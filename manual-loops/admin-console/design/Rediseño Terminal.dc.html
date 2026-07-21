@@ -1,0 +1,1889 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <style>
+    :root {
+      --bg:#0a0a0a; --panel:#0f0f0f; --hover:#1a1a1a;
+      --line:#1f1f1f; --line2:#161616; --line3:#2e2e2e;
+      --t1:#ededed; --t2:#a1a1a1; --t3:#7a7a7a;
+      --accent:#1A66FF; --accent-soft:rgba(26,102,255,0.14); --link:#6d9bff;
+      --green:#50e3a4; --green-dim:rgba(80,227,164,0.1);
+      --red:#f5455c; --red-dim:rgba(245,69,92,0.1);
+      --yellow:#f5a623; --yellow-dim:rgba(245,166,35,0.1);
+      --purple:#bf7af0;
+      --btn-bg:#ededed; --btn-fg:#0a0a0a;
+      --mono:'Geist Mono',ui-monospace,monospace;
+    }
+    :root.light-theme {
+      --bg:#fafafa; --panel:#ffffff; --hover:#f0f0f0;
+      --line:#e4e4e4; --line2:#eeeeee; --line3:#d4d4d4;
+      --t1:#171717; --t2:#666666; --t3:#999999;
+      --accent:#1A66FF; --accent-soft:rgba(26,102,255,0.09); --link:#1A66FF;
+      --green:#0c9f5f; --green-dim:rgba(12,159,95,0.08);
+      --red:#e5484d; --red-dim:rgba(229,72,77,0.08);
+      --yellow:#b26b00; --yellow-dim:rgba(178,107,0,0.08);
+      --purple:#8e4ec6;
+      --btn-bg:#171717; --btn-fg:#ffffff;
+    }
+    html, body { height:100%; margin:0; }
+    body { font-family:'Geist',system-ui,sans-serif; font-size:13px; line-height:1.5; background:var(--bg); color:var(--t1); }
+    a { color:var(--link); text-decoration:none; }
+    a:hover { color:var(--t1); }
+    ::-webkit-scrollbar { width:6px; height:6px; }
+    ::-webkit-scrollbar-thumb { background:var(--line3); border-radius:4px; }
+    .material-icons { font-size:16px; }
+    @keyframes dashmove { to { stroke-dashoffset: -20; } }
+  </style>
+</helmet>
+
+<div data-screen-label="Consola Terminal (rediseño)" style="display:flex; flex-direction:column; height:100vh; background:var(--bg); color:var(--t1); overflow:hidden;">
+
+  <!-- ═══ Top bar ═══ -->
+  <header style="height:52px; flex-shrink:0; display:flex; align-items:center; padding:0 24px; gap:14px; border-bottom:1px solid var(--line);">
+    <span style="width:22px; height:22px; border-radius:6px; background:var(--accent); display:flex; align-items:center; justify-content:center; color:#fff; font-size:11px; font-weight:700; flex-shrink:0;">Y</span>
+    <span style="color:var(--line3);">/</span>
+    <span style="font-size:13px; color:var(--t2); display:flex; align-items:center; gap:6px;"><span style="width:6px; height:6px; border-radius:50%; background:var(--green);"></span>acme-latam</span>
+    <span style="color:var(--line3);">/</span>
+    <span style="font-size:13px; font-weight:500;">{{ sectionLabel }}</span>
+    <span style="flex:1;"></span>
+    <span style="display:flex; align-items:center; gap:8px; border:1px solid var(--line3); border-radius:8px; padding:5px 12px; font-size:12px; color:var(--t3); width:210px; cursor:text;">Search…<span style="margin-left:auto; font-family:var(--mono); font-size:11px; border:1px solid var(--line3); border-radius:4px; padding:0 4px;">⌘K</span></span>
+    <button style="width:32px; height:32px; border:none; background:transparent; border-radius:8px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover); color:var(--t1);" aria-label="Notifications"><span class="material-icons" style="font-size:18px;">notifications_none</span></button>
+    <button onClick="{{ toggleTheme }}" style="width:32px; height:32px; border:none; background:transparent; border-radius:8px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover); color:var(--t1);" aria-label="Toggle theme"><span class="material-icons" style="font-size:18px;">{{ themeIcon }}</span></button>
+    <button style="width:30px; height:30px; border-radius:50%; background:linear-gradient(135deg,#1A66FF,#4A3ABF); border:none; cursor:pointer; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:600; color:#fff; margin-left:2px;">MR</button>
+  </header>
+
+  <!-- ═══ Tab row ═══ -->
+  <nav style="display:flex; align-items:center; padding:0 16px; border-bottom:1px solid var(--line); flex-shrink:0;" aria-label="Main navigation">
+    <sc-for list="{{ sections }}" as="s" hint-placeholder-count="6">
+      <a onClick="{{ s.onClick }}" style="padding:10px 12px; font-size:13px; cursor:pointer; white-space:nowrap; color:{{ s.color }}; border-bottom:2px solid {{ s.border }}; margin-bottom:-1px; font-weight:{{ s.weight }};" style-hover="color:var(--t1);">{{ s.label }}</a>
+    </sc-for>
+  </nav>
+
+  <!-- ═══ Body ═══ -->
+  <div style="display:flex; flex:1; overflow:hidden;">
+
+    <!-- Sub rail (hidden on builder) -->
+    <sc-if value="{{ showRail }}" hint-placeholder-val="{{ true }}">
+      <nav style="width:210px; min-width:210px; padding:28px 16px; display:flex; flex-direction:column; gap:2px; overflow-y:auto;">
+        <sc-for list="{{ subPages }}" as="p" hint-placeholder-count="3">
+          <a onClick="{{ p.onClick }}" style="display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:13px; padding:6px 10px; border-radius:6px; cursor:pointer; white-space:nowrap; color:{{ p.color }}; background:{{ p.bg }}; font-weight:{{ p.weight }};" style-hover="color:var(--t1);">
+            <span style="overflow:hidden; text-overflow:ellipsis;">{{ p.label }}</span>
+            <sc-if value="{{ p.count }}" hint-placeholder-val="{{ false }}">
+              <span style="font-family:var(--mono); font-size:11px; color:var(--t3); flex-shrink:0;">{{ p.count }}</span>
+            </sc-if>
+          </a>
+        </sc-for>
+      </nav>
+    </sc-if>
+
+    <main style="flex:1; overflow-y:auto; min-width:0;">
+      <div style="max-width:{{ mainMaxWidth }}; margin:0 auto; padding:{{ mainPad }};">
+
+      <!-- ─── Dashboard ─── -->
+      <sc-if value="{{ showDashboard }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="Dashboard" style="display:flex; flex-direction:column; gap:28px;">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between;">
+            <div>
+              <h1 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.5px;">Dashboard</h1>
+              <p style="margin:4px 0 0; font-size:13px; color:var(--t2);">Última actualización hace 15 s · <span style="color:var(--green);">●</span> todos los servicios operativos</p>
+            </div>
+            <button style="background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:500; font-family:inherit; cursor:pointer;" style-hover="opacity:0.85;">Export report</button>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:20px 24px; border-right:1px solid var(--line);">
+              <div style="font-size:12px; color:var(--t2);">API calls today</div>
+              <div style="font-family:var(--mono); font-size:28px; font-weight:500; margin-top:8px; letter-spacing:-0.5px;">48,214</div>
+              <div style="font-size:12px; margin-top:6px;"><span style="color:var(--green);">↑ 12.4%</span> <span style="color:var(--t3);">vs ayer</span></div>
+            </div>
+            <div style="padding:20px 24px; border-right:1px solid var(--line);">
+              <div style="font-size:12px; color:var(--t2);">Active sessions</div>
+              <div style="font-family:var(--mono); font-size:28px; font-weight:500; margin-top:8px;">127</div>
+              <div style="font-size:12px; margin-top:6px; color:var(--t3);">últimos 15 min</div>
+            </div>
+            <div style="padding:20px 24px; border-right:1px solid var(--line);">
+              <div style="font-size:12px; color:var(--t2);">Avg response</div>
+              <div style="font-family:var(--mono); font-size:28px; font-weight:500; margin-top:8px;">214<span style="font-size:16px; color:var(--t3);">ms</span></div>
+              <div style="font-size:12px; margin-top:6px; color:var(--t3);">p50 · 7 días</div>
+            </div>
+            <div style="padding:20px 24px;">
+              <div style="font-size:12px; color:var(--t2);">Error rate</div>
+              <div style="font-family:var(--mono); font-size:28px; font-weight:500; margin-top:8px;">0.42<span style="font-size:16px; color:var(--t3);">%</span></div>
+              <div style="font-size:12px; margin-top:6px;"><span style="color:var(--green);">↓ 0.08%</span> <span style="color:var(--t3);">vs ayer</span></div>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:1.6fr 1fr; gap:24px;">
+            <div style="border:1px solid var(--line); border-radius:10px; padding:20px 24px;">
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-size:13px; font-weight:500;">API usage · 7 días</span>
+                <span style="font-family:var(--mono); font-size:11px; color:var(--green); background:var(--green-dim); border-radius:6px; padding:2px 8px;">NORMAL</span>
+              </div>
+              <svg viewBox="0 0 560 120" preserveAspectRatio="none" style="width:100%; height:120px; margin-top:16px; display:block;">
+                <defs><linearGradient id="ta" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1A66FF" stop-opacity=".25"></stop><stop offset="100%" stop-color="#1A66FF" stop-opacity="0"></stop></linearGradient></defs>
+                <polygon points="0,120 0,74 93,86 186,48 279,60 372,30 465,40 560,14 560,120" fill="url(#ta)"></polygon>
+                <polyline points="0,74 93,86 186,48 279,60 372,30 465,40 560,14" fill="none" stroke="#1A66FF" stroke-width="1.5"></polyline>
+              </svg>
+              <div style="display:flex; justify-content:space-between; margin-top:10px; font-family:var(--mono); font-size:10px; color:var(--t3);"><span>TUE</span><span>WED</span><span>THU</span><span>FRI</span><span>SAT</span><span>SUN</span><span>MON</span></div>
+            </div>
+            <div style="border:1px solid var(--line); border-radius:10px; padding:20px 24px;">
+              <span style="font-size:13px; font-weight:500;">Actividad</span>
+              <div style="display:flex; flex-direction:column; margin-top:12px;">
+                <div style="display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--line2); font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">14:22</span><span style="color:var(--green);">●</span><span style="color:var(--t2);">workflow lead-qualification ejecutado</span></div>
+                <div style="display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--line2); font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">14:07</span><span style="color:var(--red);">●</span><span style="color:var(--t2);">delivery fallida · WhatsApp 131047</span></div>
+                <div style="display:flex; gap:10px; padding:9px 0; border-bottom:1px solid var(--line2); font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">13:51</span><span style="color:var(--link);">●</span><span style="color:var(--t2);">agente support-triage republicado</span></div>
+                <div style="display:flex; gap:10px; padding:9px 0; font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">13:12</span><span style="color:var(--yellow);">●</span><span style="color:var(--t2);">webhook acme-crm degradado</span></div>
+              </div>
+            </div>
+          </div>
+          <div style="border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:14px 24px; font-size:13px; font-weight:500; border-bottom:1px solid var(--line);">Workflows recientes</div>
+            <div style="display:grid; grid-template-columns:2fr 1.4fr 1fr 1fr 0.8fr; padding:8px 24px; font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--line2);"><span>Nombre</span><span>Trigger</span><span>Ejecuciones</span><span>p95</span><span>Estado</span></div>
+            <div style="display:grid; grid-template-columns:2fr 1.4fr 1fr 1fr 0.8fr; padding:12px 24px; font-size:13px; border-bottom:1px solid var(--line2); align-items:center; cursor:pointer;" style-hover="background:var(--panel);"><span style="font-weight:500;">lead-qualification</span><span style="color:var(--t2);">Channel · whatsapp</span><span style="font-family:var(--mono);">1,842</span><span style="font-family:var(--mono);">840ms</span><span style="color:var(--green); font-size:12px;">● active</span></div>
+            <div style="display:grid; grid-template-columns:2fr 1.4fr 1fr 1fr 0.8fr; padding:12px 24px; font-size:13px; border-bottom:1px solid var(--line2); align-items:center; cursor:pointer;" style-hover="background:var(--panel);"><span style="font-weight:500;">order-status-lookup</span><span style="color:var(--t2);">Channel · telegram</span><span style="font-family:var(--mono);">923</span><span style="font-family:var(--mono);">412ms</span><span style="color:var(--green); font-size:12px;">● active</span></div>
+            <div style="display:grid; grid-template-columns:2fr 1.4fr 1fr 1fr 0.8fr; padding:12px 24px; font-size:13px; align-items:center; cursor:pointer;" style-hover="background:var(--panel);"><span style="font-weight:500;">invoice-reminder</span><span style="color:var(--t2);">Channel · http</span><span style="font-family:var(--mono);">3,117</span><span style="font-family:var(--mono);">1.2s</span><span style="color:var(--t3); font-size:12px;">○ disabled</span></div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ─── Analytics ─── -->
+      <sc-if value="{{ showAnalytics }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Analytics" style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+            <div>
+              <h1 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.5px;">Analytics</h1>
+              <p style="margin:4px 0 0; font-size:13px; color:var(--t2);">Conversaciones y consumo · todo el tenant</p>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <div style="display:inline-flex; border:1px solid var(--line3); border-radius:8px; overflow:hidden;" role="tablist">
+                <button style="padding:7px 13px; font-size:12px; color:var(--t2); background:transparent; border:none; border-right:1px solid var(--line2); cursor:pointer; font-family:var(--mono);" style-hover="color:var(--t1);">7d</button>
+                <button style="padding:7px 13px; font-size:12px; color:var(--t1); background:var(--panel); border:none; border-right:1px solid var(--line2); cursor:pointer; font-family:var(--mono); font-weight:500;">30d</button>
+                <button style="padding:7px 13px; font-size:12px; color:var(--t2); background:transparent; border:none; cursor:pointer; font-family:var(--mono);" style-hover="color:var(--t1);">90d</button>
+              </div>
+              <button style="background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:500; font-family:inherit; cursor:pointer;" style-hover="opacity:0.85;">Export CSV</button>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:20px 24px; border-right:1px solid var(--line);">
+              <div style="font-size:12px; color:var(--t2);">Conversaciones</div>
+              <div style="font-family:var(--mono); font-size:28px; font-weight:500; margin-top:8px; letter-spacing:-0.5px;">12,408</div>
+              <div style="font-size:12px; margin-top:6px;"><span style="color:var(--green);">↑ 8.1%</span> <span style="color:var(--t3);">vs 30d previos</span></div>
+            </div>
+            <div style="padding:20px 24px; border-right:1px solid var(--line);">
+              <div style="font-size:12px; color:var(--t2);">Resueltas sin humano</div>
+              <div style="font-family:var(--mono); font-size:28px; font-weight:500; margin-top:8px;">82.6<span style="font-size:16px; color:var(--t3);">%</span></div>
+              <div style="font-size:12px; margin-top:6px;"><span style="color:var(--green);">↑ 3.2%</span> <span style="color:var(--t3);">handoff 7.2%</span></div>
+            </div>
+            <div style="padding:20px 24px; border-right:1px solid var(--line);">
+              <div style="font-size:12px; color:var(--t2);">1ª respuesta · p50</div>
+              <div style="font-family:var(--mono); font-size:28px; font-weight:500; margin-top:8px;">26<span style="font-size:16px; color:var(--t3);">s</span></div>
+              <div style="font-size:12px; margin-top:6px; color:var(--t3);">p95 · 84s</div>
+            </div>
+            <div style="padding:20px 24px;">
+              <div style="font-size:12px; color:var(--t2);">Tokens LLM · 30d</div>
+              <div style="font-family:var(--mono); font-size:28px; font-weight:500; margin-top:8px;">54.2<span style="font-size:16px; color:var(--t3);">M</span></div>
+              <div style="font-size:12px; margin-top:6px;"><span style="color:var(--yellow);">↑ 18.9%</span> <span style="color:var(--t3);">≈ USD 312</span></div>
+            </div>
+          </div>
+          <div style="border:1px solid var(--line); border-radius:10px; padding:20px 24px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:13px; font-weight:500;">Mensajes · 30 días</span>
+              <span style="display:flex; gap:14px; font-family:var(--mono); font-size:10px; color:var(--t3);"><span><span style="color:var(--link);">—</span> in</span><span><span style="color:var(--green);">—</span> out</span></span>
+            </div>
+            <svg viewBox="0 0 560 130" preserveAspectRatio="none" style="width:100%; height:130px; margin-top:16px; display:block;">
+              <defs><linearGradient id="ana" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1A66FF" stop-opacity=".22"></stop><stop offset="100%" stop-color="#1A66FF" stop-opacity="0"></stop></linearGradient></defs>
+              <polygon points="0,130 0,88 62,92 124,74 186,80 248,58 310,66 372,44 434,52 496,30 560,36 560,130" fill="url(#ana)"></polygon>
+              <polyline points="0,88 62,92 124,74 186,80 248,58 310,66 372,44 434,52 496,30 560,36" fill="none" stroke="#1A66FF" stroke-width="1.5"></polyline>
+              <polyline points="0,104 62,106 124,94 186,98 248,82 310,88 372,70 434,76 496,58 560,62" fill="none" stroke="#00C853" stroke-width="1.5" stroke-opacity="0.9"></polyline>
+            </svg>
+            <div style="display:flex; justify-content:space-between; margin-top:10px; font-family:var(--mono); font-size:10px; color:var(--t3);"><span>21 JUN</span><span>28 JUN</span><span>5 JUL</span><span>12 JUL</span><span>19 JUL</span></div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1.4fr; gap:24px;">
+            <div style="border:1px solid var(--line); border-radius:10px; padding:20px 24px;">
+              <span style="font-size:13px; font-weight:500;">Por canal</span>
+              <div style="display:flex; flex-direction:column; gap:14px; margin-top:18px;">
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; justify-content:space-between; font-size:12px;"><span>WhatsApp</span><span style="font-family:var(--mono); color:var(--t2);">7,204 · 58%</span></div>
+                  <div style="height:6px; border-radius:3px; background:var(--line2);"><div style="width:58%; height:100%; border-radius:3px; background:var(--link);"></div></div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; justify-content:space-between; font-size:12px;"><span>Telegram</span><span style="font-family:var(--mono); color:var(--t2);">3,918 · 32%</span></div>
+                  <div style="height:6px; border-radius:3px; background:var(--line2);"><div style="width:32%; height:100%; border-radius:3px; background:var(--link); opacity:0.65;"></div></div>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:6px;">
+                  <div style="display:flex; justify-content:space-between; font-size:12px;"><span>HTTP / webchat</span><span style="font-family:var(--mono); color:var(--t2);">1,286 · 10%</span></div>
+                  <div style="height:6px; border-radius:3px; background:var(--line2);"><div style="width:10%; height:100%; border-radius:3px; background:var(--link); opacity:0.4;"></div></div>
+                </div>
+              </div>
+              <div style="margin-top:20px; padding-top:14px; border-top:1px solid var(--line2); font-size:12px; color:var(--t3); display:flex; justify-content:space-between;"><span>Pico</span><span style="font-family:var(--mono);">lun–mié · 10–13h</span></div>
+            </div>
+            <div style="border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+              <div style="padding:14px 24px; font-size:13px; font-weight:500; border-bottom:1px solid var(--line);">Por agente · tokens y handoff</div>
+              <div style="display:grid; grid-template-columns:1.6fr 1fr 1fr 0.9fr; gap:12px; padding:8px 24px; font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--line2);"><span>Agente</span><span>Invocaciones</span><span>Tokens</span><span>Handoff</span></div>
+              <div style="display:grid; grid-template-columns:1.6fr 1fr 1fr 0.9fr; gap:12px; padding:12px 24px; font-size:13px; border-bottom:1px solid var(--line2); align-items:center;" style-hover="background:var(--panel);"><span style="font-weight:500;">lead-qualifier</span><span style="font-family:var(--mono);">61,204</span><span style="font-family:var(--mono);">28.1M</span><span style="font-family:var(--mono); color:var(--green);">4.1%</span></div>
+              <div style="display:grid; grid-template-columns:1.6fr 1fr 1fr 0.9fr; gap:12px; padding:12px 24px; font-size:13px; border-bottom:1px solid var(--line2); align-items:center;" style-hover="background:var(--panel);"><span style="font-weight:500;">support-triage</span><span style="font-family:var(--mono);">38,912</span><span style="font-family:var(--mono);">19.4M</span><span style="font-family:var(--mono); color:var(--yellow);">11.8%</span></div>
+              <div style="display:grid; grid-template-columns:1.6fr 1fr 1fr 0.9fr; gap:12px; padding:12px 24px; font-size:13px; align-items:center;" style-hover="background:var(--panel);"><span style="font-weight:500;">order-status</span><span style="font-family:var(--mono);">12,077</span><span style="font-family:var(--mono);">6.7M</span><span style="font-family:var(--mono); color:var(--green);">2.3%</span></div>
+            </div>
+          </div>
+          <div style="border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:14px 24px; font-size:13px; font-weight:500; border-bottom:1px solid var(--line);">Por workflow</div>
+            <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr 0.9fr; padding:8px 24px; font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--line2);"><span>Workflow</span><span>Ejecuciones</span><span>p95</span><span>Error rate</span><span>Costo LLM</span></div>
+            <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr 0.9fr; padding:12px 24px; font-size:13px; border-bottom:1px solid var(--line2); align-items:center;" style-hover="background:var(--panel);"><span style="font-weight:500;">lead-qualification</span><span style="font-family:var(--mono);">54,318</span><span style="font-family:var(--mono);">840ms</span><span style="font-family:var(--mono); color:var(--green);">0.3%</span><span style="font-family:var(--mono);">$164</span></div>
+            <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr 0.9fr; padding:12px 24px; font-size:13px; border-bottom:1px solid var(--line2); align-items:center;" style-hover="background:var(--panel);"><span style="font-weight:500;">support-triage</span><span style="font-family:var(--mono);">31,092</span><span style="font-family:var(--mono);">1.1s</span><span style="font-family:var(--mono); color:var(--yellow);">1.8%</span><span style="font-family:var(--mono);">$98</span></div>
+            <div style="display:grid; grid-template-columns:2fr 1fr 1fr 1fr 0.9fr; padding:12px 24px; font-size:13px; align-items:center;" style-hover="background:var(--panel);"><span style="font-weight:500;">order-status-lookup</span><span style="font-family:var(--mono);">27,644</span><span style="font-family:var(--mono);">412ms</span><span style="font-family:var(--mono); color:var(--green);">0.1%</span><span style="font-family:var(--mono);">$50</span></div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ─── Channels (ops view) ─── -->
+      <sc-if value="{{ showChannelsOps }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Channels" style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between;">
+            <div>
+              <h1 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.5px;">{{ chanTitle }}</h1>
+              <p style="margin:4px 0 0; font-size:13px; color:var(--t2);">{{ chanSub }}</p>
+            </div>
+            <button style="background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:500; font-family:inherit; cursor:pointer;" style-hover="opacity:0.85;">Add channel</button>
+          </div>
+          <!-- Fleet strip -->
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:14px 20px; border-right:1px solid var(--line);">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Flota · messages 24h</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">12,408</div>
+              <div style="font-family:var(--mono); font-size:10px; color:var(--t3); margin-top:2px;">8.1K in · 4.3K out</div>
+            </div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Flota · delivery rate</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">98.7<span style="font-size:13px; color:var(--t3);">%</span></div>
+              <div style="font-family:var(--mono); font-size:10px; color:var(--t3); margin-top:2px;">162 fallidas · 24h</div>
+            </div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Flota · conversaciones</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">342</div>
+              <div style="font-family:var(--mono); font-size:10px; color:var(--t3); margin-top:2px;">últimos 15 min</div>
+            </div>
+            <div style="padding:14px 20px;">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Flota · 1ª respuesta</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">28<span style="font-size:13px; color:var(--t3);">s</span></div>
+              <div style="font-family:var(--mono); font-size:10px; color:var(--green); margin-top:2px;">↓ 6s vs ayer</div>
+            </div>
+          </div>
+          <!-- Accounts inventory -->
+          <div style="border:1px solid var(--line); border-radius:10px; overflow-x:auto;">
+            <div style="min-width:940px; display:grid; grid-template-columns:minmax(180px,1.6fr) minmax(0,1.5fr) 1fr 1.5fr 0.8fr 0.8fr 1.4fr 28px; gap:12px; padding:8px 20px; font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--line2);"><span>Cuenta</span><span>Identidad</span><span>Estado</span><span>Msgs · 24h</span><span>Deliv.</span><span>1ª resp</span><span>Workflows</span><span></span></div>
+            <sc-for list="{{ chanRows }}" as="c" hint-placeholder-count="9">
+              <div onClick="{{ c.onClick }}" style="min-width:940px; display:grid; grid-template-columns:minmax(180px,1.6fr) minmax(0,1.5fr) 1fr 1.5fr 0.8fr 0.8fr 1.4fr 28px; gap:12px; padding:12px 20px; font-size:13px; border-bottom:1px solid var(--line2); align-items:center; cursor:pointer;" style-hover="background:var(--panel);">
+                <span style="display:flex; flex-direction:column; gap:1px; min-width:0;">
+                  <span style="display:flex; align-items:center; gap:8px;"><span style="width:7px; height:7px; border-radius:50%; background:{{ c.dotColor }}; flex-shrink:0;"></span><span style="font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ c.name }}</span></span>
+                  <span style="font-family:var(--mono); font-size:10px; color:{{ c.kindColor }}; padding-left:15px;">{{ c.kind }}</span>
+                </span>
+                <span style="font-family:var(--mono); font-size:11.5px; color:var(--t2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ c.handle }}</span>
+                <span><span style="font-family:var(--mono); font-size:10px; color:{{ c.statusColor }}; background:{{ c.statusBg }}; border-radius:5px; padding:1px 7px;">{{ c.statusLabel }}</span></span>
+                <span style="display:flex; align-items:center; gap:10px;">
+                  <span style="font-family:var(--mono); font-size:12px; min-width:44px;">{{ c.msgs }}</span>
+                  <svg viewBox="0 0 200 18" preserveAspectRatio="none" style="width:64px; height:18px; flex-shrink:0;"><polyline points="{{ c.spark }}" fill="none" stroke="{{ c.sparkColor }}" stroke-width="1.5" opacity="0.75"></polyline></svg>
+                </span>
+                <span style="font-family:var(--mono); font-size:12px; color:{{ c.delColor }};">{{ c.delivered }}</span>
+                <span style="font-family:var(--mono); font-size:12px; color:var(--t3);">{{ c.resp }}</span>
+                <span style="font-size:11.5px; color:var(--t2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ c.usedBy }}</span>
+                <span class="material-icons" style="font-size:15px; color:var(--t3);">chevron_right</span>
+              </div>
+            </sc-for>
+          </div>
+          <!-- Attention + activity -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+            <div style="border:1px solid var(--line); border-radius:10px; padding:18px 22px;">
+              <span style="font-size:13px; font-weight:500;">Necesita atención <span style="font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px;">· toda la flota</span></span>
+              <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+                <div style="display:flex; align-items:flex-start; gap:10px; font-size:12.5px;">
+                  <span style="color:var(--red); margin-top:1px;">●</span>
+                  <span style="color:var(--t2); flex:1;"><span style="font-family:var(--mono); color:var(--t1);">Soporte MX</span> — token vencido hace 2 h, la cuenta no recibe mensajes. <a href="#" onClick="{{ noop }}">Reconectar →</a></span>
+                </div>
+                <div style="display:flex; align-items:flex-start; gap:10px; font-size:12.5px;">
+                  <span style="color:var(--yellow); margin-top:1px;">●</span>
+                  <span style="color:var(--t2); flex:1;">Spike de error <span style="font-family:var(--mono); color:var(--t1);">131047</span> (re-engagement) en <span style="font-family:var(--mono); color:var(--t1);">Marketing AR</span> — 47 fallidas hoy. <a href="#" onClick="{{ noop }}">Ver plantillas →</a></span>
+                </div>
+                <div style="display:flex; align-items:flex-start; gap:10px; font-size:12.5px;">
+                  <span style="color:var(--yellow); margin-top:1px;">●</span>
+                  <span style="color:var(--t2); flex:1;">Webhook de <span style="font-family:var(--mono); color:var(--t1);">webchat-web</span> con p95 de 4.1 s — cerca del timeout.</span>
+                </div>
+              </div>
+            </div>
+            <div style="border:1px solid var(--line); border-radius:10px; padding:18px 22px;">
+              <span style="font-size:13px; font-weight:500;">Actividad <span style="font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px;">· toda la flota</span></span>
+              <div style="display:flex; flex-direction:column; margin-top:10px;">
+                <div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--line2); font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">14:07</span><span style="color:var(--red);">●</span><span style="color:var(--t2); flex:1;">delivery fallida · <span style="font-family:var(--mono); color:var(--t1);">Ventas AR</span> · error 131047</span><a href="#" onClick="{{ goTrace }}" style="font-size:11px; flex-shrink:0;">trace →</a></div>
+                <div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--line2); font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">13:41</span><span style="color:var(--green);">●</span><span style="color:var(--t2);">plantilla <span style="font-family:var(--mono); color:var(--t1);">promo_julio</span> aprobada por Meta</span></div>
+                <div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--line2); font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">12:15</span><span style="color:var(--yellow);">●</span><span style="color:var(--t2);">bot bloqueado por usuario · <span style="font-family:var(--mono); color:var(--t1);">@acme_support_bot</span></span></div>
+                <div style="display:flex; gap:10px; padding:8px 0; font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">09:02</span><span style="color:var(--link);">●</span><span style="color:var(--t2);"><span style="font-family:var(--mono); color:var(--t1);">Soporte AR</span> reconectada por m.rivas</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ─── Workflows ─── -->
+      <sc-if value="{{ showWorkflows }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Workflows" style="display:flex; flex-direction:column; gap:28px;">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between;">
+            <div>
+              <h1 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.5px;">Workflows</h1>
+              <p style="margin:4px 0 0; font-size:13px; color:var(--t2);">Automatizá procesos de negocio</p>
+            </div>
+            <button style="background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:500; font-family:inherit; cursor:pointer;" style-hover="opacity:0.85;">New workflow</button>
+          </div>
+          <div style="border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="display:grid; grid-template-columns:2fr 1.6fr 0.9fr 1fr 1fr 0.9fr 40px; padding:8px 24px; font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--line2);"><span>Nombre</span><span>Trigger</span><span>Acciones</span><span>Ejecuciones</span><span>Creado</span><span>Estado</span><span></span></div>
+            <sc-for list="{{ workflows }}" as="wf" hint-placeholder-count="4">
+              <div onClick="{{ wf.onClick }}" style="display:grid; grid-template-columns:2fr 1.6fr 0.9fr 1fr 1fr 0.9fr 40px; padding:13px 24px; font-size:13px; border-bottom:1px solid var(--line2); align-items:center; cursor:pointer; opacity:{{ wf.opacity }};" style-hover="background:var(--panel);">
+                <span style="font-weight:500;">{{ wf.name }}</span>
+                <span style="color:var(--t2);">{{ wf.sub }}</span>
+                <span style="font-family:var(--mono);">{{ wf.actions }}</span>
+                <span style="font-family:var(--mono);">{{ wf.execs }}</span>
+                <span style="color:var(--t3); font-size:12px;">{{ wf.created }}</span>
+                <span style="font-size:12px; color:{{ wf.statusColor }};">{{ wf.statusDot }} {{ wf.status }}</span>
+                <span class="material-icons" style="font-size:16px; color:var(--t3);">chevron_right</span>
+              </div>
+            </sc-for>
+          </div>
+          <p style="font-size:12px; color:var(--t3); margin:0;">Clic en un workflow para abrir el builder · <a href="#" onClick="{{ goTrace }}">inspeccionar un mensaje end-to-end en Trace →</a></p>
+        </div>
+      </sc-if>
+
+      <!-- ─── Builder (full-bleed canvas, chrome flotante) ─── -->
+      <sc-if value="{{ showBuilder }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Workflow Builder" style="position:relative; height:calc(100vh - 96px); background:var(--bg); overflow:hidden; background-image:radial-gradient(circle, var(--line) 1px, transparent 1px); background-size:24px 24px;">
+
+          <!-- Canvas -->
+          <div style="position:absolute; inset:0; overflow:auto;">
+            <div style="position:relative; width:1340px; height:560px; margin:24px;">
+              <svg width="1340" height="560" style="position:absolute; inset:0; pointer-events:none;">
+                <path d="M 284 216 C 322 216, 322 216, 358 216" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 5" style="animation:dashmove 1s linear infinite;"></path>
+                <path d="M 596 216 C 650 216, 644 106, 698 106" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 5" style="animation:dashmove 1s linear infinite;"></path>
+                <path d="M 596 216 C 650 216, 644 346, 698 346" fill="none" stroke="var(--line3)" stroke-width="1.5"></path>
+                <path d="M 936 106 C 990 106, 984 106, 1038 106" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 5" style="animation:dashmove 1s linear infinite;"></path>
+              </svg>
+              <!-- Edge labels -->
+              <span style="position:absolute; left:614px; top:142px; font-family:var(--mono); font-size:10px; color:var(--t2); background:var(--bg); border:1px solid var(--line3); border-radius:5px; padding:1px 7px;">text contains "precio"</span>
+              <span style="position:absolute; left:632px; top:300px; font-family:var(--mono); font-size:10px; color:var(--t3); background:var(--bg); border:1px solid var(--line2); border-radius:5px; padding:1px 7px;">default</span>
+
+              <sc-for list="{{ builderNodes }}" as="bn" hint-placeholder-count="5">
+                <div onClick="{{ bn.onClick }}" style="position:absolute; left:{{ bn.x }}px; top:{{ bn.y }}px; width:236px; background:var(--bg); border:1px solid {{ bn.border }}; border-radius:12px; cursor:grab; box-shadow:{{ bn.glow }};" style-hover="border-color:var(--t3);">
+                  <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid {{ bn.stripe }}; top:50%; transform:translateY(-50%); left:-6px; cursor:crosshair;"></span>
+                  <div style="display:flex; align-items:center; gap:9px; padding:11px 14px 8px;">
+                    <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; background:{{ bn.tint }}; flex-shrink:0;"><span class="material-icons" style="font-size:15px; color:{{ bn.stripe }};">{{ bn.icon }}</span></span>
+                    <span style="flex:1; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ bn.name }}</span>
+                    <sc-if value="{{ bn.tag }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono); font-size:9px; letter-spacing:0.5px; color:{{ bn.stripe }}; border:1px solid {{ bn.stripe }}; border-radius:5px; padding:1px 6px; opacity:0.9;">{{ bn.tag }}</span></sc-if>
+                  </div>
+                  <div style="padding:0 14px 9px; font-family:var(--mono); font-size:10.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ bn.summary }}</div>
+                  <div style="display:flex; gap:14px; padding:7px 14px; border-top:1px solid var(--line2); font-family:var(--mono); font-size:10px; color:var(--t3);">
+                    <span>{{ bn.stat1 }}</span><span>{{ bn.stat2 }}</span><span style="margin-left:auto; color:{{ bn.okColor }};">{{ bn.ok }}</span>
+                  </div>
+                  <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid {{ bn.stripe }}; top:50%; transform:translateY(-50%); right:-6px; cursor:crosshair;"></span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- Floating top chrome: single row, wraps on narrow widths -->
+          <div style="position:absolute; top:16px; left:16px; right:16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; pointer-events:none;">
+          <div style="display:flex; align-items:center; gap:8px; pointer-events:auto;">
+            <div style="display:flex; align-items:center; gap:8px; background:var(--bg); border:1px solid var(--line3); border-radius:10px; padding:6px 12px; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
+              <button onClick="{{ backToWorkflows }}" style="width:24px; height:24px; border:none; background:transparent; border-radius:6px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover); color:var(--t1);" aria-label="Back"><span class="material-icons" style="font-size:15px;">arrow_back</span></button>
+              <span style="font-family:var(--mono); font-size:11px; color:var(--t3);">workflows /</span>
+              <input value="lead-qualification" style="font-size:13px; font-weight:600; border:1px solid transparent; border-radius:5px; background:transparent; color:inherit; padding:1px 6px; width:150px; outline:none; font-family:inherit;" style-hover="border-color:var(--line3);" style-focus="border-color:var(--accent);">
+              <span style="font-size:10px; color:var(--green); background:var(--green-dim); border-radius:5px; padding:1px 7px; font-family:var(--mono);">ACTIVE</span>
+            </div>
+            <span style="display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px; color:var(--t3); background:var(--bg); border:1px solid var(--line2); border-radius:10px; padding:7px 12px;"><span class="material-icons" style="font-size:13px; color:var(--green);">check_circle</span>saved · 12s</span>
+          </div>
+
+          <span style="flex:1;"></span>
+          <!-- View segmented -->
+          <div style="display:inline-flex; border:1px solid var(--line3); border-radius:10px; overflow:hidden; background:var(--bg); box-shadow:0 8px 24px rgba(0,0,0,0.25); pointer-events:auto;">
+            <button style="padding:7px 16px; font-size:12px; font-weight:500; color:var(--t1); background:var(--hover); border:none; border-right:1px solid var(--line2); cursor:pointer; font-family:inherit;">Editor</button>
+            <button style="padding:7px 16px; font-size:12px; color:var(--t3); background:transparent; border:none; border-right:1px solid var(--line2); cursor:pointer; font-family:inherit;" style-hover="color:var(--t1);">Runs <span style="font-family:var(--mono); font-size:10px;">1,842</span></button>
+            <button style="padding:7px 16px; font-size:12px; color:var(--t3); background:transparent; border:none; cursor:pointer; font-family:inherit;" style-hover="color:var(--t1);">Settings</button>
+          </div>
+
+          <span style="flex:1;"></span>
+          <!-- Actions -->
+          <div style="display:flex; align-items:center; gap:8px; pointer-events:auto;">
+            <span style="display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px; color:var(--green); background:var(--bg); border:1px solid var(--line3); border-radius:10px; padding:7px 12px;"><span class="material-icons" style="font-size:13px;">verified</span>valid · 5 nodes</span>
+            <button style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:10px; font-size:12.5px; font-weight:500; cursor:pointer; background:var(--bg); color:var(--t1); border:1px solid var(--line3); font-family:inherit; box-shadow:0 8px 24px rgba(0,0,0,0.25);" style-hover="background:var(--hover);"><span class="material-icons" style="font-size:14px;">play_arrow</span>Run test</button>
+            <button style="display:inline-flex; align-items:center; gap:6px; padding:7px 16px; border-radius:10px; font-size:12.5px; font-weight:500; cursor:pointer; background:var(--btn-bg); color:var(--btn-fg); border:none; font-family:inherit; box-shadow:0 8px 24px rgba(0,0,0,0.25);" style-hover="opacity:0.85;">Publish</button>
+          </div>
+          </div>
+
+          <!-- Floating bottom-center: dock palette -->
+          <div style="position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:2px; background:var(--bg); border:1px solid var(--line3); border-radius:14px; padding:6px; box-shadow:0 12px 32px rgba(0,0,0,0.35);">
+            <sc-for list="{{ dockItems }}" as="d" hint-placeholder-count="9">
+              <sc-if value="{{ d.divider }}" hint-placeholder-val="{{ false }}">
+                <span style="width:1px; height:26px; background:var(--line2); margin:0 5px;"></span>
+              </sc-if>
+              <sc-if value="{{ d.item }}" hint-placeholder-val="{{ true }}">
+                <div title="{{ d.name }}" style="display:flex; flex-direction:column; align-items:center; gap:2px; padding:6px 9px; border-radius:9px; cursor:grab;" style-hover="background:var(--hover);">
+                  <span class="material-icons" style="font-size:17px; color:{{ d.color }};">{{ d.icon }}</span>
+                  <span style="font-family:var(--mono); font-size:8.5px; color:var(--t3); letter-spacing:0.3px;">{{ d.short }}</span>
+                </div>
+              </sc-if>
+            </sc-for>
+          </div>
+
+          <!-- Floating bottom-left: zoom -->
+          <div style="position:absolute; bottom:20px; left:16px; display:flex; align-items:center; background:var(--bg); border:1px solid var(--line3); border-radius:10px; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
+            <button style="width:30px; height:30px; border:none; background:transparent; color:var(--t2); cursor:pointer; font-size:15px; font-family:inherit;" style-hover="background:var(--hover);">−</button>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--t2); padding:0 8px; border-left:1px solid var(--line2); border-right:1px solid var(--line2); line-height:30px;">100%</span>
+            <button style="width:30px; height:30px; border:none; background:transparent; color:var(--t2); cursor:pointer; font-size:15px; font-family:inherit;" style-hover="background:var(--hover);">+</button>
+            <button style="width:30px; height:30px; border:none; border-left:1px solid var(--line2); background:transparent; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover);" title="Fit to screen"><span class="material-icons" style="font-size:14px;">fit_screen</span></button>
+          </div>
+
+          <!-- Floating bottom-right: minimap -->
+          <div style="position:absolute; bottom:20px; right:16px; width:132px; height:76px; background:var(--bg); border:1px solid var(--line3); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.25); overflow:hidden;">
+            <svg width="132" height="76" style="display:block;">
+              <rect x="8" y="32" width="20" height="9" rx="2" fill="var(--line3)"></rect>
+              <rect x="38" y="32" width="20" height="9" rx="2" fill="var(--line3)"></rect>
+              <rect x="70" y="14" width="20" height="9" rx="2" fill="var(--line3)"></rect>
+              <rect x="102" y="14" width="20" height="9" rx="2" fill="var(--line3)"></rect>
+              <rect x="70" y="52" width="20" height="9" rx="2" fill="var(--line3)"></rect>
+              <rect x="2" y="2" width="86" height="72" rx="3" fill="none" stroke="var(--accent)" stroke-width="1"></rect>
+            </svg>
+          </div>
+
+          <!-- Floating inspector (node selected) -->
+          <sc-if value="{{ builderSelNode }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute; top:68px; right:16px; bottom:64px; width:320px; display:flex; flex-direction:column; background:var(--bg); border:1px solid var(--line3); border-radius:14px; box-shadow:0 16px 48px rgba(0,0,0,0.4); overflow:hidden;">
+              <div style="display:flex; align-items:center; gap:9px; padding:14px 16px; border-bottom:1px solid var(--line);">
+                <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; background:var(--hover);"><span class="material-icons" style="font-size:15px; color:var(--t2);">{{ bSelIcon }}</span></span>
+                <span style="flex:1; font-weight:600; font-size:13px;">{{ bSelName }}</span>
+                <button onClick="{{ builderDeselect }}" style="width:26px; height:26px; border:none; background:transparent; border-radius:6px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover);" aria-label="Close"><span class="material-icons" style="font-size:16px;">close</span></button>
+              </div>
+              <div style="display:flex; border-bottom:1px solid var(--line); padding:0 16px; gap:2px;">
+                <span style="padding:8px 10px; font-size:12px; font-weight:500; color:var(--t1); border-bottom:2px solid var(--t1); margin-bottom:-1px;">Config</span>
+                <span style="padding:8px 10px; font-size:12px; color:var(--t3); cursor:pointer;" style-hover="color:var(--t1);">Output</span>
+                <span style="padding:8px 10px; font-size:12px; color:var(--t3); cursor:pointer;" style-hover="color:var(--t1);">Runs</span>
+              </div>
+              <div style="flex:1; padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto;">
+                <label style="display:flex; flex-direction:column; gap:5px;">
+                  <span style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--t3);">Name</span>
+                  <input value="{{ bSelName }}" style="height:34px; padding:0 12px; border:1px solid var(--line3); border-radius:8px; background:transparent; color:var(--t1); font-size:13px; outline:none; font-family:inherit;" style-focus="border-color:var(--accent);">
+                </label>
+                <sc-for list="{{ bSelFields }}" as="f" hint-placeholder-count="3">
+                  <label style="display:flex; flex-direction:column; gap:5px;">
+                    <span style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--t3);">{{ f.label }}</span>
+                    <span style="height:34px; padding:0 12px; border:1px solid var(--line3); border-radius:8px; color:var(--t1); font-size:13px; display:flex; align-items:center; justify-content:space-between;">{{ f.value }}<sc-if value="{{ f.select }}" hint-placeholder-val="{{ false }}"><span class="material-icons" style="font-size:15px; color:var(--t3);">unfold_more</span></sc-if></span>
+                  </label>
+                </sc-for>
+                <p style="font-size:12px; color:var(--t3); margin:0; line-height:1.5;">{{ bSelHint }}</p>
+              </div>
+              <div style="padding:12px 16px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+                <span style="font-family:var(--mono); font-size:10px; color:var(--t3);">{{ bSelId }}</span>
+                <button style="padding:6px 12px; border-radius:8px; font-size:12px; font-weight:500; cursor:pointer; background:transparent; color:var(--red); border:1px solid var(--line3); font-family:inherit;" style-hover="background:var(--red-dim); border-color:var(--red);">Remove</button>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <!-- ─── Agents (ops view) ─── -->
+      <sc-if value="{{ showAgents }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Agents" style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between;">
+            <div>
+              <h1 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.5px;">Agents</h1>
+              <p style="margin:4px 0 0; font-size:13px; color:var(--t2);">3 agentes · 2 published · 1 draft</p>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button style="display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; background:transparent; color:var(--t1); border:1px solid var(--line3); font-family:inherit;" style-hover="background:var(--hover);">Sync from seed</button>
+              <button style="background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:500; font-family:inherit; cursor:pointer;" style-hover="opacity:0.85;">New agent</button>
+            </div>
+          </div>
+          <!-- Fleet strip -->
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:14px 20px; border-right:1px solid var(--line);">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Invocations · 24h</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">4,812</div>
+            </div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Avg p95</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">640<span style="font-size:13px; color:var(--t3);">ms</span></div>
+            </div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Tokens · 24h</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">1.9M</div>
+            </div>
+            <div style="padding:14px 20px;">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Handoff rate</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">7.2<span style="font-size:13px; color:var(--t3);">%</span></div>
+            </div>
+          </div>
+          <!-- Agent cards -->
+          <div style="display:grid; grid-template-columns:repeat(auto-fill,minmax(340px,1fr)); gap:16px;">
+            <sc-for list="{{ agents }}" as="a" hint-placeholder-count="3">
+              <div onClick="{{ a.onEdit }}" style="border:1px solid var(--line); border-radius:12px; overflow:hidden; cursor:pointer; display:flex; flex-direction:column;" style-hover="border-color:var(--line3); box-shadow:0 8px 24px rgba(0,0,0,0.2);">
+                <div style="padding:16px 18px 0; display:flex; align-items:center; gap:10px;">
+                  <span style="width:8px; height:8px; border-radius:50%; background:{{ a.rtColor }}; flex-shrink:0;"></span>
+                  <span style="font-size:14px; font-weight:600;">{{ a.name }}</span>
+                  <span style="font-family:var(--mono); font-size:10px; color:{{ a.statusColor }}; background:{{ a.statusBg }}; border-radius:5px; padding:1px 7px;">{{ a.status }}</span>
+                  <span style="flex:1;"></span>
+                  <span class="material-icons" style="font-size:15px; color:var(--t3);">north_east</span>
+                </div>
+                <div style="padding:4px 18px 0; font-family:var(--mono); font-size:11px; color:var(--t3);">{{ a.meta }}</div>
+                <p style="margin:10px 18px 0; font-size:12.5px; color:var(--t2); line-height:1.5; flex:1;">{{ a.description }}</p>
+                <svg viewBox="0 0 320 40" preserveAspectRatio="none" style="width:100%; height:40px; margin-top:12px; display:block;">
+                  <polyline points="{{ a.spark }}" fill="none" stroke="{{ a.sparkColor }}" stroke-width="1.5" stroke-linejoin="round" opacity="0.8"></polyline>
+                </svg>
+                <div style="display:flex; gap:16px; padding:10px 18px; border-top:1px solid var(--line2); font-family:var(--mono); font-size:11px; color:var(--t3);">
+                  <span><span style="color:var(--t1);">{{ a.inv }}</span> inv/24h</span>
+                  <span>p95 <span style="color:var(--t1);">{{ a.p95 }}</span></span>
+                  <span><span style="color:var(--t1);">{{ a.skills }}</span> skills</span>
+                  <span style="margin-left:auto; color:{{ a.rtColor }};">{{ a.runtime }}</span>
+                </div>
+              </div>
+            </sc-for>
+            <!-- New agent ghost card -->
+            <div style="border:1px dashed var(--line3); border-radius:12px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; min-height:220px; cursor:pointer; color:var(--t3);" style-hover="border-color:var(--t3); color:var(--t1);">
+              <span class="material-icons" style="font-size:22px;">add</span>
+              <span style="font-size:13px;">New agent</span>
+              <span style="font-family:var(--mono); font-size:10px;">o empezá desde un template</span>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ─── Agent editor (IDE + live test) ─── -->
+      <sc-if value="{{ showAgentEditor }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Agent editor" style="display:flex; flex-direction:column; gap:20px;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <button onClick="{{ backToAgents }}" style="width:30px; height:30px; border:1px solid var(--line3); background:transparent; border-radius:8px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover); color:var(--t1);" aria-label="Back"><span class="material-icons" style="font-size:16px;">arrow_back</span></button>
+            <h1 style="margin:0; font-size:20px; font-weight:600; letter-spacing:-0.4px;">lead-qualifier</h1>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--t2); border:1px solid var(--line3); border-radius:6px; padding:2px 9px;">claude-sonnet-4-5</span>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--t3); border:1px solid var(--line2); border-radius:6px; padding:2px 9px;">temp 0.3</span>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--t3);">v14 · draft sobre v13 published</span>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--yellow); background:var(--yellow-dim); border-radius:6px; padding:2px 8px;">● unsaved</span>
+            <span style="flex:1;"></span>
+            <button style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; background:transparent; color:var(--t1); border:1px solid var(--line3); font-family:inherit;" style-hover="background:var(--hover);">Diff vs v13</button>
+            <button style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:8px; font-size:13px; font-weight:500; cursor:pointer; background:transparent; color:var(--t1); border:1px solid var(--line3); font-family:inherit;" style-hover="background:var(--hover);">Reset</button>
+            <button style="background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:8px; padding:7px 16px; font-size:13px; font-weight:500; font-family:inherit; cursor:pointer;" style-hover="opacity:0.85;">Update agent</button>
+          </div>
+          <div style="display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap;">
+            <!-- Outline nav -->
+            <nav style="display:flex; flex-direction:column; gap:2px; flex:0 1 180px; min-width:150px;" aria-label="Agent builder">
+              <sc-for list="{{ agentNavItems }}" as="ni" hint-placeholder-count="12">
+                <sc-if value="{{ ni.isGroup }}" hint-placeholder-val="{{ false }}">
+                  <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--t3); padding:14px 10px 4px;">{{ ni.label }}</div>
+                </sc-if>
+                <sc-if value="{{ ni.isItem }}" hint-placeholder-val="{{ true }}">
+                  <button onClick="{{ ni.onClick }}" style="display:flex; align-items:center; gap:8px; padding:6px 10px; border-radius:6px; cursor:pointer; font-size:13px; border:none; background:{{ ni.bg }}; color:{{ ni.color }}; font-family:inherit; text-align:left; width:100%; font-weight:{{ ni.weight }};" style-hover="color:var(--t1);">
+                    <span style="flex:1;">{{ ni.label }}</span>
+                    <sc-if value="{{ ni.badge }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono); font-size:11px; color:var(--t3);">{{ ni.badge }}</span></sc-if>
+                  </button>
+                </sc-if>
+              </sc-for>
+            </nav>
+            <!-- Prompt editor -->
+            <div style="display:flex; flex-direction:column; gap:16px; flex:1 1 420px; min-width:340px;">
+              <div style="border:1px solid var(--line); border-radius:12px; overflow:hidden;">
+                <div style="padding:13px 20px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between;">
+                  <div style="font-size:13px; font-weight:600;">System Prompt</div>
+                  <span style="font-family:var(--mono); font-size:10px; color:var(--t3);">312 tokens · autosave on</span>
+                </div>
+                <div style="display:flex; font-family:var(--mono); font-size:12px; line-height:1.85; background:var(--panel); min-height:380px;">
+                  <div style="padding:16px 0; width:44px; text-align:right; color:var(--t3); flex-shrink:0; user-select:none; border-right:1px solid var(--line2);">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12</div>
+                  <pre style="margin:0; padding:16px 20px; color:var(--t1); white-space:pre-wrap; overflow:auto; flex:1; font-family:inherit;">You are the lead qualification agent for acme-latam.
+
+Goals:
+- Greet the customer in their language (es-AR default).
+- Collect: company name, team size, use case.
+- Score the lead using <span style="color:var(--purple); background:rgba(191,122,240,0.1); border-radius:4px; padding:0 4px;">@skill:lead-scoring</span>.
+- If score &gt;= 70, escalate via <span style="color:var(--green); background:var(--green-dim); border-radius:4px; padding:0 4px;">@tool:crm-create-opportunity</span>.
+- Otherwise, send the self-service onboarding link.
+
+Never invent pricing. When unsure, hand off to a human
+using <span style="color:var(--green); background:var(--green-dim); border-radius:4px; padding:0 4px;">@tool:handoff-queue</span>.</pre>
+                </div>
+              </div>
+              <!-- Detected references -->
+              <div style="border:1px solid var(--line); border-radius:12px; padding:14px 20px;">
+                <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--t3); margin-bottom:10px;">Detected references</div>
+                <div style="display:flex; flex-wrap:wrap; gap:8px;">
+                  <span style="font-family:var(--mono); font-size:11px; color:var(--purple); border:1px solid rgba(191,122,240,0.35); background:rgba(191,122,240,0.08); border-radius:999px; padding:3px 11px;">@skill:lead-scoring</span>
+                  <span style="font-family:var(--mono); font-size:11px; color:var(--green); border:1px solid rgba(80,227,164,0.3); background:var(--green-dim); border-radius:999px; padding:3px 11px;">@tool:crm-create-opportunity</span>
+                  <span style="font-family:var(--mono); font-size:11px; color:var(--green); border:1px solid rgba(80,227,164,0.3); background:var(--green-dim); border-radius:999px; padding:3px 11px;">@tool:handoff-queue</span>
+                  <span style="font-family:var(--mono); font-size:11px; color:var(--t3); border:1px dashed var(--line3); border-radius:999px; padding:3px 11px;" title="Declarado pero no referenciado en el prompt">@skill:faq-lookup · sin usar</span>
+                </div>
+              </div>
+            </div>
+            <!-- Live test panel -->
+            <div style="border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; height:560px; flex:1 1 300px; min-width:280px; max-width:400px;">
+              <div style="padding:12px 16px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px;">
+                <span style="width:7px; height:7px; border-radius:50%; background:var(--green);"></span>
+                <span style="font-size:13px; font-weight:600;">Test run</span>
+                <span style="font-family:var(--mono); font-size:10px; color:var(--t3);">draft v14</span>
+                <span style="flex:1;"></span>
+                <button style="width:26px; height:26px; border:none; background:transparent; border-radius:6px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover);" title="Restart session"><span class="material-icons" style="font-size:15px;">refresh</span></button>
+              </div>
+              <div style="flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:12px;">
+                <div style="align-self:flex-end; max-width:85%; background:var(--accent); color:#fff; border-radius:12px 12px 4px 12px; padding:8px 12px; font-size:12.5px;">hola, quería saber el precio para mi equipo</div>
+                <div style="align-self:flex-start; max-width:90%; display:flex; flex-direction:column; gap:4px;">
+                  <div style="background:var(--hover); border:1px solid var(--line2); border-radius:12px 12px 12px 4px; padding:8px 12px; font-size:12.5px; color:var(--t1); line-height:1.5;">¡Hola! Con gusto te ayudo. Para armarte una propuesta, ¿me contás el nombre de tu empresa y cuántas personas son en el equipo?</div>
+                  <span style="font-family:var(--mono); font-size:10px; color:var(--t3);">620ms · 214 tokens · <a href="#" onClick="{{ noop }}">ver en Trace →</a></span>
+                </div>
+                <div style="align-self:flex-end; max-width:85%; background:var(--accent); color:#fff; border-radius:12px 12px 4px 12px; padding:8px 12px; font-size:12.5px;">somos Acme Foods, 40 personas, atención al cliente</div>
+                <div style="align-self:flex-start; max-width:90%; display:flex; flex-direction:column; gap:4px;">
+                  <div style="display:flex; flex-direction:column; gap:4px; background:var(--hover); border:1px solid var(--line2); border-radius:12px 12px 12px 4px; padding:8px 12px;">
+                    <span style="font-family:var(--mono); font-size:10px; color:var(--purple);">▸ @skill:lead-scoring → score: 82</span>
+                    <span style="font-family:var(--mono); font-size:10px; color:var(--green);">▸ @tool:crm-create-opportunity → OPP-4471 ✓</span>
+                    <span style="font-size:12.5px; color:var(--t1); line-height:1.5;">¡Gracias! Ya derivé tu consulta a nuestro equipo comercial — te van a contactar hoy mismo con una propuesta para 40 usuarios.</span>
+                  </div>
+                  <span style="font-family:var(--mono); font-size:10px; color:var(--t3);">1,184ms · 402 tokens · 2 tool calls</span>
+                </div>
+              </div>
+              <div style="padding:12px 14px; border-top:1px solid var(--line); display:flex; gap:8px;">
+                <input placeholder="Probá el agente…" style="flex:1; height:34px; padding:0 12px; border:1px solid var(--line3); border-radius:8px; background:transparent; color:var(--t1); font-size:12.5px; outline:none; font-family:inherit;" style-focus="border-color:var(--accent);">
+                <button style="width:34px; height:34px; border:none; background:var(--btn-bg); color:var(--btn-fg); border-radius:8px; cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="opacity:0.85;" aria-label="Send"><span class="material-icons" style="font-size:15px;">arrow_upward</span></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ─── Users ─── -->
+      <sc-if value="{{ showUsers }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Users" style="display:flex; flex-direction:column; gap:28px;">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between;">
+            <div>
+              <h1 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.5px;">Users</h1>
+              <p style="margin:4px 0 0; font-size:13px; color:var(--t2);">8 members in acme-latam</p>
+            </div>
+            <button style="background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:500; font-family:inherit; cursor:pointer;" style-hover="opacity:0.85;">Add user</button>
+          </div>
+          <div style="border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="display:grid; grid-template-columns:2fr 1.4fr 1.1fr 1fr 40px; padding:8px 24px; font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--line2);"><span>Email</span><span>Name</span><span>Role</span><span>Created</span><span></span></div>
+            <sc-for list="{{ users }}" as="u" hint-placeholder-count="5">
+              <div style="display:grid; grid-template-columns:2fr 1.4fr 1.1fr 1fr 40px; padding:12px 24px; font-size:13px; border-bottom:1px solid var(--line2); align-items:center;" style-hover="background:var(--panel);">
+                <span style="font-family:var(--mono); font-size:12px;">{{ u.email }}</span>
+                <span>{{ u.name }}</span>
+                <span><span style="font-family:var(--mono); font-size:11px; color:{{ u.roleColor }}; background:{{ u.roleBg }}; border-radius:6px; padding:2px 8px;">{{ u.role }}</span></span>
+                <span style="color:var(--t3); font-size:12px;">{{ u.created }}</span>
+                <button style="width:28px; height:28px; border:none; background:transparent; border-radius:6px; color:var(--t3); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover); color:var(--red);" aria-label="Deactivate user"><span class="material-icons" style="font-size:16px;">person_off</span></button>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ─── Trace ─── -->
+      <sc-if value="{{ showTrace }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Trace" style="display:flex; flex-direction:column; gap:20px;">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+            <div>
+              <h1 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.5px;">Trace</h1>
+              <p style="margin:6px 0 0; font-size:12px; color:var(--t2); display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                <span style="font-family:var(--mono); font-size:10px; color:var(--link); background:var(--accent-soft); border-radius:5px; padding:1px 7px;">business</span>
+                <span style="font-family:var(--mono);">c7f4a2e8-90b1-4d5f-8a36-2be91c04d7aa</span>
+                <span style="font-family:var(--mono); font-size:10px; color:var(--t2); background:var(--hover); border-radius:5px; padding:1px 7px;">tech</span>
+                <span style="font-family:var(--mono);">91bd03fa66e14c2b</span>
+                <a href="#" onClick="{{ noop }}" style="font-size:11px;">Open in Tempo ↗</a>
+              </p>
+            </div>
+            <div style="display:inline-flex; border:1px solid var(--line3); border-radius:8px; overflow:hidden;" role="tablist">
+              <sc-for list="{{ traceTabs }}" as="t" hint-placeholder-count="4">
+                <button onClick="{{ t.onClick }}" style="padding:7px 14px; font-size:12.5px; font-weight:500; color:{{ t.color }}; background:{{ t.bg }}; border:none; border-right:1px solid var(--line2); cursor:pointer; font-family:inherit;">{{ t.label }}</button>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- Lookup -->
+          <div style="display:flex; gap:8px; align-items:stretch; flex-wrap:wrap;">
+            <div role="group" style="display:inline-flex; border:1px solid var(--line3); border-radius:8px; overflow:hidden;">
+              <button style="height:34px; padding:0 13px; border:none; border-right:1px solid var(--line2); background:var(--hover); color:var(--t1); font-size:12px; font-weight:500; cursor:pointer; font-family:inherit;">correlation</button>
+              <button style="height:34px; padding:0 13px; border:none; background:transparent; color:var(--t3); font-size:12px; cursor:pointer; font-family:inherit;" style-hover="color:var(--t1);">event id</button>
+            </div>
+            <input placeholder="pegá un correlation id o event id…" style="flex:1; min-width:220px; height:34px; padding:0 13px; border:1px solid var(--line3); border-radius:8px; font-size:12px; background:transparent; color:var(--t1); outline:none; box-sizing:border-box; font-family:var(--mono);" style-focus="border-color:var(--accent);">
+            <button style="height:34px; padding:0 16px; border-radius:8px; border:none; background:var(--btn-bg); color:var(--btn-fg); font-size:12.5px; font-weight:500; cursor:pointer; font-family:inherit;" style-hover="opacity:0.85;">Trace</button>
+            <div style="display:flex; align-items:center; gap:8px; border:1px solid var(--line2); border-radius:8px; padding:0 13px; font-size:11.5px; color:var(--t3); cursor:pointer;" style-hover="border-color:var(--line3); color:var(--t2);">
+              <span class="material-icons" style="font-size:13px;">history</span>recientes · <span style="font-family:var(--mono);">c7f4a2e8… · 14:22</span><span class="material-icons" style="font-size:13px;">unfold_more</span>
+            </div>
+          </div>
+
+          <!-- Summary strip (shared) -->
+          <div style="display:grid; grid-template-columns:repeat(5,1fr); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Verdict</div><div style="font-family:var(--mono); font-size:16px; font-weight:500; margin-top:6px; color:var(--green);">● delivered</div></div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Total</div><div style="font-family:var(--mono); font-size:16px; font-weight:500; margin-top:6px;">1,236 ms</div></div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Eventos</div><div style="font-family:var(--mono); font-size:16px; font-weight:500; margin-top:6px;">7 · spans 3/3</div></div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Canal</div><div style="font-family:var(--mono); font-size:16px; font-weight:500; margin-top:6px;">whatsapp · Ventas AR</div></div>
+            <div style="padding:14px 20px;"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Bottleneck</div><div style="font-family:var(--mono); font-size:16px; font-weight:500; margin-top:6px; color:var(--red);">llm.completion 50.2%</div></div>
+          </div>
+
+          <div style="display:flex; gap:16px; align-items:flex-start;">
+          <div style="flex:1; min-width:0; display:flex; flex-direction:column; gap:20px;">
+
+          <!-- Waterfall -->
+          <sc-if value="{{ showWaterfall }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <div style="border:1px solid var(--line); border-radius:10px; padding:20px 24px;" role="table" aria-label="Waterfall trace">
+                <!-- time axis -->
+                <div style="display:grid; grid-template-columns:250px 1fr 64px; gap:12px; margin-bottom:8px;">
+                  <span></span>
+                  <div style="position:relative; height:14px; font-family:var(--mono); font-size:9px; color:var(--t3);">
+                    <span style="position:absolute; left:0;">0</span>
+                    <span style="position:absolute; left:25%; transform:translateX(-50%);">309ms</span>
+                    <span style="position:absolute; left:50%; transform:translateX(-50%);">618ms</span>
+                    <span style="position:absolute; left:75%; transform:translateX(-50%);">927ms</span>
+                    <span style="position:absolute; right:0;">1,236ms</span>
+                  </div>
+                  <span></span>
+                </div>
+                <div style="display:flex; flex-direction:column; gap:2px;">
+                  <sc-for list="{{ wfRows }}" as="r" hint-placeholder-count="7">
+                    <div role="row" onClick="{{ r.onClick }}" style="display:grid; grid-template-columns:250px 1fr 64px; align-items:center; gap:12px; min-height:28px; border-radius:6px; padding:0 4px; margin:0 -4px; cursor:pointer; background:{{ r.bg }};" style-hover="background:var(--panel);">
+                      <div style="display:flex; align-items:baseline; gap:8px; min-width:0; padding-left:{{ r.pad }}px;">
+                        <span style="font-family:var(--mono); font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ r.label }}</span>
+                        <span style="font-size:10px; color:var(--t3); white-space:nowrap;">{{ r.service }}</span>
+                      </div>
+                      <div style="position:relative; height:16px; background:var(--line2); border-radius:4px; background-image:linear-gradient(to right, var(--line3) 1px, transparent 1px); background-size:25% 100%;">
+                        <sc-if value="{{ r.isPoint }}" hint-placeholder-val="{{ false }}">
+                          <svg viewBox="0 0 10 10" style="position:absolute; top:3px; left:{{ r.start }}%; width:10px; height:10px; transform:translateX(-5px);"><rect x="1" y="1" width="8" height="8" transform="rotate(45 5 5)" fill="{{ r.color }}"></rect></svg>
+                        </sc-if>
+                        <sc-if value="{{ r.isBar }}" hint-placeholder-val="{{ true }}">
+                          <span style="position:absolute; top:3px; height:10px; border-radius:3px; left:{{ r.start }}%; width:{{ r.width }}%; min-width:3px; background:{{ r.color }};"></span>
+                        </sc-if>
+                      </div>
+                      <span style="font-family:var(--mono); font-size:11px; color:var(--t3); text-align:right;">{{ r.dur }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display:flex; gap:20px; font-size:12px; color:var(--t3); align-items:center;">
+                <span style="display:flex; align-items:center; gap:6px;"><span style="width:9px; height:9px; border-radius:2px; background:#50e3a4;"></span>Channel</span>
+                <span style="display:flex; align-items:center; gap:6px;"><span style="width:9px; height:9px; border-radius:2px; background:#1A66FF;"></span>Platform</span>
+                <span style="display:flex; align-items:center; gap:6px;"><span style="width:9px; height:9px; border-radius:2px; background:#bf7af0;"></span>Agent</span>
+                <span style="display:flex; align-items:center; gap:6px;"><span style="width:9px; height:9px; border-radius:2px; background:#7a7a7a;"></span>Other</span>
+                <span style="margin-left:auto; font-family:var(--mono); font-size:10px;">◆ evento puntual · ▬ span con duración</span>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- Causal graph -->
+          <sc-if value="{{ showCausal }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <div style="display:flex; gap:16px; align-items:flex-start;">
+                <div style="flex:1 1 auto; min-width:0; overflow:auto; border:1px solid var(--line); border-radius:10px;">
+                  <svg viewBox="0 0 640 400" width="640" height="400" role="img" aria-label="Causal graph" style="display:block; margin:0 auto;">
+                    <line x1="320" y1="63" x2="320" y2="105" stroke="var(--line3)" stroke-width="1.5"></line>
+                    <line x1="320" y1="153" x2="200" y2="195" stroke="var(--line3)" stroke-width="1.5"></line>
+                    <line x1="320" y1="153" x2="460" y2="195" stroke="var(--line3)" stroke-width="1.5"></line>
+                    <line x1="200" y1="243" x2="120" y2="285" stroke="var(--line3)" stroke-width="1.5"></line>
+                    <line x1="200" y1="243" x2="290" y2="285" stroke="var(--line3)" stroke-width="1.5"></line>
+                    <line x1="460" y1="243" x2="460" y2="285" stroke="var(--line3)" stroke-width="1.5"></line>
+                    <g transform="translate(236,17)" onClick="{{ cgClick0 }}" style="cursor:pointer;">
+                      <rect width="168" height="46" rx="10" fill="var(--bg)" stroke="{{ cgStroke0 }}" stroke-width="1.5"></rect>
+                      <text x="84" y="19" text-anchor="middle" font-size="12" font-weight="600" fill="var(--t1)" font-family="Geist Mono, monospace">received</text>
+                      <text x="84" y="35" text-anchor="middle" font-size="9.5" fill="var(--t3)" font-family="Geist Mono, monospace">channel-service · t+0ms</text>
+                    </g>
+                    <g transform="translate(236,107)" onClick="{{ cgClick1 }}" style="cursor:pointer;">
+                      <rect width="168" height="46" rx="10" fill="var(--bg)" stroke="{{ cgStroke1 }}" stroke-width="1.5"></rect>
+                      <text x="84" y="19" text-anchor="middle" font-size="12" font-weight="600" fill="var(--t1)" font-family="Geist Mono, monospace">workflow run</text>
+                      <text x="84" y="35" text-anchor="middle" font-size="9.5" fill="var(--t3)" font-family="Geist Mono, monospace">workflow-service · t+38ms</text>
+                    </g>
+                    <g transform="translate(116,197)" onClick="{{ cgClick2 }}" style="cursor:pointer;">
+                      <rect width="168" height="46" rx="10" fill="var(--bg)" stroke="{{ cgStroke2 }}" stroke-width="1.5"></rect>
+                      <text x="84" y="19" text-anchor="middle" font-size="12" font-weight="600" fill="var(--t1)" font-family="Geist Mono, monospace">agent.invoke</text>
+                      <text x="84" y="35" text-anchor="middle" font-size="9.5" fill="var(--t3)" font-family="Geist Mono, monospace">agent-runtime · t+96ms</text>
+                    </g>
+                    <g transform="translate(376,197)" onClick="{{ cgClick3 }}" style="cursor:pointer;">
+                      <rect width="168" height="46" rx="10" fill="var(--bg)" stroke="{{ cgStroke3 }}" stroke-width="1.5"></rect>
+                      <text x="84" y="19" text-anchor="middle" font-size="12" font-weight="600" fill="var(--t1)" font-family="Geist Mono, monospace">send</text>
+                      <text x="84" y="35" text-anchor="middle" font-size="9.5" fill="var(--t3)" font-family="Geist Mono, monospace">workflow-service · t+964ms</text>
+                    </g>
+                    <g transform="translate(36,287)" onClick="{{ cgClick4 }}" style="cursor:pointer;">
+                      <rect width="168" height="46" rx="10" fill="var(--bg)" stroke="{{ cgStroke4 }}" stroke-width="1.5"></rect>
+                      <text x="84" y="19" text-anchor="middle" font-size="12" font-weight="600" fill="var(--t1)" font-family="Geist Mono, monospace">kb.query</text>
+                      <text x="84" y="35" text-anchor="middle" font-size="9.5" fill="var(--t3)" font-family="Geist Mono, monospace">knowledge-base · t+148ms</text>
+                    </g>
+                    <g transform="translate(206,287)" onClick="{{ cgClick5 }}" style="cursor:pointer;">
+                      <rect width="168" height="46" rx="10" fill="var(--bg)" stroke="{{ cgStroke5 }}" stroke-width="1.5"></rect>
+                      <text x="84" y="19" text-anchor="middle" font-size="12" font-weight="600" fill="var(--t1)" font-family="Geist Mono, monospace">llm.completion</text>
+                      <text x="84" y="35" text-anchor="middle" font-size="9.5" fill="var(--t3)" font-family="Geist Mono, monospace">agent-runtime · t+396ms</text>
+                    </g>
+                    <g transform="translate(376,287)" onClick="{{ cgClick6 }}" style="cursor:pointer;">
+                      <rect width="168" height="46" rx="10" fill="var(--bg)" stroke="{{ cgStroke6 }}" stroke-width="1.5"></rect>
+                      <text x="84" y="19" text-anchor="middle" font-size="12" font-weight="600" fill="var(--t1)" font-family="Geist Mono, monospace">sent</text>
+                      <text x="84" y="35" text-anchor="middle" font-size="9.5" fill="var(--t3)" font-family="Geist Mono, monospace">channel-service · t+1188ms</text>
+                    </g>
+                  </svg>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- Legacy -->
+          <sc-if value="{{ showLegacy }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <div style="display:flex; gap:8px; align-items:stretch; flex-wrap:wrap;">
+                <div role="group" style="display:inline-flex; border:1px solid var(--line3); border-radius:8px; overflow:hidden;">
+                  <button style="height:36px; padding:0 14px; border:none; border-right:1px solid var(--line2); background:var(--hover); color:var(--t1); font-size:12.5px; font-weight:500; cursor:pointer; font-family:inherit;">correlation</button>
+                  <button style="height:36px; padding:0 14px; border:none; background:transparent; color:var(--t3); font-size:12.5px; cursor:pointer; font-family:inherit;">event id</button>
+                </div>
+                <input placeholder="correlation id" style="flex:1; min-width:220px; height:36px; padding:0 14px; border:1px solid var(--line3); border-radius:8px; font-size:13px; background:transparent; color:var(--t1); outline:none; box-sizing:border-box; font-family:var(--mono);" style-focus="border-color:var(--accent);">
+                <button style="height:36px; padding:0 18px; border-radius:8px; border:none; background:var(--btn-bg); color:var(--btn-fg); font-size:13px; font-weight:500; cursor:pointer; font-family:inherit;" style-hover="opacity:0.85;">Trace</button>
+              </div>
+              <div style="border:1px solid var(--line); border-radius:10px; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; font-size:12px;">
+                <span style="color:var(--t3);">Recent traces · last 10 · <span style="font-family:var(--mono);">c7f4a2e8… · whatsapp · delivered · 14:22:08</span></span>
+                <a href="#" onClick="{{ noop }}" style="font-size:12px;">refresh</a>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center;">
+                <div role="group" style="display:inline-flex; border:1px solid var(--line3); border-radius:8px; overflow:hidden;">
+                  <button style="padding:6px 14px; border:none; border-right:1px solid var(--line2); background:var(--hover); color:var(--t1); font-size:12px; cursor:pointer; font-family:inherit;">forward · origin → reply</button>
+                  <button style="padding:6px 14px; border:none; background:transparent; color:var(--t3); font-size:12px; cursor:pointer; font-family:inherit;" style-hover="color:var(--t1);">reverse</button>
+                </div>
+                <span style="font-family:var(--mono); font-size:11px; color:var(--green);">● round trip complete — reply delivered</span>
+              </div>
+              <sc-for list="{{ legacyNodes }}" as="n" hint-placeholder-count="4">
+                <article style="position:relative; border:1px solid var(--line); border-radius:10px; padding:14px 18px 14px 34px; margin-left:14px;">
+                  <span style="position:absolute; left:-14px; top:50%; width:14px; height:1px; background:var(--line3);"></span>
+                  <span style="position:absolute; left:14px; top:18px; width:9px; height:9px; border-radius:50%; background:{{ n.verdictColor }};"></span>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:8px; align-items:center;">
+                    <span style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                      <span style="font-weight:600; color:{{ n.verdictColor }};">{{ n.label }}</span>
+                      <span style="color:var(--t3); font-size:12px;">{{ n.hint }}</span>
+                      <span style="font-family:var(--mono); font-size:11px; padding:1px 8px; border-radius:6px; background:var(--hover); color:var(--t2);">{{ n.svc }}</span>
+                      <sc-if value="{{ n.origin }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono); font-size:11px; padding:1px 8px; border-radius:6px; background:var(--accent-soft); color:var(--link);">origin</span></sc-if>
+                    </span>
+                    <span style="font-family:var(--mono); color:var(--t3); font-size:11px;">{{ n.at }}</span>
+                  </div>
+                  <dl style="display:grid; grid-template-columns:88px minmax(0,1fr); gap:4px 14px; font-size:12px; margin:0; align-items:baseline;">
+                    <sc-if value="{{ n.subject }}" hint-placeholder-val="{{ false }}"><dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3);">subject</dt><dd style="margin:0; word-break:break-all; font-family:var(--mono);">{{ n.subject }}</dd></sc-if>
+                    <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3);">id</dt><dd style="margin:0; word-break:break-all; font-family:var(--mono);">{{ n.id }}</dd>
+                    <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3);">causation</dt><dd style="margin:0; word-break:break-all; font-family:var(--mono);">{{ n.causation }}</dd>
+                    <sc-if value="{{ n.persisted }}" hint-placeholder-val="{{ false }}"><dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3);">persisted</dt><dd style="margin:0;"><span style="font-family:var(--mono);">{{ n.persisted }}</span> <span style="color:var(--t3);">· {{ n.persistedSvc }}</span></dd></sc-if>
+                  </dl>
+                  <sc-if value="{{ n.subs }}" hint-placeholder-val="{{ false }}">
+                    <div style="border-top:1px solid var(--line2); margin-top:12px; padding-top:8px;">
+                      <span style="color:var(--t3); font-size:12px;">delivered to {{ n.subCount }}</span>
+                      <sc-for list="{{ n.subs }}" as="s" hint-placeholder-count="2">
+                        <div style="display:flex; justify-content:space-between; gap:12px; font-size:12px; color:var(--t3); padding:4px 0;">
+                          <span><b style="color:var(--t2); font-weight:500;">{{ s.service }}</b> · <span style="font-family:var(--mono);">{{ s.durable }}</span> <span style="font-family:var(--mono); font-size:10px; padding:1px 6px; border-radius:5px; background:var(--hover);">{{ s.role }}</span></span>
+                          <span style="font-family:var(--mono);">{{ s.health }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </sc-if>
+                </article>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- Run view -->
+          <sc-if value="{{ showRun }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <!-- Run header card -->
+              <div style="border:1px solid var(--line); border-radius:10px; padding:14px 20px; display:flex; flex-direction:column; gap:12px;">
+                <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+                  <span style="font-family:var(--mono); font-size:12px; color:var(--t2);">run <span style="color:var(--t1);">{{ runMeta.runId }}</span> · lead-qualification</span>
+                  <span style="font-family:var(--mono); font-size:10px; color:var(--green); background:var(--green-dim); border-radius:5px; padding:1px 7px;">COMPLETED</span>
+                  <span style="font-family:var(--mono); font-size:11px; color:var(--t3);">1,149ms · 4/5 nodos ejecutados</span>
+                  <span style="flex:1;"></span>
+                  <a href="#" onClick="{{ noop }}" style="font-size:12px;">Open in Temporal ↗</a>
+                  <a href="#" onClick="{{ goBuilder }}" style="font-size:12px;">Abrir en el builder →</a>
+                </div>
+                <div style="display:flex; gap:28px; flex-wrap:wrap; border-top:1px solid var(--line2); padding-top:10px;">
+                  <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">temporal id</span><span style="font-family:var(--mono); font-size:11px;">{{ runMeta.temporalId }}</span></span>
+                  <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">task queue</span><span style="font-family:var(--mono); font-size:11px;">{{ runMeta.taskQueue }}</span></span>
+                  <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">attempt</span><span style="font-family:var(--mono); font-size:11px;">{{ runMeta.attempt }}</span></span>
+                  <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">started</span><span style="font-family:var(--mono); font-size:11px;">{{ runMeta.started }}</span></span>
+                  <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">closed</span><span style="font-family:var(--mono); font-size:11px;">{{ runMeta.closed }}</span></span>
+                  <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">persisted</span><span style="font-family:var(--mono); font-size:11px;">workflow_executions <span style="color:var(--t3);">· workflow-service</span></span></span>
+                </div>
+              </div>
+              <!-- Run canvas -->
+              <div style="border:1px solid var(--line); border-radius:10px; overflow:auto; background-image:radial-gradient(circle, var(--line) 1px, transparent 1px); background-size:24px 24px;">
+                <div style="position:relative; width:1000px; height:340px;">
+                  <svg width="1000" height="340" style="position:absolute; inset:0; pointer-events:none;">
+                    <path d="M 240 170 C 275 170, 275 170, 308 170" fill="none" stroke="var(--green)" stroke-width="1.5"></path>
+                    <path d="M 504 170 C 550 170, 544 80, 588 80" fill="none" stroke="var(--green)" stroke-width="1.5"></path>
+                    <path d="M 504 170 C 550 170, 544 260, 588 260" fill="none" stroke="var(--line3)" stroke-width="1.5" stroke-dasharray="4 4"></path>
+                    <path d="M 782 80 C 826 80, 822 80, 864 80" fill="none" stroke="var(--green)" stroke-width="1.5"></path>
+                  </svg>
+                  <span style="position:absolute; left:520px; top:112px; font-family:var(--mono); font-size:10px; color:var(--green); background:var(--bg); border:1px solid var(--line3); border-radius:5px; padding:1px 7px;">✓ contains "precio"</span>
+                  <span style="position:absolute; left:530px; top:222px; font-family:var(--mono); font-size:10px; color:var(--t3); background:var(--bg); border:1px solid var(--line2); border-radius:5px; padding:1px 7px;">no tomado</span>
+                  <sc-for list="{{ runNodes }}" as="rn" hint-placeholder-count="5">
+                    <div onClick="{{ rn.onClick }}" style="position:absolute; left:{{ rn.x }}px; top:{{ rn.y }}px; width:196px; background:var(--bg); border:1px solid {{ rn.border }}; border-radius:12px; opacity:{{ rn.opacity }}; box-shadow:{{ rn.ring }}; cursor:{{ rn.cursor }};">
+                      <div style="display:flex; align-items:center; gap:8px; padding:10px 14px 7px;">
+                        <span class="material-icons" style="font-size:15px; color:{{ rn.iconColor }};">{{ rn.icon }}</span>
+                        <span style="flex:1; font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ rn.name }}</span>
+                        <span style="font-family:var(--mono); font-size:12px; color:{{ rn.statusColor }};">{{ rn.statusIcon }}</span>
+                      </div>
+                      <div style="display:flex; gap:12px; padding:6px 14px; border-top:1px solid var(--line2); font-family:var(--mono); font-size:10px; color:var(--t3);">
+                        <span>{{ rn.t }}</span><span style="margin-left:auto; color:{{ rn.statusColor }};">{{ rn.statusLabel }}</span>
+                      </div>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+              <!-- Step log -->
+              <div style="border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+                <div style="padding:12px 20px; font-size:13px; font-weight:500; border-bottom:1px solid var(--line);">Step log</div>
+                <sc-for list="{{ runSteps }}" as="s" hint-placeholder-count="5">
+                  <div onClick="{{ s.onClick }}" style="display:grid; grid-template-columns:90px minmax(0,1.6fr) minmax(0,2fr) 90px; gap:12px; padding:10px 20px; font-size:12.5px; border-bottom:1px solid var(--line2); align-items:center; cursor:pointer; background:{{ s.bg }};" style-hover="background:var(--panel);">
+                    <span style="font-family:var(--mono); font-size:11px; color:var(--t3);">{{ s.t }}</span>
+                    <span style="display:flex; align-items:center; gap:8px;"><span style="font-family:var(--mono); font-size:12px; color:{{ s.color }};">{{ s.icon }}</span><span style="font-family:var(--mono); font-size:12px;">{{ s.name }}</span></span>
+                    <span style="font-size:11.5px; color:var(--t3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ s.detail }}</span>
+                    <span style="font-family:var(--mono); font-size:11px; color:var(--t3); text-align:right;">{{ s.dur }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+          </div>
+
+          <!-- ─── Event inspector (shared: waterfall + causal) ─── -->
+          <sc-if value="{{ cgSelected }}" hint-placeholder-val="{{ false }}">
+            <aside aria-label="Event inspector" style="flex:0 0 320px; border:1px solid var(--line3); border-radius:14px; overflow:hidden; box-shadow:0 16px 48px rgba(0,0,0,0.35); background:var(--bg); position:sticky; top:16px;">
+              <div style="display:flex; align-items:center; gap:9px; padding:13px 16px; border-bottom:1px solid var(--line);">
+                <span style="flex:1; display:flex; flex-direction:column; gap:1px; min-width:0;">
+                  <span style="display:flex; align-items:center; gap:8px;"><span style="font-family:var(--mono); font-size:13px; font-weight:600;">{{ selKind }}</span><sc-if value="{{ selOrigin }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono); font-size:9px; color:var(--link); background:var(--accent-soft); border-radius:4px; padding:1px 6px;">origin</span></sc-if></span>
+                  <span style="font-family:var(--mono); font-size:10px; color:var(--t3);">{{ selService }} · {{ selT }}</span>
+                </span>
+                <span style="font-family:var(--mono); font-size:11px; color:var(--t2); background:var(--hover); border-radius:6px; padding:2px 8px;">{{ selAt }}</span>
+                <button onClick="{{ tClose }}" style="width:26px; height:26px; border:none; background:transparent; border-radius:6px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0;" style-hover="background:var(--hover);" aria-label="Close"><span class="material-icons" style="font-size:16px;">close</span></button>
+              </div>
+              <div style="padding:14px 16px; display:flex; flex-direction:column; gap:14px; max-height:560px; overflow-y:auto;">
+                <!-- Contextual: timing (waterfall) -->
+                <sc-if value="{{ selShowTiming }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:10px; background:var(--panel); border:1px solid var(--line2); border-radius:8px; padding:10px 14px;">
+                    <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">start</span><span style="font-family:var(--mono); font-size:12px;">{{ selTimingStart }}</span></span>
+                    <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">duración</span><span style="font-family:var(--mono); font-size:12px;">{{ selTimingDur }}</span></span>
+                    <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">peso</span><span style="font-family:var(--mono); font-size:12px; color:{{ selTimingTypeColor }};">{{ selTimingPct }}</span></span>
+                    <span style="grid-column:1 / -1; font-family:var(--mono); font-size:10px; color:{{ selTimingTypeColor }};">{{ selTimingType }}</span>
+                  </div>
+                </sc-if>
+                <!-- Contextual: step result (run view) -->
+                <sc-if value="{{ selShowRunStep }}" hint-placeholder-val="{{ false }}">
+                  <div style="background:var(--panel); border:1px solid var(--line2); border-radius:8px; padding:10px 14px; display:flex; flex-direction:column; gap:3px;">
+                    <span style="font-family:var(--mono); font-size:9px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">step result</span>
+                    <span style="font-family:var(--mono); font-size:12px;">{{ selRunStep }}</span>
+                    <span style="font-size:11.5px; color:var(--t2);">{{ selRunResult }}</span>
+                  </div>
+                </sc-if>
+                <dl style="display:grid; grid-template-columns:auto 1fr; gap:6px 12px; margin:0; font-size:12px;">
+                  <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">event_id</dt><dd style="margin:0; word-break:break-all; font-family:var(--mono);">{{ selId }}</dd>
+                  <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">causation</dt><dd style="margin:0; word-break:break-all; font-family:var(--mono);">{{ selCausation }}</dd>
+                  <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">depth</dt><dd style="margin:0; font-family:var(--mono);">{{ selDepth }}</dd>
+                  <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">tech</dt><dd style="margin:0;">{{ selTech }}</dd>
+                  <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">business_fn</dt><dd style="margin:0;">{{ selFn }}</dd>
+                  <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">claim_check</dt><dd style="margin:0; font-family:var(--mono);">false</dd>
+                  <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">compliance</dt><dd style="margin:0;">standard</dd>
+                  <sc-if value="{{ selSubject }}" hint-placeholder-val="{{ false }}"><dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">subject</dt><dd style="margin:0; word-break:break-all; font-family:var(--mono); font-size:11px;">{{ selSubject }}</dd></sc-if>
+                  <sc-if value="{{ selStream }}" hint-placeholder-val="{{ false }}"><dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">stream</dt><dd style="margin:0; font-family:var(--mono); font-size:11px;">{{ selStream }}</dd></sc-if>
+                  <sc-if value="{{ selPersisted }}" hint-placeholder-val="{{ false }}"><dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; color:var(--t3); letter-spacing:0.5px;">persisted</dt><dd style="margin:0; font-size:11px;"><span style="font-family:var(--mono);">{{ selPersisted }}</span> <span style="color:var(--t3);">· {{ selPersistedSvc }}</span></dd></sc-if>
+                </dl>
+                <sc-if value="{{ selSubs }}" hint-placeholder-val="{{ false }}">
+                  <div style="border-top:1px solid var(--line2); padding-top:12px;">
+                    <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3); margin-bottom:8px;">delivered to {{ selSubCount }}</div>
+                    <sc-for list="{{ selSubs }}" as="s" hint-placeholder-count="2">
+                      <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:11.5px; padding:5px 0;">
+                        <span style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><span style="color:var(--t1); font-weight:500;">{{ s.service }}</span> <span style="color:var(--t3); font-family:var(--mono); font-size:10.5px;">· {{ s.durable }}</span> <span style="font-family:var(--mono); font-size:9px; background:var(--hover); border-radius:4px; padding:1px 5px; color:var(--t2);">{{ s.role }}</span></span>
+                        <span style="font-family:var(--mono); font-size:10.5px; color:var(--green); flex-shrink:0;">{{ s.health }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <div style="border-top:1px solid var(--line2); padding-top:12px;">
+                  <button onClick="{{ tTogglePayload }}" style="display:inline-flex; align-items:center; gap:6px; padding:6px 12px; font-size:12px; border:1px solid var(--line3); border-radius:8px; background:transparent; color:var(--t1); cursor:pointer; font-family:inherit;" style-hover="background:var(--hover);"><span class="material-icons" style="font-size:14px;">data_object</span>View payload</button>
+                  <sc-if value="{{ tPayloadOpen }}" hint-placeholder-val="{{ false }}">
+                    <sc-if value="{{ tPayloadIsJson }}" hint-placeholder-val="{{ true }}">
+                      <pre style="margin:10px 0 0; padding:12px 14px; background:var(--panel); border:1px solid var(--line2); border-radius:8px; font-family:var(--mono); font-size:11px; line-height:1.7; color:var(--t1); white-space:pre-wrap; word-break:break-all; max-height:220px; overflow:auto;">{{ tPayloadBody }}</pre>
+                    </sc-if>
+                    <sc-if value="{{ tPayloadIsMsg }}" hint-placeholder-val="{{ false }}">
+                      <p style="margin:10px 0 0; font-size:11.5px; color:var(--t3);">{{ tPayloadMsg }}</p>
+                    </sc-if>
+                  </sc-if>
+                </div>
+                <sc-if value="{{ selTemporal }}" hint-placeholder-val="{{ false }}">
+                  <div style="border-top:1px solid var(--line2); padding-top:12px; display:flex; gap:8px; flex-wrap:wrap;">
+                    <a href="#" onClick="{{ noop }}" style="display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:6px 12px; border:1px solid var(--line3); border-radius:8px; color:var(--t1);" style-hover="background:var(--hover);">Open in Temporal ↗</a>
+                    <a href="#" onClick="{{ goBuilder }}" style="display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:6px 12px; border:1px solid var(--line3); border-radius:8px; color:var(--t1);" style-hover="background:var(--hover);">Abrir workflow →</a>
+                  </div>
+                </sc-if>
+              </div>
+            </aside>
+          </sc-if>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ─── Connections (inventario unificado) ─── -->
+      <sc-if value="{{ showConnections }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Connections" style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; align-items:flex-end; justify-content:space-between;">
+            <div>
+              <h1 style="margin:0; font-size:24px; font-weight:600; letter-spacing:-0.5px;">{{ connTitle }}</h1>
+              <p style="margin:4px 0 0; font-size:13px; color:var(--t2);">{{ connSub }}</p>
+            </div>
+            <button style="background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:500; font-family:inherit; cursor:pointer;" style-hover="opacity:0.85;">New connection</button>
+          </div>
+          <!-- Health strip -->
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:14px 20px; border-right:1px solid var(--line);">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Calls · 24h</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">42.6K</div>
+            </div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Error rate</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">0.6<span style="font-size:13px; color:var(--t3);">%</span></div>
+            </div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Avg p95</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">486<span style="font-size:13px; color:var(--t3);">ms</span></div>
+            </div>
+            <div style="padding:14px 20px;">
+              <div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Secrets por rotar</div>
+              <div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px; color:var(--yellow);">2<span style="font-size:13px; color:var(--t3);"> en 30 días</span></div>
+            </div>
+          </div>
+          <!-- Inventory -->
+          <div style="border:1px solid var(--line); border-radius:10px; overflow-x:auto;">
+            <div style="min-width:940px; display:grid; grid-template-columns:minmax(170px,1.5fr) minmax(0,2fr) 0.9fr 1.4fr 0.8fr 0.7fr 1.3fr 28px; gap:12px; padding:8px 20px; font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--line2);"><span>Nombre</span><span>Endpoint</span><span>Auth</span><span>Calls · 24h</span><span>p95</span><span>Err</span><span>Usado por</span><span></span></div>
+            <sc-for list="{{ connRows }}" as="c" hint-placeholder-count="7">
+              <div onClick="{{ c.onClick }}" style="min-width:940px; display:grid; grid-template-columns:minmax(170px,1.5fr) minmax(0,2fr) 0.9fr 1.4fr 0.8fr 0.7fr 1.3fr 28px; gap:12px; padding:12px 20px; font-size:13px; border-bottom:1px solid var(--line2); align-items:center; cursor:pointer;" style-hover="background:var(--panel);">
+                <span style="display:flex; flex-direction:column; gap:1px; min-width:0;">
+                  <span style="display:flex; align-items:center; gap:8px;"><span style="width:7px; height:7px; border-radius:50%; background:{{ c.dotColor }}; flex-shrink:0;"></span><span style="font-family:var(--mono); font-size:12.5px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ c.name }}</span><sc-if value="{{ c.synced }}" hint-placeholder-val="{{ false }}"><span title="Synced — nombre, URL y transporte se administran automáticamente" class="material-icons" style="font-size:12px; color:var(--t3);">sync</span></sc-if></span>
+                  <span style="font-family:var(--mono); font-size:10px; color:{{ c.kindColor }}; padding-left:15px;">{{ c.kind }} · {{ c.sub }}</span>
+                </span>
+                <span style="font-family:var(--mono); font-size:11.5px; color:var(--t2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ c.endpoint }}</span>
+                <span><span style="font-family:var(--mono); font-size:10px; color:var(--t2); border:1px solid var(--line3); border-radius:5px; padding:1px 7px;">{{ c.auth }}</span></span>
+                <span style="display:flex; align-items:center; gap:10px;">
+                  <span style="font-family:var(--mono); font-size:12px; min-width:44px;">{{ c.calls }}</span>
+                  <svg viewBox="0 0 200 18" preserveAspectRatio="none" style="width:64px; height:18px; flex-shrink:0;"><polyline points="{{ c.spark }}" fill="none" stroke="{{ c.sparkColor }}" stroke-width="1.5" opacity="0.75"></polyline></svg>
+                </span>
+                <span style="font-family:var(--mono); font-size:12px;">{{ c.p95 }}</span>
+                <span style="font-family:var(--mono); font-size:12px; color:{{ c.errColor }};">{{ c.err }}</span>
+                <span style="font-size:11.5px; color:var(--t2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ c.usedBy }}</span>
+                <span class="material-icons" style="font-size:15px; color:var(--t3);">chevron_right</span>
+              </div>
+            </sc-for>
+          </div>
+          <!-- Attention + activity -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+            <div style="border:1px solid var(--line); border-radius:10px; padding:18px 22px;">
+              <span style="font-size:13px; font-weight:500;">Necesita atención</span>
+              <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+                <div style="display:flex; align-items:flex-start; gap:10px; font-size:12.5px;">
+                  <span style="color:var(--red); margin-top:1px;">●</span>
+                  <span style="color:var(--t2); flex:1;"><span style="font-family:var(--mono); color:var(--t1);">billing-api</span> — error rate 4.8% en las últimas 6 h (timeouts). <a href="#" onClick="{{ noop }}">Ver llamadas fallidas →</a></span>
+                </div>
+                <div style="display:flex; align-items:flex-start; gap:10px; font-size:12.5px;">
+                  <span style="color:var(--yellow); margin-top:1px;">●</span>
+                  <span style="color:var(--t2); flex:1;">El secret OAuth2 de <span style="font-family:var(--mono); color:var(--t1);">acme-crm</span> vence en 12 días. <a href="#" onClick="{{ noop }}">Rotar ahora →</a></span>
+                </div>
+                <div style="display:flex; align-items:flex-start; gap:10px; font-size:12.5px;">
+                  <span style="color:var(--yellow); margin-top:1px;">●</span>
+                  <span style="color:var(--t2); flex:1;"><span style="font-family:var(--mono); color:var(--t1);">web-search</span> (MCP) no se usa en ningún workflow activo desde hace 30 días.</span>
+                </div>
+              </div>
+            </div>
+            <div style="border:1px solid var(--line); border-radius:10px; padding:18px 22px;">
+              <span style="font-size:13px; font-weight:500;">Actividad</span>
+              <div style="display:flex; flex-direction:column; margin-top:10px;">
+                <div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--line2); font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">13:40</span><span style="color:var(--green);">●</span><span style="color:var(--t2);"><span style="font-family:var(--mono); color:var(--t1);">crm-tools</span> re-sincronizado · 12 tools (+1 nueva)</span></div>
+                <div style="display:flex; gap:10px; padding:8px 0; border-bottom:1px solid var(--line2); font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">11:05</span><span style="color:var(--red);">●</span><span style="color:var(--t2);"><span style="font-family:var(--mono); color:var(--t1);">billing-api</span> circuito abierto 4 min · auto-recuperado</span></div>
+                <div style="display:flex; gap:10px; padding:8px 0; font-size:12px;"><span style="font-family:var(--mono); color:var(--t3); width:52px;">ayer</span><span style="color:var(--link);">●</span><span style="color:var(--t2);"><span style="font-family:var(--mono); color:var(--t1);">pdf-renderer</span> desplegado v2.4.1 por j.paredes</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ─── Channel account detail ─── -->
+      <sc-if value="{{ showChanDetail }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Channel account detail" style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <button onClick="{{ backToChannels }}" style="width:30px; height:30px; border:1px solid var(--line3); background:transparent; border-radius:8px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover); color:var(--t1);" aria-label="Back"><span class="material-icons" style="font-size:16px;">arrow_back</span></button>
+            <h1 style="margin:0; font-size:20px; font-weight:600; letter-spacing:-0.4px;">{{ cdName }}</h1>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--t2); border:1px solid var(--line3); border-radius:6px; padding:2px 9px;">{{ cdKind }}</span>
+            <span style="font-family:var(--mono); font-size:11px; color:var(--t3);">{{ cdHandle }}</span>
+            <span style="font-family:var(--mono); font-size:10px; color:{{ cdStatusColor }}; background:{{ cdStatusBg }}; border-radius:5px; padding:1px 7px;">{{ cdStatusLabel }}</span>
+            <span style="flex:1;"></span>
+            <div style="display:inline-flex; border:1px solid var(--line3); border-radius:8px; overflow:hidden;">
+              <button style="padding:6px 12px; font-size:12px; color:var(--t3); background:transparent; border:none; border-right:1px solid var(--line2); cursor:pointer; font-family:var(--mono);">6h</button>
+              <button style="padding:6px 12px; font-size:12px; color:var(--t1); background:var(--hover); border:none; border-right:1px solid var(--line2); cursor:pointer; font-family:var(--mono);">24h</button>
+              <button style="padding:6px 12px; font-size:12px; color:var(--t3); background:transparent; border:none; border-right:1px solid var(--line2); cursor:pointer; font-family:var(--mono);">7d</button>
+              <button style="padding:6px 12px; font-size:12px; color:var(--t3); background:transparent; border:none; cursor:pointer; font-family:var(--mono);">30d</button>
+            </div>
+            <sc-if value="{{ cdReauth }}" hint-placeholder-val="{{ false }}">
+              <button style="background:var(--red); color:#fff; border:none; border-radius:8px; padding:7px 14px; font-size:12.5px; font-weight:500; font-family:inherit; cursor:pointer;" style-hover="opacity:0.85;">Reconnect</button>
+            </sc-if>
+            <button style="display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px; font-size:12.5px; font-weight:500; cursor:pointer; background:transparent; color:var(--t1); border:1px solid var(--line3); font-family:inherit;" style-hover="background:var(--hover);"><span class="material-icons" style="font-size:14px;">refresh</span>Refresh</button>
+          </div>
+          <!-- KPIs -->
+          <div style="display:grid; grid-template-columns:repeat(5,1fr); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Received</div><div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">3,412</div></div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Sent</div><div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">1,792</div></div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Delivered</div><div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px; color:var(--green);">99.1%</div></div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Failed</div><div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">16</div></div>
+            <div style="padding:14px 20px;"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">1ª respuesta</div><div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">31<span style="font-size:13px; color:var(--t3);">s</span></div></div>
+          </div>
+          <!-- Usage chart -->
+          <div style="border:1px solid var(--line); border-radius:10px; padding:20px 24px;">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <span style="font-size:13px; font-weight:500;">Actividad · 24h</span>
+              <span style="display:flex; gap:16px; font-size:11px; color:var(--t3);"><span style="display:flex; align-items:center; gap:6px;"><span style="width:9px; height:3px; background:var(--accent);"></span>in</span><span style="display:flex; align-items:center; gap:6px;"><span style="width:9px; height:3px; background:var(--green);"></span>out</span></span>
+            </div>
+            <svg viewBox="0 0 800 140" preserveAspectRatio="none" style="width:100%; height:140px; margin-top:16px; display:block;">
+              <defs><linearGradient id="cdg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#1A66FF" stop-opacity=".2"></stop><stop offset="100%" stop-color="#1A66FF" stop-opacity="0"></stop></linearGradient></defs>
+              <polygon points="0,140 0,96 66,104 133,82 200,90 266,60 333,72 400,44 466,58 533,36 600,52 666,30 733,44 800,22 800,140" fill="url(#cdg)"></polygon>
+              <polyline points="0,96 66,104 133,82 200,90 266,60 333,72 400,44 466,58 533,36 600,52 666,30 733,44 800,22" fill="none" stroke="#1A66FF" stroke-width="1.5"></polyline>
+              <polyline points="0,118 66,120 133,108 200,114 266,96 333,104 400,86 466,96 533,80 600,90 666,74 733,84 800,68" fill="none" stroke="var(--green)" stroke-width="1.5" opacity="0.85"></polyline>
+            </svg>
+            <div style="display:flex; justify-content:space-between; margin-top:10px; font-family:var(--mono); font-size:10px; color:var(--t3);"><span>00:00</span><span>04:00</span><span>08:00</span><span>12:00</span><span>16:00</span><span>20:00</span><span>ahora</span></div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+            <!-- Streams -->
+            <div style="border:1px solid var(--line); border-radius:10px; padding:18px 22px;">
+              <span style="font-size:13px; font-weight:500;">Streams <span style="font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px;">· esta cuenta</span></span>
+              <div style="display:flex; flex-direction:column; gap:10px; margin-top:12px;">
+                <div style="border:1px solid var(--line2); border-radius:8px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center;">
+                  <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:12px;">INGRESS-ACME-LATAM</span><span style="font-family:var(--mono); font-size:10px; color:var(--t3);">stream · evt.acme-latam.&gt;</span></span>
+                  <span style="font-family:var(--mono); font-size:11px; color:var(--t3);">last seq <span style="color:var(--t1);">884,211</span></span>
+                </div>
+                <div style="border:1px solid var(--line2); border-radius:8px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center;">
+                  <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:12px;">channel-egress</span><span style="font-family:var(--mono); font-size:10px; color:var(--t3);">consumer · workflow → provider</span></span>
+                  <span style="font-family:var(--mono); font-size:11px; color:var(--green);">pending 0</span>
+                </div>
+                <div style="border:1px solid var(--line2); border-radius:8px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center;">
+                  <span style="display:flex; flex-direction:column; gap:1px;"><span style="font-family:var(--mono); font-size:12px;">workflow-triggers</span><span style="font-family:var(--mono); font-size:10px; color:var(--t3);">consumer · dispara {{ cdUsedBy }}</span></span>
+                  <span style="font-family:var(--mono); font-size:11px; color:var(--green);">pending 0</span>
+                </div>
+              </div>
+            </div>
+            <!-- Recent messages → trace -->
+            <div style="border:1px solid var(--line); border-radius:10px; padding:18px 22px;">
+              <span style="font-size:13px; font-weight:500;">Mensajes recientes <span style="font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px;">· inspector</span></span>
+              <div style="display:flex; flex-direction:column; margin-top:10px;">
+                <sc-for list="{{ cdTraces }}" as="t" hint-placeholder-count="3">
+                  <div style="display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--line2); font-size:12px;">
+                    <span style="font-family:var(--mono); color:var(--t3); width:56px;">{{ t.at }}</span>
+                    <span style="color:{{ t.color }};">●</span>
+                    <span style="font-family:var(--mono); color:var(--t1);">{{ t.cid }}</span>
+                    <span style="color:var(--t3);">{{ t.flow }}</span>
+                    <span style="flex:1;"></span>
+                    <span style="font-family:var(--mono); font-size:11px; color:{{ t.color }};">{{ t.verdict }}</span>
+                    <a href="#" onClick="{{ t.goTrace }}" style="font-size:11px;">trace →</a>
+                  </div>
+                </sc-for>
+                <p style="font-size:11px; color:var(--t3); margin:10px 0 0;">Cada mensaje abre su trace end-to-end en Processes › Trace.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ─── Connection detail ─── -->
+      <sc-if value="{{ showConnDetail }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="Connection detail" style="display:flex; flex-direction:column; gap:24px;">
+          <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+            <button onClick="{{ backToConnections }}" style="width:30px; height:30px; border:1px solid var(--line3); background:transparent; border-radius:8px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover); color:var(--t1);" aria-label="Back"><span class="material-icons" style="font-size:16px;">arrow_back</span></button>
+            <h1 style="margin:0; font-size:20px; font-weight:600; letter-spacing:-0.4px; font-family:var(--mono);">{{ kdName }}</h1>
+            <span style="font-family:var(--mono); font-size:11px; color:{{ kdKindColor }}; border:1px solid var(--line3); border-radius:6px; padding:2px 9px;">{{ kdKind }} · {{ kdSub }}</span>
+            <sc-if value="{{ kdSynced }}" hint-placeholder-val="{{ false }}"><span title="Synced — nombre, URL y transporte administrados automáticamente" style="display:inline-flex; align-items:center; gap:4px; font-family:var(--mono); font-size:10px; color:var(--t3); border:1px solid var(--line2); border-radius:5px; padding:1px 7px;"><span class="material-icons" style="font-size:11px;">sync</span>synced</span></sc-if>
+            <span style="flex:1;"></span>
+            <button style="display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px; font-size:12.5px; font-weight:500; cursor:pointer; background:transparent; color:var(--t1); border:1px solid var(--line3); font-family:inherit;" style-hover="background:var(--hover);"><span class="material-icons" style="font-size:14px;">play_arrow</span>Test connection</button>
+            <button style="display:inline-flex; align-items:center; gap:6px; padding:7px 12px; border-radius:8px; font-size:12.5px; font-weight:500; cursor:pointer; background:transparent; color:var(--t1); border:1px solid var(--line3); font-family:inherit;" style-hover="background:var(--hover);">Edit</button>
+            <button style="background:var(--btn-bg); color:var(--btn-fg); border:none; border-radius:8px; padding:7px 14px; font-size:12.5px; font-weight:500; font-family:inherit; cursor:pointer;" style-hover="opacity:0.85;">Rotate secret</button>
+          </div>
+          <!-- Overview -->
+          <div style="display:grid; grid-template-columns:repeat(4,1fr); border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Calls · 24h</div><div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">{{ kdCalls24 }}</div></div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">p95</div><div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px;">{{ kdP95 }}</div></div>
+            <div style="padding:14px 20px; border-right:1px solid var(--line);"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Error rate</div><div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px; color:{{ kdErrColor }};">{{ kdErr }}</div></div>
+            <div style="padding:14px 20px;"><div style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">Circuit breaker</div><div style="font-family:var(--mono); font-size:20px; font-weight:500; margin-top:4px; color:{{ kdCircuitColor }};">{{ kdCircuit }}</div></div>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;">
+            <!-- Configuration -->
+            <div style="border:1px solid var(--line); border-radius:10px; padding:18px 22px;">
+              <span style="font-size:13px; font-weight:500;">Configuración</span>
+              <dl style="display:grid; grid-template-columns:auto 1fr; gap:8px 18px; margin:14px 0 0; font-size:12.5px; align-items:baseline;">
+                <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">endpoint</dt><dd style="margin:0; font-family:var(--mono); font-size:12px; word-break:break-all;">{{ kdEndpoint }}</dd>
+                <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">tipo</dt><dd style="margin:0;">{{ kdKind }} · {{ kdSub }}</dd>
+                <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">auth</dt><dd style="margin:0;"><span style="font-family:var(--mono); font-size:11px; border:1px solid var(--line3); border-radius:5px; padding:1px 7px;">{{ kdAuth }}</span> <span style="color:var(--yellow); font-size:11px;">· secret vence en 12 días</span></dd>
+                <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">timeout</dt><dd style="margin:0; font-family:var(--mono); font-size:12px;">8s · 3 retries · backoff exp</dd>
+                <dt style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--t3);">usado por</dt><dd style="margin:0; color:var(--t2);">{{ kdUsedBy }}</dd>
+              </dl>
+            </div>
+            <!-- Tools / Endpoints / Runtime -->
+            <div style="border:1px solid var(--line); border-radius:10px; padding:18px 22px;">
+              <span style="font-size:13px; font-weight:500;">{{ kdListLabel }}</span>
+              <div style="display:flex; flex-direction:column; gap:8px; margin-top:12px;">
+                <sc-for list="{{ kdItems }}" as="it" hint-placeholder-count="3">
+                  <div style="border:1px solid var(--line2); border-radius:8px; padding:9px 14px; display:flex; align-items:center; gap:12px;">
+                    <span style="font-family:var(--mono); font-size:12px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ it.name }}</span>
+                    <span style="font-size:11.5px; color:var(--t3); flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ it.desc }}</span>
+                    <span style="font-family:var(--mono); font-size:10px; color:var(--t3); flex-shrink:0;">{{ it.meta }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+          <!-- Recent calls -->
+          <div style="border:1px solid var(--line); border-radius:10px; overflow:hidden;">
+            <div style="padding:12px 20px; font-size:13px; font-weight:500; border-bottom:1px solid var(--line);">Llamadas recientes</div>
+            <div style="display:grid; grid-template-columns:90px minmax(0,2fr) 80px 80px 1fr; gap:12px; padding:7px 20px; font-family:var(--mono); font-size:10px; color:var(--t3); text-transform:uppercase; letter-spacing:0.5px; border-bottom:1px solid var(--line2);"><span>Hora</span><span>Llamada</span><span>Estado</span><span>Duración</span><span></span></div>
+            <sc-for list="{{ kdCallRows }}" as="c" hint-placeholder-count="5">
+              <div style="display:grid; grid-template-columns:90px minmax(0,2fr) 80px 80px 1fr; gap:12px; padding:10px 20px; font-size:12.5px; border-bottom:1px solid var(--line2); align-items:center;" style-hover="background:var(--panel);">
+                <span style="font-family:var(--mono); font-size:11px; color:var(--t3);">{{ c.at }}</span>
+                <span style="font-family:var(--mono); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">{{ c.name }}</span>
+                <span><span style="font-family:var(--mono); font-size:10px; color:{{ c.okColor }}; background:{{ c.okBg }}; border-radius:5px; padding:1px 7px;">{{ c.okLabel }}</span></span>
+                <span style="font-family:var(--mono); font-size:12px;">{{ c.dur }}</span>
+                <span></span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ─── Placeholder ─── -->
+      <sc-if value="{{ showPlaceholder }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; padding:100px 20px; text-align:center; gap:8px;">
+          <div style="font-family:var(--mono); font-size:11px; color:var(--t3); border:1px solid var(--line3); border-radius:6px; padding:2px 10px;">TODO</div>
+          <div style="font-size:16px; font-weight:600;">{{ placeholderTitle }}</div>
+          <div style="font-size:13px; color:var(--t3);">Página no rediseñada aún — la navegación es funcional.</div>
+        </div>
+      </sc-if>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1440, &quot;height&quot;: 900}}">
+class Component extends DCLogic {
+  state = {
+    section: "overview",
+    screen: "dashboard",
+    dark: true,
+    traceTab: "waterfall",
+    cgSel: null,
+    tPayloadOpen: false,
+    bSel: null,
+    agentNavSel: "prompt",
+    chanSelIdx: 0,
+    connSelIdx: 0,
+    chanPrev: "chan-all",
+    connPrev: "conn-all",
+  };
+
+  CONN_EXTRAS = {
+    http: {
+      listLabel: "Endpoints",
+      items: [
+        { name: "GET /contacts/search", desc: "Busca contactos por teléfono o email", meta: "cache 60s" },
+        { name: "POST /opportunities", desc: "Crea una oportunidad de venta", meta: "no cache" },
+        { name: "GET /orders/:id", desc: "Estado de pedido", meta: "cache 30s" },
+      ],
+    },
+    mcp: {
+      listLabel: "Tools (descubiertas del server)",
+      items: [
+        { name: "crm_search_contact", desc: "Busca un contacto en el CRM", meta: "2 args" },
+        { name: "crm_create_opportunity", desc: "Crea una oportunidad", meta: "4 args" },
+        { name: "crm_update_stage", desc: "Mueve una oportunidad de etapa", meta: "3 args" },
+        { name: "crm_log_activity", desc: "Registra una interacción", meta: "3 args" },
+      ],
+    },
+    hosted: {
+      listLabel: "Runtime",
+      items: [
+        { name: "replicas", desc: "2/2 ready", meta: "autoscale 1-4" },
+        { name: "image", desc: "registry.yoizen.io/pdf-renderer:2.4.1", meta: "deployed ayer" },
+        { name: "memoria", desc: "312 MB / 512 MB", meta: "p95 cpu 22%" },
+      ],
+    },
+  };
+
+  RECENT_CALLS = [
+    { at: "14:22:09", name: "crm_create_opportunity", ok: true, dur: "412ms" },
+    { at: "14:22:08", name: "crm_search_contact", ok: true, dur: "188ms" },
+    { at: "14:19:51", name: "GET /orders/8841", ok: true, dur: "240ms" },
+    { at: "14:12:33", name: "POST /opportunities", ok: false, dur: "2.1s" },
+    { at: "13:58:02", name: "crm_search_contact", ok: true, dur: "201ms" },
+  ];
+
+  RECENT_TRACES = [
+    { cid: "c7f4a2e8…", verdict: "delivered", ok: true, at: "14:22:08", flow: "lead-qualification" },
+    { cid: "b2e91c04…", verdict: "delivered", ok: true, at: "14:19:51", flow: "lead-qualification" },
+    { cid: "a90b14d5…", verdict: "not confirmed", ok: false, at: "14:12:33", flow: "support-triage" },
+  ];
+
+  NAV = [
+    { key: "overview", label: "Overview", pages: [
+      { label: "Dashboard", screen: "dashboard" },
+      { label: "Analytics", screen: "analytics" },
+    ]},
+    { key: "channels", label: "Channels", pages: [
+      { label: "Todas", screen: "chan-all", count: 9 },
+      { label: "WhatsApp", screen: "chan-whatsapp", count: 4 },
+      { label: "Telegram", screen: "chan-telegram", count: 3 },
+      { label: "HTTP", screen: "chan-http", count: 2 },
+    ]},
+    { key: "connections", label: "Connections", pages: [
+      { label: "Todas", screen: "conn-all", count: 7 },
+      { label: "HTTP", screen: "conn-http", count: 3 },
+      { label: "MCP", screen: "conn-mcp", count: 2 },
+      { label: "Hosted services", screen: "conn-hosted", count: 2 },
+    ]},
+    { key: "ai", label: "AI", pages: [
+      { label: "Agents", screen: "ai", count: 5 },
+      { label: "Playground", screen: "playground" },
+      { label: "Memories", screen: "memories", count: 214 },
+      { label: "Skills", screen: "skills" },
+      { label: "Knowledge Bases", screen: "kb" },
+      { label: "System Variables", screen: "sysvars" },
+    ]},
+    { key: "processes", label: "Processes", pages: [
+      { label: "Workflows", screen: "workflows", count: 12 },
+      { label: "Schedules", screen: "schedules" },
+      { label: "Trace", screen: "trace" },
+    ]},
+    { key: "settings", label: "Settings", pages: [
+      { label: "Users", screen: "users", count: 8 },
+      { label: "Roles", screen: "roles", count: 3 },
+      { label: "API keys", screen: "apikeys" },
+      { label: "Billing", screen: "billing" },
+    ]},
+  ];
+
+  LANDING = { overview: "dashboard", channels: "chan-all", connections: "conn-all", ai: "ai", processes: "workflows", settings: "users" };
+
+  ACCOUNTS = [
+    { name: "Ventas AR", kind: "whatsapp", handle: "+54 11 5555-0100", status: "connected", msgs: "5,204", delivered: "99.1%", delBad: false, resp: "31s", usedBy: "lead-qualification · 2 más", health: "ok",
+      spark: "0,14 20,12 40,13 60,9 80,11 100,6 120,8 140,5 160,7 180,3 200,5" },
+    { name: "Soporte AR", kind: "whatsapp", handle: "+54 11 5555-0200", status: "connected", msgs: "1,821", delivered: "98.8%", delBad: false, resp: "44s", usedBy: "support-triage", health: "ok",
+      spark: "0,12 20,11 40,12 60,10 80,11 100,9 120,10 140,8 160,9 180,8 200,9" },
+    { name: "Soporte MX", kind: "whatsapp", handle: "+52 55 5555-0300", status: "reauth", msgs: "0", delivered: "—", delBad: false, resp: "—", usedBy: "support-triage", health: "down",
+      spark: "0,8 20,7 40,9 60,8 80,10 100,16 120,17 140,17 160,17 180,17 200,17" },
+    { name: "Marketing AR", kind: "whatsapp", handle: "+54 11 5555-0400", status: "connected", msgs: "179", delivered: "94.2%", delBad: true, resp: "—", usedBy: "nps-follow-up", health: "warn",
+      spark: "0,13 20,14 40,12 60,13 80,11 100,13 120,12 140,14 160,13 180,15 200,14" },
+    { name: "@acme_support_bot", kind: "telegram", handle: "id 7215540912", status: "connected", msgs: "2,913", delivered: "99.6%", delBad: false, resp: "22s", usedBy: "order-status-lookup", health: "ok",
+      spark: "0,13 20,11 40,12 60,10 80,9 100,10 120,8 140,9 160,7 180,8 200,6" },
+    { name: "@acme_ventas_bot", kind: "telegram", handle: "id 6810022341", status: "connected", msgs: "884", delivered: "99.9%", delBad: false, resp: "28s", usedBy: "lead-qualification", health: "ok",
+      spark: "0,12 20,12 40,11 60,12 80,10 100,11 120,10 140,10 160,9 180,10 200,9" },
+    { name: "@acme_alerts_bot", kind: "telegram", handle: "id 5507811234", status: "connected", msgs: "121", delivered: "100%", delBad: false, resp: "—", usedBy: "schedules · alertas", health: "ok",
+      spark: "0,12 20,12 40,12 60,11 80,12 100,11 120,12 140,11 160,11 180,12 200,11" },
+    { name: "webchat-web", kind: "http", handle: "POST /ingest/webchat", status: "connected", msgs: "1,102", delivered: "99.4%", delBad: false, resp: "18s", usedBy: "support-triage", health: "ok",
+      spark: "0,13 20,12 40,11 60,10 80,11 100,9 120,10 140,8 160,9 180,7 200,8" },
+    { name: "api-ingest", kind: "http", handle: "POST /ingest/events", status: "connected", msgs: "184", delivered: "100%", delBad: false, resp: "—", usedBy: "invoice-reminder", health: "ok",
+      spark: "0,12 20,11 40,12 60,11 80,11 100,12 120,11 140,11 160,12 180,11 200,11" },
+  ];
+
+  CONNECTIONS = [
+    { name: "acme-crm", kind: "http", sub: "external", endpoint: "https://api.acmecrm.com/v2", auth: "oauth2", calls: "18.2K", p95: "240ms", err: "0.3%", errBad: false, usedBy: "3 workflows · 1 agent", health: "ok",
+      spark: "0,14 20,12 40,13 60,9 80,11 100,7 120,9 140,5 160,7 180,4 200,6" },
+    { name: "sap-orders", kind: "http", sub: "internal", endpoint: "http://sap-bridge.platform.svc", auth: "api-key", calls: "6.1K", p95: "410ms", err: "0.1%", errBad: false, usedBy: "2 workflows", health: "ok",
+      spark: "0,12 20,13 40,11 60,12 80,10 100,12 120,9 140,11 160,10 180,9 200,10" },
+    { name: "billing-api", kind: "http", sub: "external", endpoint: "https://billing.acme-latam.com", auth: "oauth2", calls: "2.4K", p95: "1.9s", err: "4.8%", errBad: true, usedBy: "1 workflow", health: "warn",
+      spark: "0,10 20,12 40,9 60,14 80,11 100,16 120,13 140,17 160,15 180,18 200,16" },
+    { name: "crm-tools", kind: "mcp", sub: "http · 12 tools", endpoint: "https://mcp.acmecrm.com", auth: "bearer", calls: "4.7K", p95: "620ms", err: "0.4%", errBad: false, usedBy: "2 agents", health: "ok", synced: true,
+      spark: "0,13 20,11 40,12 60,9 80,10 100,8 120,9 140,7 160,8 180,6 200,7" },
+    { name: "web-search", kind: "mcp", sub: "sse · 4 tools", endpoint: "https://mcp.search.dev", auth: "api-key", calls: "1.1K", p95: "880ms", err: "1.2%", errBad: false, usedBy: "1 agent", health: "ok",
+      spark: "0,12 20,13 40,12 60,11 80,12 100,10 120,11 140,10 160,11 180,9 200,10" },
+    { name: "pdf-renderer", kind: "hosted", sub: "v2.4.1 · uptime 99.98%", endpoint: "hosted://pdf-renderer", auth: "internal", calls: "812", p95: "1.1s", err: "0.0%", errBad: false, usedBy: "2 workflows", health: "ok",
+      spark: "0,12 20,12 40,11 60,12 80,11 100,11 120,10 140,11 160,10 180,10 200,10" },
+    { name: "embeddings-worker", kind: "hosted", sub: "v1.9.0 · uptime 100%", endpoint: "hosted://embeddings-worker", auth: "internal", calls: "9.3K", p95: "95ms", err: "0.0%", errBad: false, usedBy: "3 agents · KB sync", health: "ok",
+      spark: "0,14 20,12 40,11 60,10 80,9 100,8 120,7 140,7 160,6 180,5 200,5" },
+  ];
+
+  CG_NODES = [
+    { id: "evt-01", kind: "received", service: "channel-service", t: "t+0ms", at: "14:22:08.114", causation: "— root", tech: "nats", fn: "channel", depth: 0, origin: true,
+      subject: "evt.acme-latam.channel-service.message.received.v1", stream: "INGRESS-ACME-LATAM", persisted: "channel_events", persistedSvc: "audit-service", temporal: false,
+      subs: [{ service: "workflow-service", durable: "workflow-triggers", role: "→ next", health: "pending 0" }, { service: "audit-service", durable: "channel-events-audit", role: "sink", health: "pending 0" }],
+      payload: { kind: "json", body: "{\n  \"channel\": \"whatsapp\",\n  \"account\": \"ventas-ar\",\n  \"from\": \"+54 9 11 5555-0182\",\n  \"text\": \"hola, quería saber el precio para mi equipo\",\n  \"provider_msg_id\": \"wamid.HBgNNTQ5MT…\",\n  \"received_at\": \"2026-07-14T14:22:08.114Z\"\n}" } },
+    { id: "wf-run-8842", kind: "workflow run", service: "workflow-service", t: "t+38ms", at: "14:22:08.152", causation: "evt-01-9f3c2b1a", tech: "temporal", fn: "platform", depth: 1,
+      subject: null, stream: null, persisted: "workflow_executions", persistedSvc: "workflow-service", temporal: true, subs: null,
+      payload: { kind: "not-captured", msg: "El estado del run vive en Temporal — abrilo con el deep link." } },
+    { id: "evt-02", kind: "agent.invoke", service: "agent-runtime", t: "t+96ms", at: "14:22:08.210", causation: "wf-run-8842-c4d91e07", tech: "nats", fn: "agent", depth: 2,
+      subject: "evt.acme-latam.workflow-service.agent.invoke.v1", stream: "INGRESS-ACME-LATAM", persisted: "events", persistedSvc: "audit-service", temporal: false,
+      subs: [{ service: "agent-runtime", durable: "agent-invocations", role: "→ next", health: "pending 0" }],
+      payload: { kind: "json", body: "{\n  \"agent\": \"lead-qualifier\",\n  \"message\": \"hola, quería saber el precio…\",\n  \"conversation_id\": \"conv-77120a\",\n  \"locale\": \"es-AR\"\n}" } },
+    { id: "evt-05", kind: "send", service: "workflow-service", t: "t+964ms", at: "14:22:09.078", causation: "wf-run-8842-c4d91e07", tech: "nats", fn: "platform", depth: 2,
+      subject: "evt.acme-latam.workflow-service.message.send.v1", stream: "INGRESS-ACME-LATAM", persisted: "events", persistedSvc: "audit-service", temporal: false,
+      subs: [{ service: "channel-service", durable: "channel-egress", role: "→ next", health: "pending 0" }, { service: "audit-service", durable: "channel-events-audit", role: "sink", health: "pending 0" }],
+      payload: { kind: "json", body: "{\n  \"to\": \"+54 9 11 5555-0182\",\n  \"account\": \"same-as-incoming\",\n  \"text\": \"¡Hola! Con gusto te ayudo…\",\n  \"reply_to\": \"evt-01-9f3c2b1a\"\n}" } },
+    { id: "evt-03", kind: "kb.query", service: "knowledge-base", t: "t+148ms", at: "14:22:08.262", causation: "evt-02-a1b2c3d4", tech: "http", fn: "agent", depth: 3,
+      subject: null, stream: null, persisted: "kb_queries", persistedSvc: "knowledge-base", temporal: false, subs: null,
+      payload: { kind: "expired", msg: "Payload expirado (retención de 30 días)." } },
+    { id: "evt-04", kind: "llm.completion", service: "agent-runtime", t: "t+396ms", at: "14:22:08.510", causation: "evt-02-a1b2c3d4", tech: "http", fn: "agent", depth: 3,
+      subject: null, stream: null, persisted: "llm_calls", persistedSvc: "agent-runtime", temporal: false, subs: null,
+      payload: { kind: "json", body: "{\n  \"model\": \"claude-sonnet-4-5\",\n  \"input_tokens\": 1204,\n  \"output_tokens\": 214,\n  \"duration_ms\": 620,\n  \"tool_calls\": [\"lead-scoring\"],\n  \"stop_reason\": \"end_turn\"\n}" } },
+    { id: "evt-06", kind: "sent", service: "channel-service", t: "t+1188ms", at: "14:22:09.302", causation: "evt-05-7d2a90cf", tech: "nats", fn: "channel", depth: 3,
+      subject: "evt.acme-latam.channel-service.message.sent.v1", stream: "INGRESS-ACME-LATAM", persisted: "channel_events", persistedSvc: "audit-service", temporal: false,
+      subs: [{ service: "audit-service", durable: "channel-events-audit", role: "sink", health: "pending 0" }],
+      payload: { kind: "json", body: "{\n  \"provider_msg_id\": \"wamid.HBgNNTQ5MT…\",\n  \"status\": \"delivered\",\n  \"confirmed_at\": \"2026-07-14T14:22:09.302Z\"\n}" } },
+  ];
+
+  BUILDER_NODES = [
+    { id: "wf_node_a81f", name: "WhatsApp Trigger", tag: "TRIGGER", icon: "bolt", x: 48, y: 170, kind: "channel",
+      summary: "accounts: ventas-ar · patterns: hola, info, precio", stat1: "1,842 runs", stat2: "24h: 312", ok: "● ok",
+      fields: [{ label: "Direction", value: "Inbound (receive)", select: true }, { label: "Mode", value: "Shared", select: true }, { label: "Channel accounts", value: "Ventas AR (whatsapp)", select: true }, { label: "Keyword patterns", value: "hola, info, precio", select: false }],
+      hint: "Inbound trigger — arranca el workflow cuando llega un mensaje que matchea." },
+    { id: "wf_node_c22d", name: "Intent Router", tag: "IF", icon: "alt_route", x: 360, y: 170, kind: "conditional",
+      summary: "request.text contains \"precio\" → qualify · else fallback", stat1: "2 branches", stat2: "p95: 2ms", ok: "● ok",
+      fields: [{ label: "Branch 1 · variable", value: "request.text", select: true }, { label: "Comparator", value: "contains", select: true }, { label: "Value", value: "precio", select: false }],
+      hint: "Rutea a la primera rama cuya condición matchea; si no, toma el default." },
+    { id: "wf_node_e903", name: "Qualify Lead", tag: "AGENT", icon: "smart_toy", x: 700, y: 60, kind: "agent",
+      summary: "agent: lead-qualifier · msg: {{request.text}}", stat1: "1,124 runs", stat2: "p95: 620ms", ok: "● ok",
+      fields: [{ label: "Agent", value: "lead-qualifier", select: true }, { label: "Message", value: "{{request.text}}", select: false }, { label: "Conversation ID", value: "{{request.conversationId}}", select: false }],
+      hint: "Invoca al agente de IA y espera su respuesta." },
+    { id: "wf_node_f114", name: "Send Reply", tag: null, icon: "send", x: 1040, y: 60, kind: "channel",
+      summary: "outbound · same account · to: {{request.from}}", stat1: "1,109 sent", stat2: "p95: 240ms", ok: "● ok",
+      fields: [{ label: "Direction", value: "Outbound (send)", select: true }, { label: "Account", value: "Same as incoming message", select: true }, { label: "To", value: "{{request.from}}", select: false }],
+      hint: "Responde por la misma cuenta de canal que recibió el mensaje entrante." },
+    { id: "wf_node_b7c0", name: "Fallback Message", tag: null, icon: "send", x: 700, y: 300, kind: "channel",
+      summary: "outbound · onboarding link · to: {{request.from}}", stat1: "718 sent", stat2: "p95: 198ms", ok: "● ok",
+      fields: [{ label: "Direction", value: "Outbound (send)", select: true }, { label: "Account", value: "Same as incoming message", select: true }, { label: "To", value: "{{request.from}}", select: false }],
+      hint: "Camino default — envía el link de onboarding self-service." },
+  ];
+
+  renderVals() {
+    const { section, screen, dark, traceTab, cgSel, bSel, agentNavSel } = this.state;
+    const nav = this.NAV.find((s) => s.key === section);
+
+    const sections = this.NAV.map((s) => ({
+      label: s.label,
+      color: s.key === section ? "var(--t1)" : "var(--t2)",
+      border: s.key === section ? "var(--t1)" : "transparent",
+      weight: s.key === section ? "500" : "400",
+      onClick: () => this.setState({ section: s.key, screen: this.LANDING[s.key], cgSel: null, bSel: null }),
+    }));
+
+    const subPages = (nav ? nav.pages : []).map((p) => {
+      const active = p.screen === screen;
+      return {
+        label: p.label,
+        count: p.count || null,
+        color: active ? "var(--t1)" : "var(--t2)",
+        bg: active ? "var(--hover)" : "transparent",
+        weight: active ? "500" : "400",
+        onClick: () => this.setState({ screen: p.screen }),
+      };
+    });
+
+    const traceTabs = ["waterfall", "causal", "legacy", "run"].map((id) => {
+      const labels = { waterfall: "Waterfall", causal: "Causal graph", legacy: "Legacy", run: "Run view" };
+      const on = traceTab === id;
+      return {
+        label: labels[id],
+        color: on ? "var(--t1)" : "var(--t3)",
+        bg: on ? "var(--hover)" : "transparent",
+        onClick: () => this.setState({ traceTab: id }),
+      };
+    });
+
+    const GC = { channel: "#50e3a4", platform: "#1A66FF", agent: "#bf7af0", other: "#7a7a7a" };
+    const WF_EVT = ["evt-01", "wf-run-8842", "evt-02", "evt-03", "evt-04", "evt-05", "evt-06"];
+    const wfRows = [
+      { label: "message.received.v1", service: "channel-service", pad: 0, start: 0.5, isPoint: true, isBar: false, color: GC.channel, dur: "t+0" },
+      { label: "workflow.run", service: "workflow-service", pad: 14, start: 3, width: 93, isPoint: false, isBar: true, color: GC.platform, dur: "1,149ms" },
+      { label: "agent.invoke", service: "agent-runtime", pad: 28, start: 7.8, width: 55, isPoint: false, isBar: true, color: GC.agent, dur: "680ms" },
+      { label: "kb.query", service: "knowledge-base", pad: 42, start: 12, width: 18, isPoint: false, isBar: true, color: GC.agent, dur: "222ms" },
+      { label: "llm.completion", service: "agent-runtime", pad: 42, start: 32, width: 50.2, isPoint: false, isBar: true, color: GC.agent, dur: "620ms" },
+      { label: "message.send.v1", service: "workflow-service", pad: 28, start: 78, isPoint: true, isBar: false, color: GC.platform, dur: "t+964" },
+      { label: "message.sent.v1", service: "channel-service", pad: 42, start: 96, isPoint: true, isBar: false, color: GC.channel, dur: "t+1,188" },
+    ].map((r, i) => ({
+      ...r,
+      onClick: () => this.setState({ cgSel: cgSel === WF_EVT[i] ? null : WF_EVT[i], tPayloadOpen: false }),
+      bg: cgSel === WF_EVT[i] ? "var(--accent-soft)" : "transparent",
+    }));
+
+    const cgExtra = {};
+    this.CG_NODES.forEach((n, i) => {
+      cgExtra["cgClick" + i] = () => this.setState({ cgSel: cgSel === n.id ? null : n.id, tPayloadOpen: false });
+      cgExtra["cgStroke" + i] = cgSel === n.id ? "var(--accent)" : "var(--line3)";
+    });
+    const sel = this.CG_NODES.find((n) => n.id === cgSel) || null;
+    const selPayload = sel ? sel.payload : null;
+
+    const TIMING = {
+      "evt-01": { type: "evento puntual", start: "t+0ms", dur: "—", pct: "—" },
+      "wf-run-8842": { type: "span", start: "t+38ms", dur: "1,149ms", pct: "93.0% del total" },
+      "evt-02": { type: "span", start: "t+96ms", dur: "680ms", pct: "55.0% del total" },
+      "evt-03": { type: "span", start: "t+148ms", dur: "222ms", pct: "18.0% del total" },
+      "evt-04": { type: "span · bottleneck", start: "t+396ms", dur: "620ms", pct: "50.2% del total" },
+      "evt-05": { type: "evento puntual", start: "t+964ms", dur: "—", pct: "—" },
+      "evt-06": { type: "evento puntual", start: "t+1,188ms", dur: "—", pct: "—" },
+    };
+    const RUN_STEP = {
+      "evt-01": { step: "trigger.matched", result: "pattern \"precio\" matcheó · account ventas-ar" },
+      "wf-run-8842": { step: "router.evaluate", result: "branch 1 → true · rama \"qualify\" tomada" },
+      "evt-02": { step: "agent.invoke", result: "lead-qualifier · 2 tool calls · score 82" },
+      "evt-05": { step: "channel.send", result: "misma cuenta · retries 0/3" },
+      "evt-06": { step: "provider.confirmed", result: "wamid.HBgN… · delivered" },
+    };
+    const selTiming = sel ? TIMING[sel.id] : null;
+    const selRun = sel ? RUN_STEP[sel.id] : null;
+
+    const workflows = [
+      { name: "lead-qualification", sub: "Channel · whatsapp-bot", status: "active", dot: "●", actions: 7, created: "Mar 12, 2026", execs: "1,842", enabled: true },
+      { name: "order-status-lookup", sub: "Channel · telegram-support", status: "active", dot: "●", actions: 4, created: "Apr 03, 2026", execs: "923", enabled: true },
+      { name: "nps-follow-up", sub: "No trigger · surveys", status: "draft", dot: "●", actions: 3, created: "Jun 18, 2026", execs: "0", enabled: true },
+      { name: "invoice-reminder", sub: "Channel · http-ingest", status: "disabled", dot: "○", actions: 5, created: "Jan 29, 2026", execs: "3,117", enabled: false },
+    ].map((w) => ({
+      ...w,
+      statusDot: w.dot,
+      onClick: () => this.setState({ screen: "builder" }),
+      opacity: w.enabled ? 1 : 0.55,
+      statusColor: w.status === "active" ? "var(--green)" : w.status === "draft" ? "var(--yellow)" : "var(--t3)",
+    }));
+
+    const KIND_STRIPE = { channel: "var(--green)", conditional: "var(--yellow)", agent: "var(--purple)" };
+    const KIND_TINT = { channel: "var(--green-dim)", conditional: "var(--yellow-dim)", agent: "rgba(191,122,240,0.12)" };
+    const builderNodes = this.BUILDER_NODES.map((n) => ({
+      name: n.name, tag: n.tag, icon: n.icon, x: n.x, y: n.y,
+      summary: n.summary, stat1: n.stat1, stat2: n.stat2, ok: n.ok, okColor: "var(--green)",
+      stripe: KIND_STRIPE[n.kind] || "var(--line3)",
+      tint: KIND_TINT[n.kind] || "var(--hover)",
+      border: bSel === n.id ? "var(--accent)" : "var(--line3)",
+      glow: bSel === n.id ? "0 0 0 3px var(--accent-soft), 0 12px 32px rgba(0,0,0,0.35)" : "0 4px 16px rgba(0,0,0,0.2)",
+      onClick: () => this.setState({ bSel: bSel === n.id ? null : n.id }),
+    }));
+    const bNode = this.BUILDER_NODES.find((n) => n.id === bSel) || null;
+
+    const dockItems = [
+      { item: true, name: "Channel", short: "CHAN", icon: "swap_horiz", color: "var(--green)" },
+      { item: true, name: "JS Function", short: "JS", icon: "code", color: "var(--t2)" },
+      { divider: true },
+      { item: true, name: "HTTP Connector", short: "HTTP", icon: "http", color: "var(--t2)" },
+      { item: true, name: "MCP Tool", short: "MCP", icon: "extension", color: "var(--t2)" },
+      { item: true, name: "Service Call", short: "SVC", icon: "dns", color: "var(--t2)" },
+      { item: true, name: "Publish Event", short: "EVT", icon: "send", color: "var(--t2)" },
+      { divider: true },
+      { item: true, name: "Agent", short: "AGENT", icon: "smart_toy", color: "var(--purple)" },
+      { divider: true },
+      { item: true, name: "Parallel Branch", short: "PAR", icon: "call_split", color: "var(--yellow)" },
+      { item: true, name: "Conditional", short: "IF", icon: "alt_route", color: "var(--yellow)" },
+    ].map((d) => ({ item: !!d.item, divider: !!d.divider, name: d.name || "", short: d.short || "", icon: d.icon || "", color: d.color || "var(--t2)" }));
+
+    const agents = [
+      { name: "lead-qualifier", meta: "anthropic · claude-sonnet-4-5 · temp 0.3", status: "published", skills: 3, runtime: "synced", rt: "synced",
+        inv: "2,841", p95: "620ms", spark: "0,32 32,28 64,30 96,22 128,25 160,16 192,20 224,12 256,15 288,8 320,11",
+        description: "Califica leads entrantes de WhatsApp: releva empresa, tamaño de equipo y caso de uso, y los puntúa con la skill lead-scoring.",
+        created: "Feb 11, 2026", isDraft: false, isPublished: true, hasChanges: false },
+      { name: "support-triage", meta: "anthropic · claude-haiku-4-5 · temp 0.1", status: "published*", skills: 2, runtime: "issue", rt: "unsynced",
+        inv: "1,733", p95: "410ms", spark: "0,20 32,24 64,18 96,26 128,22 160,30 192,26 224,34 256,30 288,36 320,33",
+        description: "Triage de soporte de primera línea — clasifica el ticket, resuelve FAQs desde la knowledge base y escala el resto.",
+        created: "Mar 27, 2026", isDraft: false, isPublished: true, hasChanges: true },
+      { name: "onboarding-helper", meta: "openai · gpt-4.1-mini · temp 0.5", status: "draft", skills: 1, runtime: "draft", rt: "draft",
+        inv: "238", p95: "980ms", spark: "0,36 32,35 64,36 96,34 128,35 160,33 192,34 224,32 256,33 288,31 320,32",
+        description: "Guía a clientes nuevos por el setup de la cuenta. Sin reglas de escalamiento definidas aún.",
+        created: "Jun 30, 2026", isDraft: true, isPublished: false, hasChanges: false },
+    ].map((a) => ({
+      ...a,
+      onEdit: (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ screen: "agentEditor" }); },
+      statusBg: a.status === "draft" ? "var(--accent-soft)" : a.hasChanges ? "var(--yellow-dim)" : "var(--green-dim)",
+      statusColor: a.status === "draft" ? "var(--link)" : a.hasChanges ? "var(--yellow)" : "var(--green)",
+      sparkColor: a.rt === "unsynced" ? "var(--red)" : "var(--accent)",
+      rtColor: a.rt === "synced" ? "var(--green)" : a.rt === "unsynced" ? "var(--red)" : "var(--t3)",
+    }));
+
+    const users = [
+      { email: "m.rivas@acme-latam.com", name: "Martina Rivas", role: "admin", admin: true, created: "Nov 4, 2025" },
+      { email: "j.paredes@acme-latam.com", name: "Julián Paredes", role: "editor", admin: false, created: "Nov 12, 2025" },
+      { email: "s.gutierrez@acme-latam.com", name: "Sofía Gutiérrez", role: "editor", admin: false, created: "Dec 2, 2025" },
+      { email: "f.mendez@acme-latam.com", name: "Federico Méndez", role: "viewer", admin: false, created: "Jan 15, 2026" },
+      { email: "l.ohara@acme-latam.com", name: "Lucía O'Hara", role: "viewer", admin: false, created: "Feb 20, 2026" },
+      { email: "d.silva@acme-latam.com", name: "—", role: "editor", admin: false, created: "Mar 8, 2026" },
+      { email: "a.costa@acme-latam.com", name: "Ana Costa", role: "viewer", admin: false, created: "Apr 30, 2026" },
+      { email: "ops@acme-latam.com", name: "Ops bot", role: "viewer", admin: false, created: "May 11, 2026" },
+    ].map((u) => ({
+      ...u,
+      roleBg: u.admin ? "rgba(191,122,240,0.12)" : "var(--accent-soft)",
+      roleColor: u.admin ? "var(--purple)" : "var(--link)",
+    }));
+
+    const legacyNodes = [
+      { label: "received", hint: "inbound message arrived", svc: "channel-service", origin: true, at: "14:22:08.114",
+        subject: "evt.acme-latam.channel-service.message.received.v1", id: "evt-01-9f3c2b1a", causation: "— root",
+        persisted: "channel_events", persistedSvc: "audit-service", verdictColor: "var(--green)", subCount: 2,
+        subs: [
+          { service: "workflow-service", durable: "workflow-triggers", role: "→ next", health: "pending 0" },
+          { service: "audit-service", durable: "channel-events-audit", role: "sink", health: "pending 0" },
+        ]},
+      { label: "workflow run", hint: "workflow executed", svc: "workflow-service", origin: false, at: "14:22:08.152",
+        subject: null, id: "wf-run-8842-c4d91e07", causation: "evt-01-9f3c2b1a",
+        persisted: "workflow_executions", persistedSvc: "workflow-service", verdictColor: "var(--green)", subCount: 0, subs: null },
+      { label: "reply queued", hint: "reply command on the bus — egress will deliver it", svc: "workflow-service", origin: false, at: "14:22:09.078",
+        subject: "evt.acme-latam.workflow-service.message.send.v1", id: "evt-05-7d2a90cf", causation: "wf-run-8842-c4d91e07",
+        persisted: "events", persistedSvc: "audit-service", verdictColor: "var(--yellow)", subCount: 2,
+        subs: [
+          { service: "channel-service", durable: "channel-egress", role: "→ next", health: "pending 0" },
+          { service: "audit-service", durable: "channel-events-audit", role: "sink", health: "pending 0" },
+        ]},
+      { label: "reply delivered", hint: "provider confirmed delivery", svc: "channel-service", origin: false, at: "14:22:09.302",
+        subject: "evt.acme-latam.channel-service.message.sent.v1", id: "evt-06-e81b34aa", causation: "evt-05-7d2a90cf",
+        persisted: "channel_events", persistedSvc: "audit-service", verdictColor: "var(--green)", subCount: 1,
+        subs: [
+          { service: "audit-service", durable: "channel-events-audit", role: "sink", health: "pending 0" },
+        ]},
+    ];
+
+    const paletteGroups = [
+      { label: "Channels", items: [{ name: "Channel", icon: "swap_horiz" }] },
+      { label: "Logic", items: [{ name: "JS Function", icon: "code" }] },
+      { label: "Integrations", items: [
+        { name: "HTTP Connector", icon: "http" },
+        { name: "MCP Tool", icon: "extension" },
+        { name: "Service Call", icon: "dns" },
+        { name: "Publish Event", icon: "send" },
+      ]},
+      { label: "AI", items: [{ name: "Agent", icon: "smart_toy" }] },
+      { label: "Flow Control", items: [
+        { name: "Parallel Branch", icon: "call_split" },
+        { name: "Conditional", icon: "alt_route" },
+      ]},
+    ];
+
+    const navDef = [
+      { id: "g1", group: "Configuration" },
+      { id: "general", label: "General" },
+      { id: "prompt", label: "System Prompt" },
+      { id: "rules", label: "Rules" },
+      { id: "soul", label: "Soul" },
+      { id: "mentions", label: "Detected References" },
+      { id: "g2", group: "Capabilities" },
+      { id: "skills", label: "Skills", badge: "3" },
+      { id: "tools", label: "Tools", badge: "2" },
+      { id: "builtin", label: "Built-in Tools" },
+      { id: "mcp", label: "MCP Servers" },
+      { id: "kb", label: "Knowledge Bases" },
+      { id: "g3", group: "Advanced" },
+      { id: "variables", label: "Variables" },
+      { id: "versions", label: "Versions" },
+    ];
+    const agentNavItems = navDef.map((d) => {
+      if (d.group) return { isGroup: true, isItem: false, label: d.group, badge: null };
+      const on = agentNavSel === d.id;
+      return {
+        isGroup: false, isItem: true,
+        label: d.label, badge: d.badge || null,
+        bg: on ? "var(--hover)" : "transparent",
+        color: on ? "var(--t1)" : "var(--t2)",
+        weight: on ? "500" : "400",
+        onClick: () => this.setState({ agentNavSel: d.id }),
+      };
+    });
+
+    const isChan = screen.indexOf("chan-") === 0 && screen !== "chan-detail";
+    const chanFilter = isChan ? screen.slice(5) : "all";
+    const CHAN_CHIP = { whatsapp: "var(--green)", telegram: "var(--link)", http: "var(--yellow)" };
+    const chanRows = this.ACCOUNTS
+      .filter((a) => chanFilter === "all" || a.kind === chanFilter)
+      .map((a, i) => ({
+        ...a,
+        onClick: () => this.setState({ screen: "chan-detail", chanSelIdx: this.ACCOUNTS.indexOf(a), chanPrev: screen }),
+        dotColor: a.health === "down" ? "var(--red)" : a.health === "warn" ? "var(--yellow)" : "var(--green)",
+        kindColor: CHAN_CHIP[a.kind],
+        statusLabel: a.status === "reauth" ? "needs reauth" : "connected",
+        statusColor: a.status === "reauth" ? "var(--red)" : "var(--green)",
+        statusBg: a.status === "reauth" ? "var(--red-dim)" : "var(--green-dim)",
+        delColor: a.delBad ? "var(--yellow)" : "var(--t3)",
+        sparkColor: a.health === "down" ? "var(--red)" : a.delBad ? "var(--yellow)" : "var(--accent)",
+      }));
+    const chanCount = chanRows.length;
+    const chanDown = chanRows.filter((a) => a.status === "reauth").length;
+    const chanSub = chanDown > 0
+      ? (chanCount - chanDown) + "/" + chanCount + " conectadas · " + chanDown + " necesita reauth"
+      : chanCount + " cuentas conectadas";
+    const chanTitle = { all: "Channels", whatsapp: "WhatsApp", telegram: "Telegram", http: "HTTP" }[chanFilter];
+
+    const isConn = screen.indexOf("conn-") === 0 && screen !== "conn-detail";
+    const connFilter = isConn ? screen.slice(5) : "all";
+    const KIND_CHIP = { http: "var(--link)", mcp: "var(--purple)", hosted: "var(--green)" };
+    const connRows = this.CONNECTIONS
+      .filter((c) => connFilter === "all" || c.kind === connFilter)
+      .map((c) => ({
+        ...c,
+        onClick: () => this.setState({ screen: "conn-detail", connSelIdx: this.CONNECTIONS.indexOf(c), connPrev: screen }),
+        synced: !!c.synced,
+        dotColor: c.health === "warn" ? "var(--yellow)" : "var(--green)",
+        kindColor: KIND_CHIP[c.kind],
+        errColor: c.errBad ? "var(--red)" : "var(--t3)",
+        sparkColor: c.errBad ? "var(--red)" : "var(--accent)",
+      }));
+    const connCount = connRows.length;
+    const connWarn = connRows.filter((c) => c.health === "warn").length;
+    const connSub = connWarn > 0
+      ? connCount + " conexiones · " + connWarn + " degradada · el resto operativa"
+      : connCount + " conexiones · todas operativas";
+    const connTitle = { all: "Connections", http: "HTTP connectors", mcp: "MCP servers", hosted: "Hosted services" }[connFilter];
+
+    // ── Channel account detail ──
+    const cd = this.ACCOUNTS[this.state.chanSelIdx] || this.ACCOUNTS[0];
+    const cdReauth = cd.status === "reauth";
+    const cdTraces = this.RECENT_TRACES.map((t) => ({
+      ...t,
+      color: t.ok ? "var(--green)" : "var(--yellow)",
+      goTrace: (e) => { if (e && e.preventDefault) e.preventDefault(); this.setState({ section: "processes", screen: "trace" }); },
+    }));
+
+    // ── Connection detail ──
+    const kd = this.CONNECTIONS[this.state.connSelIdx] || this.CONNECTIONS[0];
+    const kdExtras = this.CONN_EXTRAS[kd.kind];
+    const kdCalls = this.RECENT_CALLS
+      .filter((c) => kd.kind !== "mcp" ? true : c.name.indexOf("crm_") === 0 || true)
+      .map((c) => ({ ...c, okLabel: c.ok ? "OK" : "ERROR", okColor: c.ok ? "var(--green)" : "var(--red)", okBg: c.ok ? "var(--green-dim)" : "var(--red-dim)" }));
+
+    const builtScreens = ["dashboard", "analytics", "channels", "workflows", "users", "trace", "ai", "builder", "agentEditor"];
+    const placeholderTitles = {
+      analytics: "Analytics", schedules: "Schedules",
+      roles: "Roles", apikeys: "API keys", billing: "Billing", playground: "Playground",
+      memories: "Memories", skills: "Skills", kb: "Knowledge Bases", sysvars: "System Variables",
+      chwa: "WhatsApp accounts", chtg: "Telegram accounts", chhttp: "HTTP accounts",
+    };
+
+    const isBuilder = screen === "builder";
+    const isEditor = screen === "agentEditor";
+
+    return {
+      sections, subPages, traceTabs, wfRows, workflows, users, legacyNodes,
+      builderNodes, dockItems, agents, agentNavItems,
+      ...cgExtra,
+      sectionLabel: nav ? nav.label : "Overview",
+      themeIcon: dark ? "light_mode" : "dark_mode",
+      toggleTheme: () => {
+        const next = !this.state.dark;
+        document.documentElement.classList.toggle("light-theme", !next);
+        this.setState({ dark: next });
+      },
+      noop: (e) => e.preventDefault(),
+      goBuilder: (e) => { e.preventDefault(); this.setState({ section: "processes", screen: "builder", bSel: null }); },
+      goTrace: (e) => { e.preventDefault(); this.setState({ section: "processes", screen: "trace" }); },
+      runNodes: [
+        { name: "WhatsApp Trigger", icon: "bolt", iconColor: "var(--green)", x: 44, y: 142, border: "var(--green)", opacity: 1, t: "t+0ms", statusIcon: "✓", statusLabel: "ok", statusColor: "var(--green)", evt: "evt-01" },
+        { name: "Intent Router", icon: "alt_route", iconColor: "var(--yellow)", x: 308, y: 142, border: "var(--green)", opacity: 1, t: "t+38ms", statusIcon: "✓", statusLabel: "ok · 2ms", statusColor: "var(--green)", evt: "wf-run-8842" },
+        { name: "Qualify Lead", icon: "smart_toy", iconColor: "var(--purple)", x: 588, y: 46, border: "var(--green)", opacity: 1, t: "t+96ms", statusIcon: "✓", statusLabel: "ok · 680ms", statusColor: "var(--green)", evt: "evt-02" },
+        { name: "Send Reply", icon: "send", iconColor: "var(--green)", x: 864, y: 46, border: "var(--green)", opacity: 1, t: "t+964ms", statusIcon: "✓", statusLabel: "delivered", statusColor: "var(--green)", evt: "evt-05" },
+        { name: "Fallback Message", icon: "send", iconColor: "var(--t3)", x: 588, y: 226, border: "var(--line3)", opacity: 0.5, t: "—", statusIcon: "○", statusLabel: "skipped", statusColor: "var(--t3)", evt: null },
+      ].map((n) => ({
+        ...n,
+        onClick: n.evt ? (() => this.setState({ cgSel: cgSel === n.evt ? null : n.evt, tPayloadOpen: false })) : (() => {}),
+        cursor: n.evt ? "pointer" : "default",
+        ring: n.evt && cgSel === n.evt ? "0 0 0 3px var(--accent-soft), 0 4px 16px rgba(0,0,0,0.2)" : "0 4px 16px rgba(0,0,0,0.2)",
+      })),
+      runSteps: [
+        { t: "14:22:08.114", name: "trigger.matched", icon: "✓", color: "var(--green)", detail: "WhatsApp · Ventas AR · pattern \"precio\"", dur: "0ms", evt: "evt-01" },
+        { t: "14:22:08.152", name: "router.evaluate", icon: "✓", color: "var(--green)", detail: "branch 1: request.text contains \"precio\" → true", dur: "2ms", evt: "wf-run-8842" },
+        { t: "14:22:08.210", name: "agent.invoke", icon: "✓", color: "var(--green)", detail: "lead-qualifier · 2 tool calls · score 82", dur: "680ms", evt: "evt-02" },
+        { t: "14:22:09.078", name: "channel.send", icon: "✓", color: "var(--green)", detail: "same account · to +54 9 11 5555-0182", dur: "224ms", evt: "evt-05" },
+        { t: "14:22:09.302", name: "provider.confirmed", icon: "✓", color: "var(--green)", detail: "wamid.HBgN… · delivered", dur: "—", evt: "evt-06" },
+      ].map((s) => ({
+        ...s,
+        onClick: () => this.setState({ cgSel: cgSel === s.evt ? null : s.evt, tPayloadOpen: false }),
+        bg: cgSel === s.evt ? "var(--accent-soft)" : "transparent",
+      })),
+      runMeta: {
+        runId: "wf-run-8842-c4d91e07",
+        temporalId: "lead-qualification.c7f4a2e8",
+        taskQueue: "workflow-service-main",
+        attempt: "1",
+        started: "14:22:08.152",
+        closed: "14:22:09.302",
+      },
+      showRail: !isBuilder,
+      mainMaxWidth: isBuilder ? "none" : (isEditor ? "1200px" : "1100px"),
+      mainPad: isBuilder ? "0" : "36px 40px 60px",
+      showDashboard: screen === "dashboard",
+      showAnalytics: screen === "analytics",
+      showChannels: screen === "channels",
+      showWorkflows: screen === "workflows",
+      showUsers: screen === "users",
+      showTrace: screen === "trace",
+      showBuilder: isBuilder,
+      showAgents: screen === "ai",
+      showAgentEditor: isEditor,
+      showConnections: isConn,
+      connRows, connCount, connTitle, connSub,
+      showChannelsOps: isChan,
+      chanRows, chanTitle, chanSub,
+      showChanDetail: screen === "chan-detail",
+      cdName: cd.name, cdKind: cd.kind, cdHandle: cd.handle, cdUsedBy: cd.usedBy,
+      cdStatusLabel: cdReauth ? "needs reauth" : "connected",
+      cdStatusColor: cdReauth ? "var(--red)" : "var(--green)",
+      cdStatusBg: cdReauth ? "var(--red-dim)" : "var(--green-dim)",
+      cdReauth,
+      cdTraces,
+      backToChannels: () => this.setState({ screen: this.state.chanPrev }),
+      showConnDetail: screen === "conn-detail",
+      kdName: kd.name, kdKind: kd.kind, kdSub: kd.sub, kdEndpoint: kd.endpoint, kdAuth: kd.auth,
+      kdCalls24: kd.calls, kdP95: kd.p95, kdErr: kd.err, kdErrColor: kd.errBad ? "var(--red)" : "var(--t1)",
+      kdUsedBy: kd.usedBy, kdSynced: !!kd.synced,
+      kdKindColor: KIND_CHIP[kd.kind],
+      kdListLabel: kdExtras.listLabel, kdItems: kdExtras.items, kdCallRows: kdCalls,
+      kdCircuit: kd.errBad ? "half-open" : "closed",
+      kdCircuitColor: kd.errBad ? "var(--yellow)" : "var(--green)",
+      backToConnections: () => this.setState({ screen: this.state.connPrev }),
+      showPlaceholder: !builtScreens.includes(screen) && !isConn && !isChan && screen !== "chan-detail" && screen !== "conn-detail",
+      placeholderTitle: placeholderTitles[screen] || "Página",
+      backToWorkflows: () => this.setState({ screen: "workflows", bSel: null }),
+      backToAgents: () => this.setState({ screen: "ai" }),
+      builderDeselect: () => this.setState({ bSel: null }),
+      builderSelNode: !!bNode,
+      bSelName: bNode ? bNode.name : "",
+      bSelId: bNode ? bNode.id : "",
+      bSelIcon: bNode ? bNode.icon : "",
+      bSelFields: bNode ? bNode.fields : [],
+      bSelHint: bNode ? bNode.hint : "",
+      showWaterfall: traceTab === "waterfall",
+      showCausal: traceTab === "causal",
+      showLegacy: traceTab === "legacy",
+      showRun: traceTab === "run",
+      cgSelected: !!sel,
+      selId: sel ? sel.id : "",
+      selKind: sel ? sel.kind : "",
+      selService: sel ? sel.service : "",
+      selT: sel ? sel.t : "",
+      selAt: sel ? sel.at : "",
+      selCausation: sel ? sel.causation : "",
+      selTech: sel ? sel.tech : "",
+      selFn: sel ? sel.fn : "",
+      selDepth: sel != null && sel.depth != null ? String(sel.depth) : "—",
+      selSubject: sel ? sel.subject : null,
+      selStream: sel ? sel.stream : null,
+      selPersisted: sel ? sel.persisted : null,
+      selPersistedSvc: sel ? sel.persistedSvc : "",
+      selSubs: sel && sel.subs ? sel.subs : null,
+      selSubCount: sel && sel.subs ? sel.subs.length : 0,
+      selTemporal: !!(sel && sel.temporal),
+      selOrigin: !!(sel && sel.origin),
+      tClose: () => this.setState({ cgSel: null, tPayloadOpen: false }),
+      selShowTiming: !!(selTiming && traceTab === "waterfall"),
+      selTimingType: selTiming ? selTiming.type : "",
+      selTimingTypeColor: selTiming && selTiming.type.indexOf("bottleneck") >= 0 ? "var(--red)" : "var(--t1)",
+      selTimingStart: selTiming ? selTiming.start : "",
+      selTimingDur: selTiming ? selTiming.dur : "",
+      selTimingPct: selTiming ? selTiming.pct : "",
+      selShowRunStep: !!(selRun && traceTab === "run"),
+      selRunStep: selRun ? selRun.step : "",
+      selRunResult: selRun ? selRun.result : "",
+      tTogglePayload: () => this.setState({ tPayloadOpen: !this.state.tPayloadOpen }),
+      tPayloadOpen: this.state.tPayloadOpen,
+      tPayloadIsJson: !!(selPayload && selPayload.kind === "json"),
+      tPayloadIsMsg: !!(selPayload && selPayload.kind !== "json"),
+      tPayloadBody: selPayload && selPayload.body ? selPayload.body : "",
+      tPayloadMsg: selPayload && selPayload.msg ? selPayload.msg : "",
+    };
+  }
+}
+
+</script>
+</body>
+</html>
