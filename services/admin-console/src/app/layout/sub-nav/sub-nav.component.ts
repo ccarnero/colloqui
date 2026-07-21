@@ -6,20 +6,20 @@ import {
   input,
   output,
 } from "@angular/core";
+import { toSignal } from "@angular/core/rxjs-interop";
 import {
+  NavigationEnd,
   Router,
   RouterLink,
   RouterLinkActive,
-  NavigationEnd,
 } from "@angular/router";
-import { toSignal } from "@angular/core/rxjs-interop";
 import { filter, map } from "rxjs/operators";
+import { NavIndicatorRegistry } from "../../core/services/metrics/nav-indicator-registry.service";
 import {
   type INavIndicator,
   type INavPage,
   NAV_SECTIONS,
 } from "../nav/nav.config";
-import { NavIndicatorRegistry } from "../../core/services/metrics/nav-indicator-registry.service";
 
 /**
  * View-model for a sub-nav page including its resolved indicator value.
@@ -82,23 +82,24 @@ interface ISubNavPageVm {
     }
 
     .sub-nav {
-      width: 180px;
-      min-width: 180px;
-      border-right: 1px solid var(--border-subtle);
-      padding: 12px 0;
-      background: var(--bg-surface);
+      width: 210px;
+      min-width: 210px;
+      border-right: 1px solid var(--rd-line);
+      padding: var(--rd-space-12) var(--rd-space-8);
+      background: var(--rd-bg);
       display: flex;
       flex-direction: column;
+      gap: var(--rd-space-1);
       overflow-y: auto;
       scrollbar-width: thin;
-      scrollbar-color: var(--border-subtle) transparent;
+      scrollbar-color: var(--rd-line) transparent;
       transition: width 0.15s ease, min-width 0.15s ease;
     }
 
     .sub-nav.collapsed {
       width: 56px;
       min-width: 56px;
-      padding: 12px 0;
+      padding: var(--rd-space-6) 0;
       align-items: stretch;
     }
 
@@ -106,13 +107,13 @@ interface ISubNavPageVm {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 8px;
-      font-size: 13px;
+      gap: var(--rd-space-4);
+      font-size: var(--rd-text-size-base);
       font-weight: 400;
-      padding: 7px 20px;
-      color: var(--text2);
+      padding: var(--rd-space-3) var(--rd-space-5);
+      border-radius: var(--rd-radius-5);
+      color: var(--rd-text-2);
       text-decoration: none;
-      border-left: 2px solid transparent;
       transition: color 0.12s, background 0.12s;
       white-space: nowrap;
       overflow: hidden;
@@ -124,24 +125,23 @@ interface ISubNavPageVm {
       height: 40px;
       padding: 0;
       justify-content: center;
-      border: none;
       border-radius: 0;
       margin: 0;
       background: transparent;
-      color: var(--text2);
+      color: var(--rd-text-2);
       position: relative;
       border-left: 2px solid transparent;
     }
 
     .sub-nav.collapsed .nav-item:hover {
-      background: var(--accent-dim, rgba(26, 102, 255, 0.06));
-      color: var(--text-primary);
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
     }
 
     .sub-nav.collapsed .nav-item.active {
-      border-left-color: var(--primary, #1a66ff);
-      background: var(--accent-dim, rgba(26, 102, 255, 0.08));
-      color: var(--primary, #1a66ff);
+      border-left-color: var(--rd-accent);
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
     }
 
     .sub-nav.collapsed .nav-indicator {
@@ -150,29 +150,29 @@ interface ISubNavPageVm {
       right: 4px;
       min-width: 14px;
       height: 14px;
-      padding: 0 4px;
-      font-size: 10px;
+      padding: 0 var(--rd-space-2);
+      font-size: var(--rd-text-size-2xs);
       font-weight: 600;
       line-height: 14px;
-      border-radius: 999px;
-      background: var(--primary, #1a66ff);
-      color: white;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      border-radius: var(--rd-radius-full);
+      background: var(--rd-accent);
+      color: var(--rd-text-on-accent);
+      box-shadow: var(--rd-shadow-sm);
     }
 
     .sub-nav.collapsed .ind-count {
-      background: var(--primary, #1a66ff);
-      color: white;
+      background: var(--rd-accent);
+      color: var(--rd-text-on-accent);
     }
 
     .sub-nav.collapsed .ind-count-warn {
-      background: var(--yellow, #eab308);
-      color: #1a1a1a;
+      background: var(--rd-yellow);
+      color: var(--rd-bg);
     }
 
     .sub-nav.collapsed .ind-count-danger {
-      background: var(--red, #ef4444);
-      color: white;
+      background: var(--rd-red);
+      color: var(--rd-text-on-accent);
     }
 
     .sub-nav.collapsed .ind-dot {
@@ -181,19 +181,22 @@ interface ISubNavPageVm {
       right: 8px;
       width: 6px;
       height: 6px;
-      background: var(--red, #ef4444);
+      background: var(--rd-red);
       border-radius: 50%;
     }
 
+    /* Active/hover state is a neutral surface highlight (bg-hover, text-1),
+       matching the sub-rail treatment in the design file — primary nav
+       (topbar tabs) carries the accent color, secondary nav (this rail)
+       stays neutral. */
     .nav-item:hover {
-      color: var(--text-primary);
-      background: var(--bg3);
+      color: var(--rd-text-1);
+      background: var(--rd-hover);
     }
 
     .nav-item.active {
-      color: var(--primary, #1a66ff);
-      background: var(--accent-dim, rgba(26, 102, 255, 0.06));
-      border-left-color: var(--primary, #1a66ff);
+      color: var(--rd-text-1);
+      background: var(--rd-hover);
       font-weight: 500;
     }
 
@@ -203,9 +206,9 @@ interface ISubNavPageVm {
     }
 
     .sub-nav.collapsed .nav-label {
-      font-size: 13px;
+      font-size: var(--rd-text-size-base);
       font-weight: 600;
-      letter-spacing: 0.5px;
+      letter-spacing: 0.04em;
     }
 
     .nav-indicator {
@@ -214,26 +217,27 @@ interface ISubNavPageVm {
       justify-content: center;
       min-width: 18px;
       height: 16px;
-      padding: 0 5px;
-      font-size: 11px;
+      padding: 0 var(--rd-space-3);
+      font-size: var(--rd-text-size-xs);
       font-weight: 500;
-      border-radius: 999px;
+      border-radius: var(--rd-radius-full);
       flex-shrink: 0;
+      font-family: var(--rd-font-mono);
     }
 
     .ind-count {
-      color: var(--text3);
+      color: var(--rd-text-3);
       background: transparent;
     }
 
     .ind-count-warn {
-      color: var(--yellow, #b45309);
-      background: color-mix(in srgb, var(--yellow, #eab308) 18%, transparent);
+      color: var(--rd-yellow);
+      background: var(--rd-yellow-dim);
     }
 
     .ind-count-danger {
-      color: var(--red, #b91c1c);
-      background: color-mix(in srgb, var(--red,rgb(20, 19, 19)) 18%, transparent);
+      color: var(--rd-red);
+      background: var(--rd-red-dim);
     }
 
     .ind-dot {
@@ -241,19 +245,19 @@ interface ISubNavPageVm {
       width: 7px;
       height: 7px;
       padding: 0;
-      background: var(--red, #ef4444);
+      background: var(--rd-red);
     }
 
     .nav-divider {
       height: 1px;
-      background: var(--border-subtle);
-      margin: 6px 0;
+      background: var(--rd-line);
+      margin: var(--rd-space-3) 0;
     }
 
     @media (max-width: 900px) {
       .sub-nav {
         position: fixed;
-        top: 56px;
+        top: 52px;
         left: -200px;
         bottom: 0;
         z-index: 40;
@@ -264,7 +268,7 @@ interface ISubNavPageVm {
 
       .sub-nav.mobile-open {
         transform: translateX(200px);
-        box-shadow: 4px 0 20px rgba(0, 0, 0, 0.15);
+        box-shadow: var(--rd-shadow-lg);
       }
     }
   `,
@@ -280,16 +284,16 @@ export class SubNavComponent {
   private readonly url = toSignal(
     this.router.events.pipe(
       filter((e) => e instanceof NavigationEnd),
-      map((e) => (e as NavigationEnd).urlAfterRedirects),
+      map((e) => (e as NavigationEnd).urlAfterRedirects)
     ),
-    { initialValue: this.router.url },
+    { initialValue: this.router.url }
   );
 
   readonly activeSection = computed(() => {
     const url = this.url();
     return (
       NAV_SECTIONS.find((s) =>
-        s.matchPaths.some((p) => url === p || url.startsWith(p + "/")),
+        s.matchPaths.some((p) => url === p || url.startsWith(p + "/"))
       ) ?? null
     );
   });
@@ -301,7 +305,9 @@ export class SubNavComponent {
    */
   readonly pages = computed<ISubNavPageVm[]>(() => {
     const section = this.activeSection();
-    if (!section) return [];
+    if (!section) {
+      return [];
+    }
     return section.pages.map((page) => {
       const indicator = page.indicator ?? null;
       const sig = indicator ? this.indicators.resolve(indicator.source) : null;
@@ -314,14 +320,20 @@ export class SubNavComponent {
   });
 
   protected indicatorVisible(vm: ISubNavPageVm): boolean {
-    if (!vm.indicator) return false;
-    if (vm.indicator.kind === "dot") return true;
+    if (!vm.indicator) {
+      return false;
+    }
+    if (vm.indicator.kind === "dot") {
+      return true;
+    }
     const v = vm.indicatorValue();
     return v !== null && v > 0;
   }
 
   protected indicatorAriaLabel(vm: ISubNavPageVm): string {
-    if (!vm.indicator) return "";
+    if (!vm.indicator) {
+      return "";
+    }
     const v = vm.indicatorValue();
     return vm.indicator.kind === "dot"
       ? `${vm.page.label} alert`

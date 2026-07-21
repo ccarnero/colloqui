@@ -1,269 +1,114 @@
-import {
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  inject,
-} from "@angular/core";
-import { RouterLink, RouterLinkActive } from "@angular/router";
+import { ChangeDetectionStrategy, Component } from "@angular/core";
 import { MatIconModule } from "@angular/material/icon";
-import { AuthService } from "../../core/services/auth.service";
+import { RouterLink, RouterLinkActive } from "@angular/router";
+import { NAV_SECTIONS } from "../nav/nav.config";
 
-interface INavItem {
-  label: string;
-  icon: string;
-  route?: string;
-  badge?: string;
-  items?: INavItem[];
-}
+const LOG_PREFIX = "[SidebarComponent]";
 
-interface INavSection {
-  title: string;
-  requiredPermission?: string;
-  items: INavItem[];
-}
-
-const ALL_SECTIONS: INavSection[] = [
-  {
-    title: "Overview",
-    items: [
-      { label: "Dashboard", icon: "dashboard", route: "/dashboard" },
-      {
-        label: "Analytics",
-        icon: "trending_up",
-        route: "/analytics",
-        badge: "Live",
-      },
-    ],
-  },
-  {
-    title: "Identity & Access",
-    requiredPermission: "users:read",
-    items: [
-      { label: "Users", icon: "people", route: "/users" },
-      { label: "Roles & Permissions", icon: "shield", route: "/roles" },
-      // { label: "SSO / SAML", icon: "lock", route: "/sso" },
-      // { label: "MFA Settings", icon: "phonelink_lock", route: "/mfa" },
-    ],
-  },
-  {
-    title: "Channels",
-    requiredPermission: "channels:read",
-    items: [
-      { label: "Whatsapp", icon: "chat", route: "/channels/whatsapp" },
-      { label: "Telegram", icon: "send", route: "/channels/telegram" },
-    ],
-  },
-  {
-    title: "Automation",
-    requiredPermission: "workflows:read",
-    items: [
-      { label: "Workflows", icon: "account_tree", route: "/workflows" },
-      { label: "Hosted Services", icon: "webhook", route: "/hosted-services" },
-      {
-        label: "AI Agents",
-        icon: "psychology",
-        items: [
-          { label: "Agents", icon: "support_agent", route: "/ai/agents" },
-          { label: "Playground", icon: "science", route: "/ai/playground" },
-          { label: "Memories", icon: "memory", route: "/ai/memories" },
-          { label: "System Variables", icon: "tune", route: "/ai/system-variables" },
-          { label: "Knowledge Bases", icon: "library_books", route: "/ai/knowledge-bases" },
-        ],
-      },
-    ],
-  },
-  {
-    title: "Data & Integrations",
-    requiredPermission: "adapters:read",
-    items: [
-      { label: "Connectors", icon: "hub", route: "/connectors" },
-      { 
-        label: "SMCC", 
-        icon: "vpn_key", 
-        route: "/smcc",
-        items: [
-          { label: "ySocial", icon: "vpn_key", route: "/ysocial-smcc" },
-          { label: "Infinity", icon: "vpn_key", route: "/infinity-smcc" },
-          { label: "Genesis", icon: "vpn_key", route: "/genesis-smcc" },
-        ]
-      },
-      { label: "MCP", icon: "hub", route: "/mcp" },
-    ],
-  },
-];
-
+/**
+ * Restyled per the redesign contract (manual-loops/admin-console/design/
+ * Rediseño Terminal.dc.html — sub-rail pattern). The nav model is the
+ * shared `NAV_SECTIONS` from `layout/nav/nav.config.ts` (user decision 5):
+ * sections and their pages are rendered verbatim, in the order declared
+ * there — this component must never reorder/add/remove sections.
+ */
 @Component({
   selector: "app-sidebar",
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterLink, RouterLinkActive, MatIconModule],
   template: `
-    <aside class="sidebar-container bg-sidebar">
-      <!-- AI module logo (yz-ui) -->
-      <div class="brand-logo border-subtle">
-        <div class="logo-icon flex-center">
-          <svg class="w-8 h-8 logo-svg" id="Capa_1" data-name="Capa 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 714.26">
-            <defs>
-              <style>
-                .cls-1 { fill: #fd6421; }
-                .cls-2 { fill: var(--text-primary); }
-                .cls-3 { fill: #4a3abf; }
-                .cls-4 { fill: #1a66ff; }
-              </style>
-            </defs>
-            <path class="cls-1" d="M1612.48,217.89s-6.09,7.4-12.78,15.71l94.18,109.36,16.58-189.82c-38.05,15.1-71.67,37.43-97.98,64.75h0Z"/>
-            <path class="cls-2" d="M383.96,270.49v200.46c0,.54-.07,1.08-.21,1.6v6.31c0,43.29-35.1,78.39-78.41,78.39h-47.7c-4.38,0-7.92-3.54-7.92-7.92v-31.69c0-4.37,3.54-7.92,7.92-7.92h47.7c17.06,0,30.88-13.82,30.88-30.87v-2.52c-20.3.01-42.47.04-53.28.04-22.27,0-40.07-3.43-53.4-16.62-13.33-13.19-20-31.2-20-54.01v-135.26c0-1.53.59-2.79,1.77-3.8.88-.77,2.02-1.15,3.18-1.15h37.93c1.37,0,2.55.48,3.51,1.45.96.95,1.45,2.11,1.45,3.5v125.35c0,12.63,3.56,22.89,10.72,30.72,7.14,7.84,16.62,8.67,28.45,8.67,9.55,0,29.49-.44,36.82-.59,1.53-.04,2.76-1.29,2.76-2.84v-161.32c0-1.54.59-2.8,1.78-3.82.87-.75,2.01-1.14,3.16-1.14h37.94c1.37,0,2.55.48,3.51,1.45.96.95,1.44,2.11,1.44,3.5v.03Z"/>
-            <g>
-              <path class="cls-2" d="M680.21,480.54c-.98-.98-1.47-2.16-1.47-3.57v-204.85c0-1.4.49-2.58,1.47-3.57.98-.98,2.16-1.47,3.57-1.47h38.62c1.4,0,2.58.49,3.57,1.47.98.98,1.47,2.17,1.47,3.57v204.85c0,1.4-.49,2.59-1.47,3.57s-2.17,1.47-3.57,1.47h-38.62c-1.4,0-2.59-.49-3.57-1.47Z"/>
-              <path class="cls-2" d="M779.19,480.54c-.98-.98-1.47-2.16-1.47-3.57v-35.68c0-2.52.69-4.47,2.1-5.88l103.27-121.32c1.4-1.68.98-2.52-1.26-2.52h-96.97c-1.4,0-2.59-.49-3.57-1.47s-1.47-2.16-1.47-3.57v-34c0-1.4.49-2.58,1.47-3.57.98-.98,2.17-1.47,3.57-1.47h152.8c1.4,0,2.58.49,3.57,1.47.98.98,1.47,2.17,1.47,3.57v35.68c0,2.24-.84,4.2-2.52,5.88l-105.36,121.32c-1.12,1.68-.7,2.52,1.26,2.52h102.85c1.4,0,2.58.49,3.57,1.47.98.98,1.47,2.17,1.47,3.57v34c0,1.4-.49,2.59-1.47,3.57s-2.17,1.47-3.57,1.47h-156.16c-1.4,0-2.59-.49-3.57-1.47h0Z"/>
-              <path class="cls-2" d="M1396.27,339.28v137.69c0,1.56-.6,2.84-1.8,3.88-.89.77-2.06,1.17-3.24,1.17h-38.62c-1.4,0-2.59-.49-3.57-1.48-.99-.98-1.48-2.16-1.48-3.56v-127.61c0-12.86-3.63-23.3-10.91-31.27-7.28-7.98-16.93-8.83-28.97-8.83-9.72,0-30.03.43-37.48.6-1.57.04-2.82,1.32-2.82,2.89v164.23c0,1.57-.6,2.85-1.81,3.89-.89.76-2.05,1.16-3.22,1.16h-38.63c-1.4,0-2.59-.49-3.56-1.48-.99-.98-1.46-2.16-1.46-3.56v-204.07c0-1.62.6-3.24,1.84-4.28.9-.75,1.97-1.12,3.19-1.12,0,0,74.58-.12,97.81-.12s40.79,3.48,54.37,16.92c13.57,13.43,20.36,31.76,20.36,54.99v-.04Z"/>
-              <path class="cls-2" d="M529.88,312.6c34.18,0,61.98,27.81,61.98,61.98s-27.81,61.98-61.98,61.98-61.98-27.81-61.98-61.98,27.81-61.98,61.98-61.98M529.88,263.81c-61.18,0-110.78,49.6-110.78,110.78s49.6,110.78,110.78,110.78,110.78-49.6,110.78-110.78-49.6-110.78-110.78-110.78h0Z"/>
-              <path class="cls-2" d="M1113.95,434.71c-21.19,12.91-55.35,12.5-74.84-3.27-9.79-7.69-16.89-19.2-21.09-31.41l166.31-20.42c2.98-.37,5.11-3.08,4.77-6.06-9.37-81.98-69.79-127.24-151.97-101.86-56.76,18.16-81.36,80.8-64.73,133.95,31.27,95.42,155.49,104.99,203.61,20.15,1.3-2.3.57-5.23-1.66-6.65l-25.78-16.45c-2.42-1.55-5.68-.74-7.03,1.8-6.52,12.26-16.09,23.32-27.58,30.23h-.01ZM1025.81,337.44c10.67-18.74,32.62-26.81,53.76-28.58,28.39-3.41,52.04,11.6,61.97,38.32l-124.87,15.33c1.79-9.02,4.84-17.74,9.15-25.08h-.01Z"/>
-            </g>
-            <path class="cls-4" d="M1467.53,495.78l63.48-77.59c-72.28-42.81-89.18-93.6-86.15-155.54,2.03-41.62,26.61-80.68,56.82-109.65l82,96.99c-16.42,25.69-26.35,54.87-27.87,86.1-1.67,34.2,6.92,66.93,23.48,96.1l-110.82,64.66c-.69.4-1.43-.46-.92-1.08h-.02Z"/>
-            <path class="cls-3" d="M1690.27,375.03l-111,57.17c-16.56-29.17-25.15-61.9-23.48-96.1,1.53-31.23,11.45-60.41,27.87-86.1l106.33,124.52.27.52h.01Z"/>
-          </svg>
-        </div>
-        <span class="brand-text text-primary">Admin Console</span>
+    <aside class="rd-sidebar">
+      <div class="rd-brand">
+        <span class="rd-brand-mark">Y</span>
+        <span class="rd-brand-text">Admin Console</span>
       </div>
 
-      <nav class="leftnav mt-4">
-        @for (section of visibleSections(); track section.title) {
-          <div class="nav-section">
+      <nav class="rd-nav">
+        @for (section of sections; track section.key) {
+          <div class="rd-nav-section">
             <button
-              class="nav-section-label"
-              [class.collapsed]="!isSectionExpanded(section.title)"
-              (click)="toggleSection(section.title)"
+              type="button"
+              class="rd-section-label"
+              [class.collapsed]="!isSectionExpanded(section.key)"
+              (click)="toggleSection(section.key)"
             >
-              <span>{{ section.title }}</span>
-              <mat-icon class="section-chevron">
-                {{
-                  isSectionExpanded(section.title)
-                    ? "expand_less"
-                    : "expand_more"
-                }}
-            </mat-icon>
-          </button>
-          @if (isSectionExpanded(section.title)) {
-            <div class="section-items">
-              @for (item of section.items; track item.label) {
-                @if (item.items?.length) {
-                  <button
-                    class="nav-item nav-parent"
-                    [class.expanded]="isExpanded(item.label)"
-                    (click)="toggle(item.label)"
-                  >
-                    <mat-icon class="nav-icon">{{ item.icon }}</mat-icon>
-                    <span>{{ item.label }}</span>
-                    <mat-icon class="expand-icon">
-                      {{
-                        isExpanded(item.label)
-                          ? "expand_less"
-                          : "expand_more"
-                      }}
-                    </mat-icon>
-                  </button>
-                  @if (isExpanded(item.label)) {
-                    <div class="sub-items">
-                      @for (child of item.items; track child.route) {
-                        <a
-                          class="nav-item sub-item"
-                          [routerLink]="child.route"
-                          routerLinkActive="active"
-                        >
-                          <mat-icon class="nav-icon">{{
-                            child.icon
-                          }}</mat-icon>
-                          <span>{{ child.label }}</span>
-                          @if (child.badge) {
-                            <span class="nav-badge">{{ child.badge }}</span>
-                          }
-                        </a>
-                      }
-                    </div>
-                  }
-                } @else {
+              <span>{{ section.label }}</span>
+              <mat-icon class="rd-section-chevron">
+                {{ isSectionExpanded(section.key) ? "expand_less" : "expand_more" }}
+              </mat-icon>
+            </button>
+            @if (isSectionExpanded(section.key)) {
+              <div class="rd-section-items">
+                @for (page of section.pages; track page.route) {
                   <a
-                    class="nav-item"
-                    [routerLink]="item.route"
+                    class="rd-nav-item"
+                    [routerLink]="page.route"
                     routerLinkActive="active"
+                    [routerLinkActiveOptions]="{ exact: page.route === '/dashboard' }"
                   >
-                    <mat-icon class="nav-icon">{{ item.icon }}</mat-icon>
-                    <span>{{ item.label }}</span>
-                    @if (item.badge) {
-                      <span class="nav-badge">{{ item.badge }}</span>
-                    }
+                    <span>{{ page.label }}</span>
                   </a>
                 }
-              }
-            </div>
-          }
-        </div>
-      }
-    </nav>
+              </div>
+            }
+          </div>
+        }
+      </nav>
     </aside>
   `,
   styles: `
-    .sidebar-container {
+    .rd-sidebar {
       width: 100%;
       height: 100%;
       display: flex;
       flex-direction: column;
+      background: var(--rd-panel);
     }
-    
-    .brand-logo {
-      height: 64px; /* matches header height if needed */
-      padding: 0 24px;
+
+    .rd-brand {
+      height: 52px;
+      padding: 0 var(--rd-space-11);
       display: flex;
       align-items: center;
-      gap: 12px;
-      border-bottom: 1px solid var(--border-subtle);
+      gap: var(--rd-space-6);
+      border-bottom: 1px solid var(--rd-line);
       flex-shrink: 0;
     }
 
-    .brand-text {
-      color: var(--text-primary);
-      font-weight: 700;
-      font-size: 1.125rem;
-      letter-spacing: -0.025em;
-    }
-
-    .logo-icon {
-      width: 32px;
-      height: 32px;
-      flex-shrink: 0;
-      border-radius: 8px;
-    }
-    
-    .flex-center {
+    .rd-brand-mark {
+      width: 22px;
+      height: 22px;
+      border-radius: var(--rd-radius-6);
+      background: var(--rd-accent);
+      color: var(--rd-text-on-accent);
       display: flex;
       align-items: center;
       justify-content: center;
+      font-size: var(--rd-text-size-xs);
+      font-weight: 700;
+      flex-shrink: 0;
     }
 
-    .logo-svg {
-      width: 32px;
-      height: 32px;
+    .rd-brand-text {
+      color: var(--rd-text-1);
+      font-weight: 600;
+      font-size: var(--rd-text-size-lg);
+      letter-spacing: -0.02em;
     }
 
-    .mt-4 {
-      margin-top: 1rem;
-    }
-
-    .leftnav {
-      background: transparent;
-      border-right: 1px solid var(--border-subtle);
-      padding: 12px 0 20px;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border-subtle) transparent;
+    .rd-nav {
       flex: 1 1 0%;
       overflow-y: auto;
+      padding: var(--rd-space-6) 0 var(--rd-space-10);
+      scrollbar-width: thin;
+      scrollbar-color: var(--rd-line) transparent;
     }
 
-    .nav-section {
-      margin-bottom: 4px;
+    .rd-nav-section {
+      margin-bottom: var(--rd-space-2);
     }
 
-    .nav-section-label {
+    .rd-section-label {
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -271,25 +116,25 @@ const ALL_SECTIONS: INavSection[] = [
       border: none;
       background: none;
       font-family: inherit;
-      font-size: 10px;
+      font-size: var(--rd-text-size-2xs);
       font-weight: 700;
-      letter-spacing: 0.8px;
-      color: var(--text3);
+      letter-spacing: 0.06em;
+      color: var(--rd-text-3);
       text-transform: uppercase;
-      padding: 10px 16px 4px;
+      padding: var(--rd-space-5) var(--rd-space-8) var(--rd-space-2);
       cursor: pointer;
       transition: color 0.1s;
     }
 
-    .nav-section-label:hover {
-      color: var(--text2);
+    .rd-section-label:hover {
+      color: var(--rd-text-2);
     }
 
-    .nav-section-label.collapsed {
-      padding-bottom: 8px;
+    .rd-section-label.collapsed {
+      padding-bottom: var(--rd-space-4);
     }
 
-    .section-chevron {
+    .rd-section-chevron {
       font-size: 14px;
       width: 14px;
       height: 14px;
@@ -297,148 +142,61 @@ const ALL_SECTIONS: INavSection[] = [
       transition: opacity 0.15s;
     }
 
-    .nav-section:hover .section-chevron,
-    .nav-section-label.collapsed .section-chevron {
+    .rd-nav-section:hover .rd-section-chevron,
+    .rd-section-label.collapsed .rd-section-chevron {
       opacity: 0.6;
     }
 
-    .section-items {
+    .rd-section-items {
       overflow: hidden;
     }
 
-    .nav-item {
+    .rd-nav-item {
       display: flex;
       align-items: center;
-      gap: 9px;
-      padding: 7px 16px;
+      gap: var(--rd-space-5);
+      padding: var(--rd-space-3) var(--rd-space-8);
+      margin: 0 var(--rd-space-4);
+      border-radius: var(--rd-radius-5);
       cursor: pointer;
-      color: var(--text2);
-      font-size: 13px;
-      font-weight: 500;
-      transition:
-        background 0.1s,
-        color 0.1s;
-      position: relative;
+      color: var(--rd-text-2);
+      font-size: var(--rd-text-size-base);
+      font-weight: 400;
       text-decoration: none;
+      transition: background 0.1s, color 0.1s;
     }
 
-    .nav-item:hover {
-      background: var(--bg3);
-      color: var(--text);
+    .rd-nav-item:hover {
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
     }
 
-    .nav-item.active {
-      background: var(--accent-dim);
-      color: var(--primary);
-    }
-
-    .nav-item.active::before {
-      content: "";
-      position: absolute;
-      left: 0;
-      top: 0;
-      bottom: 0;
-      width: 4px;
-      border-radius: 0 4px 4px 0;
-      background: var(--primary);
-    }
-
-    .nav-icon {
-      font-size: 18px;
-      width: 18px;
-      height: 18px;
-      opacity: 0.8;
-    }
-
-    .nav-item.active .nav-icon {
-      opacity: 1;
-    }
-
-    .nav-badge {
-      margin-left: auto;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 1px 6px;
-      border-radius: 10px;
-      background: var(--bg4);
-      color: var(--text3);
-    }
-
-    .nav-item.active .nav-badge {
-      background: var(--accent-dim);
-      color: var(--accent2);
-    }
-
-    .nav-parent {
-      width: 100%;
-      border: none;
-      background: none;
-      text-align: left;
-      font-family: inherit;
-    }
-
-    .nav-parent.expanded {
-      color: var(--text);
-    }
-
-    .expand-icon {
-      margin-left: auto;
-      font-size: 16px;
-      width: 16px;
-      height: 16px;
-      opacity: 0.5;
-      transition: transform 0.15s ease;
-    }
-
-    .sub-items {
-      overflow: hidden;
-    }
-
-    .sub-item {
-      padding-left: 44px;
-      font-size: 12px;
+    .rd-nav-item.active {
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
+      font-weight: 500;
     }
   `,
 })
 export class SidebarComponent {
-  private readonly authService = inject(AuthService);
-  readonly expanded = new Set<string>();
-  readonly expandedSections = new Set<string>();
+  /** Nav model per user decision 5 — sourced verbatim from nav.config.ts. */
+  protected readonly sections = NAV_SECTIONS;
 
-  readonly visibleSections = computed(() => {
-    return ALL_SECTIONS.filter((s) => {
-      if (!s.requiredPermission) return true;
-      return this.authService.hasPermission(s.requiredPermission);
-    });
-  });
+  private readonly expandedSections = new Set<string>(
+    NAV_SECTIONS.map((section) => section.key)
+  );
 
-  constructor() {
-    for (const section of ALL_SECTIONS) {
-      this.expandedSections.add(section.title);
-    }
-  }
-
-  toggleSection(title: string): void {
-    if (this.expandedSections.has(title)) {
-      this.expandedSections.delete(title);
+  toggleSection(key: string): void {
+    if (this.expandedSections.has(key)) {
+      this.expandedSections.delete(key);
+      console.debug(`${LOG_PREFIX} collapsed section "${key}"`);
     } else {
-      this.expandedSections.add(title);
+      this.expandedSections.add(key);
+      console.debug(`${LOG_PREFIX} expanded section "${key}"`);
     }
   }
 
-  isSectionExpanded(title: string): boolean {
-    return this.expandedSections.has(title);
-  }
-
-  toggle(label: string): void {
-    if (this.expanded.has(label)) {
-      this.expanded.delete(label);
-    } else {
-      this.expanded.add(label);
-    }
-  }
-
-  isExpanded(label: string): boolean {
-    return this.expanded.has(label);
+  isSectionExpanded(key: string): boolean {
+    return this.expandedSections.has(key);
   }
 }

@@ -6,20 +6,22 @@ import {
   OnInit,
   output,
 } from "@angular/core";
-import { Router, RouterLink, NavigationEnd } from "@angular/router";
 import { toSignal } from "@angular/core/rxjs-interop";
-import { filter, map } from "rxjs/operators";
-import { MatIconModule } from "@angular/material/icon";
-import { MatButtonModule } from "@angular/material/button";
-import { MatMenuModule } from "@angular/material/menu";
 import { MatBadgeModule } from "@angular/material/badge";
+import { MatButtonModule } from "@angular/material/button";
 import { MatDividerModule } from "@angular/material/divider";
+import { MatIconModule } from "@angular/material/icon";
+import { MatMenuModule } from "@angular/material/menu";
 import { MatTooltipModule } from "@angular/material/tooltip";
-import { TenantService } from "../../core/services/tenant.service";
-import { ThemeService } from "../../core/services/theme.service";
+import { NavigationEnd, Router, RouterLink } from "@angular/router";
+import { filter, map } from "rxjs/operators";
 import { AuthService } from "../../core/services/auth.service";
 import { NotificationService } from "../../core/services/notification.service";
+import { TenantService } from "../../core/services/tenant.service";
+import { ThemeService } from "../../core/services/theme.service";
 import { NAV_SECTIONS } from "../nav/nav.config";
+
+const LOG_PREFIX = "[HeaderComponent]";
 
 @Component({
   selector: "app-header",
@@ -114,7 +116,8 @@ import { NAV_SECTIONS } from "../nav/nav.config";
           mat-icon-button
           type="button"
           class="topbar-btn"
-          (click)="themeService.toggle()"
+          data-testid="theme-toggle"
+          (click)="onThemeToggleClick()"
           [matTooltip]="themeService.isDark() ? 'Light mode' : 'Dark mode'"
         >
           <mat-icon>{{ themeService.isDark() ? "light_mode" : "dark_mode" }}</mat-icon>
@@ -161,12 +164,12 @@ import { NAV_SECTIONS } from "../nav/nav.config";
     }
 
     .topbar {
-      height: 56px;
-      background: var(--bg-surface);
-      border-bottom: 1px solid var(--border-subtle);
+      height: 52px;
+      background: var(--rd-bg);
+      border-bottom: 1px solid var(--rd-line);
       display: flex;
       align-items: stretch;
-      padding: 0 20px 0 16px;
+      padding: 0 var(--rd-space-11);
       gap: 0;
       position: relative;
       z-index: 100;
@@ -176,14 +179,14 @@ import { NAV_SECTIONS } from "../nav/nav.config";
     .topbar-left {
       display: flex;
       align-items: center;
-      gap: 4px;
-      margin-right: 24px;
+      gap: var(--rd-space-2);
+      margin-right: var(--rd-space-11);
       flex-shrink: 0;
     }
 
     .mobile-menu-btn {
       display: none;
-      color: var(--text2);
+      color: var(--rd-text-2);
     }
 
     @media (max-width: 900px) {
@@ -195,22 +198,22 @@ import { NAV_SECTIONS } from "../nav/nav.config";
     .brand {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: var(--rd-space-4);
       text-decoration: none;
-      padding: 0 8px;
+      padding: 0 var(--rd-space-4);
     }
 
     .brand-mark {
-      font-size: 16px;
-      color: var(--primary, #1a66ff);
+      font-size: var(--rd-text-size-xl);
+      color: var(--rd-accent);
       line-height: 1;
     }
 
     .brand-name {
-      font-size: 14px;
+      font-size: var(--rd-text-size-md);
       font-weight: 600;
-      color: var(--text-primary);
-      letter-spacing: -0.2px;
+      color: var(--rd-text-1);
+      letter-spacing: -0.02em;
     }
 
     /* ── Center tabs ── */
@@ -224,10 +227,10 @@ import { NAV_SECTIONS } from "../nav/nav.config";
     .tab {
       display: flex;
       align-items: center;
-      padding: 0 14px;
-      font-size: 13px;
+      padding: 0 var(--rd-space-7);
+      font-size: var(--rd-text-size-base);
       font-weight: 400;
-      color: var(--text2);
+      color: var(--rd-text-2);
       text-decoration: none;
       border-bottom: 2px solid transparent;
       margin-bottom: -1px;
@@ -236,12 +239,12 @@ import { NAV_SECTIONS } from "../nav/nav.config";
     }
 
     .tab:hover {
-      color: var(--text-primary);
+      color: var(--rd-text-1);
     }
 
     .tab.active {
-      color: var(--primary, #1a66ff);
-      border-bottom-color: var(--primary, #1a66ff);
+      color: var(--rd-accent);
+      border-bottom-color: var(--rd-accent);
       font-weight: 500;
     }
 
@@ -255,7 +258,7 @@ import { NAV_SECTIONS } from "../nav/nav.config";
     .topbar-right {
       display: flex;
       align-items: center;
-      gap: 2px;
+      gap: var(--rd-space-1);
       margin-left: auto;
       flex-shrink: 0;
     }
@@ -263,57 +266,57 @@ import { NAV_SECTIONS } from "../nav/nav.config";
     .tenant-badge {
       display: flex;
       align-items: center;
-      gap: 7px;
-      background: var(--bg3);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius, 6px);
-      padding: 4px 10px;
-      margin-right: 8px;
+      gap: var(--rd-space-3);
+      background: var(--rd-panel);
+      border: 1px solid var(--rd-line);
+      border-radius: var(--rd-radius-5);
+      padding: var(--rd-space-2) var(--rd-space-5);
+      margin-right: var(--rd-space-4);
     }
 
     .tenant-dot {
       width: 7px;
       height: 7px;
       border-radius: 50%;
-      background: var(--green, #10b981);
+      background: var(--rd-green);
       flex-shrink: 0;
     }
 
     .tenant-name {
-      font-size: 12px;
+      font-size: var(--rd-text-size-sm);
       font-weight: 500;
-      color: var(--text-primary);
+      color: var(--rd-text-1);
     }
 
     .topbar-btn {
-      color: var(--text2);
+      color: var(--rd-text-2);
     }
 
     .topbar-btn:hover {
-      background: var(--accent-dim, rgba(26, 102, 255, 0.08));
-      color: var(--primary, #1a66ff);
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
     }
 
     .topbar-btn:focus-visible {
       outline: none;
-      box-shadow: 0 0 0 2px var(--primary, #1a66ff);
+      box-shadow: 0 0 0 2px var(--rd-accent);
     }
 
     .avatar-btn {
-      width: 32px;
-      height: 32px;
-      margin-left: 6px;
+      width: 30px;
+      height: 30px;
+      margin-left: var(--rd-space-3);
       border-radius: 50%;
-      background: linear-gradient(135deg, #4f46e5 0%, #d946ef 100%);
+      background: var(--rd-avatar-gradient);
       border: none;
       cursor: pointer;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 12px;
+      font-size: var(--rd-text-size-2xs);
       font-weight: 600;
-      color: #fff;
-      letter-spacing: 0.3px;
+      color: var(--rd-text-on-accent);
+      letter-spacing: 0.02em;
       transition: opacity 0.15s;
     }
 
@@ -325,10 +328,10 @@ import { NAV_SECTIONS } from "../nav/nav.config";
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 16px;
-      font-size: 13px;
+      padding: var(--rd-space-4) var(--rd-space-8);
+      font-size: var(--rd-text-size-base);
       font-weight: 600;
-      border-bottom: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--rd-line);
     }
 
     .activity-dot {
@@ -336,7 +339,7 @@ import { NAV_SECTIONS } from "../nav/nav.config";
       width: 8px;
       height: 8px;
       border-radius: 50%;
-      margin-right: 4px;
+      margin-right: var(--rd-space-2);
       flex-shrink: 0;
     }
 
@@ -346,34 +349,34 @@ import { NAV_SECTIONS } from "../nav/nav.config";
     }
 
     .notif-text {
-      font-size: 12px;
+      font-size: var(--rd-text-size-sm);
     }
 
     .notif-time {
-      font-size: 11px;
-      color: var(--text3);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-3);
     }
 
     .user-menu-header {
-      padding: 12px 16px;
+      padding: var(--rd-space-6) var(--rd-space-8);
     }
 
     .user-menu-name {
-      font-size: 14px;
+      font-size: var(--rd-text-size-md);
       font-weight: 600;
-      color: var(--text-primary);
+      color: var(--rd-text-1);
     }
 
     .user-menu-email {
-      font-size: 12px;
-      color: var(--text3);
-      margin-top: 2px;
+      font-size: var(--rd-text-size-sm);
+      color: var(--rd-text-3);
+      margin-top: var(--rd-space-1);
     }
 
     .user-menu-role {
-      font-size: 11px;
-      color: var(--accent2);
-      margin-top: 2px;
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-accent);
+      margin-top: var(--rd-space-1);
     }
   `,
 })
@@ -394,16 +397,16 @@ export class HeaderComponent implements OnInit {
   private readonly url = toSignal(
     this.router.events.pipe(
       filter((e) => e instanceof NavigationEnd),
-      map((e) => (e as NavigationEnd).urlAfterRedirects),
+      map((e) => (e as NavigationEnd).urlAfterRedirects)
     ),
-    { initialValue: this.router.url },
+    { initialValue: this.router.url }
   );
 
   readonly activeKey = computed(() => {
     const url = this.url();
     return (
       NAV_SECTIONS.find((s) =>
-        s.matchPaths.some((p) => url === p || url.startsWith(p + "/")),
+        s.matchPaths.some((p) => url === p || url.startsWith(p + "/"))
       )?.key ?? "overview"
     );
   });
@@ -416,6 +419,19 @@ export class HeaderComponent implements OnInit {
         time: new Date().toLocaleString(),
       });
     }
+  }
+
+  /**
+   * Theme toggle handler wired to the header button (T03). Delegates all
+   * persistence/DOM work to the existing `ThemeService.toggle()` — this
+   * handler only logs the interaction so the toggle never fails silently.
+   */
+  protected onThemeToggleClick(): void {
+    const wasDark = this.themeService.isDark();
+    console.debug(
+      `${LOG_PREFIX} theme toggle clicked, current isDark=${wasDark}`
+    );
+    this.themeService.toggle();
   }
 
   protected onHelpClick(): void {

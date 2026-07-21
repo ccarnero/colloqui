@@ -1,13 +1,12 @@
-import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { signal } from "@angular/core";
+import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { ActivatedRoute, convertToParamMap } from "@angular/router";
 import { vi } from "vitest";
-
-import { HeaderComponent } from "./header.component";
-import { TenantService } from "../../core/services/tenant.service";
-import { ThemeService } from "../../core/services/theme.service";
 import { AuthService } from "../../core/services/auth.service";
 import { NotificationService } from "../../core/services/notification.service";
+import { TenantService } from "../../core/services/tenant.service";
+import { ThemeService } from "../../core/services/theme.service";
+import { HeaderComponent } from "./header.component";
 
 describe("HeaderComponent", () => {
   let fixture: ComponentFixture<HeaderComponent>;
@@ -70,5 +69,18 @@ describe("HeaderComponent", () => {
   it("shows tenant name", () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(el.textContent).toContain("Acme Corp");
+  });
+
+  it("calls ThemeService.toggle() when the theme toggle button is clicked", () => {
+    const themeService = TestBed.inject(ThemeService);
+    const el = fixture.nativeElement as HTMLElement;
+    const toggleButton = el.querySelector<HTMLButtonElement>(
+      '[data-testid="theme-toggle"]'
+    );
+
+    expect(toggleButton).toBeTruthy();
+    toggleButton!.click();
+
+    expect(themeService.toggle).toHaveBeenCalledTimes(1);
   });
 });

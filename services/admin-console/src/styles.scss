@@ -168,6 +168,17 @@ html.light-theme {
   --rd-btn-bg: #ededed;
   --rd-btn-fg: #0a0a0a;
 
+  // Avatar gradient — transcribed from the design file's topbar avatar
+  // button (Rediseño Terminal.dc.html, top-bar avatar: linear-gradient(
+  // 135deg,#1A66FF,#4A3ABF)).
+  --rd-avatar-gradient: linear-gradient(135deg, #1a66ff, #4a3abf);
+
+  // Text color for content sitting on a solid accent/badge background
+  // (e.g. avatar initials, brand mark, indicator counts). The design file
+  // uses white text on these accent surfaces in both themes, so this is
+  // defined once on :root, same as --rd-avatar-gradient above.
+  --rd-text-on-accent: #fff;
+
   // Font families
   --rd-font-sans: "Geist", system-ui, sans-serif;
   --rd-font-mono: "Geist Mono", ui-monospace, monospace;
