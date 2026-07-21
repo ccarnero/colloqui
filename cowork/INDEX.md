@@ -397,6 +397,26 @@ Decision cuádruple:
   total), restored by `manual-loops/provisioning-manifest-gaps.md`.
 - **Engram topic**: `platform/samples-reorg`.
 
+## Change: console redesign foundation (console-redesign-foundation)
+
+Manual-loop change (not SDD) landing the visual foundation for the admin
+console redesign: `--rd-*` design tokens in `services/admin-console/src/styles.scss`
+(dark default on `:root`, light overrides under `[data-theme="light"],
+.light-theme`, transcribed from `manual-loops/admin-console/design/Rediseño
+Terminal.dc.html`), the existing `ThemeService` extended to set a
+`data-theme` attribute on `<html>` alongside the legacy `light-theme` class
+(both mechanisms kept live so old screens keep working during migration),
+a restyled shell/sidebar/header/sub-nav, and a shared primitive catalog
+(`kpi-card`, `sparkline`, `status-badge` with the new `dot` health-dot
+variant, `inventory-table`, `needs-attention-panel`, `detail-dialog` over
+`MatDialog`) that section loops (L1-L7) compose instead of rebuilding. Full
+task queue, gates, and human decisions:
+`manual-loops/admin-console/console-redesign-foundation.md`. Operational
+contract (theming, token conventions, primitive catalog with usage
+snippets): `services/admin-console/README.md` "Redesign foundation
+(theming, tokens, primitives)". Engram topic:
+`admin-console/redesign-foundation`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

@@ -341,7 +341,7 @@ grep -n "console-redesign-foundation" admin-console/README.md cowork/INDEX.md
 - [x] T03 shell restyle
 - [x] T04 primitives batch 1
 - [x] T05 primitives batch 2
-- [ ] T06 docs + index
+- [x] T06 docs + index
 
 ## Out of scope (explicit)
 
