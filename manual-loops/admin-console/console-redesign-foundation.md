@@ -10,7 +10,7 @@
 
 1. The console renders with the new visual language (dark default + light
    mode, corporate-blue accent, Vercel/Linear-style density) defined in
-   `manual-loops/design/Rediseño Terminal.dc.html`.
+   `manual-loops/admin-console/design/Rediseño Terminal.dc.html`.
 2. A shared set of UI primitives (health dot, sparkline, metric card,
    needs-attention panel, inventory table, detail modal) exists and is used
    by at least one screen, so section loops (L1–L7) only compose them.
@@ -19,8 +19,8 @@
 
 ## User decisions (human boundary — do not reinterpret)
 
-1. The binding visual contract is `manual-loops/design/Rediseño Terminal.dc.html`
-   plus per-section screenshots in `manual-loops/design/`. Pixel values
+1. The binding visual contract is `manual-loops/admin-console/design/Rediseño Terminal.dc.html`
+   plus per-section screenshots in `manual-loops/admin-console/design/`. Pixel values
    (colors, radii, spacing, type scale) come from that file — not invented.
 2. Dark is the default theme; light is the secondary. Toggle lives in the
    topbar, persisted in `localStorage`.
@@ -33,14 +33,14 @@
 
 ## Prior art (validated 2026-07-21 — REUSE, do not duplicate)
 
-- `admin-console/src/app/layout/` — `shell`, `sidebar`, `header`, `sub-nav`,
+- `services/admin-console/src/app/layout/` — `shell`, `sidebar`, `header`, `sub-nav`,
   `right-panel` + `nav/nav.config.ts` (section model); restyle in place, do
   not create a parallel shell.
-- `admin-console/src/app/core/services/theme.service.ts` — theme service
+- `services/admin-console/src/app/core/services/theme.service.ts` — theme service
   ALREADY EXISTS; extend it, never create a second one.
-- `admin-console/src/styles.scss` — global styles entrypoint; tokens land here
+- `services/admin-console/src/styles.scss` — global styles entrypoint; tokens land here
   as CSS custom properties.
-- `admin-console/src/app/shared/components/` — kpi-card, sparkline,
+- `services/admin-console/src/app/shared/components/` — kpi-card, sparkline,
   status-badge, page-header, section-landing-shell, activity-feed,
   progress-bar, sub-tabs, breadcrumbs, confirm-dialog. Primitives EVOLVE
   these in place — no parallel `ui/` folder.
@@ -55,17 +55,17 @@
   state libraries; the existing `ThemeService` is extended, not duplicated.
 - All colors/spacing/typography referenced via CSS custom properties defined
   in T02 — no hard-coded hex in component SCSS (reviewer rejection).
-- Only `admin-console/` is touched in this loop. No backend changes.
+- Only `services/admin-console/` is touched in this loop. No backend changes.
 
 ## Gates (the `/manual-loop` command runs these verbatim, in order)
 
 ```
 # G1 — unit tests
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 # G2 — typecheck
-cd admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
+cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
 # G5b — COMMIT GATE (once per task): production build
-cd admin-console && pnpm run build
+cd services/admin-console && pnpm run build
 ```
 
 Gate rules: admin-console has no dev-mode — there is no G5a; G5b is the only
@@ -87,7 +87,7 @@ integration gate. G5b failures count as failed attempts like any other gate.
 
 **Accept**
 ```
-grep -n "T01 findings" manual-loops/console-redesign-foundation.md
+grep -n "T01 findings" manual-loops/admin-console/console-redesign-foundation.md
 ```
 
 **T01 findings (recorded 2026-07-21):**
@@ -268,14 +268,14 @@ grep -n "T01 findings" manual-loops/console-redesign-foundation.md
 
 - Add CSS custom properties (dark + light palettes, type scale, spacing,
   radii, shadows) to `src/styles.scss`, values transcribed from
-  `manual-loops/design/Rediseño Terminal.dc.html`.
+  `manual-loops/admin-console/design/Rediseño Terminal.dc.html`.
 - Extend the EXISTING `core/services/theme.service.ts`: toggle, persistence,
   `data-theme` attr on `<html>`; its current public API and spec stay green.
 - Unit tests: default dark, toggle flips, persisted value restored on init.
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false && grep -n "data-theme" src/styles.scss
+cd services/admin-console && pnpm exec ng test --watch=false && grep -n "data-theme" src/styles.scss
 ```
 
 ### T03 — Shell restyle (sidebar + topbar)
@@ -289,7 +289,7 @@ cd admin-console && pnpm exec ng test --watch=false && grep -n "data-theme" src/
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T04 — Shared primitives, batch 1 (health dot, metric card, sparkline)
@@ -303,7 +303,7 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false && ls src/app/shared/components
+cd services/admin-console && pnpm exec ng test --watch=false && ls src/app/shared/components
 ```
 
 ### T05 — Shared primitives, batch 2 (inventory table, needs-attention panel, detail modal)
@@ -318,12 +318,12 @@ cd admin-console && pnpm exec ng test --watch=false && ls src/app/shared/compone
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T06 — Docs + index
 
-- Update `admin-console/README.md`: theming, token conventions, primitive
+- Update `services/admin-console/README.md`: theming, token conventions, primitive
   catalog with usage snippets.
 - Add an entry to `cowork/INDEX.md`. Log the decision set (tokens source,
   theme default, primitive catalog) under Engram topic
@@ -331,7 +331,7 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-grep -n "console-redesign-foundation" admin-console/README.md cowork/INDEX.md
+grep -n "console-redesign-foundation" services/admin-console/README.md cowork/INDEX.md
 ```
 
 ---
@@ -356,6 +356,6 @@ grep -n "console-redesign-foundation" admin-console/README.md cowork/INDEX.md
 
 - Human approves this SPEC before the first run.
 - Human copies `Rediseño Terminal.dc.html` + screenshots into
-  `manual-loops/design/` before T02.
+  `manual-loops/admin-console/design/` before T02.
 - Deviating from the binding visual contract requires human sign-off.
 - Changing the sidebar section order or theme default requires human sign-off.
