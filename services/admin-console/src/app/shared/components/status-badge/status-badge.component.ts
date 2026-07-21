@@ -17,70 +17,139 @@ export type StatusBadgeColor =
   | "violet"
   | "slate";
 
+/**
+ * Rendering mode:
+ *  - "badge" (default): pill with text — original behavior, unchanged.
+ *  - "dot": health dot per the redesign (see `Rediseño Terminal.dc.html`
+ *    lines 285, 1060 — colored 7px circle next to a label), used for fleet
+ *    rows / service health where a pill is too heavy.
+ */
+export type StatusBadgeVariant = "badge" | "dot";
+
+/** Health states for the dot variant. */
+export type HealthStatus = "ok" | "warn" | "error" | "idle";
+
 @Component({
   selector: "app-status-badge",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [],
   template: `
-    <span [class]="badgeClass()">{{ status() }}</span>
+    @if (variant() === "dot") {
+      <span class="health">
+        <span
+          class="health-dot"
+          [class]="dotClass()"
+          [attr.aria-label]="'health: ' + resolvedHealth()"
+        ></span>
+        @if (status()) {
+          <span class="health-label">{{ status() }}</span>
+        }
+      </span>
+    } @else {
+      <span [class]="badgeClass()">{{ status() }}</span>
+    }
   `,
   styles: `
     :host {
       display: inline-block;
     }
-    span {
-      font-size: 11px;
+    span.badge-neutral,
+    span.badge-purple,
+    span.badge-blue,
+    span.badge-gray,
+    span.badge-green,
+    span.badge-yellow,
+    span.badge-red,
+    span.badge-cyan,
+    span.badge-orange,
+    span.badge-violet,
+    span.badge-slate {
+      font-size: var(--rd-text-size-xs, 11px);
       font-weight: 600;
-      padding: 4px 10px;
-      border-radius: var(--radius2, 6px);
+      padding: var(--rd-space-2, 4px) var(--rd-space-5, 10px);
+      border-radius: var(--rd-radius-5, 6px);
       text-transform: capitalize;
     }
     .badge-neutral {
-      background: var(--bg3, #2a2a2a);
-      color: var(--text2, #aaa);
-      border: 1px solid var(--border, #444);
+      background: var(--rd-hover);
+      color: var(--rd-text-2);
+      border: 1px solid var(--rd-line);
     }
     .badge-purple {
-      background: color-mix(in srgb, var(--purple, #a855f7) 18%, transparent);
-      color: var(--purple, #a855f7);
+      background: color-mix(in srgb, var(--rd-purple) 18%, transparent);
+      color: var(--rd-purple);
     }
     .badge-blue {
-      background: color-mix(in srgb, var(--accent, #4f7ef8) 18%, transparent);
-      color: var(--accent, #4f7ef8);
+      background: color-mix(in srgb, var(--rd-accent) 18%, transparent);
+      color: var(--rd-accent);
     }
     .badge-gray {
-      background: var(--bg3, #2a2a2a);
-      color: var(--text3, #888);
-      border: 1px solid var(--border, #444);
+      background: var(--rd-hover);
+      color: var(--rd-text-3);
+      border: 1px solid var(--rd-line);
     }
     .badge-green {
-      background: color-mix(in srgb, var(--green, #22c55e) 18%, transparent);
-      color: var(--green, #22c55e);
+      background: var(--rd-green-dim);
+      color: var(--rd-green);
     }
     .badge-yellow {
-      background: color-mix(in srgb, var(--yellow, #eab308) 18%, transparent);
-      color: var(--yellow, #eab308);
+      background: var(--rd-yellow-dim);
+      color: var(--rd-yellow);
     }
     .badge-red {
-      background: color-mix(in srgb, var(--red, #ef4444) 18%, transparent);
-      color: var(--red, #ef4444);
+      background: var(--rd-red-dim);
+      color: var(--rd-red);
     }
+    /* cyan/orange/violet/slate are not distinct hues in the redesign
+     * contract (Rediseño Terminal.dc.html) — reuse the nearest existing
+     * --rd-* token instead of inventing new colors. */
     .badge-cyan {
-      background: color-mix(in srgb, var(--cyan, #06b6d4) 18%, transparent);
-      color: var(--cyan, #06b6d4);
+      background: color-mix(in srgb, var(--rd-link) 18%, transparent);
+      color: var(--rd-link);
     }
     .badge-orange {
-      background: color-mix(in srgb, #f97316 18%, transparent);
-      color: #f97316;
+      background: var(--rd-yellow-dim);
+      color: var(--rd-yellow);
     }
     .badge-violet {
-      background: color-mix(in srgb, #8b5cf6 18%, transparent);
-      color: #8b5cf6;
+      background: color-mix(in srgb, var(--rd-purple) 18%, transparent);
+      color: var(--rd-purple);
     }
     .badge-slate {
-      background: color-mix(in srgb, #94a3b8 18%, transparent);
-      color: #94a3b8;
+      background: var(--rd-hover);
+      color: var(--rd-text-3);
+      border: 1px solid var(--rd-line);
+    }
+
+    /* Health dot variant */
+    .health {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--rd-space-4, 8px);
+    }
+    .health-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: var(--rd-radius-full, 999px);
+      flex-shrink: 0;
+    }
+    .health-dot--ok {
+      background: var(--rd-green);
+    }
+    .health-dot--warn {
+      background: var(--rd-yellow);
+    }
+    .health-dot--error {
+      background: var(--rd-red);
+    }
+    .health-dot--idle {
+      background: var(--rd-text-3);
+    }
+    .health-label {
+      font-size: var(--rd-text-size-sm, 12px);
+      color: var(--rd-text-2);
+      text-transform: capitalize;
     }
   `,
 })
@@ -88,8 +157,13 @@ export class StatusBadgeComponent {
   readonly status = input.required<string>();
   readonly color = input<StatusBadgeColor | undefined>(undefined);
 
+  /** Rendering mode; defaults to the original pill badge for backward compat. */
+  readonly variant = input<StatusBadgeVariant>("badge");
+  /** Explicit health for the dot variant; derived from `status()` when absent. */
+  readonly health = input<HealthStatus | undefined>(undefined);
+
   private readonly normalized = computed(() =>
-    this.status().toLowerCase().trim(),
+    this.status().toLowerCase().trim()
   );
 
   readonly badgeClass = computed(() => {
@@ -109,4 +183,41 @@ export class StatusBadgeComponent {
     }
     return "badge-neutral";
   });
+
+  /** Health resolved from the explicit input, falling back to status-text heuristics. */
+  readonly resolvedHealth = computed<HealthStatus>(() => {
+    const explicit = this.health();
+    if (explicit) {
+      return explicit;
+    }
+    const s = this.normalized();
+    if (!s) {
+      // Verbose logging: empty status must not silently render an unlabeled dot.
+      console.debug(
+        "[StatusBadgeComponent] empty status for dot variant, defaulting to idle"
+      );
+      return "idle";
+    }
+    if (s === "active" || s === "connected" || s === "ok" || s === "healthy") {
+      return "ok";
+    }
+    if (
+      s === "warn" ||
+      s === "warning" ||
+      s === "degraded" ||
+      s === "pending"
+    ) {
+      return "warn";
+    }
+    if (s === "error" || s === "down" || s === "failed" || s === "reauth") {
+      return "error";
+    }
+    console.debug(
+      "[StatusBadgeComponent] unrecognized status for dot variant, defaulting to idle",
+      { status: s }
+    );
+    return "idle";
+  });
+
+  readonly dotClass = computed(() => `health-dot--${this.resolvedHealth()}`);
 }
