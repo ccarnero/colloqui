@@ -417,6 +417,37 @@ snippets): `services/admin-console/README.md` "Redesign foundation
 (theming, tokens, primitives)". Engram topic:
 `admin-console/redesign-foundation`.
 
+## Change: console redesign dashboard (console-redesign-dashboard)
+
+Manual-loop change (not SDD) rebuilding the Overview → Dashboard screen on
+top of the `console-redesign-foundation` primitives: a four-card metric
+strip from `IDashboardStats` (sparklines only on `requestsToday` and
+`avgResponseMs`, the two metrics with a real `dailyBreakdown` series), an
+API-usage sparkline panel next to an Activity feed (row dot color via an
+`activityTone` mapping precedented on `RightPanelComponent.activityColor`),
+and a recent-workflows `inventory-table`. Full task queue, gates, and human
+decisions: `manual-loops/admin-console/console-redesign-dashboard.md`.
+Operational contract (widget composition, column/metric rationale):
+`services/admin-console/README.md` "Dashboard composition". Engram topic:
+`admin-console/redesign-dashboard`.
+
+Two human-signed amendments (both dated 2026-07-21, made after T01's
+inventory findings) diverge from the SPEC's original wording:
+
+- **No needs-attention panel on Dashboard.** The originally specified layout
+  ("metric cards → needs-attention panel → recent-activity table") does not
+  match the binding visual contract (`Rediseño Terminal.dc.html`), which has
+  no attention panel on the Dashboard screen at all — that element belongs
+  to the Channels ops view (L2). The SPEC was amended to drop it here rather
+  than invent a deviation from the mock.
+- **Recent-workflows table renders real columns only.** Of the design's five
+  columns (Nombre / Trigger / Ejecuciones / p95 / Estado), only Nombre and
+  Ejecuciones map to live data (`ProcessesMetricsService.topWorkflows`);
+  Trigger, p95, and Estado have no data source today, and the closest
+  candidate field (`successRate`) is hard-coded to `1` for every row. The
+  SPEC was amended to render Name + Executions only rather than render a
+  hard-coded value as if it were real.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

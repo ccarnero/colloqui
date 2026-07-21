@@ -311,7 +311,7 @@ grep -n "console-redesign-dashboard" cowork/INDEX.md
 - [x] T01 inventory report
 - [x] T02 metrics + needs-attention
 - [x] T03 activity table + retirement
-- [ ] T04 docs + index
+- [x] T04 docs + index
 
 ## Out of scope (explicit)
 

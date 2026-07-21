@@ -236,3 +236,35 @@ metric cards, tables, or dialogs.
     },
   });
   ```
+
+### Dashboard composition
+
+The Overview → Dashboard screen (`features/overview/dashboard/`) was rebuilt
+on top of the foundation primitives above, per
+`manual-loops/admin-console/console-redesign-dashboard.md`. Top to bottom:
+
+- **Metric strip** — four `app-kpi-card`s driven by `IDashboardStats`
+  (`requestsToday`, `activeSessions`, `avgResponseMs`, `errorRate`, each with
+  its `*Delta`/trend where the service provides one). Sparklines render only
+  on `requestsToday` and `avgResponseMs`, the two metrics with an actual
+  `dailyBreakdown` series behind them — the other two cards render as plain
+  value/delta cards, no invented series.
+- **API-usage panel + Activity row** — `app-sparkline` renders the 7-day
+  `dailyBreakdown[].requests` series ("API usage"), next to an activity feed
+  built from `IDashboardStats.recentActivity`. Each row's dot color is
+  derived from `IDashboardActivity.type` via an `activityTone` mapping, kept
+  consistent with the severity mapping already established by
+  `RightPanelComponent.activityColor` rather than inventing a new palette.
+- **Recent workflows** — `app-inventory-table` sourced from
+  `ProcessesMetricsService.topWorkflows`, with **Name and Executions columns
+  only**. Trigger, p95, and Estado are intentionally omitted: none of them
+  has a real data source today (`successRate` is hard-coded to `1` for every
+  row and must not be rendered as a live status). Row click navigates to
+  `/workflows/:id`.
+- **No needs-attention panel on this screen.** The binding design
+  (`Rediseño Terminal.dc.html`, Dashboard section) does not include one — the
+  needs-attention panel is a Channels ops-view element (L2), not Dashboard.
+  Both the real-columns-only table and the absence of the attention panel
+  here are documented, human-signed-off amendments to the original SPEC
+  layout — see `manual-loops/admin-console/console-redesign-dashboard.md`
+  §"User decisions", amendments dated 2026-07-21.
