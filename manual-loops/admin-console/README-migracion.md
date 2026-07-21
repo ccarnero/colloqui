@@ -4,7 +4,7 @@ Plan maestro de manual loops para migrar la consola Angular actual a la nueva
 UI (dark/light, estilo Vercel/Linear, acento azul corporativo). El contrato
 visual binding es **`Rediseño Terminal.dc.html`** (proyecto Cowork "Rediseño
 consola admin") — copiar ese archivo + screenshots por sección a
-`manual-loops/design/` del repo antes de la primera corrida, para que
+`manual-loops/admin-console/design/` del repo antes de la primera corrida, para que
 implementer y reviewers puedan consultarlo.
 
 ## Orden y dependencias
@@ -32,9 +32,9 @@ L6 arranca solo con L5 done.
   sin aprobación humana.
 - **Gates Angular** (la consola no tiene dev-mode → no hay G5a; el commit
   gate es build de producción):
-  - G1 `cd admin-console && pnpm exec ng test --watch=false`
-  - G2 `cd admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit`
-  - G5b `cd admin-console && pnpm run build` (el prebuild compila la lib compartida)
+  - G1 `cd services/admin-console && pnpm exec ng test --watch=false`
+  - G2 `cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit`
+  - G5b `cd services/admin-console && pnpm run build` (el prebuild compila la lib compartida)
 - **Contrato visual**: desviarse de `Rediseño Terminal.dc.html` requiere
   sign-off humano (está en Human boundaries de cada SPEC).
 - **Paths validados** (2026-07-21) contra el repo real; cada loop conserva su

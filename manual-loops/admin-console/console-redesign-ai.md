@@ -2,7 +2,7 @@
 
 > Task queue for the `/manual-loop` command. One task at a time, gated by tests
 > and dual review. Queues live in `manual-loops/`.
-> Depends on: `manual-loops/console-redesign-foundation.md` (must be shipped).
+> Depends on: `manual-loops/admin-console/console-redesign-foundation.md` (must be shipped).
 > Origin: user decisions 2026-07-21 (Cowork session "Rediseño consola admin").
 > Engram topic: 'admin-console/redesign-ai'.
 
@@ -16,7 +16,7 @@ tracking — reusing the existing agent CRUD and test/invoke plumbing.
 ## User decisions (human boundary — do not reinterpret)
 
 1. Visual contract: "AI" sections (list, editor, test panel) of
-   `manual-loops/design/Rediseño Terminal.dc.html` (+ screenshots).
+   `manual-loops/admin-console/design/Rediseño Terminal.dc.html` (+ screenshots).
 2. Mention highlighting is display-layer only: the stored prompt format does
    NOT change. Highlighting is derived by parsing the existing mention syntax
    (exact syntax confirmed at T01).
@@ -53,14 +53,14 @@ tracking — reusing the existing agent CRUD and test/invoke plumbing.
 
 ```
 # G1 — unit tests
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 # G2 — typecheck
-cd admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
+cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
 # G5b — COMMIT GATE (once per task): production build
-cd admin-console && pnpm run build
+cd services/admin-console && pnpm run build
 ```
 
-Gate rules: identical to `manual-loops/console-redesign-foundation.md`.
+Gate rules: identical to `manual-loops/admin-console/console-redesign-foundation.md`.
 
 ---
 
@@ -75,7 +75,7 @@ Gate rules: identical to `manual-loops/console-redesign-foundation.md`.
 
 **Accept**
 ```
-grep -n "T01 findings" manual-loops/console-redesign-ai.md
+grep -n "T01 findings" manual-loops/admin-console/console-redesign-ai.md
 ```
 
 ### T02 — Agents list view
@@ -87,7 +87,7 @@ grep -n "T01 findings" manual-loops/console-redesign-ai.md
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T03 — Prompt editor with mention highlights
@@ -101,7 +101,7 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T04 — Test panel with live output + metrics
@@ -114,12 +114,12 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T05 — Docs + index
 
-- Update `admin-console/README.md` (editor architecture: overlay highlighting,
+- Update `services/admin-console/README.md` (editor architecture: overlay highlighting,
   invoke reuse), add entry to `cowork/INDEX.md`, log decisions to Engram
   topic 'admin-console/redesign-ai'.
 

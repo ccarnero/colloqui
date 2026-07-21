@@ -2,7 +2,7 @@
 
 > Task queue for the `/manual-loop` command. One task at a time, gated by tests
 > and dual review. Queues live in `manual-loops/`.
-> Depends on: `manual-loops/console-redesign-foundation.md` (must be shipped).
+> Depends on: `manual-loops/admin-console/console-redesign-foundation.md` (must be shipped).
 > Origin: user decisions 2026-07-21 (Cowork session "Rediseño consola admin").
 > Engram topic: 'admin-console/redesign-users-analytics-settings'.
 
@@ -16,7 +16,7 @@ keeping current behavior, permissions, and data sources.
 ## User decisions (human boundary — do not reinterpret)
 
 1. Visual contract: "Users", "Analytics", "Settings" sections of
-   `manual-loops/design/Rediseño Terminal.dc.html` (+ screenshots
+   `manual-loops/admin-console/design/Rediseño Terminal.dc.html` (+ screenshots
    `18-analytics.png`, `19-analytics-tables.png`, `17-settings-users.png`).
 2. These are restyles: no new capabilities, columns, metrics, or settings.
 3. Analytics charts reuse whatever chart approach exists today; if none, use
@@ -47,14 +47,14 @@ keeping current behavior, permissions, and data sources.
 
 ```
 # G1 — unit tests
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 # G2 — typecheck
-cd admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
+cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
 # G5b — COMMIT GATE (once per task): production build
-cd admin-console && pnpm run build
+cd services/admin-console && pnpm run build
 ```
 
-Gate rules: identical to `manual-loops/console-redesign-foundation.md`.
+Gate rules: identical to `manual-loops/admin-console/console-redesign-foundation.md`.
 
 ---
 
@@ -68,7 +68,7 @@ Gate rules: identical to `manual-loops/console-redesign-foundation.md`.
 
 **Accept**
 ```
-grep -n "T01 findings" manual-loops/console-redesign-users-analytics-settings.md
+grep -n "T01 findings" manual-loops/admin-console/console-redesign-users-analytics-settings.md
 ```
 
 ### T02 — Users
@@ -81,7 +81,7 @@ grep -n "T01 findings" manual-loops/console-redesign-users-analytics-settings.md
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T03 — Analytics
@@ -93,7 +93,7 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T04 — Settings
@@ -105,12 +105,12 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T05 — Docs + index
 
-- Update `admin-console/README.md`, add entry to `cowork/INDEX.md`, log
+- Update `services/admin-console/README.md`, add entry to `cowork/INDEX.md`, log
   decisions to Engram topic 'admin-console/redesign-users-analytics-settings'.
 
 **Accept**

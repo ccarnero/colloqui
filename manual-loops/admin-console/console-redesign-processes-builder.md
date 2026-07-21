@@ -2,7 +2,7 @@
 
 > Task queue for the `/manual-loop` command. One task at a time, gated by tests
 > and dual review. Queues live in `manual-loops/`.
-> Depends on: `manual-loops/console-redesign-foundation.md` (must be shipped).
+> Depends on: `manual-loops/admin-console/console-redesign-foundation.md` (must be shipped).
 > Origin: user decisions 2026-07-21 (Cowork session "Rediseño consola admin").
 > Engram topic: 'admin-console/redesign-processes-builder'.
 
@@ -19,7 +19,7 @@
 ## User decisions (human boundary — do not reinterpret)
 
 1. Visual contract: "Processes" + "Builder" sections of
-   `manual-loops/design/Rediseño Terminal.dc.html` (+ screenshots).
+   `manual-loops/admin-console/design/Rediseño Terminal.dc.html` (+ screenshots).
 2. The builder's data model, save format, and validation rules do NOT change —
    this is a re-skin + chrome/UX rework of the existing builder, not a new
    engine. The canvas stays on `@foblex/flow` (18.6.0).
@@ -58,14 +58,14 @@
 
 ```
 # G1 — unit tests
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 # G2 — typecheck
-cd admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
+cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
 # G5b — COMMIT GATE (once per task): production build
-cd admin-console && pnpm run build
+cd services/admin-console && pnpm run build
 ```
 
-Gate rules: identical to `manual-loops/console-redesign-foundation.md`.
+Gate rules: identical to `manual-loops/admin-console/console-redesign-foundation.md`.
 
 ---
 
@@ -81,7 +81,7 @@ Gate rules: identical to `manual-loops/console-redesign-foundation.md`.
 
 **Accept**
 ```
-grep -n "T01 findings" manual-loops/console-redesign-processes-builder.md
+grep -n "T01 findings" manual-loops/admin-console/console-redesign-processes-builder.md
 ```
 
 ### T02 — Workflow list view
@@ -92,7 +92,7 @@ grep -n "T01 findings" manual-loops/console-redesign-processes-builder.md
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T03 — Full-bleed builder shell + re-skin
@@ -105,7 +105,7 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T04 — Ports, edge labels, mini-stats
@@ -117,7 +117,7 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T05 — Floating inspector
@@ -130,12 +130,12 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T06 — Docs + index
 
-- Update `admin-console/README.md` (builder architecture notes), add entry to
+- Update `services/admin-console/README.md` (builder architecture notes), add entry to
   `cowork/INDEX.md`, log the port-color mapping and full-bleed decision to
   Engram topic 'admin-console/redesign-processes-builder'.
 

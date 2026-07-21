@@ -2,7 +2,7 @@
 
 > Task queue for the `/manual-loop` command. One task at a time, gated by tests
 > and dual review. Queues live in `manual-loops/`.
-> Depends on: `manual-loops/console-redesign-foundation.md` (must be shipped).
+> Depends on: `manual-loops/admin-console/console-redesign-foundation.md` (must be shipped).
 > Origin: user decisions 2026-07-21 (Cowork session "Rediseño consola admin").
 > Engram topic: 'admin-console/redesign-dashboard'.
 
@@ -17,7 +17,7 @@ sources.
 ## User decisions (human boundary — do not reinterpret)
 
 1. Visual contract: "Dashboard" section of
-   `manual-loops/design/Rediseño Terminal.dc.html` (+ screenshot).
+   `manual-loops/admin-console/design/Rediseño Terminal.dc.html` (+ screenshot).
 2. Layout: metric cards row (MetricCard + Sparkline) → needs-attention panel
    (NeedsAttentionPanel) → recent-activity table (InventoryTable).
 3. Needs-attention rows deep-link to the owning section's route (e.g. a
@@ -27,9 +27,9 @@ sources.
 
 ## Prior art (validated 2026-07-21 — REUSE, do not duplicate)
 
-- `admin-console/src/app/features/overview/dashboard/dashboard.component.ts`
+- `services/admin-console/src/app/features/overview/dashboard/dashboard.component.ts`
   — existing screen; replace presentation only.
-- `admin-console/src/app/core/services/dashboard.service.ts` +
+- `services/admin-console/src/app/core/services/dashboard.service.ts` +
   `core/services/metrics/` — data sources; reuse as-is.
 - `src/app/shared/components/` kpi-card, sparkline, activity-feed — restyled
   by L0; compose, don't fork.
@@ -41,21 +41,21 @@ sources.
 - Never weaken, skip, or delete existing tests — automatic reviewer rejection.
 - Verbose logging on every new code path; nothing fails silently.
 - Colors/spacing only via foundation CSS custom properties — no hard-coded hex.
-- Only `admin-console/src/app/features/overview/dashboard/` (+ its tests) is touched;
+- Only `services/admin-console/src/app/features/overview/dashboard/` (+ its tests) is touched;
   primitives are consumed, never modified, in this loop.
 
 ## Gates (the `/manual-loop` command runs these verbatim, in order)
 
 ```
 # G1 — unit tests
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 # G2 — typecheck
-cd admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
+cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
 # G5b — COMMIT GATE (once per task): production build
-cd admin-console && pnpm run build
+cd services/admin-console && pnpm run build
 ```
 
-Gate rules: identical to `manual-loops/console-redesign-foundation.md`
+Gate rules: identical to `manual-loops/admin-console/console-redesign-foundation.md`
 (no dev-mode → no G5a).
 
 ---
@@ -72,7 +72,7 @@ Gate rules: identical to `manual-loops/console-redesign-foundation.md`
 
 **Accept**
 ```
-grep -n "T01 findings" manual-loops/console-redesign-dashboard.md
+grep -n "T01 findings" manual-loops/admin-console/console-redesign-dashboard.md
 ```
 
 ### T02 — Metrics row + needs-attention panel
@@ -85,7 +85,7 @@ grep -n "T01 findings" manual-loops/console-redesign-dashboard.md
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T03 — Activity table + old-widget retirement
@@ -97,12 +97,12 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T04 — Docs + index
 
-- Update `admin-console/README.md` (dashboard composition), add entry to
+- Update `services/admin-console/README.md` (dashboard composition), add entry to
   `cowork/INDEX.md`, log decisions to Engram topic
   'admin-console/redesign-dashboard'.
 

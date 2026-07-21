@@ -2,7 +2,7 @@
 
 > Task queue for the `/manual-loop` command. One task at a time, gated by tests
 > and dual review. Queues live in `manual-loops/`.
-> Depends on: `manual-loops/console-redesign-processes-builder.md` (done N/N —
+> Depends on: `manual-loops/admin-console/console-redesign-processes-builder.md` (done N/N —
 > trace lives inside the Processes section; degrade gracefully only for T01).
 > Origin: user decisions 2026-07-21 (Cowork session "Rediseño consola admin").
 > Engram topic: 'admin-console/redesign-trace'.
@@ -18,7 +18,7 @@ three views, per the design contract.
 ## User decisions (human boundary — do not reinterpret)
 
 1. Visual contract: "Trace" sections (all four views + inspector) of
-   `manual-loops/design/Rediseño Terminal.dc.html` (+ screenshots).
+   `manual-loops/admin-console/design/Rediseño Terminal.dc.html` (+ screenshots).
 2. The four views are tabs/modes of ONE trace screen sharing one selection
    state — a single `TraceSelectionService` (signal-based), not per-view state.
 3. Inspector content is context-aware: base payload/timing/subscribers
@@ -63,14 +63,14 @@ three views, per the design contract.
 
 ```
 # G1 — unit tests
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 # G2 — typecheck
-cd admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
+cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
 # G5b — COMMIT GATE (once per task): production build
-cd admin-console && pnpm run build
+cd services/admin-console && pnpm run build
 ```
 
-Gate rules: identical to `manual-loops/console-redesign-foundation.md`.
+Gate rules: identical to `manual-loops/admin-console/console-redesign-foundation.md`.
 
 ---
 
@@ -86,7 +86,7 @@ Gate rules: identical to `manual-loops/console-redesign-foundation.md`.
 
 **Accept**
 ```
-grep -n "T01 findings" manual-loops/console-redesign-trace.md
+grep -n "T01 findings" manual-loops/admin-console/console-redesign-trace.md
 ```
 
 ### T02 — Trace screen shell + selection service
@@ -98,7 +98,7 @@ grep -n "T01 findings" manual-loops/console-redesign-trace.md
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T03 — Waterfall view
@@ -110,7 +110,7 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T04 — Step log + causal graph views
@@ -123,7 +123,7 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T05 — Run-view canvas
@@ -136,7 +136,7 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T06 — Inspector deep links
@@ -148,12 +148,12 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T07 — Docs + index
 
-- Update `admin-console/README.md` (trace architecture: selection service,
+- Update `services/admin-console/README.md` (trace architecture: selection service,
   view contract), add entry to `cowork/INDEX.md`, log decisions to Engram
   topic 'admin-console/redesign-trace'.
 

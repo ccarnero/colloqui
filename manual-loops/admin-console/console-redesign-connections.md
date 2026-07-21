@@ -2,7 +2,7 @@
 
 > Task queue for the `/manual-loop` command. One task at a time, gated by tests
 > and dual review. Queues live in `manual-loops/`.
-> Depends on: `manual-loops/console-redesign-foundation.md` (must be shipped).
+> Depends on: `manual-loops/admin-console/console-redesign-foundation.md` (must be shipped).
 > Origin: user decisions 2026-07-21 (Cowork session "Rediseño consola admin").
 > Engram topic: 'admin-console/redesign-connections'.
 
@@ -16,7 +16,7 @@ needs-attention panel for failing connections, and a connection detail view
 ## User decisions (human boundary — do not reinterpret)
 
 1. Visual contract: "Connections" + "Connection detail" sections of
-   `manual-loops/design/Rediseño Terminal.dc.html` (+ screenshots).
+   `manual-loops/admin-console/design/Rediseño Terminal.dc.html` (+ screenshots).
 2. Detail keeps the existing routes (`/connections/http/:id`,
    `/connections/mcp/:id`); hosted services keep dialog-based editing.
 3. Secrets/credentials are never rendered — masked placeholders only.
@@ -46,14 +46,14 @@ needs-attention panel for failing connections, and a connection detail view
 
 ```
 # G1 — unit tests
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 # G2 — typecheck
-cd admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
+cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
 # G5b — COMMIT GATE (once per task): production build
-cd admin-console && pnpm run build
+cd services/admin-console && pnpm run build
 ```
 
-Gate rules: identical to `manual-loops/console-redesign-foundation.md`.
+Gate rules: identical to `manual-loops/admin-console/console-redesign-foundation.md`.
 
 ---
 
@@ -67,7 +67,7 @@ Gate rules: identical to `manual-loops/console-redesign-foundation.md`.
 
 **Accept**
 ```
-grep -n "T01 findings" manual-loops/console-redesign-connections.md
+grep -n "T01 findings" manual-loops/admin-console/console-redesign-connections.md
 ```
 
 ### T02 — Inventory list view
@@ -79,7 +79,7 @@ grep -n "T01 findings" manual-loops/console-redesign-connections.md
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T03 — Detail views restyle
@@ -92,12 +92,12 @@ cd admin-console && pnpm exec ng test --watch=false
 
 **Accept**
 ```
-cd admin-console && pnpm exec ng test --watch=false
+cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
 ### T04 — Docs + index
 
-- Update `admin-console/README.md`, add entry to `cowork/INDEX.md`, log
+- Update `services/admin-console/README.md`, add entry to `cowork/INDEX.md`, log
   decisions to Engram topic 'admin-console/redesign-connections'.
 
 **Accept**
