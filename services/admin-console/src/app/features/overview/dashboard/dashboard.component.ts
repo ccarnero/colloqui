@@ -8,16 +8,25 @@ import {
   OnInit,
 } from "@angular/core";
 import { MatButtonModule } from "@angular/material/button";
+import { Router } from "@angular/router";
 import {
   DashboardService,
   type IDashboardActivity,
 } from "../../../core/services/dashboard.service";
+import {
+  type ITopWorkflowEntry,
+  ProcessesMetricsService,
+} from "../../../core/services/metrics/processes-metrics.service";
 import { TenantService } from "../../../core/services/tenant.service";
 import {
   ActivityFeedComponent,
   type ActivityTone,
   type IActivityEntry,
 } from "../../../shared/components/activity-feed/activity-feed.component";
+import {
+  type InventoryTableColumn,
+  InventoryTableComponent,
+} from "../../../shared/components/inventory-table/inventory-table.component";
 import { KpiCardComponent } from "../../../shared/components/kpi-card/kpi-card.component";
 import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import { SparklineComponent } from "../../../shared/components/sparkline/sparkline.component";
@@ -32,6 +41,7 @@ import { formatCompact } from "../../../shared/utils/format-compact";
     PageHeaderComponent,
     KpiCardComponent,
     ActivityFeedComponent,
+    InventoryTableComponent,
   ],
   template: `
     <app-page-header
@@ -130,6 +140,29 @@ import { formatCompact } from "../../../shared/utils/format-compact";
           </div>
         </div>
       </div>
+
+      <!-- Recent workflows table — design: lines 147-153.
+           AMENDED decision 4 (human sign-off, T01 finding 6): only Name and
+           Executions map to real data (ProcessesMetricsService.topWorkflows,
+           processes-metrics.service.ts:11-16). Trigger/p95/Estado have no
+           existing data source and are NOT rendered; the hard-coded
+           successRate (line 68 of that service) is never surfaced here.
+           No per-workflow time series exists either, so no sparkline
+           column is added (nothing invented). -->
+      <div class="section-card">
+        <div class="section-card-header">
+          <div>
+            <div class="section-card-title">Recent workflows</div>
+          </div>
+        </div>
+        <app-inventory-table
+          [columns]="workflowColumns"
+          [rows]="topWorkflows()"
+          ariaLabel="Recent workflows"
+          emptyMessage="No recent workflows"
+          (rowClick)="onWorkflowRowClick($event)"
+        />
+      </div>
     }
   `,
   styles: `
@@ -171,10 +204,43 @@ import { formatCompact } from "../../../shared/utils/format-compact";
 export class DashboardComponent implements OnInit, OnDestroy {
   protected readonly tenant = inject(TenantService);
   protected readonly dashboard = inject(DashboardService);
+  protected readonly processes = inject(ProcessesMetricsService);
+  private readonly router = inject(Router);
 
   protected readonly skeletonCards = Array.from({ length: 4 });
 
   protected readonly stats = this.dashboard.stats;
+
+  protected readonly topWorkflows = computed(() => {
+    const workflows = this.processes.topWorkflows();
+    if (workflows.length === 0) {
+      console.debug(
+        "[DashboardComponent] topWorkflows empty, recent-workflows table will render its empty state"
+      );
+    }
+    return workflows;
+  });
+
+  /**
+   * "Recent workflows" columns — design: Rediseño Terminal.dc.html
+   * lines 147-153 (Nombre / Trigger / Ejecuciones / p95 / Estado).
+   * AMENDED decision 4 (human sign-off, T01 finding 6): only Name and
+   * Executions have a real data source in `ITopWorkflowEntry`
+   * (`name`, `runs7d`); Trigger/p95/Estado are dropped, and `successRate`
+   * (hard-coded to `1` in `processes-metrics.service.ts:68`) is never
+   * rendered as if it were real.
+   */
+  protected readonly workflowColumns: InventoryTableColumn<ITopWorkflowEntry>[] =
+    [
+      { key: "name", header: "Name", type: "text", value: (r) => r.name },
+      {
+        key: "executions",
+        header: "Executions",
+        type: "mono",
+        value: (r) => r.runs7d.toLocaleString("en-US"),
+        width: "120px",
+      },
+    ];
 
   protected readonly formattedRequests = computed(() => {
     return formatCompact(this.stats()?.requestsToday ?? 0);
@@ -273,8 +339,27 @@ export class DashboardComponent implements OnInit, OnDestroy {
     }
   }
 
+  /**
+   * Row click on the "Recent workflows" table navigates to the workflow's
+   * existing detail route (SPEC decision 3: deep links use existing routes
+   * only — `/workflows/:id`, `app.routes.ts:307-311`).
+   */
+  protected onWorkflowRowClick(row: ITopWorkflowEntry): void {
+    console.debug(
+      "[DashboardComponent] recent-workflows row clicked, navigating",
+      { workflowId: row.id }
+    );
+    this.router.navigate(["/workflows", row.id]).catch((error: unknown) => {
+      console.error(
+        "[DashboardComponent] navigation to workflow detail failed",
+        { workflowId: row.id, error }
+      );
+    });
+  }
+
   ngOnInit(): void {
     this.dashboard.startPolling();
+    this.processes.loadTopWorkflows();
   }
 
   ngOnDestroy(): void {

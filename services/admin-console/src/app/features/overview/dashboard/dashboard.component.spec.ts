@@ -1,12 +1,22 @@
 import { signal } from "@angular/core";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
+import { Router } from "@angular/router";
 import { vi } from "vitest";
 import {
   DashboardService,
   type IDashboardStats,
 } from "../../../core/services/dashboard.service";
+import {
+  type ITopWorkflowEntry,
+  ProcessesMetricsService,
+} from "../../../core/services/metrics/processes-metrics.service";
 import { TenantService } from "../../../core/services/tenant.service";
 import { DashboardComponent } from "./dashboard.component";
+
+const mockTopWorkflows: ITopWorkflowEntry[] = [
+  { id: "wf-1", name: "lead-qualification", runs7d: 1842, successRate: 1 },
+  { id: "wf-2", name: "order-status-lookup", runs7d: 923, successRate: 1 },
+];
 
 const mockStats: IDashboardStats = {
   requestsToday: 100,
@@ -49,10 +59,14 @@ describe("DashboardComponent", () => {
   let fixture: ComponentFixture<DashboardComponent>;
   let startPolling: ReturnType<typeof vi.fn>;
   let stopPolling: ReturnType<typeof vi.fn>;
+  let loadTopWorkflows: ReturnType<typeof vi.fn>;
+  let navigate: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     startPolling = vi.fn();
     stopPolling = vi.fn();
+    loadTopWorkflows = vi.fn();
+    navigate = vi.fn().mockResolvedValue(true);
     await TestBed.configureTestingModule({
       imports: [DashboardComponent],
       providers: [
@@ -75,6 +89,14 @@ describe("DashboardComponent", () => {
             stopPolling,
           },
         },
+        {
+          provide: ProcessesMetricsService,
+          useValue: {
+            topWorkflows: signal(mockTopWorkflows),
+            loadTopWorkflows,
+          },
+        },
+        { provide: Router, useValue: { navigate } },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(DashboardComponent);
@@ -89,6 +111,10 @@ describe("DashboardComponent", () => {
 
   it("starts polling on init", () => {
     expect(startPolling).toHaveBeenCalled();
+  });
+
+  it("loads top workflows on init", () => {
+    expect(loadTopWorkflows).toHaveBeenCalled();
   });
 
   it("stops polling on destroy", () => {
@@ -142,6 +168,32 @@ describe("DashboardComponent", () => {
     expect(dots[1].className).toContain("tone-danger"); // "auth.failed"
     expect(dots[2].className).toContain("tone-neutral"); // unmapped type falls back to neutral
   });
+
+  it("renders the Recent workflows table with only Name and Executions columns from ProcessesMetricsService.topWorkflows", () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const headers = Array.from(el.querySelectorAll(".table-header-cell")).map(
+      (n) => n.textContent
+    );
+    expect(headers).toEqual(["Name", "Executions"]);
+    // Trigger/p95/Estado are dropped (amended decision 4, no data source).
+    expect(el.textContent).not.toContain("Trigger");
+    expect(el.textContent).not.toContain("p95");
+    expect(el.textContent).not.toContain("Estado");
+
+    const rows = el.querySelectorAll(".table-row");
+    expect(rows.length).toBe(2);
+    expect(rows[0].textContent).toContain("lead-qualification");
+    expect(rows[0].textContent).toContain("1,842");
+    expect(rows[1].textContent).toContain("order-status-lookup");
+    expect(rows[1].textContent).toContain("923");
+  });
+
+  it("navigates to the workflow detail route on row click", () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const firstRow = el.querySelector(".table-row") as HTMLElement;
+    firstRow.click();
+    expect(navigate).toHaveBeenCalledWith(["/workflows", "wf-1"]);
+  });
 });
 
 describe("DashboardComponent — Avg response trend (regression: bug fix `d <= 80` -> `d <= 0`)", () => {
@@ -178,6 +230,17 @@ describe("DashboardComponent — Avg response trend (regression: bug fix `d <= 8
             startPolling: vi.fn(),
             stopPolling: vi.fn(),
           },
+        },
+        {
+          provide: ProcessesMetricsService,
+          useValue: {
+            topWorkflows: signal(mockTopWorkflows),
+            loadTopWorkflows: vi.fn(),
+          },
+        },
+        {
+          provide: Router,
+          useValue: { navigate: vi.fn().mockResolvedValue(true) },
         },
       ],
     }).compileComponents();
@@ -252,6 +315,17 @@ describe("DashboardComponent — loading and empty states", () => {
             stopPolling: vi.fn(),
           },
         },
+        {
+          provide: ProcessesMetricsService,
+          useValue: {
+            topWorkflows: signal(mockTopWorkflows),
+            loadTopWorkflows: vi.fn(),
+          },
+        },
+        {
+          provide: Router,
+          useValue: { navigate: vi.fn().mockResolvedValue(true) },
+        },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(DashboardComponent);
@@ -303,6 +377,17 @@ describe("DashboardComponent — loading and empty states", () => {
             stopPolling: vi.fn(),
           },
         },
+        {
+          provide: ProcessesMetricsService,
+          useValue: {
+            topWorkflows: signal(mockTopWorkflows),
+            loadTopWorkflows: vi.fn(),
+          },
+        },
+        {
+          provide: Router,
+          useValue: { navigate: vi.fn().mockResolvedValue(true) },
+        },
       ],
     }).compileComponents();
     fixture = TestBed.createComponent(DashboardComponent);
@@ -313,5 +398,49 @@ describe("DashboardComponent — loading and empty states", () => {
     expect(el.textContent).toContain("No recent activity");
     // No sparklines rendered when dailyBreakdown is empty.
     expect(el.querySelectorAll(".kpi-spark").length).toBe(0);
+  });
+
+  it("renders the empty state in the recent-workflows table when topWorkflows is empty", async () => {
+    await TestBed.configureTestingModule({
+      imports: [DashboardComponent],
+      providers: [
+        {
+          provide: TenantService,
+          useValue: {
+            currentTenant: signal({
+              id: "t1",
+              name: "Test Tenant",
+              configuration: {},
+            }),
+          },
+        },
+        {
+          provide: DashboardService,
+          useValue: {
+            stats: signal(mockStats),
+            loading: signal(false),
+            startPolling: vi.fn(),
+            stopPolling: vi.fn(),
+          },
+        },
+        {
+          provide: ProcessesMetricsService,
+          useValue: {
+            topWorkflows: signal([]),
+            loadTopWorkflows: vi.fn(),
+          },
+        },
+        {
+          provide: Router,
+          useValue: { navigate: vi.fn().mockResolvedValue(true) },
+        },
+      ],
+    }).compileComponents();
+    fixture = TestBed.createComponent(DashboardComponent);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelectorAll(".table-row").length).toBe(0);
+    expect(el.textContent).toContain("No recent workflows");
   });
 });
