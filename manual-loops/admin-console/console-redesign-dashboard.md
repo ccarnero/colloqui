@@ -58,7 +58,7 @@ cd services/admin-console && pnpm run build
 ```
 
 Gate rules: identical to `manual-loops/admin-console/console-redesign-foundation.md`
-(no dev-mode → no G5a).
+.
 
 ---
 
