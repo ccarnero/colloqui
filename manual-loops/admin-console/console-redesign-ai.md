@@ -56,6 +56,8 @@ tracking — reusing the existing agent CRUD and test/invoke plumbing.
 cd services/admin-console && pnpm exec ng test --watch=false
 # G2 — typecheck
 cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
+# G5a — COMMIT GATE (once per task): dev-mode smoke — ng serve boots and serves the shell
+cd services/admin-console && node scripts/dev-smoke.mjs
 # G5b — COMMIT GATE (once per task): production build
 cd services/admin-console && pnpm run build
 ```

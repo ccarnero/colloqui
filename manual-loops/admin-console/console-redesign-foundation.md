@@ -64,12 +64,18 @@
 cd services/admin-console && pnpm exec ng test --watch=false
 # G2 — typecheck
 cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit
+# G5a — COMMIT GATE (once per task): dev-mode smoke — ng serve boots and serves the shell
+cd services/admin-console && node scripts/dev-smoke.mjs
 # G5b — COMMIT GATE (once per task): production build
 cd services/admin-console && pnpm run build
 ```
 
-Gate rules: admin-console has no dev-mode — there is no G5a; G5b is the only
-integration gate. G5b failures count as failed attempts like any other gate.
+Gate rules: G5a (added 2026-07-21, human-approved) is the dev-mode smoke gate —
+`scripts/dev-smoke.mjs` boots `ng serve`, polls until the shell responds with
+`<app-root>`, then shuts it down; it proves the app boots at runtime, which
+unit tests and the production build cannot. G5a and G5b are COMMIT GATES (once
+per task, after iteration gates are green). Failures of either count as failed
+attempts like any other gate.
 
 ---
 
