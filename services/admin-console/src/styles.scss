@@ -810,6 +810,26 @@ body.light-theme {
   }
 }
 
+// Redesign MatDialog theme (T05) — apply via `panelClass: "rd-dialog-panel"`
+// on `MatDialog.open(...)`. Values transcribed from the `--rd-*` tokens
+// (T02) rather than invented; kept separate from `.app-dialog-panel` above
+// so pre-redesign dialogs keep their current legacy-token appearance.
+.rd-dialog-panel {
+  .mat-mdc-dialog-container {
+    --mdc-dialog-container-color: var(--rd-panel);
+
+    border-radius: var(--rd-radius-10, 12px);
+    border: 1px solid var(--rd-line);
+    box-shadow: var(--rd-shadow-lg);
+    overflow: hidden;
+  }
+
+  .mat-mdc-dialog-surface {
+    border-radius: var(--rd-radius-10, 12px) !important;
+    background: var(--rd-panel) !important;
+  }
+}
+
 /* Yoizen UI Utilities */
 .bg-brand-gradient { background: var(--brand-gradient); }
 .text-brand-accent { color: var(--accent); }
