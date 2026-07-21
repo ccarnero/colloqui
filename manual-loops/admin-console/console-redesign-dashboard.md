@@ -20,10 +20,20 @@ sources.
    `manual-loops/admin-console/design/Rediseño Terminal.dc.html` (+ screenshot).
 2. Layout: metric cards row (MetricCard + Sparkline) → needs-attention panel
    (NeedsAttentionPanel) → recent-activity table (InventoryTable).
+   **AMENDED 2026-07-21 (human sign-off, post-T01 finding 4):** the binding
+   design has NO needs-attention panel on Dashboard (it belongs to the
+   Channels ops view — L2). Follow the design: metric cards row → API-usage
+   chart + Activity row → recent-workflows table (InventoryTable). Decision 3
+   below applies only when/where an attention panel exists (L2), not here.
 3. Needs-attention rows deep-link to the owning section's route (e.g. a
    failing channel links into Channels); links use existing routes only.
 4. No new API endpoints: compose from the data the current dashboard already
    fetches. Missing data = report finding, don't invent.
+   **AMENDED 2026-07-21 (human sign-off, post-T01 finding 6):** the
+   recent-workflows table renders ONLY columns with real data sources today
+   (name, executions, sparkline where a series exists). Trigger, p95 and
+   Estado are deferred until the backend exposes them; the hard-coded
+   `successRate: 1` must NOT be rendered as if real.
 
 ## Prior art (validated 2026-07-21 — REUSE, do not duplicate)
 
@@ -258,24 +268,26 @@ grep -n "T01 findings" manual-loops/admin-console/console-redesign-dashboard.md
    (lines 10, 19-24) — compatible with the `serviceHealth`/error-count
    sources in finding 6, once mapped to that shape.
 
-### T02 — Metrics row + needs-attention panel
+### T02 — Metrics row + API-usage/activity row (amended per decision 2)
 
-- Rebuild the top of the dashboard: MetricCard row with sparklines, then
-  NeedsAttentionPanel fed by a `DashboardAttentionService` (or extend the
-  existing service per T01 findings) aggregating degraded items.
-- Unit tests: metrics map from service data; empty attention state; row
-  deep-links match decision 3.
+- Rebuild the top of the dashboard per the amended decision 2: MetricCard row
+  with sparklines (4 metrics from `IDashboardStats`), then the API-usage
+  chart + Activity row as the design shows. NO needs-attention panel here.
+- Unit tests: metrics map from service data; empty/loading states; activity
+  rows render from `recentActivity`.
 
 **Accept**
 ```
 cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
-### T03 — Activity table + old-widget retirement
+### T03 — Recent-workflows table + old-widget retirement (amended per decision 4)
 
-- Recent-activity via InventoryTable; remove replaced legacy widgets and
-  their dead styles. DO NOT remove data services still used elsewhere.
-- Unit tests: table renders activity rows; removed widgets' specs deleted
+- Recent-workflows via InventoryTable, real columns only (name, executions,
+  sparkline where a series exists — per amended decision 4); remove replaced
+  legacy widgets and their dead styles. DO NOT remove data services still
+  used elsewhere.
+- Unit tests: table renders workflow rows; removed widgets' specs deleted
   alongside their components (not skipped).
 
 **Accept**
