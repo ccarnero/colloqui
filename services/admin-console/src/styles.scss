@@ -138,6 +138,122 @@ html.light-theme {
   --shadow2: 0 4px 20px rgba(0, 0, 0, 0.12);
 }
 
+// ─── Redesign design tokens (T02) ──────────────────────────────────────────
+// Source: manual-loops/admin-console/design/Rediseño Terminal.dc.html
+// Namespaced with an `--rd-` prefix so the legacy Yoizen UI tokens above
+// (still consumed by screens not yet migrated, per user decision 3 — old
+// screens keep working during migration) keep their existing values
+// unchanged. Restyled screens/primitives (T03+) consume `--rd-*` tokens.
+:root {
+  // Color palette — dark (default theme, per user decision 2)
+  --rd-bg: #0a0a0a;
+  --rd-panel: #0f0f0f;
+  --rd-hover: #1a1a1a;
+  --rd-line: #1f1f1f;
+  --rd-line-2: #161616;
+  --rd-line-3: #2e2e2e;
+  --rd-text-1: #ededed;
+  --rd-text-2: #a1a1a1;
+  --rd-text-3: #7a7a7a;
+  --rd-accent: #1a66ff;
+  --rd-accent-soft: rgba(26, 102, 255, 0.14);
+  --rd-link: #6d9bff;
+  --rd-green: #50e3a4;
+  --rd-green-dim: rgba(80, 227, 164, 0.1);
+  --rd-red: #f5455c;
+  --rd-red-dim: rgba(245, 69, 92, 0.1);
+  --rd-yellow: #f5a623;
+  --rd-yellow-dim: rgba(245, 166, 35, 0.1);
+  --rd-purple: #bf7af0;
+  --rd-btn-bg: #ededed;
+  --rd-btn-fg: #0a0a0a;
+
+  // Font families
+  --rd-font-sans: "Geist", system-ui, sans-serif;
+  --rd-font-mono: "Geist Mono", ui-monospace, monospace;
+
+  // Type scale (every distinct font-size found in the design file)
+  --rd-text-size-3xs: 9px;
+  --rd-text-size-2xs: 10px;
+  --rd-text-size-xs: 11px;
+  --rd-text-size-sm: 12px;
+  --rd-text-size-base: 13px;
+  --rd-text-size-md: 14px;
+  --rd-text-size-lg: 15px;
+  --rd-text-size-xl: 16px;
+  --rd-text-size-2xl: 17px;
+  --rd-text-size-3xl: 18px;
+  --rd-text-size-4xl: 20px;
+  --rd-text-size-5xl: 22px;
+  --rd-text-size-6xl: 24px;
+  --rd-text-size-7xl: 28px;
+
+  // Spacing scale (padding/gap/margin values found in the design file)
+  --rd-space-1: 2px;
+  --rd-space-2: 4px;
+  --rd-space-3: 6px;
+  --rd-space-4: 8px;
+  --rd-space-5: 10px;
+  --rd-space-6: 12px;
+  --rd-space-7: 14px;
+  --rd-space-8: 16px;
+  --rd-space-9: 18px;
+  --rd-space-10: 20px;
+  --rd-space-11: 24px;
+  --rd-space-12: 28px;
+
+  // Radii scale
+  --rd-radius-1: 2px;
+  --rd-radius-2: 3px;
+  --rd-radius-3: 4px;
+  --rd-radius-4: 5px;
+  --rd-radius-5: 6px;
+  --rd-radius-6: 7px;
+  --rd-radius-7: 8px;
+  --rd-radius-8: 9px;
+  --rd-radius-9: 10px;
+  --rd-radius-10: 12px;
+  --rd-radius-11: 14px;
+  --rd-radius-full: 999px;
+
+  // Shadows
+  --rd-shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.2);
+  --rd-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.25);
+  --rd-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.35);
+  --rd-shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.35);
+  --rd-shadow-2xl: 0 16px 48px rgba(0, 0, 0, 0.4);
+}
+
+// Color palette — light theme.
+// Supports both the `data-theme="light"` attribute (set on <html> by
+// ThemeService as of T02) and the legacy `.light-theme` class (kept so
+// screens/selectors that already depend on it keep working, per user
+// decision 3 — old screens keep working during migration).
+[data-theme="light"],
+.light-theme {
+  --rd-bg: #fafafa;
+  --rd-panel: #ffffff;
+  --rd-hover: #f0f0f0;
+  --rd-line: #e4e4e4;
+  --rd-line-2: #eeeeee;
+  --rd-line-3: #d4d4d4;
+  --rd-text-1: #171717;
+  --rd-text-2: #666666;
+  --rd-text-3: #999999;
+  --rd-accent: #1a66ff;
+  --rd-accent-soft: rgba(26, 102, 255, 0.09);
+  --rd-link: #1a66ff;
+  --rd-green: #0c9f5f;
+  --rd-green-dim: rgba(12, 159, 95, 0.08);
+  --rd-red: #e5484d;
+  --rd-red-dim: rgba(229, 72, 77, 0.08);
+  --rd-yellow: #b26b00;
+  --rd-yellow-dim: rgba(178, 107, 0, 0.08);
+  --rd-purple: #8e4ec6;
+  --rd-btn-bg: #171717;
+  --rd-btn-fg: #ffffff;
+}
+
 *,
 *::before,
 *::after {
