@@ -13,6 +13,7 @@ import { MatIconModule } from "@angular/material/icon";
 import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
 import { ActivatedRoute, Router } from "@angular/router";
 import {
+  type FCanvasChangeEvent,
   FCanvasComponent,
   type FCreateConnectionEvent,
   type FCreateNodeEvent,
@@ -115,48 +116,6 @@ function pruneConflictingConnections(
   ],
   template: `
     <div class="builder-shell">
-      <!-- Toolbar -->
-      <div class="builder-toolbar">
-        <button mat-icon-button type="button" (click)="goBack()">
-          <mat-icon>arrow_back</mat-icon>
-        </button>
-        <input
-          class="builder-title-input"
-          [value]="flow().name"
-          placeholder="Workflow name"
-          (input)="onNameInput($event)"
-          (blur)="onNameBlur($event)"
-          (keydown.enter)="$event.target.blur()"
-        />
-        <span class="builder-spacer"></span>
-        <button
-          mat-icon-button
-          type="button"
-          (click)="fitCanvas()"
-          title="Fit to screen"
-        >
-          <mat-icon>fit_screen</mat-icon>
-        </button>
-        <button
-          mat-flat-button
-          type="button"
-          (click)="toggleTestPanel()"
-          [class.active]="testPanelOpen()"
-        >
-          <mat-icon>play_arrow</mat-icon>
-          Run Test
-        </button>
-        <button
-          mat-flat-button
-          type="button"
-          (click)="saveWorkflow()"
-          [disabled]="saving()"
-        >
-          <mat-icon>save</mat-icon>
-          Save
-        </button>
-      </div>
-
       <div class="builder-body">
         <!-- Palette -->
         <app-workflow-palette />
@@ -172,9 +131,11 @@ function pruneConflictingConnections(
             (fCreateConnection)="onCreateConnection($event)"
             (fReassignConnection)="onReassignConnection($event)"
           >
-            <f-background />
+            <f-background>
+              <f-circle-pattern color="var(--rd-line)" [radius]="1" />
+            </f-background>
 
-            <f-canvas fZoom>
+            <f-canvas fZoom (fCanvasChange)="onCanvasChange($event)">
               <f-connection-for-create />
 
               @for (conn of connections(); track conn.key) {
@@ -195,11 +156,99 @@ function pruneConflictingConnections(
                   [fNodePosition]="node.position"
                   [node]="node"
                   [hasError]="errorNodeKeys().has(node.key)"
+                  [isSelected]="node.key === selectedNodeKey()"
                   (click)="selectNode(node.key)"
                 />
               }
             </f-canvas>
           </f-flow>
+
+          <!-- Floating chrome: back / name / save state (SPEC decision 3
+               amendment — overlays the canvas, the app header/tabs stay
+               visible above the shell). -->
+          <div class="floating-chrome floating-top">
+            <div class="chrome-pill chrome-identity">
+              <button
+                class="chrome-icon-btn"
+                type="button"
+                (click)="goBack()"
+                aria-label="Back to workflows"
+              >
+                <mat-icon>arrow_back</mat-icon>
+              </button>
+              <span class="chrome-breadcrumb">workflows /</span>
+              <input
+                class="builder-title-input"
+                [value]="flow().name"
+                placeholder="Workflow name"
+                (input)="onNameInput($event)"
+                (blur)="onNameBlur($event)"
+                (keydown.enter)="$event.target.blur()"
+              />
+            </div>
+            <div
+              class="chrome-pill chrome-save-state"
+              [class.is-saving]="saving()"
+              data-testid="builder-save-state"
+            >
+              <mat-icon>{{ saving() ? "sync" : "check_circle" }}</mat-icon>
+              {{ saveStateLabel() }}
+            </div>
+
+            <span class="chrome-spacer"></span>
+
+            <div class="chrome-pill chrome-actions">
+              <button
+                mat-flat-button
+                type="button"
+                (click)="toggleTestPanel()"
+                [class.active]="testPanelOpen()"
+              >
+                <mat-icon>play_arrow</mat-icon>
+                Run Test
+              </button>
+              <button
+                mat-flat-button
+                type="button"
+                (click)="saveWorkflow()"
+                [disabled]="saving()"
+              >
+                <mat-icon>save</mat-icon>
+                Save
+              </button>
+            </div>
+          </div>
+
+          <!-- Floating chrome: zoom controls, wired to @foblex/flow's
+               FCanvasComponent zoom API (getScale/setScale/fitToScreen). -->
+          <div class="floating-chrome floating-zoom">
+            <button
+              type="button"
+              class="zoom-btn"
+              (click)="zoomOut()"
+              aria-label="Zoom out"
+            >
+              −
+            </button>
+            <span class="zoom-readout">{{ zoomPercent() }}%</span>
+            <button
+              type="button"
+              class="zoom-btn"
+              (click)="zoomIn()"
+              aria-label="Zoom in"
+            >
+              +
+            </button>
+            <button
+              type="button"
+              class="zoom-btn zoom-fit"
+              (click)="fitCanvas()"
+              aria-label="Fit to screen"
+              title="Fit to screen"
+            >
+              <mat-icon>fit_screen</mat-icon>
+            </button>
+          </div>
         </div>
 
         <!-- Config Panel -->
@@ -235,10 +284,13 @@ function pruneConflictingConnections(
       box-sizing: border-box;
       /*
        * f-flow / f-canvas require a definite height; percentage height from
-       * main.workspace often collapses to 0. Tie height to the viewport minus
-       * shell header and main padding so the graph is always visible.
+       * main.workspace often collapses to 0. The builder route is
+       * full-bleed (shell.component.ts's subNavHidden flag zeroes the
+       * shell-main padding), so the only chrome left above this component
+       * is the 52px app header — see layout/header/header.component.ts's
+       * .topbar height.
        */
-      height: calc(100dvh - 8rem);
+      height: calc(100dvh - 52px);
       min-height: 320px;
     }
     .builder-shell {
@@ -246,40 +298,7 @@ function pruneConflictingConnections(
       flex-direction: column;
       flex: 1;
       min-height: 0;
-      background: var(--bg);
-    }
-    .builder-toolbar {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 16px;
-      border-bottom: 1px solid var(--border);
-      background: var(--bg-surface, var(--bg2));
-      flex-shrink: 0;
-    }
-    .builder-title-input {
-      font-size: 16px;
-      font-weight: 600;
-      border: 1px solid transparent;
-      border-radius: 4px;
-      background: transparent;
-      color: inherit;
-      padding: 2px 6px;
-      min-width: 120px;
-      max-width: 320px;
-      outline: none;
-      font-family: inherit;
-      transition: border-color 0.15s, background 0.15s;
-    }
-    .builder-title-input:hover {
-      border-color: var(--border);
-    }
-    .builder-title-input:focus {
-      border-color: var(--accent);
-      background: var(--bg);
-    }
-    .builder-spacer {
-      flex: 1;
+      background: var(--rd-bg);
     }
     .builder-body {
       display: flex;
@@ -302,14 +321,162 @@ function pruneConflictingConnections(
       height: 100%;
     }
 
+    /* Floating chrome overlaying the canvas — SPEC decision 3 amendment. */
+    .floating-chrome {
+      position: absolute;
+      z-index: 5;
+      display: flex;
+      align-items: center;
+      gap: var(--rd-space-4);
+      pointer-events: none;
+    }
+    .floating-chrome.floating-top {
+      top: var(--rd-space-8);
+      left: var(--rd-space-8);
+      right: var(--rd-space-8);
+      flex-wrap: wrap;
+    }
+    .floating-chrome.floating-zoom {
+      bottom: var(--rd-space-8);
+      left: var(--rd-space-8);
+      pointer-events: auto;
+      background: var(--rd-panel);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-7);
+      box-shadow: var(--rd-shadow-md);
+      overflow: hidden;
+      gap: 0;
+    }
+    .chrome-pill {
+      display: flex;
+      align-items: center;
+      gap: var(--rd-space-4);
+      background: var(--rd-panel);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-7);
+      padding: var(--rd-space-3) var(--rd-space-6);
+      box-shadow: var(--rd-shadow-md);
+      pointer-events: auto;
+    }
+    .chrome-identity {
+      padding: var(--rd-space-2) var(--rd-space-4);
+    }
+    .chrome-icon-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border: none;
+      border-radius: var(--rd-radius-5);
+      background: transparent;
+      color: var(--rd-text-2);
+      cursor: pointer;
+    }
+    .chrome-icon-btn:hover {
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
+    }
+    .chrome-icon-btn mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+    }
+    .chrome-breadcrumb {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-3);
+      white-space: nowrap;
+    }
+    .builder-title-input {
+      font-size: var(--rd-text-size-lg);
+      font-weight: 600;
+      border: 1px solid transparent;
+      border-radius: var(--rd-radius-4);
+      background: transparent;
+      color: var(--rd-text-1);
+      padding: 1px 6px;
+      min-width: 120px;
+      max-width: 260px;
+      outline: none;
+      font-family: inherit;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .builder-title-input:hover {
+      border-color: var(--rd-line-3);
+    }
+    .builder-title-input:focus {
+      border-color: var(--rd-accent);
+      background: var(--rd-bg);
+    }
+    .chrome-save-state {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-green);
+      gap: var(--rd-space-2);
+    }
+    .chrome-save-state mat-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+      color: var(--rd-green);
+    }
+    .chrome-save-state.is-saving,
+    .chrome-save-state.is-saving mat-icon {
+      color: var(--rd-text-3);
+    }
+    .chrome-spacer {
+      flex: 1;
+      pointer-events: none;
+    }
+    .chrome-actions {
+      gap: var(--rd-space-3);
+    }
+    .zoom-btn {
+      width: 30px;
+      height: 30px;
+      border: none;
+      border-right: 1px solid var(--rd-line-2);
+      background: transparent;
+      color: var(--rd-text-2);
+      cursor: pointer;
+      font-size: 15px;
+      font-family: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .zoom-btn:last-child {
+      border-right: none;
+    }
+    .zoom-btn:hover {
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
+    }
+    .zoom-btn mat-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+    }
+    .zoom-readout {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-2);
+      padding: 0 var(--rd-space-4);
+      border-right: 1px solid var(--rd-line-2);
+      line-height: 30px;
+      min-width: 40px;
+      text-align: center;
+    }
+
     /* Foblex connection rendering (library sets fill:none but no stroke) */
     :host ::ng-deep .f-connection-path {
-      stroke: var(--accent, #6366f1);
+      stroke: var(--rd-accent);
       stroke-width: 2px;
       transition: stroke 0.15s ease;
     }
     :host ::ng-deep .f-connection.f-selected .f-connection-path {
-      stroke: var(--accent-hover, #818cf8);
+      stroke: var(--rd-link);
       stroke-width: 3px;
     }
     :host ::ng-deep .f-connection-selection {
@@ -317,20 +484,19 @@ function pruneConflictingConnections(
       stroke-width: 10px;
     }
     :host ::ng-deep .f-connection-drag-handle {
-      fill: var(--accent, #6366f1);
+      fill: var(--rd-accent);
     }
     :host ::ng-deep .f-connection-for-create .f-connection-path {
-      stroke: var(--accent, #6366f1);
+      stroke: var(--rd-accent);
       stroke-width: 2px;
       stroke-dasharray: 6 3;
     }
-    :host ::ng-deep .f-connection-for-create
-      .f-connection-drag-handle {
-      fill: var(--accent, #6366f1);
+    :host ::ng-deep .f-connection-for-create .f-connection-drag-handle {
+      fill: var(--rd-accent);
     }
     button.active {
-      background: var(--accent);
-      color: white;
+      background: var(--rd-accent);
+      color: var(--rd-text-on-accent);
     }
   `,
 })
@@ -353,6 +519,8 @@ export class WorkflowBuilderComponent implements OnInit {
   readonly selectedNodeKey = signal<string | null>(null);
   readonly testPanelOpen = signal(false);
   readonly saving = signal(false);
+  /** Current canvas zoom, mirrored from FCanvasComponent's scale for the floating zoom readout. */
+  readonly zoomPercent = signal(100);
   readonly validationErrors = signal<ValidationError[]>([]);
   readonly errorNodeKeys = computed(
     () =>
@@ -362,6 +530,19 @@ export class WorkflowBuilderComponent implements OnInit {
           .filter((k): k is string => typeof k === "string")
       )
   );
+
+  /**
+   * Floating chrome save-state indicator. Reuses only state the builder
+   * already tracks (`saving` + whether the flow has been assigned a
+   * persisted `key` by a prior save) — no new dirty-diffing state is
+   * introduced, per the SPEC's re-skin-only constraint.
+   */
+  readonly saveStateLabel = computed<string>(() => {
+    if (this.saving()) {
+      return "Saving…";
+    }
+    return this.flow().key ? "Saved" : "Unsaved";
+  });
 
   readonly nodes = computed(() => Object.values(this.flow().nodes));
 
@@ -546,14 +727,51 @@ export class WorkflowBuilderComponent implements OnInit {
     const c = this.canvas();
     if (c) {
       c.resetScaleAndCenter(false);
+      this.zoomPercent.set(Math.round(c.getScale() * 100));
+      console.debug("[WorkflowBuilderComponent] canvas loaded", {
+        scale: c.getScale(),
+      });
     }
+  }
+
+  /** Mirrors FCanvasComponent's live scale into the floating zoom readout. */
+  onCanvasChange(event: FCanvasChangeEvent): void {
+    this.zoomPercent.set(Math.round(event.scale * 100));
   }
 
   fitCanvas(): void {
     const c = this.canvas();
     if (c) {
       c.fitToScreen();
+      this.zoomPercent.set(Math.round(c.getScale() * 100));
+      console.debug("[WorkflowBuilderComponent] fit to screen", {
+        scale: c.getScale(),
+      });
     }
+  }
+
+  /** Zoom in one step via FCanvasComponent's setScale, clamped to a sane max. */
+  zoomIn(): void {
+    const c = this.canvas();
+    if (!c) {
+      return;
+    }
+    const next = Math.min(2, c.getScale() + 0.1);
+    c.setScale(next);
+    this.zoomPercent.set(Math.round(next * 100));
+    console.debug("[WorkflowBuilderComponent] zoom in", { scale: next });
+  }
+
+  /** Zoom out one step via FCanvasComponent's setScale, clamped to a sane min. */
+  zoomOut(): void {
+    const c = this.canvas();
+    if (!c) {
+      return;
+    }
+    const next = Math.max(0.2, c.getScale() - 0.1);
+    c.setScale(next);
+    this.zoomPercent.set(Math.round(next * 100));
+    console.debug("[WorkflowBuilderComponent] zoom out", { scale: next });
   }
 
   onCreateNode(event: FCreateNodeEvent): void {
@@ -808,6 +1026,9 @@ export class WorkflowBuilderComponent implements OnInit {
   }
 
   goBack(): void {
+    console.debug("[WorkflowBuilderComponent] back to workflows list", {
+      key: this.flow().key,
+    });
     this.router.navigate(["/workflows"]);
   }
 }

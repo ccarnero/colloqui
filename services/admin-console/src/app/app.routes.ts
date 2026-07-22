@@ -301,6 +301,10 @@ export const routes: Routes = [
               import(
                 "./features/automation/workflows/builder/workflow-builder.component"
               ).then((m) => m.WorkflowBuilderComponent),
+            // Full-bleed builder shell (T03): hides the sub-nav rail and
+            // gives the canvas edge-to-edge width. See shell.component.ts's
+            // `subNavHidden` flag.
+            data: { subNavHidden: true },
           },
           { path: ":id/edit", redirectTo: ":id/builder", pathMatch: "full" },
           {
@@ -324,7 +328,17 @@ export const routes: Routes = [
                   import(
                     "./features/automation/workflows/builder/workflow-builder.component"
                   ).then((m) => m.WorkflowBuilderComponent),
-                data: { subNavCollapsed: true },
+                // Full-bleed builder shell (T03): hides the sub-nav rail
+                // entirely (not just the icon-collapsed rail used by the AI
+                // editor routes) — see shell.component.ts's `subNavHidden`
+                // flag. NOTE: this route is nested under
+                // WorkflowDetailComponent, which still renders its own
+                // breadcrumb/title/sub-tabs chrome above the router-outlet;
+                // that component lives outside this task's allowed scope
+                // (features/automation/workflows/builder/ only), so it is
+                // NOT fully edge-to-edge here the way /workflows/new is —
+                // recorded as a T03 finding, not silently fixed.
+                data: { subNavHidden: true },
               },
               {
                 path: "executions",

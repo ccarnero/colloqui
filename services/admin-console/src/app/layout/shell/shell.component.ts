@@ -20,21 +20,28 @@ import { HeaderComponent } from "../header/header.component";
 import { SubNavComponent } from "../sub-nav/sub-nav.component";
 
 /**
- * Walks the activated route tree looking for the deepest `data.subNavCollapsed`
- * value. Pages that want a roomy canvas (Builder) set this on their route data:
+ * Walks the activated route tree looking for the deepest boolean value of
+ * `data[key]`. Shared by the `subNavCollapsed` (icon-only rail, e.g. the AI
+ * agent editor) and `subNavHidden` (rail fully removed, e.g. the full-bleed
+ * workflow builder — SPEC amendment 2026-07-22, decision 3) route-data
+ * flags:
  *   { path: "...", data: { subNavCollapsed: true }, ... }
+ *   { path: "...", data: { subNavHidden: true }, ... }
  */
-function readCollapsedFlag(route: ActivatedRoute | null): boolean {
+function readRouteDataFlag(
+  route: ActivatedRoute | null,
+  key: "subNavCollapsed" | "subNavHidden"
+): boolean {
   let r: ActivatedRoute | null = route;
-  let collapsed = false;
+  let value = false;
   while (r) {
-    const flag = r.snapshot.data?.["subNavCollapsed"];
+    const flag = r.snapshot.data?.[key];
     if (typeof flag === "boolean") {
-      collapsed = flag;
+      value = flag;
     }
     r = r.firstChild;
   }
-  return collapsed;
+  return value;
 }
 
 @Component({
@@ -57,13 +64,15 @@ function readCollapsedFlag(route: ActivatedRoute | null): boolean {
           ></div>
         }
 
-        <app-sub-nav
-          [mobileOpen]="mobileNavOpen()"
-          [collapsed]="subNavCollapsed()"
-          (mobileClose)="mobileNavOpen.set(false)"
-        />
+        @if (!subNavHidden()) {
+          <app-sub-nav
+            [mobileOpen]="mobileNavOpen()"
+            [collapsed]="subNavCollapsed()"
+            (mobileClose)="mobileNavOpen.set(false)"
+          />
+        }
 
-        <main class="shell-main">
+        <main class="shell-main" [class.full-bleed]="subNavHidden()">
           <router-outlet />
         </main>
       </div>
@@ -100,6 +109,18 @@ function readCollapsedFlag(route: ActivatedRoute | null): boolean {
       scrollbar-color: var(--rd-line) transparent;
     }
 
+    /*
+     * Full-bleed routes (the workflow builder, per SPEC decision 3
+     * amendment): the app header/tabs stay visible, but the main content
+     * area drops its padding so the canvas runs edge-to-edge and the
+     * builder's own floating chrome can overlay it, matching the design's
+     * mainPad: 0 rule for the builder screen.
+     */
+    .shell-main.full-bleed {
+      padding: 0;
+      overflow: hidden;
+    }
+
     .mobile-overlay {
       position: fixed;
       inset: 0;
@@ -108,7 +129,7 @@ function readCollapsedFlag(route: ActivatedRoute | null): boolean {
     }
 
     @media (max-width: 900px) {
-      .shell-main {
+      .shell-main:not(.full-bleed) {
         padding: var(--rd-space-10) var(--rd-space-8);
       }
     }
@@ -123,9 +144,9 @@ export class ShellComponent implements OnInit {
   readonly mobileNavOpen = signal(false);
 
   /**
-   * Recomputes on every NavigationEnd by reading route data.subNavCollapsed
-   * down the active route tree. Builder routes set this to true for a roomy
-   * canvas; everything else defaults to false.
+   * Recomputes on every NavigationEnd by reading route data down the active
+   * route tree. The AI agent editor routes set `subNavCollapsed: true` for
+   * an icon-only rail; everything else defaults to false.
    */
   private readonly navEnd = toSignal(
     this.router.events.pipe(filter((e) => e instanceof NavigationEnd)),
@@ -135,7 +156,23 @@ export class ShellComponent implements OnInit {
   readonly subNavCollapsed = computed(() => {
     // Touch navEnd so this recomputes on every navigation.
     this.navEnd();
-    return readCollapsedFlag(this.route);
+    return readRouteDataFlag(this.route, "subNavCollapsed");
+  });
+
+  /**
+   * Full-bleed routes (currently the workflow builder — SPEC decision 3
+   * amendment 2026-07-22) set `subNavHidden: true` to remove the sub-nav
+   * rail entirely, rather than collapsing it to icon-mode. The app header
+   * stays visible per the amendment; only this rail hides.
+   */
+  readonly subNavHidden = computed(() => {
+    this.navEnd();
+    const hidden = readRouteDataFlag(this.route, "subNavHidden");
+    console.debug("[ShellComponent] sub-nav hidden state recomputed", {
+      hidden,
+      url: this.router.url,
+    });
+    return hidden;
   });
 
   ngOnInit(): void {

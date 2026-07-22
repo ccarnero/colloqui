@@ -22,6 +22,7 @@ import {
         [class.is-branch]="node().type === branchType"
         [class.is-conditional]="node().type === conditionalType"
         [class.has-error]="hasError()"
+        [class.is-selected]="isSelected()"
       >
       <div
         class="wf-node-input"
@@ -55,34 +56,41 @@ import {
     }
     .wf-builder-node {
       min-width: 180px;
-      background: var(--bg-card, var(--bg3));
-      border: 1.5px solid var(--border2);
-      border-radius: var(--radius2, 8px);
+      background: var(--rd-panel);
+      border: 1.5px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-7);
       padding: 0;
       cursor: grab;
       transition: border-color 0.15s, box-shadow 0.15s;
       position: relative;
     }
     .wf-builder-node:hover {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 2px var(--accent-dim);
+      border-color: var(--rd-accent);
+      box-shadow: 0 0 0 2px var(--rd-accent-soft);
     }
+    /* Node-type accent stripe — mirrors the design's KIND_STRIPE mapping
+       (channel: green, branch: purple, conditional: yellow); port/type
+       color mapping for the remaining node kinds is T04's scope. */
     .wf-builder-node.is-channel {
-      border-color: var(--green);
+      border-color: var(--rd-green);
     }
     .wf-builder-node.is-branch {
-      border-color: var(--purple);
+      border-color: var(--rd-purple);
     }
     .wf-builder-node.is-conditional {
-      border-color: var(--orange, #f59e0b);
+      border-color: var(--rd-yellow);
+    }
+    .wf-builder-node.is-selected {
+      border-color: var(--rd-accent);
+      box-shadow: 0 0 0 2px var(--rd-accent-soft);
     }
     .wf-builder-node.has-error {
-      border-color: var(--red, #dc2626);
-      box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.18);
+      border-color: var(--rd-red);
+      box-shadow: 0 0 0 2px var(--rd-red-dim);
     }
     .wf-builder-node.has-error:hover {
-      border-color: var(--red, #dc2626);
-      box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.32);
+      border-color: var(--rd-red);
+      box-shadow: 0 0 0 3px var(--rd-red-dim);
     }
     .wf-node-content {
       display: flex;
@@ -96,15 +104,15 @@ import {
       justify-content: center;
       width: 32px;
       height: 32px;
-      border-radius: 6px;
-      background: var(--bg2);
+      border-radius: var(--rd-radius-6);
+      background: var(--rd-hover);
       flex-shrink: 0;
     }
     .wf-node-icon-wrap mat-icon {
       font-size: 18px;
       width: 18px;
       height: 18px;
-      color: var(--accent);
+      color: var(--rd-accent);
     }
     .wf-node-info {
       display: flex;
@@ -112,15 +120,16 @@ import {
       min-width: 0;
     }
     .wf-node-name {
-      font-size: 13px;
+      font-size: var(--rd-text-size-base);
       font-weight: 600;
+      color: var(--rd-text-1);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .wf-node-type {
-      font-size: 11px;
-      color: var(--text3);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-3);
     }
     .wf-node-input,
     .wf-node-output {
@@ -128,8 +137,8 @@ import {
       width: 12px;
       height: 12px;
       border-radius: 50%;
-      background: var(--border2);
-      border: 2px solid var(--bg-card, var(--bg3));
+      background: var(--rd-line-3);
+      border: 2px solid var(--rd-panel);
       top: 50%;
       transform: translateY(-50%);
       z-index: 1;
@@ -143,13 +152,15 @@ import {
     }
     .wf-node-input:hover,
     .wf-node-output:hover {
-      background: var(--accent);
+      background: var(--rd-accent);
     }
   `,
 })
 export class WorkflowNodeComponent {
   readonly node = input.required<IWorkflowNode>();
   readonly hasError = input<boolean>(false);
+  /** Highlights this card when it's the currently-selected node in the builder's config panel. */
+  readonly isSelected = input<boolean>(false);
   readonly selected = output<string>();
 
   readonly channelType = EWorkflowNodeType.CHANNEL;

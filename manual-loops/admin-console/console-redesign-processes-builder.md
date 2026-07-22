@@ -488,7 +488,7 @@ grep -n "console-redesign-processes-builder" cowork/INDEX.md
 
 - [x] T01 inventory report
 - [x] T02 workflow list view
-- [ ] T03 full-bleed shell + re-skin
+- [x] T03 full-bleed shell + re-skin
 - [ ] T04 ports, labels, mini-stats
 - [ ] T05 floating inspector
 - [ ] T06 docs + index
