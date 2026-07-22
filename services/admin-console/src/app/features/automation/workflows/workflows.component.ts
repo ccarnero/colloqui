@@ -1,40 +1,65 @@
 import {
   ChangeDetectionStrategy,
   Component,
+  computed,
   inject,
   type OnInit,
   signal,
 } from "@angular/core";
-import { MatButtonModule } from "@angular/material/button";
-import { MatDialog } from "@angular/material/dialog";
-import { MatIconModule } from "@angular/material/icon";
-import { MatSlideToggleModule } from "@angular/material/slide-toggle";
-import { MatSnackBar } from "@angular/material/snack-bar";
 import { Router } from "@angular/router";
 import { forkJoin, of } from "rxjs";
 import { catchError } from "rxjs/operators";
 import {
-  ConfirmDialogComponent,
-  type IConfirmDialogData,
-} from "../../../shared/components/confirm-dialog/confirm-dialog.component";
+  type InventoryTableColumn,
+  InventoryTableComponent,
+} from "../../../shared/components/inventory-table/inventory-table.component";
+import { KpiCardComponent } from "../../../shared/components/kpi-card/kpi-card.component";
+import {
+  type AttentionSeverity,
+  type IAttentionIssue,
+  NeedsAttentionPanelComponent,
+} from "../../../shared/components/needs-attention-panel/needs-attention-panel.component";
 import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
-import { StatusBadgeComponent } from "../../../shared/components/status-badge/status-badge.component";
 import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 import {
   type IWorkflowDefinitionDto,
+  type IWorkflowsSummary,
   WorkflowApiService,
 } from "./services/workflow-api.service";
+import {
+  deriveWorkflowStatusLabel,
+  mapWorkflowStatusToHealth,
+} from "./workflow-status.helpers";
 
+/**
+ * Workflow list view (route `/workflows`, unchanged). Rebuilt per
+ * `manual-loops/admin-console/console-redesign-processes-builder.md` T02:
+ * MetricCard row + InventoryTable + NeedsAttentionPanel, following the
+ * `AiAgentsPageComponent` composition
+ * (`features/automation/ai/ai-agents-page.component.ts`). Data flow is
+ * `WorkflowApiService.list()` (unchanged) plus the new `getSummary()`
+ * wrapper for the existing `GET /workflows/summary` endpoint (T01
+ * finding 1 - wiring gap, no new backend endpoint). Per T01 finding 1,
+ * per-workflow success/error rate has no data source and is NOT
+ * rendered; per-workflow sparklines have no backing series either
+ * (T01 finding 1) and are NOT rendered.
+ *
+ * Enable/disable and delete moved to the workflow detail mini-app's
+ * Settings tab (`detail/workflow-settings.component.ts`, which now
+ * implements both — the enable/disable toggle exercises the same
+ * `WorkflowApiService.setStatus` confirm/direct flow this list used to
+ * have); this list is read-focused per the design
+ * (`design/10-workflows.png`: name/trigger/actions/executions/
+ * created/status + chevron, no inline mutation controls).
+ */
 @Component({
   selector: "app-workflows",
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    UtcDatePipe,
-    MatButtonModule,
-    MatIconModule,
-    MatSlideToggleModule,
     PageHeaderComponent,
-    StatusBadgeComponent,
+    KpiCardComponent,
+    InventoryTableComponent,
+    NeedsAttentionPanelComponent,
   ],
   template: `
     <app-page-header
@@ -53,171 +78,179 @@ import {
     </app-page-header>
 
     @if (loading()) {
-      <div class="wf-loading">Loading workflows...</div>
-    }
-
-    @for (wf of workflows(); track wf.id) {
-      <div
-        class="section-card wf-card"
-        [class.wf-card-disabled]="!isEnabled(wf)"
-        (click)="openEditor(wf.id)"
-      >
-        <div class="section-card-header">
-          <div>
-            <div class="section-card-title">{{ wf.name }}</div>
-            <div class="section-card-sub">
-              {{ triggerLabel(wf) }} · {{ wf.application }}
-            </div>
-          </div>
-          @if (!isEnabled(wf)) {
-            <app-status-badge status="disabled" />
-          } @else {
-            <app-status-badge [status]="wf.trigger ? 'active' : 'draft'" />
-          }
-        </div>
-        <div class="section-card-body wf-meta">
-          <span class="wf-meta-item">
-            <mat-icon>account_tree</mat-icon>
-            {{ actionCount(wf) }} actions
-          </span>
-          <span class="wf-meta-item">
-            <mat-icon>schedule</mat-icon>
-            {{ wf.createdAt | utcDate }}
-          </span>
-          <span class="wf-meta-item">
-            <mat-icon>history</mat-icon>
-            {{ executionCount(wf) }} executions
-          </span>
-          <span class="wf-meta-spacer"></span>
-          <mat-slide-toggle
-            class="wf-status-toggle"
-            [checked]="isEnabled(wf)"
-            [disabled]="togglingId() === wf.id"
-            (click)="$event.stopPropagation()"
-            (change)="onStatusToggle($event.checked, wf)"
-          >
-          </mat-slide-toggle>
-          <button
-            mat-icon-button
-            type="button"
-            class="wf-delete-btn"
-            aria-label="Delete workflow"
-            [disabled]="deletingId() === wf.id"
-            (click)="onDeleteClick($event, wf)"
-          >
-            <mat-icon>delete</mat-icon>
-          </button>
-        </div>
+      <div class="metric-strip metric-strip--loading">
+        <div class="metric-skeleton"></div>
       </div>
-    }
-
-    @if (!loading() && workflows().length === 0) {
-      <div class="wf-empty">
-        <mat-icon class="wf-empty-icon">account_tree</mat-icon>
-        <div class="wf-empty-title">No workflows yet</div>
-        <div class="wf-empty-sub">
-          Create your first workflow to automate business processes
-        </div>
-        <button
-          class="btn btn-primary btn-sm"
-          type="button"
-          (click)="createNew()"
-        >
-          + New Workflow
-        </button>
+    } @else {
+      <!-- Metric row: workflow/active counts are client-derived from the
+           real workflow list; completed/failed (7d) come straight from the
+           existing summary endpoint (T01 finding 1). No invented metrics. -->
+      <div class="metric-strip">
+        <app-kpi-card label="Workflows" [value]="totalWorkflows()" />
+        <app-kpi-card label="Active" [value]="activeCount()" />
+        <app-kpi-card label="Completed (7d)" [value]="completedLast7d()" />
+        <app-kpi-card label="Failed (7d)" [value]="failedLast7d()" />
       </div>
+
+      <!-- Workflows inventory: status column carries the health dot,
+           derived purely from real fields (status/trigger,
+           workflow-status.helpers.ts). Executions column is the real,
+           7-day-windowed per-workflow run count from the summary
+           endpoint's top-5 list; workflows outside that top 5 render an
+           empty cell rather than a fabricated 0 (T02 spec). -->
+      <app-inventory-table
+        [columns]="workflowColumns"
+        [rows]="workflows()"
+        ariaLabel="Workflows"
+        emptyMessage="No workflows yet. Create your first workflow to automate business processes."
+        (rowClick)="onWorkflowRowClick($event)"
+      />
+
+      <!-- Needs attention: workflows in a non-ok state (disabled) per the
+           same real mapping; deep-links to the existing /workflows/:id
+           route. -->
+      <app-needs-attention-panel
+        title="Needs attention"
+        subtitle="Workflows"
+        [issues]="attentionIssues()"
+        emptyMessage="No workflows need attention"
+        (actionClick)="onAttentionActionClick($event)"
+      />
     }
   `,
   styles: `
-    .wf-card {
-      cursor: pointer;
-      transition: border-color 0.15s;
+    .metric-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: var(--rd-space-8, 16px);
+      margin-bottom: var(--rd-space-8, 16px);
     }
-    .wf-card:hover {
-      border-color: var(--accent);
+    .metric-strip--loading {
+      opacity: 0.4;
     }
-    .wf-card-disabled {
-      opacity: 0.6;
+    .metric-skeleton {
+      grid-column: 1 / -1;
+      height: 72px;
+      border-radius: var(--rd-radius-7, 8px);
+      background: var(--rd-line);
     }
-    .wf-status-toggle {
-      margin-right: 4px;
-    }
-    .wf-meta {
-      display: flex;
-      gap: 20px;
-      align-items: center;
-    }
-    .wf-meta-item {
-      display: flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 12px;
-      color: var(--text3);
-    }
-    .wf-meta-item mat-icon {
-      font-size: 16px;
-      width: 16px;
-      height: 16px;
-    }
-    .wf-meta-spacer {
-      flex: 1;
-    }
-    .wf-delete-btn {
-      color: var(--text3);
-      transition: color 0.15s;
-    }
-    .wf-delete-btn:hover:not([disabled]) {
-      color: var(--red, #dc2626);
-    }
-    .wf-loading {
-      text-align: center;
-      padding: 40px;
-      color: var(--text3);
-    }
-    .wf-empty {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      padding: 60px 20px;
-      text-align: center;
-      gap: 8px;
-    }
-    .wf-empty-icon {
-      font-size: 48px;
-      width: 48px;
-      height: 48px;
-      color: var(--text3);
-      margin-bottom: 8px;
-    }
-    .wf-empty-title {
-      font-size: 16px;
-      font-weight: 600;
-    }
-    .wf-empty-sub {
-      font-size: 13px;
-      color: var(--text3);
-      margin-bottom: 12px;
+    app-inventory-table {
+      display: block;
+      margin-bottom: var(--rd-space-8, 16px);
     }
   `,
 })
 export class WorkflowsComponent implements OnInit {
   private readonly api = inject(WorkflowApiService);
   private readonly router = inject(Router);
-  private readonly dialog = inject(MatDialog);
-  private readonly snackBar = inject(MatSnackBar);
+  private readonly utcDate = new UtcDatePipe();
 
   readonly workflows = signal<IWorkflowDefinitionDto[]>([]);
+  readonly summary = signal<IWorkflowsSummary | null>(null);
   readonly loading = signal(true);
-  /** Tracks the workflow currently being deleted to disable its row. */
-  readonly deletingId = signal<string | null>(null);
-  /** Tracks the workflow whose status toggle is mid-flight. */
-  readonly togglingId = signal<string | null>(null);
+
   /**
-   * `definitionId -> executionsCount` lookup table. A `Map` is chosen
-   * over a plain object so per-card lookups stay O(1) regardless of
-   * the workflow set size.
+   * `definitionId -> 7d run count` lookup, built from the summary
+   * endpoint's `topByExecutionCountLast7d` (top 5 workflows only, per
+   * T01 finding 1). Workflows outside that top 5 have no entry here.
    */
-  readonly executionCounts = signal<Map<string, number>>(new Map());
+  private readonly runCountsLast7d = computed(() => {
+    const rows = this.summary()?.topByExecutionCountLast7d ?? [];
+    return new Map(rows.map((row) => [row.definition_id, row.count]));
+  });
+
+  readonly totalWorkflows = computed(() => this.workflows().length);
+
+  readonly activeCount = computed(
+    () =>
+      this.workflows().filter(
+        (wf) => deriveWorkflowStatusLabel(wf) === "active"
+      ).length
+  );
+
+  readonly completedLast7d = computed(
+    () => this.summary()?.executionsCompletedLast7d ?? 0
+  );
+
+  readonly failedLast7d = computed(
+    () => this.summary()?.executionsFailedLast7d ?? 0
+  );
+
+  /**
+   * Columns per the design (`design/10-workflows.png`): Name, Trigger,
+   * Actions, Executions (7d), Created, Status. All values come from real
+   * `IWorkflowDefinitionDto` fields or the summary endpoint - no
+   * invented data.
+   */
+  readonly workflowColumns: InventoryTableColumn<IWorkflowDefinitionDto>[] = [
+    {
+      key: "name",
+      header: "Name",
+      type: "text",
+      value: (wf) => wf.name,
+      width: "2fr",
+    },
+    {
+      key: "trigger",
+      header: "Trigger",
+      type: "text",
+      value: (wf) => this.triggerSummary(wf),
+      width: "1.6fr",
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      type: "mono",
+      value: (wf) => String(this.actionCount(wf)),
+      width: "0.9fr",
+    },
+    {
+      key: "executions",
+      header: "Executions (7d)",
+      type: "mono",
+      value: (wf) => this.executionsLast7dLabel(wf),
+      width: "1fr",
+    },
+    {
+      key: "created",
+      header: "Created",
+      type: "text",
+      value: (wf) => this.createdLabel(wf),
+      width: "1fr",
+    },
+    {
+      key: "status",
+      header: "Status",
+      type: "status-badge",
+      value: (wf) => deriveWorkflowStatusLabel(wf),
+      health: (wf) => mapWorkflowStatusToHealth(deriveWorkflowStatusLabel(wf)),
+      width: "0.9fr",
+    },
+  ];
+
+  /** Workflows whose derived health is "warn" or "error" (disabled). */
+  readonly attentionIssues = computed<IAttentionIssue[]>(() => {
+    const issues: IAttentionIssue[] = [];
+    for (const wf of this.workflows()) {
+      const health = mapWorkflowStatusToHealth(deriveWorkflowStatusLabel(wf));
+      if (health !== "warn" && health !== "error") {
+        continue;
+      }
+      issues.push({
+        id: wf.id,
+        message: `${wf.name} is disabled.`,
+        severity: this.healthToSeverity(health),
+        action: { label: "Open workflow" },
+      });
+    }
+    if (issues.length === 0) {
+      // Verbose logging: empty attention list must not fail silently.
+      console.debug(
+        "[WorkflowsComponent] no workflows in warn/error state, needs-attention panel will render its empty state"
+      );
+    }
+    return issues;
+  });
 
   ngOnInit(): void {
     this.loadWorkflows();
@@ -226,39 +259,80 @@ export class WorkflowsComponent implements OnInit {
   private loadWorkflows(): void {
     this.loading.set(true);
     // Run both requests in parallel so total wall time is `max(list,
-    // counts)` instead of `list + counts`. `catchError` on the counts
-    // stream isolates failures: a counts outage shouldn't blank out
-    // the workflow list.
+    // summary)` instead of `list + summary`. `catchError` on the summary
+    // stream isolates failures: a summary outage shouldn't blank out the
+    // workflow list, only zero out the metric row / 7d run counts.
     forkJoin({
       list: this.api.list(),
-      counts: this.api
-        .getExecutionCounts()
-        .pipe(catchError(() => of<Record<string, number>>({}))),
+      summary: this.api
+        .getSummary()
+        .pipe(catchError(() => of<IWorkflowsSummary | null>(null))),
     }).subscribe({
-      next: ({ list, counts }) => {
+      next: ({ list, summary }) => {
         this.workflows.set(list);
-        this.executionCounts.set(new Map(Object.entries(counts)));
+        this.summary.set(summary);
         this.loading.set(false);
+        console.debug("[WorkflowsComponent] workflows loaded", {
+          count: list.length,
+          summaryLoaded: summary !== null,
+        });
       },
-      error: () => this.loading.set(false),
+      error: (error: unknown) => {
+        this.loading.set(false);
+        console.error("[WorkflowsComponent] failed to load workflows", {
+          error,
+        });
+      },
     });
   }
 
   createNew(): void {
-    this.router.navigate(["/workflows", "new"]);
+    this.router.navigate(["/workflows", "new"]).catch((error: unknown) => {
+      console.error(
+        "[WorkflowsComponent] navigation to new-workflow route failed",
+        { error }
+      );
+    });
   }
 
   /**
-   * Card click opens the workflow detail mini-app (Overview sub-tab).
-   * Users get to the Builder via the "Edit" action in the detail
-   * header, or via the Builder sub-tab. Old `/workflows/:id/edit`
-   * deep links still work — the route-level redirect handles them.
+   * Row click opens the workflow detail mini-app (Overview sub-tab, the
+   * existing `/workflows/:id` route - T01 finding, `app.routes.ts:310`).
    */
-  openEditor(id: string): void {
-    this.router.navigate(["/workflows", id]);
+  onWorkflowRowClick(wf: IWorkflowDefinitionDto): void {
+    console.debug("[WorkflowsComponent] workflow row clicked, navigating", {
+      workflowId: wf.id,
+    });
+    this.router.navigate(["/workflows", wf.id]).catch((error: unknown) => {
+      console.error("[WorkflowsComponent] navigation to workflow failed", {
+        workflowId: wf.id,
+        error,
+      });
+    });
   }
 
-  triggerLabel(wf: IWorkflowDefinitionDto): string {
+  /**
+   * Needs-attention action link navigates to the same detail route as
+   * the row click; `issue.id` is the workflow id (see `attentionIssues`).
+   */
+  onAttentionActionClick(issue: IAttentionIssue): void {
+    console.debug(
+      "[WorkflowsComponent] needs-attention action clicked, navigating",
+      { workflowId: issue.id }
+    );
+    this.router.navigate(["/workflows", issue.id]).catch((error: unknown) => {
+      console.error(
+        "[WorkflowsComponent] navigation from needs-attention panel failed",
+        { workflowId: issue.id, error }
+      );
+    });
+  }
+
+  private healthToSeverity(health: "warn" | "error"): AttentionSeverity {
+    return health === "error" ? "critical" : "warning";
+  }
+
+  protected triggerLabel(wf: IWorkflowDefinitionDto): string {
     if (!wf.trigger) {
       return "No trigger";
     }
@@ -266,129 +340,28 @@ export class WorkflowsComponent implements OnInit {
     return t.type === "message_received" ? "Channel" : t.type;
   }
 
-  actionCount(wf: IWorkflowDefinitionDto): number {
+  /** Matches the design's combined "Trigger · application" sub-line (`design/10-workflows.png`). */
+  protected triggerSummary(wf: IWorkflowDefinitionDto): string {
+    return `${this.triggerLabel(wf)} · ${wf.application}`;
+  }
+
+  protected actionCount(wf: IWorkflowDefinitionDto): number {
     return Array.isArray(wf.actions) ? wf.actions.length : 0;
   }
 
-  /** O(1) lookup against the prefetched `executionCounts` map. */
-  executionCount(wf: IWorkflowDefinitionDto): number {
-    return this.executionCounts().get(wf.id) ?? 0;
-  }
-
-  /** Legacy rows have no persisted `status`; treat missing as enabled. */
-  isEnabled(wf: IWorkflowDefinitionDto): boolean {
-    return wf.status !== "disabled";
-  }
-
   /**
-   * Slide toggle change handler. Turning a workflow ON is a direct call —
-   * no confirmation needed. Turning it OFF opens the shared confirm
-   * dialog because disabling terminates in-flight executions; cancelling
-   * reverts the toggle back to its previous (checked) visual state.
+   * 7-day-windowed run count for this workflow, sourced from the summary
+   * endpoint's top-5 list. Absent (not in the top 5) renders as an empty
+   * cell, never a fabricated `0` (T02 spec - the design has no em-dash
+   * convention for this column, so the cell is left blank rather than
+   * showing a placeholder).
    */
-  onStatusToggle(checked: boolean, wf: IWorkflowDefinitionDto): void {
-    if (checked) {
-      this.applyStatus(wf, "enabled");
-      return;
-    }
-
-    const data: IConfirmDialogData = {
-      title: "Disable workflow",
-      message: `Disabling "${wf.name}" will terminate any running executions of this workflow. Continue?`,
-      confirmLabel: "Disable",
-      variant: "danger",
-      icon: "warning_amber",
-    };
-    this.dialog
-      .open<ConfirmDialogComponent, IConfirmDialogData, boolean>(
-        ConfirmDialogComponent,
-        { data, autoFocus: false, restoreFocus: true }
-      )
-      .afterClosed()
-      .subscribe((confirmed) => {
-        if (confirmed === true) {
-          this.applyStatus(wf, "disabled");
-        } else {
-          // Cancelled: force a re-render so the toggle reverts to the
-          // workflow's actual (still enabled) status.
-          this.workflows.update((list) => [...list]);
-        }
-      });
+  protected executionsLast7dLabel(wf: IWorkflowDefinitionDto): string {
+    const count = this.runCountsLast7d().get(wf.id);
+    return count === undefined ? "" : count.toLocaleString("en-US");
   }
 
-  private applyStatus(
-    wf: IWorkflowDefinitionDto,
-    status: "enabled" | "disabled"
-  ): void {
-    this.togglingId.set(wf.id);
-    this.api.setStatus(wf.id, status).subscribe({
-      next: (updated) => {
-        this.togglingId.set(null);
-        this.workflows.update((list) =>
-          list.map((w) =>
-            w.id === wf.id ? { ...w, status: updated.status } : w
-          )
-        );
-        const message =
-          status === "disabled"
-            ? `Workflow disabled. ${updated.terminated} execution(s) terminated.`
-            : "Workflow enabled";
-        this.snackBar.open(message, "OK", { duration: 3000 });
-      },
-      error: () => {
-        this.togglingId.set(null);
-        // Force a re-render so the toggle reverts to the workflow's
-        // last known (unchanged) status after the failed API call.
-        this.workflows.update((list) => [...list]);
-        this.snackBar.open("Failed to update workflow status", "OK", {
-          duration: 5000,
-        });
-      },
-    });
-  }
-
-  /**
-   * Opens a confirm dialog before issuing the delete. Stops propagation
-   * so the parent card click (which opens the editor) does not fire.
-   */
-  onDeleteClick(event: Event, wf: IWorkflowDefinitionDto): void {
-    event.stopPropagation();
-    const data: IConfirmDialogData = {
-      title: "Delete workflow",
-      message: `Delete "${wf.name}"? This action cannot be undone.`,
-      confirmLabel: "Delete",
-      variant: "danger",
-      icon: "warning_amber",
-    };
-    this.dialog
-      .open<ConfirmDialogComponent, IConfirmDialogData, boolean>(
-        ConfirmDialogComponent,
-        { data, autoFocus: false, restoreFocus: true }
-      )
-      .afterClosed()
-      .subscribe((confirmed) => {
-        if (confirmed === true) {
-          this.deleteWorkflow(wf);
-        }
-      });
-  }
-
-  private deleteWorkflow(wf: IWorkflowDefinitionDto): void {
-    this.deletingId.set(wf.id);
-    this.api.delete(wf.id).subscribe({
-      next: () => {
-        this.deletingId.set(null);
-        this.workflows.update((list) => list.filter((w) => w.id !== wf.id));
-        this.snackBar.open("Workflow deleted", "OK", {
-          duration: 3000,
-        });
-      },
-      error: () => {
-        this.deletingId.set(null);
-        this.snackBar.open("Failed to delete workflow", "OK", {
-          duration: 5000,
-        });
-      },
-    });
+  protected createdLabel(wf: IWorkflowDefinitionDto): string {
+    return this.utcDate.transform(wf.createdAt, "mediumDate") ?? "";
   }
 }

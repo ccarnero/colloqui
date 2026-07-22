@@ -3,25 +3,26 @@ import {
   Component,
   computed,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { ActivatedRoute, Router } from "@angular/router";
 import { toSignal } from "@angular/core/rxjs-interop";
 import { FormsModule } from "@angular/forms";
-import { MatDialog } from "@angular/material/dialog";
-import { MatSnackBar } from "@angular/material/snack-bar";
-import { MatFormFieldModule } from "@angular/material/form-field";
-import { MatInputModule } from "@angular/material/input";
 import { MatButtonModule } from "@angular/material/button";
+import { MatDialog } from "@angular/material/dialog";
+import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
+import { MatInputModule } from "@angular/material/input";
+import { MatSlideToggleModule } from "@angular/material/slide-toggle";
+import { MatSnackBar } from "@angular/material/snack-bar";
+import { ActivatedRoute, Router } from "@angular/router";
 import {
   ConfirmDialogComponent,
   type IConfirmDialogData,
 } from "../../../../shared/components/confirm-dialog/confirm-dialog.component";
 import {
-  WorkflowApiService,
   type IWorkflowDefinitionDto,
+  WorkflowApiService,
 } from "../services/workflow-api.service";
 
 interface IVariableEntry {
@@ -37,6 +38,12 @@ interface IVariableEntry {
  * actions, and node-level config because that's where they're being
  * authored. Future phases can pull retry policy, env vars, version
  * history, etc. into this tab.
+ *
+ * Enable/disable moved here from the workflows list (T02 rebuild): the
+ * list is read-only per `design/10-workflows.png`, and this Status card
+ * is now the single place that exercises
+ * `WorkflowApiService.setStatus` — same confirm-on-disable /
+ * direct-on-enable flow the list toggle used to have.
  */
 @Component({
   selector: "app-workflow-settings",
@@ -48,6 +55,7 @@ interface IVariableEntry {
     MatInputModule,
     MatButtonModule,
     MatIconModule,
+    MatSlideToggleModule,
   ],
   template: `
     <section class="ws">
@@ -56,6 +64,10 @@ interface IVariableEntry {
       }
 
       @if (!loading() && workflow(); as wf) {
+        @if (statusError()) {
+          <div class="error-banner save-error-banner">{{ statusError() }}</div>
+        }
+
         <div class="card">
           <h2 class="card-h">Identity</h2>
           <dl class="kv">
@@ -65,6 +77,24 @@ interface IVariableEntry {
             <dt>Tenant</dt><dd class="mono">{{ wf.tenantId }}</dd>
             <dt>Created</dt><dd>{{ wf.createdAt }}</dd>
           </dl>
+        </div>
+
+        <div class="card">
+          <h2 class="card-h">Status</h2>
+          <div class="status-row">
+            <mat-slide-toggle
+              class="status-toggle"
+              [checked]="isEnabled(wf)"
+              [disabled]="togglingStatus()"
+              (change)="onStatusToggle($event.checked, wf)"
+            >
+              {{ isEnabled(wf) ? "Enabled" : "Disabled" }}
+            </mat-slide-toggle>
+          </div>
+          <p class="muted">
+            Disabling a workflow stops it from accepting new triggers and
+            terminates any of its running executions.
+          </p>
         </div>
 
         <div class="card">
@@ -199,6 +229,22 @@ interface IVariableEntry {
     }
     .link { color: var(--primary, #1a66ff); cursor: pointer; }
     .danger-card { border-color: var(--red, #ef4444); }
+    .status-row {
+      display: flex;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .status-toggle {
+      font-size: 12px;
+    }
+    .error-banner {
+      font-size: 12px;
+      color: var(--rd-red-fg, #b91c1c);
+      background: var(--rd-red-bg, #fee2e2);
+      border: 1px solid var(--rd-red-border, #fca5a5);
+      border-radius: var(--radius, 6px);
+      padding: 8px 12px;
+    }
     .btn {
       font-size: 12px;
       padding: 6px 12px;
@@ -260,7 +306,7 @@ export class WorkflowSettingsComponent implements OnInit {
 
   private readonly parentParams = toSignal(
     this.route.parent?.params ?? this.route.params,
-    { initialValue: this.route.parent?.snapshot.params ?? {} },
+    { initialValue: this.route.parent?.snapshot.params ?? {} }
   );
   private readonly id = computed<string>(() => this.parentParams()["id"] ?? "");
 
@@ -268,6 +314,10 @@ export class WorkflowSettingsComponent implements OnInit {
   readonly loading = signal(true);
   readonly deleting = signal(false);
   readonly savingVars = signal(false);
+  /** Tracks whether the enable/disable toggle's `setStatus` call is mid-flight. */
+  readonly togglingStatus = signal(false);
+  /** User-visible error surfaced when `setStatus` fails (save-error-banner pattern, see `mcp-detail.component.ts`). */
+  readonly statusError = signal<string | null>(null);
 
   /** Editable variable entries derived from the workflow definition. */
   readonly variableEntries = signal<IVariableEntry[]>([]);
@@ -283,8 +333,17 @@ export class WorkflowSettingsComponent implements OnInit {
         this.workflow.set(wf);
         this.syncVariableEntries(wf.variables);
         this.loading.set(false);
+        console.debug("[WorkflowSettingsComponent] workflow loaded", {
+          id: wf.id,
+        });
       },
-      error: () => this.loading.set(false),
+      error: (error: unknown) => {
+        this.loading.set(false);
+        console.error("[WorkflowSettingsComponent] failed to load workflow", {
+          id,
+          error,
+        });
+      },
     });
   }
 
@@ -296,11 +355,96 @@ export class WorkflowSettingsComponent implements OnInit {
     void this.router.navigate(["/workflows", this.id(), "builder"]);
   }
 
+  // ── Enable/disable ───────────────────────────────────────────────
+
+  /** Legacy rows have no persisted `status`; treat missing as enabled. */
+  protected isEnabled(wf: IWorkflowDefinitionDto): boolean {
+    return wf.status !== "disabled";
+  }
+
+  /**
+   * Slide toggle change handler. Turning a workflow ON is a direct call —
+   * no confirmation needed. Turning it OFF opens the shared confirm
+   * dialog because disabling terminates in-flight executions; cancelling
+   * reverts the toggle back to its previous (checked) visual state.
+   */
+  protected onStatusToggle(checked: boolean, wf: IWorkflowDefinitionDto): void {
+    if (checked) {
+      this.applyStatus(wf, "enabled");
+      return;
+    }
+
+    const data: IConfirmDialogData = {
+      title: "Disable workflow",
+      message: `Disabling "${wf.name}" will terminate any running executions of this workflow. Continue?`,
+      confirmLabel: "Disable",
+      variant: "danger",
+      icon: "warning_amber",
+    };
+    this.dialog
+      .open<ConfirmDialogComponent, IConfirmDialogData, boolean>(
+        ConfirmDialogComponent,
+        { data, autoFocus: false, restoreFocus: true }
+      )
+      .afterClosed()
+      .subscribe((confirmed) => {
+        if (confirmed === true) {
+          this.applyStatus(wf, "disabled");
+        } else {
+          // Cancelled: force a re-render so the toggle reverts to the
+          // workflow's actual (still enabled) status.
+          this.workflow.update((current) =>
+            current ? { ...current } : current
+          );
+        }
+      });
+  }
+
+  private applyStatus(
+    wf: IWorkflowDefinitionDto,
+    status: "enabled" | "disabled"
+  ): void {
+    this.togglingStatus.set(true);
+    this.statusError.set(null);
+    this.api.setStatus(wf.id, status).subscribe({
+      next: (updated) => {
+        this.togglingStatus.set(false);
+        this.workflow.update((current) =>
+          current ? { ...current, status: updated.status } : current
+        );
+        console.debug("[WorkflowSettingsComponent] workflow status updated", {
+          id: wf.id,
+          status: updated.status,
+          terminated: updated.terminated,
+        });
+        const message =
+          status === "disabled"
+            ? `Workflow disabled. ${updated.terminated} execution(s) terminated.`
+            : "Workflow enabled";
+        this.snackBar.open(message, "OK", { duration: 3000 });
+      },
+      error: (error: unknown) => {
+        this.togglingStatus.set(false);
+        console.error(
+          "[WorkflowSettingsComponent] failed to update workflow status",
+          { id: wf.id, status, error }
+        );
+        // Force a re-render so the toggle reverts to the workflow's last
+        // known (unchanged) status after the failed API call.
+        this.workflow.update((current) => (current ? { ...current } : current));
+        this.statusError.set(
+          "Couldn't update workflow status. Please try again."
+        );
+        this.snackBar.open("Failed to update workflow status", "OK", {
+          duration: 5000,
+        });
+      },
+    });
+  }
+
   // ── Variables editor ──────────────────────────────────────────────
 
-  private syncVariableEntries(
-    variables?: Record<string, unknown>,
-  ): void {
+  private syncVariableEntries(variables?: Record<string, unknown>): void {
     if (!variables || typeof variables !== "object") {
       this.variableEntries.set([]);
       return;
@@ -308,11 +452,8 @@ export class WorkflowSettingsComponent implements OnInit {
     const entries: IVariableEntry[] = Object.entries(variables).map(
       ([key, value]) => ({
         key,
-        value:
-          typeof value === "string"
-            ? value
-            : JSON.stringify(value),
-      }),
+        value: typeof value === "string" ? value : JSON.stringify(value),
+      })
     );
     this.variableEntries.set(entries);
   }
@@ -350,12 +491,16 @@ export class WorkflowSettingsComponent implements OnInit {
 
   saveVariables(): void {
     const wf = this.workflow();
-    if (!wf) return;
+    if (!wf) {
+      return;
+    }
 
     const entries = this.variableEntries();
     const variables: Record<string, unknown> = {};
     for (const entry of entries) {
-      if (!entry.key.trim()) continue;
+      if (!entry.key.trim()) {
+        continue;
+      }
       // Attempt to parse JSON values; fall back to raw string.
       let parsed: unknown = entry.value;
       if (
@@ -394,11 +539,9 @@ export class WorkflowSettingsComponent implements OnInit {
         },
         error: () => {
           this.savingVars.set(false);
-          this.snackBar.open(
-            "Failed to save variables",
-            "OK",
-            { duration: 5000 },
-          );
+          this.snackBar.open("Failed to save variables", "OK", {
+            duration: 5000,
+          });
         },
       });
   }
@@ -416,11 +559,13 @@ export class WorkflowSettingsComponent implements OnInit {
     this.dialog
       .open<ConfirmDialogComponent, IConfirmDialogData, boolean>(
         ConfirmDialogComponent,
-        { data, autoFocus: false, restoreFocus: true },
+        { data, autoFocus: false, restoreFocus: true }
       )
       .afterClosed()
       .subscribe((confirmed) => {
-        if (confirmed === true) this.deleteWorkflow(wf);
+        if (confirmed === true) {
+          this.deleteWorkflow(wf);
+        }
       });
   }
 
@@ -434,7 +579,9 @@ export class WorkflowSettingsComponent implements OnInit {
       },
       error: () => {
         this.deleting.set(false);
-        this.snackBar.open("Failed to delete workflow", "OK", { duration: 5000 });
+        this.snackBar.open("Failed to delete workflow", "OK", {
+          duration: 5000,
+        });
       },
     });
   }

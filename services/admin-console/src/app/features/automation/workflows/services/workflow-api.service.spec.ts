@@ -77,4 +77,42 @@ describe("WorkflowApiService", () => {
     expect(response.terminated).toBe(0);
     httpMock.verify();
   });
+
+  it("getSummary GETs /workflows/summary and returns the tenant-wide summary", async () => {
+    const promise = firstValueFrom(service.getSummary());
+
+    const req = httpMock.expectOne(`${environment.apiUrl}/workflows/summary`);
+    expect(req.request.method).toBe("GET");
+
+    req.flush({
+      activeDefinitions: 5,
+      definitionsFailingNow: 1,
+      definitionsWithFailuresLast7d: 2,
+      executionsCompletedLast7d: 42,
+      executionsFailedLast7d: 3,
+      executionsRunningLast7d: 1,
+      executionsCompletedLast24h: 10,
+      topByExecutionCountLast7d: [
+        {
+          definition_id: "wf1",
+          name: "Top Workflow",
+          application: "app1",
+          count: 1842,
+        },
+      ],
+    });
+
+    const response = await promise;
+    expect(response.executionsCompletedLast7d).toBe(42);
+    expect(response.executionsFailedLast7d).toBe(3);
+    expect(response.topByExecutionCountLast7d).toEqual([
+      {
+        definition_id: "wf1",
+        name: "Top Workflow",
+        application: "app1",
+        count: 1842,
+      },
+    ]);
+    httpMock.verify();
+  });
 });

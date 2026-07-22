@@ -87,6 +87,37 @@ export interface IWorkflowExecutionDetail {
   createdAt: string;
 }
 
+/**
+ * A single row of `topByExecutionCountLast7d` in `IWorkflowsSummary`.
+ * Mirrors `ITopDefinitionRow` (workflow-service
+ * `executions.repository.interface.ts:40-45`) field-for-field — no
+ * status/success breakdown exists server-side, so none is added here.
+ */
+export interface ITopDefinitionRow {
+  definition_id: string;
+  name: string;
+  application: string;
+  count: number;
+}
+
+/**
+ * Response shape of `GET /workflows/summary`. Mirrors
+ * `IWorkflowsSummary` (workflow-service `workflows.service.ts:212-221`)
+ * field-for-field — T01 finding 1: this endpoint already exists and is
+ * proxied by api-gateway; `WorkflowApiService` previously had no wrapper
+ * for it.
+ */
+export interface IWorkflowsSummary {
+  activeDefinitions: number;
+  definitionsFailingNow: number;
+  definitionsWithFailuresLast7d: number;
+  executionsCompletedLast7d: number;
+  executionsFailedLast7d: number;
+  executionsRunningLast7d: number;
+  executionsCompletedLast24h: number;
+  topByExecutionCountLast7d: ITopDefinitionRow[];
+}
+
 interface ICreateWorkflowPayload {
   name: string;
   application: string;
@@ -186,13 +217,16 @@ export class WorkflowApiService {
   }
 
   /**
-   * Tenant-wide map of `definitionId -> executionsCount`. The caller
-   * folds it into a `Map<string, number>` for O(1) per-card lookups.
+   * Tenant-wide workflows summary: 7d/24h execution windows plus the
+   * real, 7-day-windowed per-workflow run counts for the top 5
+   * workflows by execution count. Wired to the existing
+   * `GET /workflows/summary` endpoint (workflow-service
+   * `workflows.controller.ts:82-85`, proxied by api-gateway
+   * `workflows.controller.ts:120-127`) — T01 finding 1: no new backend
+   * endpoint, this method closes the admin-console wiring gap.
    */
-  getExecutionCounts(): Observable<Record<string, number>> {
-    return this.http.get<Record<string, number>>(
-      `${this.base}/executions/counts`
-    );
+  getSummary(): Observable<IWorkflowsSummary> {
+    return this.http.get<IWorkflowsSummary>(`${this.base}/summary`);
   }
 
   /**
