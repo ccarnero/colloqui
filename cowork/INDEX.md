@@ -560,6 +560,55 @@ Backend follow-ups from T01 (not fixed in this loop — front-only SPEC):
   the `httpErrored` signal that depends on them never resolves to a real
   value. No `mcpErrored`/`hostedErrored` signal exists at all.
 
+## Change: console redesign ai (console-redesign-ai)
+
+Manual-loop change (not SDD) rebuilding the AI section on top of the
+`console-redesign-foundation` primitives: the agents list
+(`ai-agents-page.component.ts` → `ai.component.ts` list mode →
+`existing-agents-panel.component.ts`) with an `app-kpi-card` row of real
+agent counts, an `app-inventory-table` with a runtime-state health mapping
+(`synced`→`ok`, `draft`→`idle`, `unsynced`→`warn`, `misconfigured`→`error`)
+and an `app-needs-attention-panel`; a prompt editor, hosted by
+`ai-agent-editor-page.component.ts`'s `AiAgentEditorPageComponent` (which
+composes `<app-ai>` and `<app-agent-test-panel>` side by side for both
+`/ai/agents/new` and `/ai/agents/:id/configure`), with Monaco mention
+decorations (`@skill:`/`@tool:`, purple/green per the design) built from
+`MENTION_PATTERN_SOURCE`/`createMentionRegex()` in `ai.helpers.ts` — the
+single source of truth also consumed by `extractMentionsFromPrompt` —
+display-layer only, the save path stays byte-identical; and a NEW
+`agent-test-panel` component beside the editor reusing
+`AgentRuntimeService`'s `createExecution` → poll `getExecution` contract
+(the `playground.component.ts` pattern), tokens from `result.usage.*`,
+latency computed client-side, visible error turns on failure. Full task
+queue, gates, and human decisions:
+`manual-loops/admin-console/console-redesign-ai.md`. Operational contract
+(list composition, health mapping, editor architecture, test-panel invoke
+reuse): `services/admin-console/README.md` "AI composition". Engram topic:
+`admin-console/redesign-ai`.
+
+Human-signed decision (T04 amendment, dated 2026-07-22, made after T01's
+inventory findings): the SPEC's original wording called for restyling the
+"existing" `chat-panel.component.ts` test panel with its invoke wiring
+"reused verbatim." T01 found this factually wrong — `chat-panel.component.ts`
+is an orphaned prompt-editing component (System Prompt/Rules/Soul chips),
+never imported by any route or by `ai.component.ts`, and contains zero
+`AgentRuntimeService`/invoke wiring to reuse. The test panel was instead
+built as the new `agent-test-panel` component described above; the orphaned
+file was left untouched rather than repurposed.
+
+Follow-ups (flagged by T01, not fixed in this loop — front-only SPEC, no
+new endpoints allowed):
+
+- `chat-panel.component.ts` removal — it is dead code with no route or
+  parent-component reference; deleting it is a separate follow-up, not
+  bundled into this loop.
+- No per-agent stats/usage endpoint exists (`AgentAdminService` has no
+  `stats`/`usage`/`metrics`/`invocation`/`error_rate` method for agents) —
+  blocks the design's per-agent `inv`/`p95`/`spark` inventory-table columns
+  and the list's top-of-page `MetricCard` row (invocations·24h, avg p95,
+  tokens·24h, handoff rate), all rendered as an explicit empty/dash state
+  in this loop rather than invented numbers.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

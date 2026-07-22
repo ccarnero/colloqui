@@ -364,3 +364,53 @@ rebuilt on top of the `console-redesign-foundation` primitives, per
   is ever touched), but there is no equivalent sentinel unit test on
   `connections-landing.component.spec.ts` yet — tracked as a pending
   follow-up.
+
+### AI composition
+
+The AI section (`features/automation/ai/`, routes `/ai/agents` and
+`/ai/agents/:id/configure`) was rebuilt on top of the
+`console-redesign-foundation` primitives, per
+`manual-loops/admin-console/console-redesign-ai.md`.
+
+- **List view** (`ai-agents-page.component.ts` → `ai.component.ts` list
+  mode, delegating to `existing-agents-panel.component.ts`) — an
+  `app-kpi-card` row of real agent counts, an `app-inventory-table` with a
+  runtime-state health mapping (`ai.component.ts`'s `runtimeHealth` signal,
+  driven by `AgentRuntimeService.checkRuntimeHealth()`): `synced` → `ok`,
+  `draft` → `idle`, `unsynced` → `warn`, `misconfigured` → `error`, plus an
+  `app-needs-attention-panel` for agents in a failing runtime state.
+  Invocation counts, p95, and sparklines from the design mock have no
+  backing field on `IAgent` or any per-agent stats endpoint — flagged
+  NO-DATA rather than invented (T01 finding).
+- **Editor architecture — Monaco decorations overlay, display-layer only**
+  (`ai.component.ts`'s Monaco panes bound to `systemPrompt`/`rules`/`soul`,
+  hosted by `ai-agent-editor-page.component.ts`'s `AiAgentEditorPageComponent`,
+  which composes `<app-ai>` (editor) side by side with
+  `<app-agent-test-panel>` for both `/ai/agents/new` and
+  `/ai/agents/:id/configure`). Mention highlighting (`@skill:<id>` /
+  `@tool:<id>`, purple/green per the design) is implemented as a Monaco
+  decorations layer added alongside the existing `ai-monaco-hover.ts`
+  hover/completion providers — it never touches the stored prompt text or
+  the save path. The single source of truth is `MENTION_PATTERN_SOURCE`
+  in `ai.helpers.ts`: `ai-monaco-decorations.ts`'s
+  `computeMentionDecorationRanges` builds its regex via
+  `createMentionRegex()` (constructed from `MENTION_PATTERN_SOURCE`), the
+  same factory `extractMentionsFromPrompt` also consumes, so highlighting
+  and the mention parser can never drift out of sync. Saved payloads are
+  byte-identical to what the pre-redesign editor would save.
+- **Test panel — invoke reuse, no new endpoints** — a NEW standalone
+  `agent-test-panel` component sits beside the editor and reuses
+  `AgentRuntimeService`'s existing `createExecution` → poll `getExecution`
+  contract, the same pattern already proven in `playground.component.ts`.
+  Tokens are read directly from `result.usage.*`; latency is computed
+  client-side as `completedAt - startedAt` (not a backend field); failed or
+  timed-out executions render a visible error turn, never fail silently.
+  No new API endpoints were added.
+- **The T04 amendment (human sign-off, 2026-07-22)** — the SPEC originally
+  called for restyling the "existing" `chat-panel.component.ts` test panel.
+  T01's inventory found `chat-panel.component.ts` was in fact an orphaned
+  prompt-editing component with zero invoke wiring, never imported by any
+  route or the AI host component. Rather than "restyle in place," the test
+  panel was built as the new `agent-test-panel` component described above;
+  the orphaned `chat-panel.component.ts` was left untouched, with its
+  removal tracked as a follow-up.

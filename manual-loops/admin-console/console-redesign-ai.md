@@ -186,7 +186,7 @@ grep -n "console-redesign-ai" cowork/INDEX.md
 - [x] T02 agents list view
 - [x] T03 prompt editor + highlights
 - [x] T04 test panel + metrics
-- [ ] T05 docs + index
+- [x] T05 docs + index
 
 ## Out of scope (explicit)
 
