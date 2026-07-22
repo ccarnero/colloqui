@@ -4,170 +4,183 @@ import {
   computed,
   inject,
   type OnInit,
+  signal,
 } from "@angular/core";
 import { Router } from "@angular/router";
+import type { IMcpServer } from "../../core/models/agent.model";
+import type { IRegisteredService } from "../../core/models/registry.model";
+import { AgentAdminService } from "../../core/services/agent-admin.service";
+import type { IAdapterDto } from "../../core/services/http-adapter.service";
+import { HttpAdapterService } from "../../core/services/http-adapter.service";
 import { ConnectionsMetricsService } from "../../core/services/metrics/connections-metrics.service";
+import { RegistryService } from "../../core/services/registry.service";
 import {
-  ActivityFeedComponent,
-  type IActivityEntry,
-} from "../../shared/components/activity-feed/activity-feed.component";
+  type InventoryTableColumn,
+  InventoryTableComponent,
+} from "../../shared/components/inventory-table/inventory-table.component";
 import { KpiCardComponent } from "../../shared/components/kpi-card/kpi-card.component";
-import { SectionLandingShellComponent } from "../../shared/components/section-landing-shell/section-landing-shell.component";
+import type {
+  AttentionSeverity,
+  IAttentionIssue,
+} from "../../shared/components/needs-attention-panel/needs-attention-panel.component";
+import { NeedsAttentionPanelComponent } from "../../shared/components/needs-attention-panel/needs-attention-panel.component";
+import { PageHeaderComponent } from "../../shared/components/page-header/page-header.component";
+import type { HealthStatus } from "../../shared/components/status-badge/status-badge.component";
 
-interface ITopConnector {
+/** Connection kind, drives per-row routing (decision 2: routes unchanged). */
+type ConnectionKind = "http" | "mcp" | "hosted";
+
+/**
+ * Unified fleet row across the three real connection sources. Every field
+ * here is a real, already-fetched value — no invented columns (T01 §6:
+ * calls/p95/err/sparkline/usedBy are NO-DATA and are never mapped).
+ */
+interface IConnectionRow {
+  id: string;
+  kind: ConnectionKind;
   name: string;
-  kind: "internal" | "external" | "hosted" | "mcp";
-  calls7d: number;
+  status: string;
+  health: HealthStatus;
+  /** Per-type real field (T01 §3): HTTP -> authType, MCP -> transport_type, hosted -> image. */
+  detail: string;
 }
 
 /**
- * Connections section landing.
+ * Connections section landing — fleet operational view.
  *
- * Aggregated view across all connection types — Internal HTTP, External
- * HTTP, MCP, Hosted services. KPIs show counts per type; primary panel
- * lists most-used connectors regardless of type; secondary panel is
- * recent activity (errors, sync events, additions).
+ * Rebuilt per `manual-loops/admin-console/console-redesign-connections.md`
+ * T02: fleet MetricCard row (real counts only, ConnectionsMetricsService),
+ * an InventoryTable of every HTTP/MCP/hosted connection, and a
+ * NeedsAttentionPanel for non-ok connections. The previous "most-used
+ * connectors"/"recent activity" panels were dead code (T01 §2, §7 — hard-
+ * coded to empty arrays) and have been removed along with their styles.
  */
 @Component({
   selector: "app-connections-landing",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    SectionLandingShellComponent,
+    PageHeaderComponent,
     KpiCardComponent,
-    ActivityFeedComponent,
+    InventoryTableComponent,
+    NeedsAttentionPanelComponent,
   ],
   template: `
-    <app-section-landing-shell
-      title="Connections"
-      subtitle="Catálogo de integraciones del tenant"
-      [hasSecondary]="true"
-    >
-      <div slot="actions">
-        <button class="btn btn-primary" type="button" (click)="newConnector()">
+    <app-page-header title="Connections" subtitle="Tenant integration catalog">
+      <ng-container slot="actions">
+        <button class="btn btn-primary btn-sm" type="button" (click)="newConnector()">
           + New connector
         </button>
-      </div>
+      </ng-container>
+    </app-page-header>
 
-      <div slot="kpis" class="kpis">
-        <app-kpi-card
-          label="HTTP"
-          [value]="metrics.httpConnectorsTotal() ?? '—'"
-          [sub]="httpSub()"
-        />
-        <app-kpi-card
-          label="MCP"
-          [value]="metrics.mcpServersTotal() ?? '—'"
-          [sub]="mcpSub()"
-        />
-        <app-kpi-card
-          label="Hosted services"
-          [value]="metrics.hostedTotal() ?? '—'"
-          sub="all healthy"
-        />
-      </div>
+    <!-- Fleet strip: only real counts (T02 — the design's calls/error-rate/
+         p95/secrets-to-rotate KPIs are NO-DATA per T01 §6 and are not
+         rendered). mcpSub is real (mcpServersEnabled); http/hosted have no
+         real secondary metric today, so no sub text is shown for them. -->
+    <div class="fleet-strip">
+      <app-kpi-card label="HTTP" [value]="metrics.httpConnectorsTotal() ?? '—'" />
+      <app-kpi-card
+        label="MCP"
+        [value]="metrics.mcpServersTotal() ?? '—'"
+        [sub]="mcpSub()"
+      />
+      <app-kpi-card label="Hosted services" [value]="metrics.hostedTotal() ?? '—'" />
+    </div>
 
-      <div slot="primary" class="panel">
-        <h2 class="panel-h">Most-used connectors · last 7 days</h2>
-        @for (c of topConnectors(); track c.name) {
-          <a class="row" (click)="openByKind(c.kind)">
-            <span class="name">{{ c.name }}</span>
-            <span class="kind">{{ c.kind }}</span>
-            <span class="stat">{{ formatNum(c.calls7d) }} calls</span>
-          </a>
-        } @empty {
-          <p class="empty-hint">Usage analytics coming soon</p>
-        }
-      </div>
+    <!-- Inventory of every connection, all three sources. Health dot per the
+         binding decision-3 ruling (2026-07-22): hosted -> statusColor()
+         semantics, MCP -> enabled && is_active, HTTP -> status === "enabled". -->
+    <app-inventory-table
+      [columns]="columns"
+      [rows]="rows()"
+      ariaLabel="Connections inventory"
+      emptyMessage="No connections found. Create an HTTP connector, MCP server, or hosted service to get started."
+      (rowClick)="onRowClick($event)"
+    />
 
-      <div slot="secondary" class="panel">
-        <h2 class="panel-h">Recent activity</h2>
-        <app-activity-feed
-          [entries]="recentActivity()"
-          emptyText="No recent activity"
-        />
-      </div>
-    </app-section-landing-shell>
+    <!-- Needs attention: every row whose health resolved to non-ok (T01 §6 —
+         the design's error-rate/secret-expiry/unused-30d reasons are
+         NO-DATA; this panel only surfaces the real enabled/disabled and
+         hosted-status signals). -->
+    <app-needs-attention-panel
+      title="Needs attention"
+      subtitle="connections"
+      [issues]="attentionIssues()"
+      emptyMessage="No connections need attention"
+      (actionClick)="onAttentionActionClick($event)"
+    />
   `,
   styles: `
-    :host { display: block; }
-    .kpis {
+    :host {
+      display: block;
+    }
+    .fleet-strip {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-      gap: 12px;
+      grid-template-columns: repeat(3, 1fr);
+      gap: var(--rd-space-8, 16px);
+      margin-bottom: var(--rd-space-8, 16px);
     }
-    .panel {
-      background: var(--bg-surface);
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius, 6px);
-      padding: 14px 16px;
-    }
-    .panel-h {
-      font-size: 13px;
-      font-weight: 500;
-      margin: 0 0 10px;
-      color: var(--text-primary);
-    }
-    .row {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      padding: 8px 0;
-      border-bottom: 1px solid var(--border-subtle);
-      font-size: 12px;
-      cursor: pointer;
-      text-decoration: none;
-      color: inherit;
-    }
-    .row:last-child { border-bottom: none; }
-    .row:hover { background: var(--bg3); }
-    .name {
-      flex: 1;
-      color: var(--text-primary);
-      font-family: var(--font-mono, monospace);
-    }
-    .kind { color: var(--text2); width: 70px; font-size: 11px; }
-    .stat {
-      color: var(--text2);
-      width: 90px;
-      text-align: right;
-      font-variant-numeric: tabular-nums;
+    app-inventory-table {
+      display: block;
+      margin-bottom: var(--rd-space-8, 16px);
     }
     .btn {
       font-size: 12px;
       padding: 6px 12px;
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius, 6px);
-      background: var(--bg-surface);
-      color: var(--text-primary);
+      border: 1px solid var(--rd-line);
+      border-radius: var(--rd-radius-7, 8px);
+      background: var(--rd-panel);
+      color: var(--rd-text-1);
       cursor: pointer;
     }
     .btn-primary {
-      background: var(--primary, #1a66ff);
-      color: #fff;
-      border-color: var(--primary, #1a66ff);
-    }
-    .empty-hint {
-      font-size: 12px;
-      color: var(--text3);
-      padding: 12px 0;
-      margin: 0;
-      text-align: center;
+      background: var(--rd-accent);
+      color: var(--rd-bg);
+      border-color: var(--rd-accent);
     }
   `,
 })
 export class ConnectionsLandingComponent implements OnInit {
   protected readonly metrics = inject(ConnectionsMetricsService);
   private readonly router = inject(Router);
+  private readonly httpAdapters = inject(HttpAdapterService);
+  private readonly agentAdmin = inject(AgentAdminService);
+  private readonly registry = inject(RegistryService);
 
-  ngOnInit(): void {
-    this.metrics.loadCounts();
-  }
+  private readonly httpAdapterList = signal<IAdapterDto[]>([]);
+  private readonly mcpServerList = signal<IMcpServer[]>([]);
 
-  protected readonly httpSub = computed(() => {
-    const errs = this.metrics.httpErrored() ?? 0;
-    return errs > 0 ? `${errs} errored` : "all healthy";
-  });
+  protected readonly columns: InventoryTableColumn<IConnectionRow>[] = [
+    {
+      key: "name",
+      header: "Name",
+      type: "status-badge",
+      variant: "dot",
+      value: (r) => r.name,
+      health: (r) => r.health,
+    },
+    {
+      key: "kind",
+      header: "Type",
+      type: "mono",
+      value: (r) => r.kind,
+      width: "100px",
+    },
+    {
+      key: "status",
+      header: "Status",
+      type: "text",
+      value: (r) => r.status,
+      width: "110px",
+    },
+    {
+      key: "detail",
+      header: "Detail",
+      type: "mono",
+      value: (r) => r.detail,
+    },
+  ];
 
   protected readonly mcpSub = computed(() => {
     const total = this.metrics.mcpServersTotal();
@@ -178,28 +191,215 @@ export class ConnectionsLandingComponent implements OnInit {
     return `${enabled} enabled`;
   });
 
-  protected readonly topConnectors = computed<ITopConnector[]>(() => []);
+  /** Unified fleet rows across all three connection sources. */
+  protected readonly rows = computed<IConnectionRow[]>(() => {
+    const httpRows = this.httpAdapterList().map((a) => this.mapHttpRow(a));
+    const mcpRows = this.mcpServerList().map((s) => this.mapMcpRow(s));
+    const hostedRows = this.registry
+      .services()
+      .map((s) => this.mapHostedRow(s));
+    const all = [...httpRows, ...mcpRows, ...hostedRows];
+    console.debug("[ConnectionsLandingComponent] fleet rows computed", {
+      http: httpRows.length,
+      mcp: mcpRows.length,
+      hosted: hostedRows.length,
+      total: all.length,
+    });
+    return all;
+  });
 
-  protected readonly recentActivity = computed<IActivityEntry[]>(() => []);
+  protected readonly attentionIssues = computed<IAttentionIssue[]>(() => {
+    const nonOk = this.rows().filter((r) => r.health !== "ok");
+    if (nonOk.length === 0) {
+      // Verbose logging: empty attention list must not fail silently.
+      console.debug(
+        "[ConnectionsLandingComponent] no non-ok connections, needs-attention panel will render its empty state"
+      );
+    }
+    return nonOk.map((r) => ({
+      id: `${r.kind}:${r.id}`,
+      message: `${r.name} (${r.kind}) is ${r.status}.`,
+      severity: this.severityFor(r.health),
+      action: { label: "View" },
+    }));
+  });
 
-  protected formatNum(n: number): string {
-    return n >= 1_000 ? `${(n / 1_000).toFixed(1)}K` : String(n);
+  ngOnInit(): void {
+    this.metrics.loadCounts();
+    this.loadHttpAdapters();
+    this.loadMcpServers();
+    this.registry.loadServices();
   }
 
-  protected openByKind(kind: ITopConnector["kind"]): void {
-    if (kind === "hosted") {
-      void this.router.navigate(["/connections", "hosted-services"]);
-      return;
+  private loadHttpAdapters(): void {
+    this.httpAdapters.list().subscribe({
+      next: (rows) => {
+        this.httpAdapterList.set(rows);
+        console.debug("[ConnectionsLandingComponent] HTTP adapters loaded", {
+          count: rows.length,
+        });
+      },
+      error: (err: unknown) => {
+        this.httpAdapterList.set([]);
+        console.error(
+          "[ConnectionsLandingComponent] failed to load HTTP adapters",
+          { error: err }
+        );
+      },
+    });
+  }
+
+  private loadMcpServers(): void {
+    this.agentAdmin.listMcpServers().subscribe({
+      next: (rows) => {
+        this.mcpServerList.set(rows);
+        console.debug("[ConnectionsLandingComponent] MCP servers loaded", {
+          count: rows.length,
+        });
+      },
+      error: (err: unknown) => {
+        this.mcpServerList.set([]);
+        console.error(
+          "[ConnectionsLandingComponent] failed to load MCP servers",
+          { error: err }
+        );
+      },
+    });
+  }
+
+  /**
+   * HTTP connector health mapping — decision 3 ruling (2026-07-22):
+   * status === "enabled" -> ok, else -> error. No warn is derivable (no
+   * error-rate field on IAdapterDto, T01 §3).
+   */
+  private mapHttpRow(a: IAdapterDto): IConnectionRow {
+    const health: HealthStatus = a.status === "enabled" ? "ok" : "error";
+    console.debug("[ConnectionsLandingComponent] HTTP health derived", {
+      id: a.id,
+      status: a.status,
+      health,
+    });
+    return {
+      id: a.id,
+      kind: "http",
+      name: a.name,
+      status: a.status,
+      health,
+      detail: a.authType,
+    };
+  }
+
+  /**
+   * MCP server health mapping — decision 3 ruling (2026-07-22):
+   * enabled && is_active -> ok, else -> error. No warn is derivable (no
+   * call-success aggregation is wired here, T01 §3/§4).
+   */
+  private mapMcpRow(s: IMcpServer): IConnectionRow {
+    const active = s.enabled && s.is_active;
+    const health: HealthStatus = active ? "ok" : "error";
+    console.debug("[ConnectionsLandingComponent] MCP health derived", {
+      id: s.id,
+      enabled: s.enabled,
+      is_active: s.is_active,
+      health,
+    });
+    return {
+      id: s.id,
+      kind: "mcp",
+      name: s.name,
+      status: active ? "active" : "inactive",
+      health,
+      detail: s.transport_type,
+    };
+  }
+
+  /**
+   * Hosted service health mapping — decision 3 ruling (2026-07-22): reuse
+   * the existing `statusColor()` semantics (active -> ok, pending -> warn,
+   * error -> error). Any other raw status string falls back to "idle"
+   * (unmapped/unknown — matches `statusColor()`'s "gray" fallback).
+   */
+  private mapHostedRow(s: IRegisteredService): IConnectionRow {
+    let health: HealthStatus;
+    if (s.status === "active") {
+      health = "ok";
+    } else if (s.status === "pending") {
+      health = "warn";
+    } else if (s.status === "error") {
+      health = "error";
+    } else {
+      health = "idle";
     }
-    if (kind === "mcp") {
-      void this.router.navigate(["/connections", "mcp"]);
-      return;
+    console.debug("[ConnectionsLandingComponent] hosted health derived", {
+      id: s.id,
+      status: s.status,
+      health,
+    });
+    return {
+      id: s.id,
+      kind: "hosted",
+      name: s.name,
+      status: s.status,
+      health,
+      detail: s.image,
+    };
+  }
+
+  private severityFor(health: HealthStatus): AttentionSeverity {
+    if (health === "error") {
+      return "critical";
     }
-    // internal + external collapse to the same flat HTTP page in v1.
-    void this.router.navigate(["/connections", "http"]);
+    if (health === "warn") {
+      return "warning";
+    }
+    return "warning";
+  }
+
+  /**
+   * Row click navigates to the type's existing detail route (decision 2:
+   * routes unchanged). Hosted services have no per-item detail route
+   * (T01 §1) — clicking a hosted row goes to the existing hosted-services
+   * list page instead of inventing a new route.
+   */
+  onRowClick(row: IConnectionRow): void {
+    console.debug("[ConnectionsLandingComponent] fleet row clicked", {
+      id: row.id,
+      kind: row.kind,
+    });
+    this.navigateForKind(row.kind, row.id);
+  }
+
+  onAttentionActionClick(issue: IAttentionIssue): void {
+    const [kind, id] = issue.id.split(":") as [ConnectionKind, string];
+    console.debug(
+      "[ConnectionsLandingComponent] needs-attention action clicked",
+      { kind, id }
+    );
+    this.navigateForKind(kind, id);
+  }
+
+  private navigateForKind(kind: ConnectionKind, id: string): void {
+    const path =
+      kind === "http"
+        ? ["/connections", "http", id]
+        : kind === "mcp"
+          ? ["/connections", "mcp", id]
+          : ["/connections", "hosted-services"];
+    this.router.navigate(path).catch((error: unknown) => {
+      console.error("[ConnectionsLandingComponent] navigation failed", {
+        kind,
+        id,
+        error,
+      });
+    });
   }
 
   protected newConnector(): void {
-    void this.router.navigate(["/connections", "http"]);
+    this.router.navigate(["/connections", "http"]).catch((error: unknown) => {
+      console.error(
+        "[ConnectionsLandingComponent] navigation to new-connector failed",
+        { error }
+      );
+    });
   }
 }
