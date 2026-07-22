@@ -153,6 +153,14 @@ cd services/admin-console && pnpm exec ng test --watch=false
 - Restyle the EXISTING `chat-panel.component.ts` beside the editor: message
   input, chat-style output (invoke wiring unchanged), latency/token readout
   per response (fields per T01/decision 4), running-state indicator.
+- **AMENDED 2026-07-22 (human sign-off, post-T01 finding 7):** `chat-panel`
+  is an orphaned prompt-editing component with NO invoke wiring — the prior
+  art was wrong. The test panel is a NEW standalone component beside the
+  editor that reuses `AgentRuntimeService` (`createExecution` → poll
+  `getExecution`, the proven playground pattern): tokens from
+  `result.usage.*`, latency client-computed (`completedAt - startedAt`),
+  error state on failed/timed-out executions. No new endpoints. The orphaned
+  `chat-panel.component.ts` stays untouched; its removal is a follow-up.
 - Unit tests: request wiring, response rendering, error rendering (invoke
   failure shows an error state, never silent), metrics display.
 
