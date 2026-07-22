@@ -28,6 +28,18 @@ three views, per the design contract.
    builder link opens the builder route focused on the corresponding node.
    Existing identifiers only — no new backend fields.
 5. Trace data comes from the existing trace/run endpoints; gaps are findings.
+   **ORCHESTRATOR RULING 2026-07-22 (applying the human "design wins" +
+   "real data only" precedents signed in earlier loops, post-T01):**
+   (a) Tab set follows the design mock: waterfall / causal / legacy / run —
+   "step log" is a sub-panel INSIDE the run view, not a fifth tab. The
+   legacy tab stays (old screens keep working).
+   (b) Inspector renders only fields that exist: payload stays fetch-on-demand
+   (existing getEventPayload); subscribers on the new pipeline render the
+   consumed_by durable names only (the rich shape is legacy-only — backend
+   follow-up); Temporal links render where workflow_id/run_id exist; the
+   builder deep link is HIDDEN until a trace-event→builder-node id bridge
+   exists (backend/builder follow-up — never synthesized), per the SPEC's
+   own "hidden otherwise, never a broken link" rule in T06.
 
 ## Prior art (validated 2026-07-21 — REUSE, do not duplicate)
 
