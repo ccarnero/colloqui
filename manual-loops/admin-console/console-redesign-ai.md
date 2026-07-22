@@ -183,7 +183,7 @@ grep -n "console-redesign-ai" cowork/INDEX.md
 ---
 
 - [x] T01 inventory report
-- [ ] T02 agents list view
+- [x] T02 agents list view
 - [ ] T03 prompt editor + highlights
 - [ ] T04 test panel + metrics
 - [ ] T05 docs + index
