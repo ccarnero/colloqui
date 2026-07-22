@@ -25,8 +25,17 @@
    engine. The canvas stays on `@foblex/flow` (18.6.0).
 3. Full-bleed means the builder route hides the console sidebar/topbar and
    shows floating chrome (back button, workflow name, save state, zoom).
+   **AMENDED 2026-07-22 (human sign-off, post-T01 finding 5):** follow the
+   design — the app header/tabs STAY VISIBLE in the builder; only the
+   sub-nav hides (extend the existing `subNavCollapsed` mechanism). Floating
+   chrome (back, name, save state, zoom) overlays the canvas.
 4. Port colors map by port data type; the exact type→color mapping is
    confirmed with the human after T01.
+   **AMENDED 2026-07-22 (human sign-off, post-T01 finding 2):** ports have
+   no data type in the domain model, and the design itself colors by NODE
+   type (KIND_STRIPE). Ports/accents are colored by `EWorkflowNodeType`
+   mapped to existing `--rd-*` tokens, with a neutral fallback for unknown
+   types. No model changes.
 5. Per-node mini-stats (runs, error rate) come from existing run data; if the
    builder view has no access to it, it's a finding, not a new endpoint.
 
