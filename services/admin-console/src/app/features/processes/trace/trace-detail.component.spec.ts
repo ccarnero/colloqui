@@ -12,6 +12,7 @@ import {
   TrackingChainService,
 } from "../../../core/services/tracking-chain.service";
 import { TraceDetailComponent } from "./trace-detail.component";
+import { TraceSelectionService } from "./trace-selection.service";
 
 function event(overrides: Partial<ITrackedEvent>): ITrackedEvent {
   return {
@@ -240,6 +241,152 @@ describe("TraceDetailComponent", () => {
         workflowId: "wf-a",
         runId: "run-a",
       });
+    });
+  });
+
+  describe("Tab bar (T02)", () => {
+    it("renders the four tabs waterfall/causal/legacy/run, per the ORCHESTRATOR RULING under decision 5(a)", () => {
+      getChain.mockReturnValue(
+        of({
+          ...fixtureChain,
+          events: [
+            ...fixtureChain.events,
+            event({
+              event_id: "evt-run",
+              producer: "workflow-service",
+              domain: "workflow",
+              kind: "execution_started",
+              rule: 19,
+              workflow_id: "acme:order-workflow:abc123",
+              run_id: "run-9",
+            }),
+          ],
+        })
+      );
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const labels = Array.from(
+        el.querySelectorAll<HTMLButtonElement>(".td-tab")
+      ).map((b) => b.textContent?.trim());
+
+      expect(labels).toEqual([
+        "Waterfall",
+        "Causal graph",
+        "Legacy",
+        "Run view",
+      ]);
+    });
+  });
+
+  describe("Event inspector shell (T02)", () => {
+    it("shows the empty state and no close button when nothing is selected", () => {
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+
+      expect(el.querySelector(".td-inspector-empty")?.textContent).toContain(
+        "Select an event…"
+      );
+      expect(el.querySelector(".td-inspector-close")).toBeFalsy();
+    });
+
+    it("opens (shows the event id + close button) once TraceSelectionService.select() is called", () => {
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const selection = fixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+
+      selection.select("evt-42", "waterfall");
+      fixture.detectChanges();
+
+      expect(el.querySelector(".td-inspector-title")?.textContent).toContain(
+        "evt-42"
+      );
+      expect(el.querySelector(".td-inspector-source")?.textContent).toBe(
+        "waterfall"
+      );
+      expect(el.querySelector(".td-inspector-close")).toBeTruthy();
+      expect(el.querySelector(".td-inspector-empty")).toBeFalsy();
+    });
+
+    it("closes (back to the empty state) when TraceSelectionService.clear() is called", () => {
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const selection = fixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+      selection.select("evt-42", "waterfall");
+      fixture.detectChanges();
+
+      selection.clear();
+      fixture.detectChanges();
+
+      expect(el.querySelector(".td-inspector-empty")?.textContent).toContain(
+        "Select an event…"
+      );
+    });
+
+    it("closes on clicking the × button", () => {
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const selection = fixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+      selection.select("evt-42", "waterfall");
+      fixture.detectChanges();
+
+      el.querySelector<HTMLButtonElement>(".td-inspector-close")?.click();
+      fixture.detectChanges();
+
+      expect(selection.selectedEventId()).toBeNull();
+      expect(el.querySelector(".td-inspector-empty")).toBeTruthy();
+    });
+
+    it("closes on Esc", () => {
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const selection = fixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+      selection.select("evt-42", "waterfall");
+      fixture.detectChanges();
+
+      el.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
+      );
+      fixture.detectChanges();
+
+      expect(selection.selectedEventId()).toBeNull();
+      expect(el.querySelector(".td-inspector-empty")).toBeTruthy();
+    });
+
+    it("Esc is a no-op when nothing is selected (no spurious clear/log)", () => {
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const selection = fixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+
+      el.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
+      );
+      fixture.detectChanges();
+
+      expect(selection.selectedEventId()).toBeNull();
+      expect(el.querySelector(".td-inspector-empty")).toBeTruthy();
+    });
+
+    it("selection is provided per trace-screen instance, not shared globally (component-level provider)", () => {
+      setup();
+      const first = fixture.debugElement.injector.get(TraceSelectionService);
+
+      const secondFixture = TestBed.createComponent(TraceDetailComponent);
+      secondFixture.detectChanges();
+      const second = secondFixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+
+      expect(first).not.toBe(second);
     });
   });
 });

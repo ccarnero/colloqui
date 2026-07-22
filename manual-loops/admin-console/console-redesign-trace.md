@@ -486,7 +486,7 @@ grep -n "console-redesign-trace" cowork/INDEX.md
 ---
 
 - [x] T01 inventory report
-- [ ] T02 shell + selection service
+- [x] T02 shell + selection service
 - [ ] T03 waterfall
 - [ ] T04 step log + causal graph
 - [ ] T05 run-view canvas
