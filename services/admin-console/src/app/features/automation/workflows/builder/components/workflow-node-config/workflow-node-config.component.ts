@@ -723,14 +723,21 @@ import { TemplateAutocompleteComponent } from "../template-autocomplete/template
     }
   `,
   styles: `
+    /*
+     * SPEC T05 — container/positioning only (T01 finding 2: this component's
+     * field set maps directly onto the floating inspector's Config tab).
+     * The old surface was a fixed 300px sidebar with its own background and
+     * border; the floating inspector wrapper (workflow-builder.component.ts)
+     * now supplies the panel chrome (--rd-panel background, shadow, radius),
+     * so this :host only needs to fill that wrapper. Form controls, model
+     * bindings and all (change) outputs below are untouched.
+     */
     :host {
       display: flex;
       flex-direction: column;
-      width: 300px;
-      background: var(--bg-sidebar, var(--bg2));
-      border-left: 1px solid var(--border);
+      width: 100%;
+      height: 100%;
       overflow-y: auto;
-      flex-shrink: 0;
     }
     .config-panel {
       display: flex;

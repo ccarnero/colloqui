@@ -2,6 +2,7 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  HostListener,
   inject,
   type OnInit,
   signal,
@@ -130,6 +131,7 @@ function pruneConflictingConnections(
             (fCreateNode)="onCreateNode($event)"
             (fCreateConnection)="onCreateConnection($event)"
             (fReassignConnection)="onReassignConnection($event)"
+            (click)="onCanvasSurfaceClick()"
           >
             <f-background>
               <f-circle-pattern color="var(--rd-line)" [radius]="1" />
@@ -169,7 +171,7 @@ function pruneConflictingConnections(
                   [node]="node"
                   [hasError]="errorNodeKeys().has(node.key)"
                   [isSelected]="node.key === selectedNodeKey()"
-                  (click)="selectNode(node.key)"
+                  (click)="onNodeSurfaceClick($event, node.key)"
                 />
               }
             </f-canvas>
@@ -261,21 +263,29 @@ function pruneConflictingConnections(
               <mat-icon>fit_screen</mat-icon>
             </button>
           </div>
-        </div>
 
-        <!-- Config Panel -->
-        @if (selectedNode()) {
-          <app-workflow-node-config
-            [node]="selectedNode()"
-            [triggerAccountIds]="triggerAccountIds()"
-            [workflowNodes]="nodes()"
-            [variableGroups]="variableGroups()"
-            (close)="deselectNode()"
-            (remove)="removeNode($event)"
-            (configChange)="onNodeConfigChange($event)"
-            (nameChange)="onNodeNameChange($event)"
-          />
-        }
+          <!-- Floating inspector (SPEC T05 — T01 finding 2: replaces the old
+               300px sidebar; embeds the EXISTING WorkflowNodeConfigComponent
+               form logic unchanged, only the container/positioning changes.
+               Sits as a sibling of <f-flow>, not inside it, so clicks inside
+               the panel never bubble into the canvas click-to-deselect
+               handler below — no pointer-events blocking needed elsewhere
+               on the canvas. -->
+          @if (selectedNode(); as sel) {
+            <div class="floating-inspector" data-testid="floating-inspector">
+              <app-workflow-node-config
+                [node]="sel"
+                [triggerAccountIds]="triggerAccountIds()"
+                [workflowNodes]="nodes()"
+                [variableGroups]="variableGroups()"
+                (close)="onInspectorCloseButton()"
+                (remove)="removeNode($event)"
+                (configChange)="onNodeConfigChange($event)"
+                (nameChange)="onNodeNameChange($event)"
+              />
+            </div>
+          }
+        </div>
 
         <!-- Test Panel (when no node selected and test panel is open) -->
         @if (!selectedNode() && testPanelOpen()) {
@@ -479,6 +489,27 @@ function pruneConflictingConnections(
       line-height: 30px;
       min-width: 40px;
       text-align: center;
+    }
+
+    /* Floating inspector (SPEC T05) — token-styled floating panel over the
+       canvas, right side, per the design's Builder section. A sibling of
+       <f-flow>, so it never intercepts the canvas click-to-deselect
+       listener and never blocks canvas interactions outside itself. */
+    .floating-inspector {
+      position: absolute;
+      top: calc(var(--rd-space-8) * 3 + 12px);
+      right: var(--rd-space-8);
+      bottom: var(--rd-space-8);
+      width: 320px;
+      max-width: calc(100% - var(--rd-space-8) * 2);
+      z-index: 5;
+      background: var(--rd-panel);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-7);
+      box-shadow: var(--rd-shadow-md);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
     }
 
     /* Foblex connection rendering (library sets fill:none but no stroke) */
@@ -900,11 +931,77 @@ export class WorkflowBuilderComponent implements OnInit {
   }
 
   selectNode(key: string): void {
+    console.debug("[WorkflowBuilderComponent] inspector opened", {
+      nodeKey: key,
+      previousKey: this.selectedNodeKey(),
+    });
     this.selectedNodeKey.set(key);
   }
 
   deselectNode(): void {
+    if (this.selectedNodeKey() === null) {
+      return;
+    }
+    console.debug("[WorkflowBuilderComponent] inspector closed", {
+      previousKey: this.selectedNodeKey(),
+    });
     this.selectedNodeKey.set(null);
+  }
+
+  /**
+   * Node click within the canvas (SPEC T05): stops propagation so the
+   * bubbled click doesn't also hit `onCanvasSurfaceClick` and immediately
+   * deselect the node it just selected.
+   */
+  onNodeSurfaceClick(event: MouseEvent, key: string): void {
+    event.stopPropagation();
+    this.selectNode(key);
+  }
+
+  /**
+   * Empty-canvas click (SPEC T05): deselects the current node, closing the
+   * floating inspector. Node clicks stop propagation before reaching here
+   * (see `onNodeSurfaceClick`), and the floating chrome / inspector panel
+   * are DOM siblings of `<f-flow>`, so their clicks never bubble into this
+   * handler either — only genuine empty-canvas clicks land here.
+   */
+  onCanvasSurfaceClick(): void {
+    if (this.selectedNodeKey() === null) {
+      return;
+    }
+    console.debug(
+      "[WorkflowBuilderComponent] canvas background clicked — dismissing inspector",
+      { previousKey: this.selectedNodeKey() }
+    );
+    this.deselectNode();
+  }
+
+  /**
+   * Explicit close (×) button inside the inspector panel (SPEC T05).
+   * Logged separately from the canvas-click and Escape dismiss paths so
+   * the dismissal reason is traceable in verbose logs.
+   */
+  onInspectorCloseButton(): void {
+    console.debug("[WorkflowBuilderComponent] inspector close button clicked", {
+      nodeKey: this.selectedNodeKey(),
+    });
+    this.deselectNode();
+  }
+
+  /**
+   * Keyboard dismissal (SPEC T05): Esc closes the floating inspector from
+   * anywhere in the document, matching the design's floating-panel UX.
+   */
+  @HostListener("document:keydown.escape")
+  onEscapeKey(): void {
+    if (this.selectedNodeKey() === null) {
+      return;
+    }
+    console.debug(
+      "[WorkflowBuilderComponent] Escape pressed — dismissing inspector",
+      { previousKey: this.selectedNodeKey() }
+    );
+    this.deselectNode();
   }
 
   protected toggleTestPanel(): void {

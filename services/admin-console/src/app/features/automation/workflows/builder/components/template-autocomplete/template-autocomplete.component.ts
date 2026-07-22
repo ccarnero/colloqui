@@ -1,3 +1,4 @@
+import { CommonModule } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
@@ -9,7 +10,6 @@ import {
   signal,
   ViewChild,
 } from "@angular/core";
-import { CommonModule } from "@angular/common";
 import { FormsModule } from "@angular/forms";
 import type { IWorkflowNode } from "../../../domain/workflow-node.types";
 
@@ -212,8 +212,12 @@ export class TemplateAutocompleteComponent {
     // Results from other steps (exclude the current node being edited)
     const resultVars: IVariableEntry[] = [];
     for (const node of this.workflowNodes) {
-      if (node.key === this.currentNodeKey) continue;
-      if (!node.name) continue;
+      if (node.key === this.currentNodeKey) {
+        continue;
+      }
+      if (!node.name) {
+        continue;
+      }
       resultVars.push({
         path: `results["${node.name}"].data`,
         label: `${node.name} data`,
@@ -226,7 +230,11 @@ export class TemplateAutocompleteComponent {
       });
     }
     if (resultVars.length > 0) {
-      groups.push({ namespace: "Results", icon: "\uD83D\uDCCA", variables: resultVars });
+      groups.push({
+        namespace: "Results",
+        icon: "\uD83D\uDCCA",
+        variables: resultVars,
+      });
     }
 
     // Built-in variables — always available
@@ -338,7 +346,7 @@ export class TemplateAutocompleteComponent {
         variables: g.variables.filter(
           (v) =>
             v.path.toLowerCase().includes(q) ||
-            v.description.toLowerCase().includes(q),
+            v.description.toLowerCase().includes(q)
         ),
       }))
       .filter((g) => g.variables.length > 0);
@@ -351,7 +359,9 @@ export class TemplateAutocompleteComponent {
   }
 
   onKeyDown(event: KeyboardEvent): void {
-    if (!this.showDropdown()) return;
+    if (!this.showDropdown()) {
+      return;
+    }
 
     const flat = this.getFlatItems();
 
@@ -367,6 +377,13 @@ export class TemplateAutocompleteComponent {
         this.selectVariable(flat[this.activeIndex()]);
       }
     } else if (event.key === "Escape") {
+      // Consume Escape here so it does not bubble to the document-level
+      // listener in WorkflowBuilderComponent (which would also dismiss the
+      // floating inspector and discard the user's editing context).
+      event.stopPropagation();
+      console.debug(
+        "[TemplateAutocompleteComponent] Escape consumed — closing dropdown"
+      );
       this.showDropdown.set(false);
     }
   }
@@ -402,7 +419,9 @@ export class TemplateAutocompleteComponent {
     let idx = 0;
     for (const g of this.filteredGroups()) {
       for (const item of g.variables) {
-        if (item === v) return idx;
+        if (item === v) {
+          return idx;
+        }
         idx++;
       }
     }
