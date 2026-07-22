@@ -76,6 +76,10 @@ import {
   type IToolInfo,
 } from "./ai.types";
 import {
+  type IMentionDecorationEditor,
+  registerAiMonacoMentionDecorations,
+} from "./ai-monaco-decorations";
+import {
   registerAiMonacoCompletionProvider,
   registerAiMonacoHoverProvider,
 } from "./ai-monaco-hover";
@@ -244,6 +248,7 @@ const AUTOSAVE_INTERVAL_MS = 800;
                     class="prompt-editor-tall"
                     [options]="editorOptions"
                     [(ngModel)]="systemPrompt"
+                    (onInit)="onPromptEditorInit($event)"
                   />
                 </div>
               }
@@ -262,6 +267,7 @@ const AUTOSAVE_INTERVAL_MS = 800;
                     class="prompt-editor-tall"
                     [options]="editorOptions"
                     [(ngModel)]="rules"
+                    (onInit)="onPromptEditorInit($event)"
                   />
                 </div>
               }
@@ -281,6 +287,7 @@ const AUTOSAVE_INTERVAL_MS = 800;
                     class="prompt-editor-tall"
                     [options]="editorOptions"
                     [(ngModel)]="soul"
+                    (onInit)="onPromptEditorInit($event)"
                   />
                 </div>
               }
@@ -640,6 +647,13 @@ export class AiComponent implements OnInit {
   knowledgeBaseList: IKnowledgeBase[] = [];
   selectedKbIds: string[] = [];
 
+  /**
+   * Mention-decoration cleanup callbacks, one per Monaco instance that has
+   * called `onPromptEditorInit` (System Prompt / Rules / Soul). Disposed on
+   * component destroy — display-layer only, never touches the save path.
+   */
+  private readonly mentionDecorationDisposers: Array<{ dispose(): void }> = [];
+
   constructor() {
     registerAiMonacoHoverProvider({
       getSkills: () => this.availableSkills(),
@@ -657,7 +671,11 @@ export class AiComponent implements OnInit {
     this.destroyRef.onDestroy(() => {
       clearInterval(intervalHandle);
       this.bridge?.unregisterHandlers();
-      console.debug("[ai] autosave + bridge torn down");
+      for (const disposer of this.mentionDecorationDisposers) {
+        disposer.dispose();
+      }
+      this.mentionDecorationDisposers.length = 0;
+      console.debug("[ai] autosave + bridge + mention decorations torn down");
     });
 
     // Push state changes to the parent detail header via the bridge.
@@ -685,6 +703,19 @@ export class AiComponent implements OnInit {
       onReset: () => this.resetToTemplate(),
       onCancel: () => this.cancelEdit(),
     });
+  }
+
+  /**
+   * Wires mention decorations for a Monaco editor instance once it fires
+   * `onInit` (System Prompt / Rules / Soul all share this handler — smallest
+   * change that covers all three). Display-layer only: decorations are
+   * ephemeral view state computed from the model text, the model/save path
+   * is never touched.
+   */
+  onPromptEditorInit(editor: IMentionDecorationEditor): void {
+    console.debug("[ai] Monaco editor initialized, wiring mention decorations");
+    const disposer = registerAiMonacoMentionDecorations(editor);
+    this.mentionDecorationDisposers.push(disposer);
   }
 
   refresh(): void {

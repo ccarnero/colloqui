@@ -11,15 +11,30 @@ import type {
  */
 export function formatHttpErrorMessage(
   message: string | string[] | undefined,
-  fallback: string,
+  fallback: string
 ): string {
   return Array.isArray(message) ? message.join(", ") : (message ?? fallback);
 }
 
+// Single source of truth for the mention pattern. Non-greedy name group stops
+// at punctuation, a recognized stop word, or end-of-string, so multi-word
+// names (with spaces/hyphens) are captured without swallowing surrounding
+// prose. Exported so other consumers (e.g. Monaco decorations) reuse the
+// EXACT same boundary logic instead of re-implementing it.
+export const MENTION_PATTERN_SOURCE =
+  "@(skill|tool):([a-zA-Z0-9_ -]+?)(?:\\s+(?:skill|tool|and|or|the|for|when|while|using|with|to)\\s|[,.!?;:\\n]|\\s*$)";
+
+/**
+ * Builds a fresh mention regex instance. The pattern uses a global flag, so a
+ * shared module-level RegExp would carry mutable `lastIndex` state across
+ * calls — always construct a new one per parse.
+ */
+export function createMentionRegex(): RegExp {
+  return new RegExp(MENTION_PATTERN_SOURCE, "gi");
+}
+
 export function extractMentionsFromPrompt(text: string): string[] {
-  // Primary: captures multi-word names by stopping at punctuation, stop words, or EOS
-  const mentionRegex =
-    /@(skill|tool):([a-zA-Z0-9_ -]+?)(?:\s+(?:skill|tool|and|or|the|for|when|while|using|with|to)\s|[,.!?;:\n]|\s*$)/gi;
+  const mentionRegex = createMentionRegex();
   const mentions: string[] = [];
   let match;
 
@@ -34,44 +49,62 @@ export function extractMentionsFromPrompt(text: string): string[] {
 }
 
 function buildParametersSchema(
-  parameters: IToolParameter[],
+  parameters: IToolParameter[]
 ): Record<string, unknown> {
-  if (!parameters || parameters.length === 0) return {};
+  if (!parameters || parameters.length === 0) {
+    return {};
+  }
 
   const properties: Record<string, unknown> = {};
   const required: string[] = [];
 
   for (const param of parameters) {
-    if (!param.name.trim()) continue;
+    if (!param.name.trim()) {
+      continue;
+    }
     const prop: Record<string, unknown> = { type: param.type };
-    if (param.description?.trim()) prop["description"] = param.description.trim();
+    if (param.description?.trim()) {
+      prop["description"] = param.description.trim();
+    }
     if (param.enum && param.enum.length > 0) {
       prop["enum"] = param.enum.filter((e) => e.trim().length > 0);
     }
     properties[param.name.trim()] = prop;
-    if (param.required) required.push(param.name.trim());
+    if (param.required) {
+      required.push(param.name.trim());
+    }
   }
 
   const schema: Record<string, unknown> = {
     type: "object",
     properties,
   };
-  if (required.length > 0) schema["required"] = required;
+  if (required.length > 0) {
+    schema["required"] = required;
+  }
   return schema;
 }
 
 function parseParametersFromSchema(schema: unknown): IToolParameter[] {
-  if (!schema || typeof schema !== "object") return [];
+  if (!schema || typeof schema !== "object") {
+    return [];
+  }
   const s = schema as Record<string, unknown>;
-  if (!s["properties"] || typeof s["properties"] !== "object") return [];
+  if (!s["properties"] || typeof s["properties"] !== "object") {
+    return [];
+  }
 
-  const required = Array.isArray(s["required"]) ? (s["required"] as string[]) : [];
+  const required = Array.isArray(s["required"])
+    ? (s["required"] as string[])
+    : [];
   const params: IToolParameter[] = [];
 
   for (const [name, prop] of Object.entries(
-    s["properties"] as Record<string, unknown>,
+    s["properties"] as Record<string, unknown>
   )) {
-    if (!prop || typeof prop !== "object") continue;
+    if (!prop || typeof prop !== "object") {
+      continue;
+    }
     const p = prop as Record<string, unknown>;
     params.push({
       name,
@@ -89,7 +122,9 @@ function parseParametersFromSchema(schema: unknown): IToolParameter[] {
 export function parseToolPayload(raw: unknown): IAgentToolDraft {
   const t = raw as Record<string, unknown>;
   const isBuiltin = t["builtin"] === true || t["source_type"] === "builtin";
-  const sourceType: ToolSourceType = isBuiltin ? "builtin" : ((t["source_type"] as ToolSourceType) ?? "http");
+  const sourceType: ToolSourceType = isBuiltin
+    ? "builtin"
+    : ((t["source_type"] as ToolSourceType) ?? "http");
   const adapterRef = t["adapter_ref"] as
     | { adapter_id: string; endpoint_id: string }
     | undefined;
@@ -109,7 +144,7 @@ export function parseToolPayload(raw: unknown): IAgentToolDraft {
 }
 
 export function buildToolPayloadsFromDrafts(
-  tools: IAgentToolDraft[],
+  tools: IAgentToolDraft[]
 ): IAgentToolPayload[] {
   return tools
     .filter((t) => t.name.trim().length > 0)
@@ -162,6 +197,8 @@ export function mapSubagentConfigToDraft(config: {
     description: config.description || "",
     systemPrompt: config.system_prompt,
     enabled: config.enabled ?? true,
-    ...(config.catalog_skill_id ? { catalogSkillId: config.catalog_skill_id } : {}),
+    ...(config.catalog_skill_id
+      ? { catalogSkillId: config.catalog_skill_id }
+      : {}),
   };
 }

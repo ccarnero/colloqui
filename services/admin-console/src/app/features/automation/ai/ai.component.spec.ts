@@ -15,6 +15,33 @@ describe("AiComponent", () => {
     listTemplates: vi.fn().mockReturnValue(of({ templates: [] })),
     listAgents: vi.fn().mockReturnValue(of({ agents: [] })),
     deleteAgent: vi.fn().mockReturnValue(of(void 0)),
+    createAgent: vi.fn().mockReturnValue(
+      of({
+        id: "agent-new",
+        name: "New Agent",
+        description: "",
+        system_prompt: "",
+        model_config: {
+          llm: { provider: "openai", model: "gpt-5.4-nano", connectorId: null },
+          rules: "",
+          soul: "",
+          subagents: [],
+        },
+        tools: [],
+        enabled_tools: null,
+        enabled_mcp_servers: null,
+        enabled_mcp_tools: null,
+        tool_description_overrides: null,
+        channels: [],
+        status: "draft",
+        is_active: true,
+        published_at: null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        published_config: null,
+      })
+    ),
+    updateAgent: vi.fn(),
   };
 
   const mockRuntimeService = {
@@ -136,5 +163,27 @@ describe("AiComponent", () => {
     expect(component.runtimeHealth()[sampleAgent.id]?.detail).toBe(
       "Agent not published"
     );
+  });
+
+  // Mention decorations are DISPLAY-LAYER ONLY (SPEC decision 2): the saved
+  // prompt string must be byte-identical to what the editor holds, even
+  // though it contains mention syntax the decorations mechanism also parses.
+  it("saves the system prompt byte-identical to the editor value, mentions included", () => {
+    const component = fixture.componentInstance;
+    const promptWithMentions =
+      "Score using @skill:lead-scoring, then escalate via @tool:crm-create-opportunity.";
+
+    component.agentName = "Sales Agent";
+    component.systemPrompt = promptWithMentions;
+    component.rules = "Be helpful.";
+    component.soul = "Friendly.";
+    component.editingAgentId.set(null);
+
+    component.saveAgent();
+
+    expect(mockAdminService.createAgent).toHaveBeenCalledTimes(1);
+    const [draft] = mockAdminService.createAgent.mock.calls[0];
+    expect(draft.systemPrompt).toBe(promptWithMentions);
+    expect(draft.systemPrompt).toEqual(promptWithMentions);
   });
 });

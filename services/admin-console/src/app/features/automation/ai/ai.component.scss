@@ -317,3 +317,22 @@ code {
     justify-content: center;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Monaco mention decorations (System Prompt / Rules / Soul editors).
+// Display-layer only — inline classes applied via `deltaDecorations` on
+// @skill:/@tool: matches; the stored prompt text never changes. Monaco
+// renders its own DOM outside Angular's view encapsulation, so these classes
+// must be global (::ng-deep) to reach the decorated spans. Colors match the
+// design's chip contract: purple for @skill:, green for @tool:.
+::ng-deep .ai-mention-decoration-skill {
+  background: color-mix(in srgb, var(--rd-purple) 14%, transparent);
+  color: var(--rd-purple);
+  border-radius: var(--rd-radius-2);
+}
+
+::ng-deep .ai-mention-decoration-tool {
+  background: var(--rd-green-dim);
+  color: var(--rd-green);
+  border-radius: var(--rd-radius-2);
+}
