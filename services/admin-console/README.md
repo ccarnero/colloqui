@@ -414,3 +414,91 @@ The AI section (`features/automation/ai/`, routes `/ai/agents` and
   panel was built as the new `agent-test-panel` component described above;
   the orphaned `chat-panel.component.ts` was left untouched, with its
   removal tracked as a follow-up.
+
+### Processes & builder composition
+
+The Processes section (workflow list at `/workflows` and the workflow
+builder at `/workflows/:id/builder` etc., under
+`features/automation/workflows/`) was rebuilt on top of the
+`console-redesign-foundation` primitives, per
+`manual-loops/admin-console/console-redesign-processes-builder.md`.
+
+- **List view** (`workflows.component.ts`) — an `app-inventory-table` of
+  workflows (health dot, run sparkline, status) plus an
+  `app-needs-attention-panel`, sourced from a new `WorkflowApiService`
+  wrapper, `getSummary()`, around the **existing**
+  `GET /workflows/summary` endpoint (already implemented server-side —
+  `WorkflowsService.getWorkflowsSummary`, 7-day-windowed
+  `topByExecutionCountLast7d`) — no new backend endpoint was added; T01
+  found the endpoint existed but was simply never wired into
+  admin-console. Health mapping: `active` → `ok`, `draft` → `idle`,
+  `disabled` → `warn` (there is no per-workflow success/error-rate field
+  today, so health is derived from workflow status only, not from run
+  outcomes). Enable/disable moved off the list row into the workflow
+  detail view's **Settings** tab, behind a confirm dialog, with a
+  user-visible error banner on a failed toggle (never fails silently).
+- **Builder — full-bleed shell.** The builder route hides only the left
+  **sub-nav**, not the app header/tabs — this is a documented, human-signed
+  amendment to the original SPEC wording; see "Amended decisions" below.
+  The mechanism is a new `subNavHidden` route-data flag that extends the
+  existing `subNavCollapsed` mechanism (`app.routes.ts` → `ShellComponent`'s
+  `readRouteDataFlag`/sub-nav visibility), rather than inventing a
+  parallel chrome-hiding system. Floating chrome (back button, workflow
+  name, save state, zoom controls) overlays the canvas and drives zoom via
+  `@foblex/flow`'s existing `FCanvas`/`fZoom` APIs — no new zoom engine.
+- **Builder — node-type port colors.** Ports and node accents are colored
+  by `EWorkflowNodeType` via a `KIND_STRIPE`-style mapping (per the
+  amended decision 4 below), not by a nonexistent port-level data type:
+  `channel` → `--rd-green`, `conditional` → `--rd-yellow`, `agent` →
+  `--rd-purple`, every other node type (`jsFunction`, `endpointCall`,
+  `mcpCall`, `serviceCall`, `serviceBusCall`, `branch`) → a neutral
+  fallback token. Applied consistently to the node border/icon tint and
+  to both ends of each port dot.
+- **Builder — edge labels.** Edge labels render from
+  `IWorkflowConnection.label` via `fConnectionContent`; the field already
+  exists on the connection model but is **never populated** by
+  `flow-serializer.ts`/`flow-deserializer.ts` today, so labels currently
+  render empty/absent for every existing saved workflow. This is a
+  wiring-ready display path, not invented data — labels will appear as
+  soon as the serializer starts setting the field (see follow-ups).
+- **Builder — per-node mini-stats.** The stats badge slot exists in the
+  node card markup but renders hidden: T01 confirmed there is no
+  per-node execution-count/error-rate aggregate anywhere in the platform
+  (`ITopDefinitionRow` is per-definition only), so the badge is a
+  documented NO-DATA state rather than invented numbers.
+- **Builder — floating inspector.** Node selection opens a floating panel
+  embedding the **same** `WorkflowNodeConfigComponent` used before this
+  loop (same fields, same save path) — only its container/positioning
+  changed. It dismisses on canvas click, `Esc`, or an explicit close (×).
+  Fixing the inspector's `Esc` dismissal surfaced a regression: the
+  Monaco/autocomplete-style field inputs inside the config form were
+  swallowing `Esc` before it reached the inspector's dismiss handler; the
+  fix stops the autocomplete's own `Esc` handling from propagating
+  further only when it actually closes an open suggestion list, otherwise
+  `Esc` propagates and dismisses the inspector. Covered by a regression
+  test.
+- **Round-trip guarantee.** The builder's save path
+  (`flow-serializer.ts`/`flow-deserializer.ts`) was not modified by this
+  loop. A unit test opens every one of the 9 `EWorkflowNodeType`s, saves
+  without edits, and asserts the resulting `{name, application, actions,
+  trigger}` payload is **deep-equal** (not raw-string-equal — key order
+  is not guaranteed) to the original, guarding against a future
+  regression in the reused engine.
+
+**Amended decisions (human sign-off, 2026-07-22, made after T01's
+inventory findings):**
+
+- **Decision 4 (port colors)** — the original wording, "port colors map
+  by port data type," does not match the domain model: there is no
+  per-port data type anywhere in `workflow-node.types.ts`, only one input
+  and one output port per node. The confirmed rule instead colors by
+  `EWorkflowNodeType` (node kind), matching both the existing pre-redesign
+  `.is-channel`/`.is-branch`/`.is-conditional` CSS classes and the design
+  mock's own `KIND_STRIPE` mapping.
+- **Decision 3 (full-bleed)** — the original wording, "hides the console
+  sidebar/topbar," conflicts with the binding visual contract (the
+  `11-builder.png` screenshot and the mock's `showRail: !isBuilder`),
+  which keeps the app header and top-section tabs visible in the builder
+  and hides only the left sub-nav. The confirmed rule follows the
+  screenshot: sub-nav hides, header/tabs stay, floating chrome overlays
+  the canvas below the header.

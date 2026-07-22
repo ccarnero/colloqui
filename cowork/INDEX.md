@@ -609,6 +609,79 @@ new endpoints allowed):
   tokens·24h, handoff rate), all rendered as an explicit empty/dash state
   in this loop rather than invented numbers.
 
+## Change: console redesign processes-builder (console-redesign-processes-builder)
+
+Manual-loop change (not SDD) rebuilding the Processes section on top of the
+`console-redesign-foundation` primitives: the workflow list
+(`workflows.component.ts`) as an operational view — `app-inventory-table`
+(health dot, run sparkline, status) sourced from a new `WorkflowApiService.
+getSummary()` wrapper around the **existing** `GET /workflows/summary`
+endpoint (7-day-windowed `topByExecutionCountLast7d`, previously unwired
+into admin-console — no new backend endpoint added), health mapping
+`active`→`ok`, `draft`→`idle`, `disabled`→`warn`, plus an
+`app-needs-attention-panel`, with enable/disable moved to the workflow
+detail view's Settings tab behind a confirm dialog and an error banner on
+failure; and the workflow builder rebuilt as a full-bleed, Figma-style
+canvas on top of the **existing** `@foblex/flow` engine and save path
+(`flow-serializer.ts`/`flow-deserializer.ts` untouched) — a new
+`subNavHidden` route flag extending the existing `subNavCollapsed`
+mechanism hides only the sub-nav (app header/tabs stay visible), floating
+chrome (back, name, save state, zoom via `FCanvas`/`fZoom`) overlays the
+canvas, node/port colors map by `EWorkflowNodeType` (`KIND_STRIPE`-style:
+channel→green, conditional→yellow, agent→purple, other kinds→neutral),
+edge labels render from `IWorkflowConnection.label` via
+`fConnectionContent`, and the floating inspector embeds the same
+`WorkflowNodeConfigComponent` (canvas-click/Esc/× dismissal, with an
+autocomplete `Esc`-propagation regression fix + test). A round-trip unit
+test covers all 9 node types, asserting deep-equal (not string-equal)
+save-payload identity. Full task queue, gates, and human decisions:
+`manual-loops/admin-console/console-redesign-processes-builder.md`.
+Operational contract (list composition, builder architecture, amended
+decisions, round-trip guarantee): `services/admin-console/README.md`
+"Processes & builder composition". Engram topic:
+`admin-console/redesign-processes-builder`.
+
+Human-signed amendments (2026-07-22, made after T01's inventory findings):
+
+- **Node-type colors, not port-type colors** — decision 4 originally read
+  "port colors map by port data type." T01 found no per-port data type
+  exists anywhere in the domain model (`workflow-node.types.ts` has one
+  input/output port per node, untyped). Confirmed rule: color by
+  `EWorkflowNodeType`, mirroring the pre-redesign `.is-channel`/
+  `.is-branch`/`.is-conditional` classes and the design mock's own
+  `KIND_STRIPE` mapping.
+- **Header/tabs stay visible in the builder** — decision 3 originally read
+  "hides the console sidebar/topbar." T01 found this contradicts the
+  binding visual contract (`11-builder.png`, the mock's
+  `showRail: !isBuilder`), which shows the app header and top-section tabs
+  still visible in the builder, with only the left sub-nav hidden.
+  Confirmed rule: extend `subNavCollapsed` (as `subNavHidden`) to hide only
+  the sub-nav; no new topbar-hiding logic was added.
+
+Follow-ups (flagged during this loop, not fixed — out of scope or
+NO-DATA):
+
+- The nested `:id/builder` route still shows the detail-view wrapper
+  chrome around the canvas — `features/processes`/`detail/` composition
+  was out of scope for this loop; only the top-level builder route got the
+  full-bleed treatment.
+- A stale doc comment in `workflow-detail.component.ts` still describes
+  the pre-move enable/disable location (the control now lives in the
+  Settings tab) — not corrected in this loop.
+- `IWorkflowConnection.label` is never populated by
+  `flow-serializer.ts`/`flow-deserializer.ts` — the builder's edge-label
+  rendering path is wired and ready, but labels will only appear once the
+  backend/serializer starts setting the field.
+- Per-node run-count/error-rate mini-stats have no backing aggregate
+  anywhere in the platform (`ITopDefinitionRow` is per-definition, not
+  per-node) — the stats badge ships hidden rather than showing invented
+  numbers; building the aggregate would require a new endpoint/query.
+- `ProcessesMetricsService` (`core/services/metrics/processes-metrics.service.ts`)
+  still computes `topWorkflows()` from the older, unwindowed
+  `getExecutionCounts()` and hard-codes `successRate: 1` for every row —
+  it was not migrated to the new `WorkflowApiService.getSummary()` wrapper
+  in this loop (only the workflow list view was); doing so is a follow-up.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.
