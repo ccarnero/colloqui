@@ -146,7 +146,19 @@ function pruneConflictingConnections(
                   [fReassignableStart]="true"
                   fType="bezier"
                   fBehavior="floating"
-                />
+                >
+                  <!-- Edge label rendered only from real IWorkflowConnection.label
+                       metadata (SPEC T04 — T01 finding 2: this field exists but
+                       is never populated by the current serializer/deserializer;
+                       nothing is invented when it is absent). Uses @foblex/flow's
+                       own supported connection-content mechanism (fConnectionContent),
+                       positioned at the path midpoint. -->
+                  @if (conn.label) {
+                    <div fConnectionContent [position]="0.5" class="wf-edge-label">
+                      {{ conn.label }}
+                    </div>
+                  }
+                </f-connection>
               }
 
               @for (node of nodes(); track node.key) {
@@ -494,6 +506,18 @@ function pruneConflictingConnections(
     :host ::ng-deep .f-connection-for-create .f-connection-drag-handle {
       fill: var(--rd-accent);
     }
+    /* Edge label (SPEC T04) - rendered via fConnectionContent, only when
+       IWorkflowConnection.label is set (T01 finding 2). */
+    .wf-edge-label {
+      background: var(--rd-panel);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-5);
+      padding: 2px 8px;
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-2);
+      white-space: nowrap;
+      pointer-events: none;
+    }
     button.active {
       background: var(--rd-accent);
       color: var(--rd-text-on-accent);
@@ -718,6 +742,21 @@ export class WorkflowBuilderComponent implements OnInit {
             nodes,
             connections,
           });
+          // Verbose logging per SPEC line 59: edge labels are only ever
+          // rendered from real IWorkflowConnection.label metadata (T04,
+          // T01 finding 2 — this field exists but is never populated by
+          // today's serializer/deserializer, so this count is commonly 0).
+          const labeledCount = Object.values(connections).filter(
+            (c) => !!c.label
+          ).length;
+          console.debug(
+            "[WorkflowBuilderComponent] resolved edge labels from connection metadata",
+            {
+              workflowId: dto.id,
+              totalConnections: Object.keys(connections).length,
+              labeledCount,
+            }
+          );
         },
       });
     }
