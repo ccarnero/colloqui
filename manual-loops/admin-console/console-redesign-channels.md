@@ -365,8 +365,15 @@ cd services/admin-console && pnpm exec ng test --watch=false
 
 - Routed detail view per decision 2: account header (status, identifiers),
   per-channel breakdown table, recent errors/needs-attention for that account.
+- **ADDED 2026-07-22 (human sign-off, post-T02):** the fleet table no longer
+  carries inline Edit/Delete actions (design has none; primitive has no action
+  column). Those actions MOVE HERE — Edit/Delete buttons in the account-detail
+  header, reusing the existing `AccountDialogComponent` edit mode and
+  `ChannelAdminService.deleteAccount` (delete confirms via the existing
+  confirm-dialog and navigates back to the fleet on success).
 - DO NOT duplicate list-view logic — share models/services.
-- Unit tests: route param resolves account; unknown id shows not-found state.
+- Unit tests: route param resolves account; unknown id shows not-found state;
+  edit opens the account dialog; delete confirms and calls the service.
 
 **Accept**
 ```
@@ -387,7 +394,7 @@ grep -n "console-redesign-channels" cowork/INDEX.md
 ---
 
 - [x] T01 inventory report
-- [ ] T02 fleet list view
+- [x] T02 fleet list view
 - [ ] T03 account detail view
 - [ ] T04 docs + index
 
