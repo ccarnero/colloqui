@@ -6,9 +6,11 @@ import {
   type OnInit,
   signal,
 } from "@angular/core";
+import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { ActivatedRoute, RouterLink } from "@angular/router";
+import { concatMap, from, of, switchMap, toArray } from "rxjs";
 import { AuthService } from "../../../../core/services/auth.service";
 import {
   ConnectorCallService,
@@ -18,8 +20,21 @@ import {
   HttpAdapterService,
   type IAdapterDto,
 } from "../../../../core/services/http-adapter.service";
+import { HttpAdapterDialogComponent } from "../../../../shared/components/http-adapter-dialog/http-adapter-dialog.component";
 import { PageHeaderComponent } from "../../../../shared/components/page-header/page-header.component";
+import {
+  type HealthStatus,
+  StatusBadgeComponent,
+} from "../../../../shared/components/status-badge/status-badge.component";
+import type {
+  IHttpAdapterContext,
+  IHttpAdapterDialogData,
+  IHttpAdapterDialogResult,
+} from "../../../../shared/models/http-adapter.model";
 import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
+import { adapterDtoToHttpAdapter } from "./adapter-dto-to-http-adapter";
+import { buildAdapterEndpointOperations } from "./build-adapter-endpoint-operations";
+import { buildAdapterUpdatePayload } from "./build-adapter-update-payload";
 
 const DIAGNOSTICS_PERMISSION = "diagnostics:read";
 
@@ -29,9 +44,11 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
     RouterLink,
+    MatDialogModule,
     MatIconModule,
     MatProgressSpinnerModule,
     PageHeaderComponent,
+    StatusBadgeComponent,
     UtcDatePipe,
   ],
   template: `
@@ -47,7 +64,36 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
     } @else if (errorMessage()) {
       <div class="error-banner">{{ errorMessage() }}</div>
     } @else if (adapter(); as a) {
+      @if (saveError()) {
+        <div class="error-banner save-error-banner">{{ saveError() }}</div>
+      }
       <app-page-header [title]="a.name" subtitle="HTTP adapter configuration">
+        <ng-container slot="actions">
+          <span class="identity-chips">
+            <app-status-badge
+              [status]="a.status"
+              variant="dot"
+              [health]="health()"
+            />
+            <span class="id-chip" [class.id-chip--internal]="a.context === 'internal'">
+              {{ a.context }}
+            </span>
+            @if (a.managedBy) {
+              <span class="id-chip id-chip--synced" [title]="'Synced from ' + a.managedBy">
+                <mat-icon class="id-chip-icon">sync</mat-icon>
+                Synced
+              </span>
+            }
+          </span>
+          <button
+            type="button"
+            class="btn btn-outline btn-sm"
+            (click)="openEdit()"
+          >
+            <mat-icon>edit</mat-icon>
+            Edit
+          </button>
+        </ng-container>
       </app-page-header>
 
       <section class="section">
@@ -187,81 +233,136 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
   `,
   styles: `
     .ws-breadcrumb {
-      margin-bottom: 12px;
+      margin-bottom: var(--rd-space-6, 12px);
     }
     .breadcrumb-link {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      color: var(--text3, #94a3b8);
+      gap: var(--rd-space-2, 4px);
+      color: var(--rd-text-3);
       text-decoration: none;
-      font-size: 13px;
+      font-size: var(--rd-text-size-xs, 13px);
     }
     .breadcrumb-link:hover {
-      color: var(--text, #e5e7eb);
+      color: var(--rd-text-1);
     }
     .loader {
       display: flex;
       justify-content: center;
+      align-items: center;
+      gap: var(--rd-space-4, 8px);
       padding: 2rem;
     }
     .error-banner {
-      padding: 12px 16px;
-      border-radius: 6px;
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.3);
-      color: #ef4444;
-      font-size: 13px;
+      padding: var(--rd-space-6, 12px) var(--rd-space-8, 16px);
+      border-radius: var(--rd-radius-5, 6px);
+      background: var(--rd-red-dim);
+      border: 1px solid var(--rd-red);
+      color: var(--rd-red);
+      font-size: var(--rd-text-size-xs, 13px);
+    }
+    .save-error-banner {
+      margin-bottom: var(--rd-space-6, 12px);
+    }
+    .identity-chips {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--rd-space-5, 10px);
+    }
+    .id-chip {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs, 11px);
+      color: var(--rd-text-2);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-5, 6px);
+      padding: 2px var(--rd-space-5, 9px);
+      text-transform: capitalize;
+    }
+    .id-chip--internal {
+      color: var(--rd-link);
+    }
+    .id-chip--synced {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--rd-space-2, 4px);
+      color: var(--rd-text-3);
+    }
+    .id-chip-icon {
+      font-size: 12px;
+      width: 12px;
+      height: 12px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--rd-space-3, 6px);
+      border-radius: var(--rd-radius-7, 8px);
+      padding: 7px var(--rd-space-6, 12px);
+      font-size: var(--rd-text-size-sm, 12.5px);
+      font-weight: 500;
+      cursor: pointer;
+      font-family: inherit;
+      border: 1px solid var(--rd-line-3);
+      background: transparent;
+      color: var(--rd-text-1);
+    }
+    .btn:hover {
+      background: var(--rd-hover);
+    }
+    .btn mat-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
     }
     .section {
-      margin-top: 24px;
-      padding: 16px;
-      border: 1px solid var(--border, rgba(255,255,255,0.08));
-      border-radius: 8px;
+      margin-top: var(--rd-space-11, 24px);
+      padding: var(--rd-space-8, 16px);
+      border: 1px solid var(--rd-line);
+      border-radius: var(--rd-radius-7, 8px);
     }
     .section-title {
-      margin: 0 0 12px;
-      font-size: 14px;
+      margin: 0 0 var(--rd-space-6, 12px);
+      font-size: var(--rd-text-size-md, 14px);
       font-weight: 600;
-      color: var(--text, #e5e7eb);
+      color: var(--rd-text-1);
     }
     .summary-cards {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 12px;
+      gap: var(--rd-space-6, 12px);
     }
     .summary-card {
       display: flex;
       flex-direction: column;
-      gap: 4px;
-      padding: 12px;
-      background: rgba(255, 255, 255, 0.03);
-      border: 1px solid var(--border);
-      border-radius: 6px;
+      gap: var(--rd-space-2, 4px);
+      padding: var(--rd-space-6, 12px);
+      background: var(--rd-panel);
+      border: 1px solid var(--rd-line);
+      border-radius: var(--rd-radius-5, 6px);
     }
     .summary-label {
-      font-size: 11px;
-      color: var(--text3);
+      font-size: var(--rd-text-size-xs, 11px);
+      color: var(--rd-text-3);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
     .summary-value {
-      font-size: 14px;
+      font-size: var(--rd-text-size-md, 14px);
       font-weight: 600;
-      color: var(--text);
-      padding: 4px 8px;
-      border-radius: 4px;
+      color: var(--rd-text-1);
+      padding: var(--rd-space-2, 4px) var(--rd-space-4, 8px);
+      border-radius: var(--rd-radius-3, 4px);
     }
-    .badge-blue { color: #3b82f6; background: rgba(59, 130, 246, 0.1); }
-    .badge-cyan { color: #22d3ee; background: rgba(34, 211, 238, 0.1); }
-    .badge-orange { color: #f97316; background: rgba(249, 115, 22, 0.1); }
-    .badge-purple { color: #a855f7; background: rgba(168, 85, 247, 0.1); }
-    .badge-green { color: #4ade80; background: rgba(74, 222, 128, 0.1); }
-    .badge-slate { color: #94a3b8; background: rgba(148, 163, 184, 0.1); }
+    .badge-blue { color: var(--rd-accent); background: color-mix(in srgb, var(--rd-accent) 12%, transparent); }
+    .badge-cyan { color: var(--rd-link); background: color-mix(in srgb, var(--rd-link) 12%, transparent); }
+    .badge-orange { color: var(--rd-yellow); background: var(--rd-yellow-dim); }
+    .badge-purple { color: var(--rd-purple); background: color-mix(in srgb, var(--rd-purple) 12%, transparent); }
+    .badge-green { color: var(--rd-green); background: var(--rd-green-dim); }
+    .badge-slate { color: var(--rd-text-3); background: var(--rd-hover); }
     .info-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-      gap: 12px;
+      gap: var(--rd-space-6, 12px);
     }
     .info-item {
       display: flex;
@@ -269,198 +370,146 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
       gap: 2px;
     }
     .info-label {
-      font-size: 11px;
-      color: var(--text3, #94a3b8);
+      font-size: var(--rd-text-size-xs, 11px);
+      color: var(--rd-text-3);
       text-transform: uppercase;
       letter-spacing: 0.05em;
     }
     .info-value {
-      font-size: 13px;
-      color: var(--text, #e5e7eb);
+      font-size: var(--rd-text-size-base, 13px);
+      color: var(--rd-text-1);
     }
     .mono {
-      font-family: monospace;
+      font-family: var(--rd-font-mono);
     }
     .endpoints-list {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: var(--rd-space-4, 8px);
     }
     .endpoint-card {
       display: flex;
       align-items: center;
-      gap: 12px;
-      padding: 12px;
-      background: rgba(255, 255, 255, 0.03);
-      border-radius: 6px;
-      font-size: 13px;
+      gap: var(--rd-space-6, 12px);
+      padding: var(--rd-space-6, 12px);
+      background: var(--rd-panel);
+      border-radius: var(--rd-radius-5, 6px);
+      font-size: var(--rd-text-size-base, 13px);
       cursor: pointer;
       transition: background-color 0.12s;
     }
     .endpoint-card:hover {
-      background: rgba(255, 255, 255, 0.07);
+      background: var(--rd-hover);
     }
     .endpoint-badge {
-      font-size: 11px;
+      font-size: var(--rd-text-size-xs, 11px);
       font-weight: 600;
-      padding: 2px 6px;
-      border-radius: 3px;
-      background: rgba(34, 211, 238, 0.15);
-      color: #22d3ee;
+      padding: 2px var(--rd-space-3, 6px);
+      border-radius: var(--rd-radius-2, 3px);
+      background: color-mix(in srgb, var(--rd-link) 15%, transparent);
+      color: var(--rd-link);
       text-transform: uppercase;
       min-width: 50px;
       text-align: center;
     }
     .endpoint-path {
       flex: 1;
-      font-family: monospace;
-      font-size: 12px;
-      color: var(--text2);
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-sm, 12px);
+      color: var(--rd-text-2);
     }
     .endpoint-label {
-      font-size: 12px;
-      color: var(--text3);
+      font-size: var(--rd-text-size-sm, 12px);
+      color: var(--rd-text-3);
     }
     .endpoint-cache {
-      font-size: 11px;
-      color: var(--text3);
+      font-size: var(--rd-text-size-xs, 11px);
+      color: var(--rd-text-3);
       white-space: nowrap;
     }
     .no-calls {
-      color: var(--text3, #94a3b8);
-      font-size: 13px;
+      color: var(--rd-text-3);
+      font-size: var(--rd-text-size-base, 13px);
       margin: 0;
     }
     .call-list {
       display: flex;
       flex-direction: column;
-      gap: 4px;
+      gap: var(--rd-space-2, 4px);
     }
     .call-row {
       display: grid;
       grid-template-columns: 160px 60px 50px 70px 1fr auto;
-      gap: 8px;
+      gap: var(--rd-space-4, 8px);
       align-items: center;
-      padding: 6px 8px;
-      border-radius: 4px;
-      background: rgba(255,255,255,0.03);
-      font-size: 12px;
-      color: var(--text2, #cbd5e1);
+      padding: var(--rd-space-3, 6px) var(--rd-space-4, 8px);
+      border-radius: var(--rd-radius-3, 4px);
+      background: var(--rd-panel);
+      font-size: var(--rd-text-size-sm, 12px);
+      color: var(--rd-text-2);
       cursor: pointer;
       transition: background-color 0.12s;
       outline: none;
     }
     .call-row:hover,
     .call-row:focus-visible {
-      background: rgba(255,255,255,0.07);
-      color: var(--text, #e5e7eb);
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
     }
     .call-ts {
-      color: var(--text3, #94a3b8);
-      font-size: 11px;
+      color: var(--rd-text-3);
+      font-size: var(--rd-text-size-xs, 11px);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .call-method {
-      font-family: monospace;
-      font-size: 11px;
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs, 11px);
       font-weight: 600;
-      color: var(--cyan, #22d3ee);
+      color: var(--rd-link);
     }
     .call-status {
-      font-family: monospace;
+      font-family: var(--rd-font-mono);
       font-weight: 600;
-      font-size: 12px;
+      font-size: var(--rd-text-size-sm, 12px);
     }
-    .st-2xx { color: #4ade80; }
-    .st-3xx { color: #facc15; }
-    .st-4xx { color: #fb923c; }
-    .st-5xx { color: #f87171; }
+    .st-2xx { color: var(--rd-green); }
+    .st-3xx { color: var(--rd-yellow); }
+    .st-4xx { color: var(--rd-yellow); }
+    .st-5xx { color: var(--rd-red); }
     .call-dur {
-      color: var(--text3, #94a3b8);
-      font-size: 11px;
+      color: var(--rd-text-3);
+      font-size: var(--rd-text-size-xs, 11px);
     }
     .call-url {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      font-family: monospace;
-      font-size: 11px;
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs, 11px);
     }
     .call-cache {
-      font-size: 10px;
+      font-size: var(--rd-text-size-3xs, 10px);
       padding: 1px 5px;
-      border-radius: 3px;
+      border-radius: var(--rd-radius-2, 3px);
       font-weight: 600;
       text-transform: uppercase;
     }
-    .cache-hit { background: rgba(74,222,128,0.15); color: #4ade80; }
-    .cache-miss { background: rgba(251,146,60,0.15); color: #fb923c; }
-    .cache-bypass { background: rgba(148,163,184,0.1); color: #94a3b8; }
-    .call-detail {
-      grid-column: 1 / -1;
-      border-top: 1px solid var(--border, rgba(255,255,255,0.08));
-      margin-top: 4px;
-      padding-top: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-    .detail-section {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .detail-label {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.3px;
-      color: var(--text2, #cbd5e1);
-    }
-    .detail-row {
-      display: flex;
-      flex-direction: column;
-      gap: 2px;
-      margin-left: 12px;
-    }
-    .detail-sub {
-      font-size: 10px;
-      color: var(--text3, #94a3b8);
-      text-transform: uppercase;
-      letter-spacing: 0.2px;
-    }
-    .detail-pre {
-      margin: 0;
-      font-size: 11px;
-      background: var(--bg2, rgba(15,23,42,0.5));
-      padding: 6px 8px;
-      border-radius: 3px;
-      overflow-x: auto;
-      line-height: 1.4;
-      color: var(--text2, #cbd5e1);
-      white-space: pre-wrap;
-      word-break: break-all;
-      max-height: 200px;
-      overflow-y: auto;
-    }
-    .detail-trace {
-      margin-top: 4px;
-      padding-top: 8px;
-      border-top: 1px solid var(--border, rgba(255,255,255,0.08));
-    }
+    .cache-hit { background: var(--rd-green-dim); color: var(--rd-green); }
+    .cache-miss { background: var(--rd-yellow-dim); color: var(--rd-yellow); }
+    .cache-bypass { background: var(--rd-hover); color: var(--rd-text-3); }
     .trace-link {
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      font-size: 12px;
-      color: var(--accent, #4f7ef8);
+      gap: var(--rd-space-2, 4px);
+      font-size: var(--rd-text-size-sm, 12px);
+      color: var(--rd-accent);
       text-decoration: none;
       transition: color 0.12s;
     }
     .trace-link:hover {
-      color: var(--text, #e5e7eb);
+      color: var(--rd-text-1);
       text-decoration: underline;
     }
     .trace-link mat-icon {
@@ -475,15 +524,25 @@ export class ConnectorDetailComponent implements OnInit {
   private readonly adapters = inject(HttpAdapterService);
   private readonly calls = inject(ConnectorCallService);
   private readonly auth = inject(AuthService);
+  private readonly dialog = inject(MatDialog);
 
   readonly adapter = signal<IAdapterDto | null>(null);
   readonly loading = signal(true);
   readonly errorMessage = signal<string | null>(null);
+  readonly saveError = signal<string | null>(null);
   readonly recentCalls = signal<IConnectorCall[]>([]);
   readonly callsLoading = signal(false);
 
   readonly canViewCalls = computed(() =>
     this.auth.hasPermission(DIAGNOSTICS_PERMISSION)
+  );
+
+  // Health mapping (SPEC console-redesign-connections.md, decision 3,
+  // orchestrator ruling 2026-07-22): HTTP connectors map
+  // status === "enabled" -> ok, else error. No warn is derivable — no
+  // error-rate/threshold field exists (T01 §4).
+  readonly health = computed<HealthStatus>(() =>
+    this.adapter()?.status === "enabled" ? "ok" : "error"
   );
 
   readonly hasCacheConfig = computed(() => {
@@ -546,13 +605,22 @@ export class ConnectorDetailComponent implements OnInit {
   private load(id: string): void {
     this.loading.set(true);
     this.errorMessage.set(null);
+    console.debug("[ConnectorDetailComponent] loading adapter", { id });
     this.adapters.get(id).subscribe({
       next: (dto) => {
         this.adapter.set(dto);
         this.loading.set(false);
+        console.debug("[ConnectorDetailComponent] adapter loaded", {
+          id,
+          status: dto.status,
+        });
         this.loadCalls(id);
       },
-      error: () => {
+      error: (err: unknown) => {
+        console.error("[ConnectorDetailComponent] failed to load adapter", {
+          id,
+          err,
+        });
         this.errorMessage.set("Failed to load connector.");
         this.loading.set(false);
       },
@@ -561,6 +629,10 @@ export class ConnectorDetailComponent implements OnInit {
 
   private loadCalls(id: string): void {
     if (!this.canViewCalls()) {
+      console.debug(
+        "[ConnectorDetailComponent] recent calls skipped — missing diagnostics:read permission",
+        { id }
+      );
       return;
     }
     this.callsLoading.set(true);
@@ -568,11 +640,123 @@ export class ConnectorDetailComponent implements OnInit {
       next: (rows) => {
         this.recentCalls.set(rows);
         this.callsLoading.set(false);
+        console.debug("[ConnectorDetailComponent] recent calls loaded", {
+          id,
+          count: rows.length,
+        });
       },
-      error: () => {
+      error: (err: unknown) => {
+        console.error(
+          "[ConnectorDetailComponent] failed to load recent calls",
+          {
+            id,
+            err,
+          }
+        );
         this.callsLoading.set(false);
       },
     });
+  }
+
+  /**
+   * Edit action, reusing `HttpAdapterDialogComponent` exactly as
+   * `connectors.component.ts` does — the form is never duplicated here,
+   * only the update/endpoint-sync glue (mapping + payload builders live in
+   * `adapter-dto-to-http-adapter.ts`, `build-adapter-update-payload.ts`,
+   * `build-adapter-endpoint-operations.ts` in this folder).
+   */
+  openEdit(): void {
+    const dto = this.adapter();
+    if (!dto) {
+      console.error(
+        "[ConnectorDetailComponent] edit requested with no adapter loaded"
+      );
+      return;
+    }
+    const currentAdapter = adapterDtoToHttpAdapter(dto);
+    const data: IHttpAdapterDialogData = {
+      mode: "edit",
+      context: dto.context as IHttpAdapterContext,
+      adapter: currentAdapter,
+    };
+    console.debug("[ConnectorDetailComponent] opening adapter edit dialog", {
+      id: dto.id,
+    });
+    this.dialog
+      .open(HttpAdapterDialogComponent, {
+        data,
+        width: "860px",
+        maxWidth: "95vw",
+        panelClass: "app-dialog-panel",
+      })
+      .afterClosed()
+      .subscribe((result?: IHttpAdapterDialogResult) => {
+        if (!result) {
+          console.debug("[ConnectorDetailComponent] edit dialog dismissed", {
+            id: dto.id,
+          });
+          return;
+        }
+        const nextAdapter = {
+          ...result.adapter,
+          managedBy: dto.managedBy ?? null,
+        };
+        const endpointOps = buildAdapterEndpointOperations(
+          dto.id,
+          currentAdapter,
+          nextAdapter,
+          {
+            addEndpoint: (adapterId, endpoint) =>
+              this.adapters.addEndpoint(adapterId, endpoint),
+            updateEndpoint: (adapterId, endpointId, payload) =>
+              this.adapters.updateEndpoint(adapterId, endpointId, payload),
+            removeEndpoint: (adapterId, endpointId) =>
+              this.adapters.removeEndpoint(adapterId, endpointId),
+          }
+        );
+        console.debug("[ConnectorDetailComponent] saving adapter edit", {
+          id: dto.id,
+          endpointOps: endpointOps.length,
+        });
+        this.saveError.set(null);
+        // Fail-fast endpoint sync, mirroring connectors.component.ts:550-556
+        // exactly: no endpoint ops short-circuits to `of([])`, otherwise every
+        // op runs sequentially via concatMap and the whole chain errors (and
+        // is surfaced to the user) the moment any single op fails — no silent
+        // partial success.
+        const endpointSync$ =
+          endpointOps.length === 0
+            ? of([])
+            : from(endpointOps).pipe(
+                concatMap((operation) => operation),
+                toArray()
+              );
+        this.adapters
+          .update(dto.id, buildAdapterUpdatePayload(nextAdapter))
+          .pipe(
+            switchMap(() => endpointSync$),
+            switchMap(() => this.adapters.get(dto.id))
+          )
+          .subscribe({
+            next: (updated) => {
+              this.adapter.set(updated);
+              console.debug("[ConnectorDetailComponent] adapter edit saved", {
+                id: dto.id,
+              });
+              this.loadCalls(dto.id);
+            },
+            error: (err: unknown) => {
+              console.error(
+                "[ConnectorDetailComponent] failed to save adapter edit",
+                {
+                  id: dto.id,
+                  err,
+                }
+              );
+              this.saveError.set("Couldn't save changes. Please try again.");
+            },
+          });
+      });
   }
 
   protected shortUrl(url: string): string {

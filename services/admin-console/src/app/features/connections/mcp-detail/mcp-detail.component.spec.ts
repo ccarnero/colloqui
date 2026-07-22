@@ -1,0 +1,285 @@
+import "@angular/compiler";
+import { type ComponentFixture, TestBed } from "@angular/core/testing";
+import { MatDialog } from "@angular/material/dialog";
+import { provideNoopAnimations } from "@angular/platform-browser/animations";
+import {
+  ActivatedRoute,
+  convertToParamMap,
+  provideRouter,
+} from "@angular/router";
+import { BehaviorSubject, of, tap, throwError } from "rxjs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { IMcpServer, IMcpUsage } from "../../../core/models/agent.model";
+import { AgentAdminService } from "../../../core/services/agent-admin.service";
+import { McpServerDialogComponent } from "../../../shared/components/mcp-server-dialog/mcp-server-dialog.component";
+import { McpDetailComponent } from "./mcp-detail.component";
+
+function makeServer(overrides: Partial<IMcpServer> = {}): IMcpServer {
+  return {
+    id: "mcp-1",
+    tenant_id: "t1",
+    name: "My MCP Server",
+    description: null,
+    transport_type: "http",
+    url: "https://mcp.example.com",
+    headers: null,
+    auth_type: "none",
+    auth_config: null,
+    enabled: true,
+    is_active: true,
+    managed_by: null,
+    managed_locked_fields: null,
+    scope: "internal",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+function makeUsage(overrides: Partial<IMcpUsage> = {}): IMcpUsage {
+  return {
+    windowDays: 7,
+    summary: {
+      totalCalls: 0,
+      successCalls: 0,
+      errorCalls: 0,
+      avgDurationMs: 0,
+    },
+    recentCalls: [],
+    ...overrides,
+  };
+}
+
+describe("McpDetailComponent", () => {
+  let fixture: ComponentFixture<McpDetailComponent>;
+  let agentAdminService: {
+    getMcpServer: ReturnType<typeof vi.fn>;
+    listMcpServerTools: ReturnType<typeof vi.fn>;
+    getMcpServerUsage: ReturnType<typeof vi.fn>;
+    updateMcpServer: ReturnType<typeof vi.fn>;
+  };
+  let dialogMock: { open: ReturnType<typeof vi.fn> };
+  let paramMap$: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
+
+  async function setup(
+    serverObs = of(makeServer()),
+    toolsObs = of([]),
+    usageObs = of(makeUsage())
+  ) {
+    paramMap$ = new BehaviorSubject(convertToParamMap({ id: "mcp-1" }));
+    agentAdminService = {
+      getMcpServer: vi.fn().mockReturnValue(serverObs),
+      listMcpServerTools: vi.fn().mockReturnValue(toolsObs),
+      getMcpServerUsage: vi.fn().mockReturnValue(usageObs),
+      updateMcpServer: vi.fn().mockReturnValue(of(makeServer())),
+    };
+    dialogMock = {
+      open: vi.fn().mockReturnValue({ afterClosed: () => of(undefined) }),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [McpDetailComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: ActivatedRoute,
+          useValue: { paramMap: paramMap$.asObservable() },
+        },
+        { provide: AgentAdminService, useValue: agentAdminService },
+        { provide: MatDialog, useValue: dialogMock },
+      ],
+    }).compileComponents();
+
+    // TestBed gotcha (L2): McpDetailComponent imports MatDialogModule
+    // directly, which re-provides (and shadows) MatDialog via a
+    // component-scoped injector — only overrideProvider reaches it.
+    TestBed.overrideProvider(MatDialog, { useValue: dialogMock });
+
+    fixture = TestBed.createComponent(McpDetailComponent);
+    fixture.detectChanges();
+  }
+
+  afterEach(() => TestBed.resetTestingModule());
+
+  it("resolves the server for the route param", async () => {
+    await setup();
+    expect(agentAdminService.getMcpServer).toHaveBeenCalledWith("mcp-1");
+    expect(fixture.componentInstance.server()?.id).toBe("mcp-1");
+    expect(fixture.componentInstance.loading()).toBe(false);
+  });
+
+  it("sets errorMessage when getMcpServer errors", async () => {
+    await setup(throwError(() => new Error("Not found")));
+    expect(fixture.componentInstance.errorMessage()).toBe(
+      "Failed to load MCP server."
+    );
+    expect(fixture.componentInstance.loading()).toBe(false);
+  });
+
+  it("shows the real Calls (Nd) KPI sourced from usage.summary.totalCalls", async () => {
+    await setup(
+      of(makeServer()),
+      of([]),
+      of(
+        makeUsage({
+          windowDays: 7,
+          summary: {
+            totalCalls: 42,
+            successCalls: 40,
+            errorCalls: 2,
+            avgDurationMs: 120,
+          },
+        })
+      )
+    );
+
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+    expect(text).toContain("Calls (7d)");
+    expect(text).toContain("42");
+  });
+
+  // T03 — health mapping (decision 3, orchestrator ruling 2026-07-22):
+  // MCP servers map enabled && is_active -> ok, else error.
+  it("health() is ok when enabled and is_active", async () => {
+    await setup(of(makeServer({ enabled: true, is_active: true })));
+    expect(fixture.componentInstance.health()).toBe("ok");
+  });
+
+  it("health() is error when disabled", async () => {
+    await setup(of(makeServer({ enabled: false, is_active: true })));
+    expect(fixture.componentInstance.health()).toBe("error");
+  });
+
+  it("health() is error when enabled but not active", async () => {
+    await setup(of(makeServer({ enabled: true, is_active: false })));
+    expect(fixture.componentInstance.health()).toBe("error");
+  });
+
+  // T03 — decision 3: secrets/credentials are never rendered, masked
+  // placeholders only. auth_config must never leak into the DOM, even
+  // though it is a real field on IMcpServer (used only to seed the reused
+  // edit dialog's data input, never rendered as text here).
+  it("never renders auth_config secret values in the DOM", async () => {
+    const SENTINEL = "mcp-super-secret-token-should-never-render-7c1e";
+    await setup(
+      of(
+        makeServer({
+          auth_type: "bearer",
+          auth_config: { token: SENTINEL },
+        })
+      )
+    );
+
+    const html = (fixture.nativeElement as HTMLElement).innerHTML;
+    expect(html).not.toContain(SENTINEL);
+  });
+
+  // T03 — form reuse: Edit must open the EXISTING McpServerDialogComponent,
+  // never a duplicated/local form component.
+  it("Edit opens the existing McpServerDialogComponent, not a duplicate form", async () => {
+    await setup();
+
+    fixture.componentInstance.openEdit();
+
+    expect(dialogMock.open).toHaveBeenCalledTimes(1);
+    expect(dialogMock.open.mock.calls[0]?.[0]).toBe(McpServerDialogComponent);
+  });
+
+  it("openEdit logs and no-ops when no server is loaded", async () => {
+    await setup(throwError(() => new Error("Not found")));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    fixture.componentInstance.openEdit();
+
+    expect(dialogMock.open).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
+
+  // Regression test for the reviewer-flagged behavioral drift: openEdit's
+  // save failure must be user-visible (saveError signal + banner), mirroring
+  // connector-detail.component.spec.ts's equivalent test — it must not only
+  // console.error and leave the page silently stale.
+  it("openEdit surfaces a user-visible error and does NOT silently succeed when updateMcpServer fails", async () => {
+    const existingServer = makeServer();
+    await setup(of(existingServer));
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    dialogMock.open.mockReturnValue({
+      afterClosed: () =>
+        of({
+          name: "Renamed server",
+          url: existingServer.url,
+          transport_type: existingServer.transport_type,
+          auth_type: existingServer.auth_type,
+          auth_config: null,
+          headers: null,
+          enabled: existingServer.enabled,
+          scope: existingServer.scope,
+        }),
+    });
+    agentAdminService.updateMcpServer.mockReturnValue(
+      throwError(() => new Error("update rejected"))
+    );
+
+    fixture.componentInstance.openEdit();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.saveError()).toBe(
+      "Couldn't save changes. Please try again."
+    );
+    // No silent success — the stale server signal must remain unchanged.
+    expect(fixture.componentInstance.server()).toEqual(existingServer);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[McpDetailComponent] failed to save MCP server edit",
+      expect.objectContaining({ id: "mcp-1" })
+    );
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+    expect(text).toContain("Couldn't save changes. Please try again.");
+
+    errorSpy.mockRestore();
+  });
+
+  it("openEdit happy path saves successfully, updates the view, and leaves saveError null", async () => {
+    const existingServer = makeServer();
+    await setup(of(existingServer));
+
+    const callOrder: string[] = [];
+    dialogMock.open.mockReturnValue({
+      afterClosed: () =>
+        of({
+          name: "Renamed server",
+          url: existingServer.url,
+          transport_type: existingServer.transport_type,
+          auth_type: existingServer.auth_type,
+          auth_config: null,
+          headers: null,
+          enabled: existingServer.enabled,
+          scope: existingServer.scope,
+        }),
+    });
+    const updatedServer = makeServer({ name: "Renamed server" });
+    agentAdminService.updateMcpServer.mockReturnValue(
+      of(updatedServer).pipe(tap(() => callOrder.push("update")))
+    );
+
+    fixture.componentInstance.openEdit();
+    fixture.detectChanges();
+
+    expect(callOrder).toEqual(["update"]);
+    expect(fixture.componentInstance.server()?.name).toBe("Renamed server");
+    expect(fixture.componentInstance.saveError()).toBeNull();
+  });
+
+  it("renders tools empty state when the server exposes none", async () => {
+    await setup(of(makeServer()), of([]));
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+    expect(text).toContain("This server exposes no tools right now.");
+  });
+
+  it("renders the recent-calls empty state", async () => {
+    await setup(of(makeServer()), of([]), of(makeUsage({ recentCalls: [] })));
+    const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+    expect(text).toContain("No calls in the selected window.");
+  });
+});
