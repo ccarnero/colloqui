@@ -395,7 +395,7 @@ grep -n "console-redesign-channels" cowork/INDEX.md
 
 - [x] T01 inventory report
 - [x] T02 fleet list view
-- [ ] T03 account detail view
+- [x] T03 account detail view
 - [ ] T04 docs + index
 
 ## Out of scope (explicit)

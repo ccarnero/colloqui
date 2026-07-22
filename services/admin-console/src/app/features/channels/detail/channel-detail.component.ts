@@ -1,44 +1,57 @@
+import { TitleCasePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
-  OnDestroy,
-  OnInit,
   computed,
   inject,
+  OnDestroy,
+  OnInit,
   signal,
 } from "@angular/core";
-import { TitleCasePipe } from "@angular/common";
-import { ActivatedRoute, RouterLink } from "@angular/router";
 import { MatButtonModule } from "@angular/material/button";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
-import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
-import { Subject, forkJoin, takeUntil } from "rxjs";
-import { ChannelAdminService } from "../../../core/services/channel-admin.service";
-import { AuthService } from "../../../core/services/auth.service";
+import { ActivatedRoute, Router, RouterLink } from "@angular/router";
+import { forkJoin, Subject, takeUntil } from "rxjs";
+import type { IChannelAccount } from "../../../core/models/channel-account.model";
 import type {
   IUsageBucketRow,
   IUsageTotalsRow,
   UsageBucket,
 } from "../../../core/models/channel-streams.model";
+import { AuthService } from "../../../core/services/auth.service";
+import { ChannelAdminService } from "../../../core/services/channel-admin.service";
+import { MessageTraceService } from "../../../core/services/message-trace.service";
 import {
-  RangeSelectorComponent,
+  ConfirmDialogComponent,
+  type IConfirmDialogData,
+} from "../../../shared/components/confirm-dialog/confirm-dialog.component";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
+import {
+  type HealthStatus,
+  StatusBadgeComponent,
+} from "../../../shared/components/status-badge/status-badge.component";
+import type { IRecentTrace } from "../../processes/trace/domain/message-trace.model";
+import {
+  AccountDialogComponent,
+  type IAccountDialogResult,
+} from "../account-dialog.component";
+import { KpiCardsComponent } from "./kpi-cards.component";
+import {
+  type IMessageInspectorDialogData,
+  MessageInspectorDialogComponent,
+} from "./message-inspector-dialog.component";
+import {
   type IUsageRangeSelection,
+  RangeSelectorComponent,
   type UsagePresetRange,
 } from "./range-selector.component";
-import {
-  UsageChartComponent,
-  type IUsageChartRange,
-} from "./usage-chart.component";
-import { KpiCardsComponent } from "./kpi-cards.component";
 import { ScopedStreamCardsComponent } from "./scoped-stream-cards.component";
 import {
-  MessageInspectorDialogComponent,
-  type IMessageInspectorDialogData,
-} from "./message-inspector-dialog.component";
-import { MessageTraceService } from "../../../core/services/message-trace.service";
-import type { IRecentTrace } from "../../processes/trace/domain/message-trace.model";
+  type IUsageChartRange,
+  UsageChartComponent,
+} from "./usage-chart.component";
 
 interface IRangeSpec {
   readonly durationMs: number;
@@ -86,6 +99,7 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
     MatIconModule,
     MatProgressSpinnerModule,
     PageHeaderComponent,
+    StatusBadgeComponent,
     RangeSelectorComponent,
     UsageChartComponent,
     KpiCardsComponent,
@@ -100,10 +114,34 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
     </div>
 
     <app-page-header
-      title="Account {{ accountId() }}"
+      [title]="headerTitle()"
       subtitle="Usage metrics and JetStream activity for this account."
     >
       <ng-container slot="actions">
+        @if (account(); as acc) {
+          <span class="account-meta">
+            <span class="account-meta-chip">{{ acc.channel }}</span>
+            <span class="account-meta-chip">{{ acc.externalId }}</span>
+          </span>
+          <app-status-badge
+            [status]="accountStatusLabel()"
+            variant="dot"
+            [health]="accountHealth()"
+          />
+          <button mat-stroked-button type="button" (click)="openEdit()">
+            <mat-icon>edit</mat-icon>
+            Edit
+          </button>
+          <button
+            mat-stroked-button
+            type="button"
+            color="warn"
+            (click)="confirmDelete()"
+          >
+            <mat-icon>delete</mat-icon>
+            Delete
+          </button>
+        }
         <app-range-selector
           [value]="rangeSelection()"
           (valueChange)="onRangeChange($event)"
@@ -114,6 +152,12 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
         </button>
       </ng-container>
     </app-page-header>
+
+    @if (accountNotFound()) {
+      <div class="error-banner">
+        Account not found. It may have been deleted.
+      </div>
+    }
 
     @if (errorMessage()) {
       <div class="error-banner">{{ errorMessage() }}</div>
@@ -193,10 +237,23 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
     .breadcrumb-link:hover {
       color: var(--text);
     }
+    .account-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .account-meta-chip {
+      font-family: var(--rd-font-mono, monospace);
+      font-size: 11px;
+      color: var(--rd-text-3, var(--text3));
+      border: 1px solid var(--rd-line, var(--border));
+      border-radius: 6px;
+      padding: 2px 8px;
+    }
     .error-banner {
-      background: rgba(239, 68, 68, 0.1);
-      border: 1px solid rgba(239, 68, 68, 0.4);
-      color: #ef4444;
+      background: var(--rd-red-dim);
+      border: 1px solid var(--rd-red);
+      color: var(--rd-red);
       padding: 12px 16px;
       border-radius: 8px;
       margin-bottom: 16px;
@@ -269,15 +326,16 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
 })
 export class ChannelDetailComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly channels = inject(ChannelAdminService);
   private readonly auth = inject(AuthService);
   private readonly dialog = inject(MatDialog);
   private readonly traceService = inject(MessageTraceService);
 
-  readonly recentTraces  = signal<IRecentTrace[]>([]);
+  readonly recentTraces = signal<IRecentTrace[]>([]);
   readonly tracesLoading = signal(false);
   readonly canViewTraces = computed(() =>
-    this.auth.hasPermission(DIAGNOSTICS_PERMISSION),
+    this.auth.hasPermission(DIAGNOSTICS_PERMISSION)
   );
 
   private readonly destroy$ = new Subject<void>();
@@ -295,18 +353,47 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
   readonly errorMessage = signal<string | null>(null);
   readonly resolvedRange = signal<IResolvedUsageRange | null>(null);
 
+  /**
+   * Account entity for the header (name/channel/identity/status, T01
+   * finding 4/12 - never fetched by this component before). There is no
+   * per-account GET endpoint (T01 finding 8), so the account is resolved
+   * by listing all accounts and matching the route's `accountId`.
+   */
+  readonly account = signal<IChannelAccount | null>(null);
+  readonly accountLoading = signal<boolean>(false);
+  readonly accountNotFound = signal<boolean>(false);
+
+  readonly headerTitle = computed(() => {
+    const acc = this.account();
+    return acc ? acc.name : `Account ${this.accountId()}`;
+  });
+
+  readonly accountStatusLabel = computed(() => {
+    const acc = this.account();
+    return acc ? (acc.isActive ? "Active" : "Inactive") : "";
+  });
+
+  // Mapping A (decision 3, DECIDED 2026-07-22, T01 finding 10):
+  // isActive === true -> ok, isActive === false -> error. warn/idle are
+  // unreachable - no backend degradation signal exists today.
+  readonly accountHealth = computed<HealthStatus>(() =>
+    this.account()?.isActive ? "ok" : "error"
+  );
+
   readonly hasRecentActivity = computed<boolean>(() =>
-    this.totals().some((row) => row.events > 0),
+    this.totals().some((row) => row.events > 0)
   );
 
   readonly resolvedRangeForChart = computed<IUsageChartRange | null>(() => {
     const r = this.resolvedRange();
-    if (!r) return null;
+    if (!r) {
+      return null;
+    }
     return { from: r.from, to: r.to, bucket: r.bucket };
   });
 
   readonly rangeLabel = computed<string>(() =>
-    this.formatRangeSelectionLabel(this.rangeSelection()),
+    this.formatRangeSelectionLabel(this.rangeSelection())
   );
 
   ngOnInit(): void {
@@ -314,6 +401,7 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
       this.channel.set(params.get("channel") ?? "");
       this.accountId.set(params.get("accountId") ?? "");
       this.reload();
+      this.loadAccount();
     });
   }
 
@@ -330,14 +418,16 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
   reload(): void {
     const accountId = this.accountId();
     const channel = this.channel();
-    if (!accountId || !channel) return;
+    if (!accountId || !channel) {
+      return;
+    }
 
     let resolved: IResolvedUsageRange;
     try {
       resolved = this.resolveRange(this.rangeSelection());
     } catch (err: unknown) {
       this.errorMessage.set(
-        err instanceof Error ? err.message : "Invalid date range",
+        err instanceof Error ? err.message : "Invalid date range"
       );
       this.loading.set(false);
       return;
@@ -371,7 +461,7 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
         },
         error: (err: unknown) => {
           this.errorMessage.set(
-            err instanceof Error ? err.message : "Failed to load channel detail",
+            err instanceof Error ? err.message : "Failed to load channel detail"
           );
           this.loading.set(false);
         },
@@ -379,18 +469,161 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
     this.loadRecentTraces();
   }
 
+  /**
+   * Resolves the account entity backing this detail view. `listAccounts()`
+   * is the only account-read endpoint (T01 finding 8, no new endpoints
+   * per constraint 4) - accounts are fetched in full and matched by id.
+   * An id with no match sets the not-found state instead of failing
+   * silently.
+   */
+  loadAccount(): void {
+    const accountId = this.accountId();
+    if (!accountId) {
+      return;
+    }
+    this.accountLoading.set(true);
+    this.accountNotFound.set(false);
+    this.channels
+      .listAccounts()
+      .pipe(takeUntil(this.destroy$))
+      .subscribe({
+        next: (accounts) => {
+          const found = accounts.find((a) => a.id === accountId) ?? null;
+          this.account.set(found);
+          this.accountLoading.set(false);
+          if (found === null) {
+            this.accountNotFound.set(true);
+            console.error(
+              "[ChannelDetailComponent] account not found for route params",
+              { accountId, channel: this.channel() }
+            );
+          } else {
+            console.debug("[ChannelDetailComponent] account resolved", {
+              accountId,
+              name: found.name,
+              isActive: found.isActive,
+            });
+          }
+        },
+        error: (err: unknown) => {
+          this.accountLoading.set(false);
+          this.accountNotFound.set(true);
+          console.error("[ChannelDetailComponent] failed to load account", {
+            accountId,
+            error: err,
+          });
+        },
+      });
+  }
+
+  /**
+   * Edit action (ADDED 2026-07-22, human sign-off post-T02): reuses
+   * AccountDialogComponent's edit mode exactly as the fleet table did
+   * before the actions column was removed.
+   */
+  openEdit(): void {
+    const acc = this.account();
+    if (!acc) {
+      console.error(
+        "[ChannelDetailComponent] edit requested with no account loaded"
+      );
+      return;
+    }
+    console.debug("[ChannelDetailComponent] opening account edit dialog", {
+      accountId: acc.id,
+    });
+    const ref = this.dialog.open(AccountDialogComponent, {
+      data: { account: acc },
+      width: "520px",
+    });
+    ref.afterClosed().subscribe((result?: IAccountDialogResult) => {
+      if (result?.saved) {
+        console.debug(
+          "[ChannelDetailComponent] account updated, reloading account",
+          { accountId: acc.id }
+        );
+        this.loadAccount();
+      }
+    });
+  }
+
+  /**
+   * Delete action (ADDED 2026-07-22, human sign-off post-T02): confirms
+   * via the existing confirm-dialog pattern, then deletes and navigates
+   * back to the fleet list on success.
+   */
+  confirmDelete(): void {
+    const acc = this.account();
+    if (!acc) {
+      console.error(
+        "[ChannelDetailComponent] delete requested with no account loaded"
+      );
+      return;
+    }
+    const data: IConfirmDialogData = {
+      title: "Delete Account",
+      message: `Delete account "${acc.name}"?\n\nThis will also delete all auto-reply rules and messages for this account.`,
+      confirmLabel: "Delete",
+      cancelLabel: "Cancel",
+      variant: "danger",
+      icon: "delete_forever",
+    };
+    console.debug("[ChannelDetailComponent] delete confirmation requested", {
+      accountId: acc.id,
+    });
+    this.dialog
+      .open<ConfirmDialogComponent, IConfirmDialogData, boolean>(
+        ConfirmDialogComponent,
+        { data }
+      )
+      .afterClosed()
+      .subscribe((confirmed) => {
+        if (confirmed === true) {
+          this.deleteAccount(acc);
+        } else {
+          console.debug("[ChannelDetailComponent] delete cancelled", {
+            accountId: acc.id,
+          });
+        }
+      });
+  }
+
+  private deleteAccount(acc: IChannelAccount): void {
+    this.channels.deleteAccount(acc.id).subscribe({
+      next: () => {
+        console.debug(
+          "[ChannelDetailComponent] account deleted, navigating back to fleet",
+          { accountId: acc.id, channel: this.channel() }
+        );
+        this.router
+          .navigate(["/channels", this.channel()])
+          .catch((error: unknown) => {
+            console.error(
+              "[ChannelDetailComponent] navigation back to fleet failed",
+              { accountId: acc.id, error }
+            );
+          });
+      },
+      error: (err: unknown) => {
+        console.error("[ChannelDetailComponent] failed to delete account", {
+          accountId: acc.id,
+          error: err,
+        });
+      },
+    });
+  }
+
   openInspector(streamKey: "ingress" | "dlq"): void {
     const basePattern = this.defaultStreamSubjectPattern(streamKey);
     const channelFilter = this.buildChannelScopedFilter(
       basePattern,
-      this.channel(),
+      this.channel()
     );
     const data: IMessageInspectorDialogData = {
       streamKey,
       streamName: streamKey === "ingress" ? "Ingress" : "DLQ",
       defaultSubject: channelFilter,
-      subjectPlaceholder:
-        channelFilter || basePattern || "e.g. evt.<tenant>.>",
+      subjectPlaceholder: channelFilter || basePattern || "e.g. evt.<tenant>.>",
       accountId: this.accountId() || undefined,
     };
     this.dialog.open(MessageInspectorDialogComponent, {
@@ -409,10 +642,14 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
    */
   private buildChannelScopedFilter(
     basePattern: string,
-    channel: string,
+    channel: string
   ): string {
-    if (!basePattern || !channel) return "";
-    if (!basePattern.endsWith(".>")) return "";
+    if (!basePattern || !channel) {
+      return "";
+    }
+    if (!basePattern.endsWith(".>")) {
+      return "";
+    }
     const prefix = basePattern.slice(0, basePattern.length - 1); // keeps trailing dot
     return `${prefix}channel-service.messaging.${channel}.>`;
   }
@@ -423,7 +660,9 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
    */
   private defaultStreamSubjectPattern(streamKey: "ingress" | "dlq"): string {
     const tid = this.auth.tenantId();
-    if (!tid) return "";
+    if (!tid) {
+      return "";
+    }
     return streamKey === "ingress" ? `evt.${tid}.>` : `dlq.${tid}.>`;
   }
 
@@ -434,10 +673,7 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
       }
       const fromDate = new Date(selection.from);
       const toDate = new Date(selection.to);
-      if (
-        Number.isNaN(fromDate.getTime()) ||
-        Number.isNaN(toDate.getTime())
-      ) {
+      if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
         throw new Error("Invalid custom date range");
       }
       if (fromDate >= toDate) {
@@ -456,7 +692,8 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
     }
 
     const preset = selection.preset ?? DEFAULT_PRESET_RANGE;
-    const spec = RANGE_SPECS.get(preset) ?? RANGE_SPECS.get(DEFAULT_PRESET_RANGE)!;
+    const spec =
+      RANGE_SPECS.get(preset) ?? RANGE_SPECS.get(DEFAULT_PRESET_RANGE)!;
     const now = Date.now();
     return {
       from: new Date(now - spec.durationMs).toISOString(),
@@ -474,7 +711,9 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
     if (selection.mode !== "custom") {
       return selection.preset ?? DEFAULT_PRESET_RANGE;
     }
-    if (!selection.from || !selection.to) return "Custom";
+    if (!selection.from || !selection.to) {
+      return "Custom";
+    }
     const fromDate = new Date(selection.from);
     const toDate = new Date(selection.to);
     if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
@@ -488,18 +727,28 @@ export class ChannelDetailComponent implements OnInit, OnDestroy {
   }
 
   private loadRecentTraces(): void {
-    if (!this.canViewTraces()) return;
+    if (!this.canViewTraces()) {
+      return;
+    }
     const accountId = this.accountId();
-    const channel   = this.channel();
-    if (!accountId || !channel) return;
+    const channel = this.channel();
+    if (!accountId || !channel) {
+      return;
+    }
 
     this.tracesLoading.set(true);
     this.traceService
       .recentTraces(60, 20, { accountId, channel })
       .pipe(takeUntil(this.destroy$))
       .subscribe({
-        next:  (rows) => { this.recentTraces.set(rows); this.tracesLoading.set(false); },
-        error: ()     => { this.recentTraces.set([]);   this.tracesLoading.set(false); },
+        next: (rows) => {
+          this.recentTraces.set(rows);
+          this.tracesLoading.set(false);
+        },
+        error: () => {
+          this.recentTraces.set([]);
+          this.tracesLoading.set(false);
+        },
       });
   }
 
