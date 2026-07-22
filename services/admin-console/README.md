@@ -268,3 +268,38 @@ on top of the foundation primitives above, per
   here are documented, human-signed-off amendments to the original SPEC
   layout — see `manual-loops/admin-console/console-redesign-dashboard.md`
   §"User decisions", amendments dated 2026-07-21.
+
+### Channels composition
+
+The Channels → per-channel fleet screen (`features/channels/channels.component.ts`,
+routed at `/channels/:channel`) and the account detail screen
+(`features/channels/detail/channel-detail.component.ts`, routed unchanged at
+`/channels/:channel/accounts/:accountId`) were rebuilt on top of the
+foundation primitives, per
+`manual-loops/admin-console/console-redesign-channels.md`.
+
+- **Fleet view** — a metric-card row (messages 24h, active/inactive account
+  counts) above an `app-inventory-table` of accounts (health dot, sparkline
+  column, status) sourced from `ChannelAdminService.listAccounts()`, plus an
+  `app-needs-attention-panel` listing inactive accounts. A row click
+  navigates to that account's detail route.
+- **Health mapping (Mapping A)** — the inventory table's health dot uses
+  `IChannelAccount.isActive` as the only status source: `isActive === true`
+  → primitive `ok` (green), `isActive === false` → primitive `error` (red).
+  This is a 2-state mapping; the design's third state, `warn` (yellow), is
+  **unreachable** with the fields available today and is documented as a
+  backend follow-up (a per-account degradation signal — e.g. recent `dlq`
+  events or a `reauth`-specific flag — does not exist on `IChannelAccount`
+  or in `listAccounts()`'s response). It is never derived from DLQ counts in
+  this loop, since that would require an extra `getUsageTotals` call per
+  row. The `status-badge` primitive's `idle` value stays unused here.
+- **Detail view** — Edit and Delete were relocated from the fleet table
+  (the design has no action column there) to the account-detail header,
+  reusing the existing `AccountDialogComponent` edit mode and
+  `ChannelAdminService.deleteAccount`; delete confirms via the existing
+  confirm-dialog and navigates back to the fleet on success. This is a
+  human-signed amendment to the original SPEC layout, recorded in
+  `manual-loops/admin-console/console-redesign-channels.md` §"T03 — Account
+  detail view". The account for the detail route is resolved client-side by
+  matching `listAccounts()` against the route's `:accountId` (no dedicated
+  get-by-id endpoint); an unknown id renders a not-found state.

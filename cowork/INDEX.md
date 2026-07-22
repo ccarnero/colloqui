@@ -448,6 +448,52 @@ inventory findings) diverge from the SPEC's original wording:
   SPEC was amended to render Name + Executions only rather than render a
   hard-coded value as if it were real.
 
+## Change: console redesign channels (console-redesign-channels)
+
+Manual-loop change (not SDD) rebuilding the Channels section on top of the
+`console-redesign-foundation` primitives: a fleet view
+(`features/channels/channels.component.ts`, `/channels/:channel`) with a
+messages-24h/active/inactive metric-card row, an `app-inventory-table` of
+accounts (health dot, sparkline, status) and an `app-needs-attention-panel`
+of inactive accounts, plus the existing account detail route
+(`features/channels/detail/channel-detail.component.ts`,
+`/channels/:channel/accounts/:accountId`, unchanged) now carrying an
+identity header with health dot and the Edit/Delete actions. Full task
+queue, gates, and human decisions:
+`manual-loops/admin-console/console-redesign-channels.md`. Operational
+contract (fleet + detail composition, health mapping rationale, Edit/Delete
+relocation): `services/admin-console/README.md` "Channels composition".
+Engram topic: `admin-console/redesign-channels`.
+
+Two human-signed decisions (both dated 2026-07-22, made after T01/T02's
+inventory findings) diverge from ambiguous SPEC wording:
+
+- **Health-dot Mapping A (isActive only).** The design defines three health
+  states (`ok`/`warn`/`down`), but `IChannelAccount.isActive` is the only
+  per-account status field the API returns today. Mapping A maps
+  `isActive === true` → `ok`, `isActive === false` → `error`, and treats the
+  design's `warn` state as unreachable until the backend exposes a
+  degradation signal — rejected the alternative (an extra
+  `getUsageTotals({direction: 'dlq'})` call per row to approximate `warn`)
+  because it adds N per-row HTTP calls the fleet table does not make today.
+- **Edit/Delete relocated to the account-detail header.** The design's
+  fleet table has no action column, so the account list's inline Edit/Delete
+  buttons moved to the detail view's header, reusing the existing
+  `AccountDialogComponent` edit mode and `ChannelAdminService.deleteAccount`.
+
+Backend follow-ups flagged by T01 (not fixed in this loop — front-only
+SPEC):
+
+- No per-account `health`/degradation or time-bucketed series (`spark`)
+  field exists in `listAccounts()` — blocks the design's `warn` state and
+  the fleet table's sparkline/msgs-24h/delivery/first-response columns.
+- `ChannelsMetricsService.failedDeliveries24h` is declared and exposed via
+  `resolve()` but never `.set()` anywhere — a dead signal, permanently
+  `null`.
+- `ChannelsMetricsService.connectedCount` is set to `accounts.length` (the
+  same value as `totalCount`) and never filters by `isActive` — the
+  landing page's "N need reauth" sub-label can never fire today.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.
