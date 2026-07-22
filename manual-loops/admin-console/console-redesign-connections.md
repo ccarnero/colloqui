@@ -381,7 +381,7 @@ grep -n "console-redesign-connections" cowork/INDEX.md
 - [x] T01 inventory report
 - [x] T02 inventory list view
 - [x] T03 detail views
-- [ ] T04 docs + index
+- [x] T04 docs + index
 
 ## Out of scope (explicit)
 

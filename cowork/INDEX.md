@@ -494,6 +494,72 @@ SPEC):
   same value as `totalCount`) and never filters by `isActive` — the
   landing page's "N need reauth" sub-label can never fire today.
 
+## Change: console redesign connections (console-redesign-connections)
+
+Manual-loop change (not SDD) rebuilding the Connections section on top of
+the `console-redesign-foundation` primitives: a unified fleet landing
+(`features/connections/connections-landing.component.ts`, `/connections`)
+with a KPI-count row (HTTP/MCP/Hosted), an `app-inventory-table` merging
+the three connector kinds into one rows array with per-type health dots,
+and an `app-needs-attention-panel` of failing connections across all three
+types, plus restyled `connector-detail` (HTTP,
+`features/data-integrations/connectors/detail/connector-detail.component.ts`)
+and `mcp-detail` (`features/connections/mcp-detail/mcp-detail.component.ts`)
+routed views with health dots, identity chips, `app-kpi-card` config
+summaries, and Edit buttons reusing the existing `http-adapter-dialog`/
+`mcp-server-dialog` unchanged with fail-fast save + user-visible
+`saveError` banners. Secrets are never rendered: the detail views
+(`connector-detail`, `mcp-detail`) are sentinel-tested (unit tests assert a
+sentinel secret placed in `authConfig`/`auth_config` never appears in
+rendered DOM); the landing table's row-mapping functions only read
+`authType`/`transport_type`/`image` (no secret field touched) but lack an
+equivalent sentinel unit test — tracked as a follow-up below. Full
+task queue, gates, and human decisions:
+`manual-loops/admin-console/console-redesign-connections.md`. Operational
+contract (fleet + detail composition, health-mapping rationale,
+Edit-in-header pattern, secrets rule): `services/admin-console/README.md`
+"Connections composition". Engram topic: `admin-console/redesign-connections`.
+
+Health-mapping ruling (precedent-applied, orchestrator ruling
+2026-07-22, applying the human precedent signed in the Channels loop —
+real fields only, no invented thresholds): hosted services reuse the
+existing `statusColor()` semantics unchanged (`active`→ok, `pending`→warn,
+`error`→error, all real states); MCP servers map `enabled && is_active` →
+ok else error; HTTP connectors map `status === "enabled"` → ok else error.
+No `warn` state is derived from call error rates or other thresholds for
+MCP/HTTP — same class of rejection as the DLQ-derived `warn` the human
+turned down in the Channels loop's decision 3. Flagged as backend
+follow-up, not fixed in this loop.
+
+Landing-table sentinel-test follow-up (flagged by review, not fixed in this
+loop): `connections-landing.component.spec.ts` has no sentinel test
+covering the row-mapping functions, unlike `connector-detail` and
+`mcp-detail`; the mapping functions only read `authType`/`transport_type`/
+`image` today (behavior is safe), but a sentinel unit test should be added
+to `connections-landing.component.spec.ts` to lock that in.
+
+Glue-duplication follow-up (flagged by review, not fixed in this loop): the
+adapter update-glue between `connectors.component.ts`'s list-refresh path
+and `connector-detail.component.ts`'s save/reload path is duplicated
+rather than extracted into a shared adapter-update helper; both call sites
+independently re-fetch and re-map `IAdapterDto` after a save. Extracting a
+shared "update adapter + refresh" function is recommended before a third
+call site appears.
+
+Backend follow-ups from T01 (not fixed in this loop — front-only SPEC):
+
+- No call-aggregation or error-rate fields exist anywhere in the
+  inventoried services (`IAdapterDto`, `IMcpServer`, `IRegisteredService`,
+  `ConnectorCallService`, `AgentAdminService`) — the design's fleet
+  health-strip (Calls·24h, Error rate, Avg p95, Secrets por rotar) and the
+  inventory table's sparkline/p95/err/usedBy columns have no real data
+  source today; would require new backend aggregation, not a client
+  derivation.
+- `ConnectionsMetricsService`'s `internalErrored`/`externalErrored` signals
+  exist but `loadCounts()` never sets them — they stay `null` forever, so
+  the `httpErrored` signal that depends on them never resolves to a real
+  value. No `mcpErrored`/`hostedErrored` signal exists at all.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

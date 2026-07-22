@@ -303,3 +303,64 @@ foundation primitives, per
   detail view". The account for the detail route is resolved client-side by
   matching `listAccounts()` against the route's `:accountId` (no dedicated
   get-by-id endpoint); an unknown id renders a not-found state.
+
+### Connections composition
+
+The Connections section (fleet landing at `/connections`, plus the existing
+per-type routes `/connections/http/:id` and `/connections/mcp/:id`) was
+rebuilt on top of the `console-redesign-foundation` primitives, per
+`manual-loops/admin-console/console-redesign-connections.md`.
+
+- **Fleet landing** (`features/connections/connections-landing.component.ts`)
+  — a `app-kpi-card` row of HTTP/MCP/Hosted counts from
+  `ConnectionsMetricsService`, an `app-inventory-table` unifying the three
+  connector kinds (HTTP adapters, MCP servers, hosted services) into one
+  rows array with a `type` column and a per-row health dot, and an
+  `app-needs-attention-panel` listing the failing rows across all three
+  types. Selecting a row navigates to that row's per-type route
+  (`/connections/http/:id`, `/connections/mcp/:id`); hosted services keep
+  their existing dialog-based editing entry point instead of a detail route
+  (per SPEC decision 2).
+- **Health mapping (orchestrator ruling, applying the Channels-loop
+  precedent — real fields only, no invented thresholds)**: each connector
+  type maps its own real status field independently, there is no shared
+  cross-type health enum:
+  - **Hosted services** reuse the existing `statusColor()` semantics
+    unchanged (`active` → ok, `pending` → warn, `error` → error — all three
+    are real backend states, not derived).
+  - **MCP servers** map `enabled && is_active` → ok, else error (the same
+    binary logic already used at `mcp-servers-page.component.ts` and
+    `mcp-detail.component.ts`); there is no source field for a `warn` state.
+  - **HTTP connectors** map `status === "enabled"` → ok, else error (from
+    `IAdapterDto.status: "enabled" | "disabled"`); there is no source field
+    for a `warn` state either.
+  - No health state is ever derived from call error rates, p95, or other
+    thresholds — that data does not exist in any of the three services
+    today (see `manual-loops/admin-console/console-redesign-connections.md`
+    §T01 findings) and inventing a threshold would repeat the DLQ-derived
+    `warn` the human explicitly rejected in the Channels loop's decision 3.
+    Flagged as a backend follow-up, not fixed in this loop.
+- **Detail views** (`features/data-integrations/connectors/detail/connector-detail.component.ts`
+  for HTTP, `features/connections/mcp-detail/mcp-detail.component.ts` for
+  MCP) were restyled in place per decision 2: a health-dot + identity-chip
+  header, `app-kpi-card`s for the config summary, and the existing "Recent
+  calls"/"Recent invocations" sections (already wired to
+  `ConnectorCallService`/`AgentAdminService.getMcpServerUsage()` before this
+  loop) restyled, not rebuilt.
+- **Edit-in-header pattern** — Edit opens the pre-existing edit
+  dialog/form for that connector type (`http-adapter-dialog`,
+  `mcp-server-dialog`) unchanged, from a button in the detail header rather
+  than a fork of the form. Save is fail-fast: a failed save renders a
+  user-visible `saveError` banner in the detail view instead of failing
+  silently; the dialogs themselves are reused as-is (decision 2 — "existing
+  edit forms/dialogs are embedded unchanged").
+- **Secrets rule (decision 3)** — every list/detail render site reads only
+  the `authType`/`auth_type` field; `authConfig`/`auth_config` values are
+  never spread or rendered outside the reused edit-dialog form inputs.
+  Sentinel-tested in both detail views: unit tests assert a sentinel secret
+  value placed in `authConfig`/`auth_config` never appears in the rendered
+  DOM of `connector-detail` or `mcp-detail`. The landing table's row-mapping
+  functions only read `authType`/`transport_type`/`image` (no secret field
+  is ever touched), but there is no equivalent sentinel unit test on
+  `connections-landing.component.spec.ts` yet — tracked as a pending
+  follow-up.
