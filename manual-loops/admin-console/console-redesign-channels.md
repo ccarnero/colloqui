@@ -22,6 +22,12 @@ per-channel breakdown — matching the design contract.
    `detail/channel-detail.component.ts`); a row click navigates to it.
 3. Health status mapping (dot color) is derived from existing status fields —
    the exact mapping is decided at T01 review with the human if ambiguous.
+   **DECIDED 2026-07-22 (human sign-off, post-T01 finding 10): Mapping A** —
+   `isActive === true` → `ok` (green), `isActive === false` → `error` (red).
+   No extra HTTP calls. The design's `warn` (yellow) state is UNREACHABLE
+   until the backend exposes a degradation signal — documented as a backend
+   follow-up, never derived from DLQ counts in this loop. The status-badge
+   primitive's `idle` value stays unused here.
 4. No new API endpoints; existing channels/accounts services are the source.
 
 ## Prior art (validated 2026-07-21 — REUSE, do not duplicate)
