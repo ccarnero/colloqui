@@ -1,21 +1,12 @@
-import type { HttpErrorResponse } from "@angular/common/http";
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
   inject,
   input,
-  signal,
 } from "@angular/core";
-import { RouterLink } from "@angular/router";
-import { AuthService } from "../../../../core/services/auth.service";
-import {
-  type IEventPayloadResponse,
-  type ITrackedEvent,
-  type ITrackingChainResponse,
-  TrackingChainService,
-} from "../../../../core/services/tracking-chain.service";
-import { resolveTrackedEventDeepLink } from "./causal-graph-deep-link";
+import type { ITrackingChainResponse } from "../../../../core/services/tracking-chain.service";
+import { TraceSelectionService } from "../trace-selection.service";
 import {
   computeChainCompleteness,
   computeChannel,
@@ -25,22 +16,6 @@ import {
   type IGraphEdgePoints,
   type IGraphNode,
 } from "./causal-graph-geometry";
-
-/** Tenant-admin permission gating the payload viewer (SPEC.md
- * `manual-loops/payload-capture.md` T05 — reuses the console's existing
- * `AuthService.hasPermission()` gate, same mechanism as
- * `message-trace.component.ts`'s `diagnostics:read` gate). */
-const PAYLOAD_PERMISSION = "tracking:payload:read";
-
-/** Local view-state for the on-demand payload fetch, keyed to whichever
- * event is currently selected — reset whenever the selection changes. */
-type PayloadViewState =
-  | { readonly kind: "idle" }
-  | { readonly kind: "loading" }
-  | { readonly kind: "loaded"; readonly response: IEventPayloadResponse }
-  | { readonly kind: "expired" }
-  | { readonly kind: "not-captured"; readonly message: string }
-  | { readonly kind: "error" };
 
 const NODE_WIDTH = 168;
 const NODE_HEIGHT = 46;
@@ -58,16 +33,25 @@ interface IRenderedEdge {
  * Causal graph view for a correlation's tracked-event chain: nodes are
  * events laid out on a causal spine by `causation_depth`, edges are drawn
  * `causation_id -> event_id` (solid) or as a dashed "missing parent" stub
- * for the solo-correlation case, and clicking a node opens a detail card
- * (SPEC.md `manual-loops/trace-console.md` T06). The detail card also hosts
- * an admin-only "View payload" affordance that fetches the event's payload
- * on demand (SPEC.md `manual-loops/payload-capture.md` T05).
+ * for the solo-correlation case (SPEC.md `manual-loops/trace-console.md`
+ * T06).
+ *
+ * T04 (`manual-loops/admin-console/console-redesign-trace.md`) MIGRATED
+ * this component's selection off a local `selected` signal onto the shared
+ * `TraceSelectionService.select(eventId, "causal")` (decision 2: view-local
+ * selection state is automatic rejection) — node click and highlight both
+ * go through the service now. The inline `.cg-detail` card (base fields,
+ * on-demand payload fetch, "Open connector" deep link) that used to live
+ * here has been REPLACED by `TraceDetailComponent`'s shared inspector,
+ * which renders the same content (plus the new "causal chain" block,
+ * decision 3) for causal-mode selections — see that component's header
+ * comment and `causal-chain.ts`. This component is now purely presentational:
+ * geometry in, selection events out.
  *
  * Data-agnostic: the chain is provided by the parent (T07 wires the fetch).
  */
 @Component({
   selector: "app-causal-graph",
-  imports: [RouterLink],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <div class="cg">
@@ -96,8 +80,7 @@ interface IRenderedEdge {
         </span>
       </header>
 
-      <div class="cg-body">
-        <div class="cg-svg-scroll">
+      <div class="cg-svg-scroll">
         <svg
           class="cg-svg"
           [attr.viewBox]="viewBox()"
@@ -147,9 +130,9 @@ interface IRenderedEdge {
           @for (node of nodes(); track node.eventId) {
             <g
               class="cg-node"
-              [class.cg-node-selected]="node.eventId === selectedEventId()"
+              [class.cg-node-selected]="isSelected(node)"
               [attr.transform]="'translate(' + (node.x - NODE_WIDTH / 2) + ',' + (node.y - NODE_HEIGHT / 2) + ')'"
-              (click)="select(node.eventId)"
+              (click)="onNodeClick(node)"
             >
               <rect
                 class="cg-node-rect"
@@ -166,83 +149,6 @@ interface IRenderedEdge {
             </g>
           }
         </svg>
-        </div>
-
-        @if (selectedEvent(); as event) {
-          <aside class="cg-detail" aria-label="Event detail">
-            <h3 class="cg-detail-title">Event detail</h3>
-            <dl class="cg-detail-list">
-              <dt>event_id</dt>
-              <dd class="cg-mono">{{ event.event_id }}</dd>
-              <dt>causation_id</dt>
-              <dd class="cg-mono">{{ event.causation_id ?? "—" }}</dd>
-              <dt>tech</dt>
-              <dd>{{ event.tech }}</dd>
-              <dt>business_fn</dt>
-              <dd>{{ event.business_fn }}</dd>
-              <dt>causation_depth</dt>
-              <dd>{{ event.causation_depth ?? "—" }}</dd>
-              <dt>is_claim_check</dt>
-              <dd>{{ event.is_claim_check }}</dd>
-              <dt>compliance</dt>
-              <dd>
-                {{ event.compliance }}
-                @if (event.tenant === null) {
-                  <span class="cg-flag">null tenant</span>
-                }
-              </dd>
-            </dl>
-
-            @if (canViewPayload()) {
-              <div class="cg-payload">
-                <button
-                  type="button"
-                  class="cg-payload-btn"
-                  (click)="viewPayload(event.event_id)"
-                >
-                  View payload
-                </button>
-
-                @switch (payloadState().kind) {
-                  @case ("loading") {
-                    <p class="cg-payload-status">Loading payload…</p>
-                  }
-                  @case ("expired") {
-                    <p class="cg-payload-status">
-                      Payload expired (30-day retention)
-                    </p>
-                  }
-                  @case ("not-captured") {
-                    <p class="cg-payload-status">
-                      {{ notCapturedMessage() }}
-                    </p>
-                  }
-                  @case ("error") {
-                    <p class="cg-payload-status cg-payload-error">
-                      Failed to load payload.
-                    </p>
-                  }
-                  @case ("loaded") {
-                    <details class="cg-payload-details">
-                      <summary>
-                        Payload ({{ loadedResponse()?.payload_status }})
-                      </summary>
-                      <pre class="cg-payload-pre">{{ payloadJson() }}</pre>
-                    </details>
-                  }
-                }
-              </div>
-            }
-
-            @if (deepLink(); as link) {
-              <div class="cg-deep-link">
-                <a class="cg-deep-link-btn" [routerLink]="link.route">
-                  {{ link.label }}
-                </a>
-              </div>
-            }
-          </aside>
-        }
       </div>
     </div>
   `,
@@ -280,13 +186,7 @@ interface IRenderedEdge {
     .cg-mono {
       font-family: var(--font-mono, monospace);
     }
-    .cg-body {
-      display: flex;
-      gap: 16px;
-      align-items: flex-start;
-    }
     .cg-svg-scroll {
-      flex: 1 1 auto;
       min-width: 0;
       min-height: 300px;
       overflow: auto;
@@ -327,127 +227,21 @@ interface IRenderedEdge {
       fill: #868e96;
       text-anchor: middle;
     }
-    .cg-detail {
-      flex: 0 0 260px;
-      border: 1px solid var(--border-subtle, #ddd);
-      border-radius: 8px;
-      padding: 12px 14px;
-      font-size: 12px;
-    }
-    .cg-detail-title {
-      margin: 0 0 8px;
-      font-size: 13px;
-    }
-    .cg-detail-list {
-      display: grid;
-      grid-template-columns: auto 1fr;
-      gap: 4px 8px;
-      margin: 0;
-    }
-    .cg-detail-list dt {
-      color: var(--text3, #888);
-    }
-    .cg-detail-list dd {
-      margin: 0;
-      word-break: break-all;
-    }
-    .cg-flag {
-      display: inline-block;
-      margin-left: 6px;
-      padding: 1px 6px;
-      border-radius: 4px;
-      background: var(--red-bg, #fbe9e7);
-      color: var(--red, #b3261e);
-      font-size: 10px;
-    }
-    .cg-payload {
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid var(--border-subtle, #ddd);
-    }
-    .cg-payload-btn {
-      padding: 4px 10px;
-      font-size: 12px;
-      border: 1px solid var(--border, #185fa5);
-      border-radius: 6px;
-      background: var(--bg, #fff);
-      color: #185fa5;
-      cursor: pointer;
-    }
-    .cg-payload-status {
-      margin: 8px 0 0;
-      color: var(--text3, #888);
-    }
-    .cg-payload-error {
-      color: var(--red, #b3261e);
-    }
-    .cg-payload-details {
-      margin-top: 8px;
-    }
-    .cg-payload-pre {
-      margin: 6px 0 0;
-      padding: 8px;
-      background: var(--bg2, #f8f9fa);
-      border-radius: 6px;
-      max-height: 240px;
-      overflow: auto;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-    .cg-deep-link {
-      margin-top: 10px;
-      padding-top: 10px;
-      border-top: 1px solid var(--border-subtle, #ddd);
-    }
-    .cg-deep-link-btn {
-      display: inline-block;
-      padding: 4px 10px;
-      font-size: 12px;
-      border: 1px solid var(--border, #185fa5);
-      border-radius: 6px;
-      background: var(--bg, #fff);
-      color: #185fa5;
-      font-weight: 500;
-      cursor: pointer;
-      text-decoration: none;
-    }
   `,
 })
 export class CausalGraphComponent {
-  private readonly auth = inject(AuthService);
-  private readonly trackingChainService = inject(TrackingChainService);
-
   readonly chain = input.required<ITrackingChainResponse>();
+
+  /** Shared cross-view selection (T02-T04) — walks up to the
+   * `TraceDetailComponent`-provided instance; NOT `providedIn: "root"` (see
+   * `TraceSelectionService`'s header comment). T04 removed this
+   * component's OWN local `selected` signal (T01 finding, item 2) —
+   * Constraints: "a view holding its own selected-event state is automatic
+   * rejection" (decision 2). */
+  private readonly selection = inject(TraceSelectionService);
 
   readonly NODE_WIDTH = NODE_WIDTH;
   readonly NODE_HEIGHT = NODE_HEIGHT;
-
-  private readonly selected = signal<string | null>(null);
-  readonly selectedEventId = computed(() => this.selected());
-
-  /** Gates the "View payload" action — SPEC.md `manual-loops/payload-capture.md`
-   * T05: "visible only when the session user has the admin permission". */
-  readonly canViewPayload = computed(() =>
-    this.auth.hasPermission(PAYLOAD_PERMISSION)
-  );
-
-  private readonly payload = signal<PayloadViewState>({ kind: "idle" });
-  readonly payloadState = computed(() => this.payload());
-
-  readonly loadedResponse = computed<IEventPayloadResponse | null>(() => {
-    const state = this.payload();
-    return state.kind === "loaded" ? state.response : null;
-  });
-
-  readonly payloadJson = computed(() => {
-    const response = this.loadedResponse();
-    return response ? JSON.stringify(response.payload, null, 2) : "";
-  });
-
-  readonly notCapturedMessage = computed(() => {
-    const state = this.payload();
-    return state.kind === "not-captured" ? state.message : "";
-  });
 
   readonly nodes = computed(() => computeGraphNodes(this.chain()));
   readonly edges = computed(() => computeGraphEdges(this.chain()));
@@ -512,65 +306,25 @@ export class CausalGraphComponent {
   readonly graphWidth = computed(() => this.extents().width);
   readonly graphHeight = computed(() => this.extents().height);
 
-  readonly selectedEvent = computed<ITrackedEvent | null>(() => {
-    const id = this.selected();
-    if (!id) {
-      return null;
-    }
-    return this.chain().events.find((event) => event.event_id === id) ?? null;
-  });
-
-  /** "Open <entity>" deep link for the selected event (T05 of
-   * `manual-loops/connector-trace-linking.md`) — `null` hides the button,
-   * same pattern as `canViewPayload()` gating the payload section. */
-  readonly deepLink = computed(() => {
-    const event = this.selectedEvent();
-    return event ? resolveTrackedEventDeepLink(event) : null;
-  });
-
-  select(eventId: string): void {
-    const next = this.selected() === eventId ? null : eventId;
-    this.selected.set(next);
-    // Selecting a different event (or closing the card) discards any
-    // in-flight/loaded payload state — the viewer never carries state across
-    // events (SPEC.md `manual-loops/payload-capture.md` T05: fetch on demand,
-    // never pre-fetched).
-    this.payload.set({ kind: "idle" });
+  /** Selected-node highlight — reads the shared service's signal directly,
+   * no local state (mirrors `TraceWaterfallComponent.isSelected`). */
+  isSelected(node: IGraphNode): boolean {
+    return this.selection.selectedEventId() === node.eventId;
   }
 
-  /**
-   * Fetches the selected event's payload on demand via
-   * `TrackingChainService.getEventPayload` — never pre-fetched with the
-   * chain. Maps the gateway's `payload_status`-driven HTTP responses (T04:
-   * 200 body, 404 unresolved/none/unknown, 410 scrubbed) to view state.
-   */
-  viewPayload(eventId: string): void {
-    const correlationId = this.chain().correlation_id;
-    this.payload.set({ kind: "loading" });
-    this.trackingChainService
-      .getEventPayload(correlationId, eventId)
-      .subscribe({
-        next: (response) => this.payload.set({ kind: "loaded", response }),
-        error: (err: HttpErrorResponse) => {
-          if (err.status === 410) {
-            this.payload.set({ kind: "expired" });
-            return;
-          }
-          if (err.status === 404) {
-            // The gateway/ingester distinguish unresolved/none/unknown-event
-            // only via the `error` message text (handle-payload-request.ts) —
-            // surface the claim-check-specific message when detectable, else
-            // a generic not-captured message.
-            const reason =
-              typeof err.error?.error === "string" ? err.error.error : "";
-            const message = reason.includes("unresolved")
-              ? "Payload was not captured (claim-check expired)"
-              : "Payload was not captured";
-            this.payload.set({ kind: "not-captured", message });
-            return;
-          }
-          this.payload.set({ kind: "error" });
-        },
-      });
+  /** Node click -> shared selection, sourced as "causal" — replaces the old
+   * local toggle-open/toggle-closed `select()` (T01 finding: this component
+   * used to own a `selected` signal and an inline detail card). The
+   * inspector's own close (×) button / Esc handling now owns "closing" the
+   * selection; a node click here always just (re-)selects. Verbose
+   * logging: every new selection-triggering path logs the node it
+   * selected. */
+  onNodeClick(node: IGraphNode): void {
+    console.debug("[CausalGraphComponent] node clicked, selecting event", {
+      eventId: node.eventId,
+      kind: node.kind,
+      correlationId: this.chain().correlation_id,
+    });
+    this.selection.select(node.eventId, "causal");
   }
 }

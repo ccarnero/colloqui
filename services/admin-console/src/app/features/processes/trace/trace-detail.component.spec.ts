@@ -1,4 +1,5 @@
 import "@angular/compiler";
+import type { HttpErrorResponse } from "@angular/common/http";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { ActivatedRoute, convertToParamMap } from "@angular/router";
 import { NEVER, of, throwError } from "rxjs";
@@ -71,6 +72,7 @@ const fixtureChain: ITrackingChainResponse = {
 describe("TraceDetailComponent", () => {
   let fixture: ComponentFixture<TraceDetailComponent>;
   let getChain: ReturnType<typeof vi.fn>;
+  let getEventPayload: ReturnType<typeof vi.fn>;
 
   function setup(cid = "corr-1"): void {
     fixture = TestBed.createComponent(TraceDetailComponent);
@@ -79,6 +81,11 @@ describe("TraceDetailComponent", () => {
 
   beforeEach(async () => {
     getChain = vi.fn().mockReturnValue(of(fixtureChain));
+    getEventPayload = vi
+      .fn()
+      .mockReturnValue(
+        of({ payload: { foo: "bar" }, payload_status: "inline" })
+      );
     await TestBed.configureTestingModule({
       imports: [TraceDetailComponent],
       providers: [
@@ -90,7 +97,10 @@ describe("TraceDetailComponent", () => {
             },
           },
         },
-        { provide: TrackingChainService, useValue: { getChain } },
+        {
+          provide: TrackingChainService,
+          useValue: { getChain, getEventPayload },
+        },
         { provide: AuthService, useValue: { hasPermission: () => false } },
         // RunViewComponent (embedded by the "Run view" tab) fetches on its
         // own — NEVER keeps it parked in "Loading…" so these tests assert
@@ -459,7 +469,7 @@ describe("TraceDetailComponent", () => {
       );
     });
 
-    it("does NOT show waterfall-mode content (base fields/timing) for a non-waterfall selection", () => {
+    it("does NOT show waterfall-mode content (timing) for a non-waterfall selection", () => {
       getChain.mockReturnValue(of(barChain));
       setup();
       const el = fixture.nativeElement as HTMLElement;
@@ -467,12 +477,326 @@ describe("TraceDetailComponent", () => {
         TraceSelectionService
       );
 
-      selection.select("evt-2", "causal");
+      selection.select("evt-2", "legacy");
       fixture.detectChanges();
 
       expect(el.querySelector(".td-timing")).toBeFalsy();
       expect(el.querySelector(".td-base")).toBeFalsy();
-      expect(el.querySelector(".td-muted")?.textContent).toContain("T04-T06");
+      expect(el.querySelector(".td-muted")?.textContent).toContain("T05-T06");
+    });
+  });
+
+  describe("Inspector causal-mode content (T04)", () => {
+    const causalChain: ITrackingChainResponse = {
+      correlation_id: "corr-1",
+      tenant: "acme",
+      events: [
+        event({
+          event_id: "evt-a",
+          kind: "webhook_received",
+          business_fn: "ingress",
+          causation_depth: 0,
+          occurred_at: "2026-01-01T00:00:00.000Z",
+        }),
+        event({
+          event_id: "evt-b",
+          kind: "execution_started",
+          causation_id: "evt-a",
+          causation_depth: 1,
+          business_fn: "workflow-execution",
+          occurred_at: "2026-01-01T00:00:00.100Z",
+        }),
+        event({
+          event_id: "evt-orphan",
+          kind: "dlq_replayed",
+          business_fn: "dlq",
+          causation_id: "evt-missing",
+          causation_depth: 2,
+          tenant: null,
+          compliance: "none",
+          occurred_at: "2026-01-01T00:00:00.900Z",
+        }),
+        event({
+          event_id: "evt-connector",
+          kind: "endpoint_call_completed",
+          business_fn: "connector-invocation",
+          connector_id: "adapter-9",
+          occurred_at: "2026-01-01T00:00:01.000Z",
+        }),
+      ],
+      spans: [span({})],
+      summary: {
+        count: 4,
+        first_at: "2026-01-01T00:00:00.000Z",
+        last_at: "2026-01-01T00:00:01.000Z",
+        total_ms: 1000,
+        orphan_count: 1,
+      },
+    };
+
+    function selectEvent(eventId: string): {
+      el: HTMLElement;
+      selection: TraceSelectionService;
+    } {
+      const el = fixture.nativeElement as HTMLElement;
+      const selection = fixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+      selection.select(eventId, "causal");
+      fixture.detectChanges();
+      return { el, selection };
+    }
+
+    it("shows base event fields (same 'everywhere' dl as waterfall-mode), flagging a null-tenant row", () => {
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-orphan");
+
+      const base = el.querySelector(".td-base")?.textContent ?? "";
+      expect(base).toContain("evt-orphan");
+      expect(base).toContain("dlq_replayed");
+      expect(base).toContain("evt-missing");
+      expect(base).toContain("none");
+      expect(base).toContain("null tenant");
+    });
+
+    it("renders the linear causal chain root-first, marking the selected entry", () => {
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-b");
+
+      const entries = Array.from(el.querySelectorAll(".td-causal-chain-entry"));
+      expect(
+        entries.map(
+          (e) => e.querySelector(".td-causal-chain-kind")?.textContent
+        )
+      ).toEqual(["webhook_received", "execution_started"]);
+      expect(
+        entries[1]?.classList.contains("td-causal-chain-entry--current")
+      ).toBe(true);
+      expect(el.querySelector(".td-causal-chain-orphan")).toBeFalsy();
+    });
+
+    it("surfaces the missing-parent id for an orphan event's causal chain", () => {
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-orphan");
+
+      expect(
+        el.querySelector(".td-causal-chain-orphan")?.textContent
+      ).toContain("evt-missing");
+      const entries = el.querySelectorAll(".td-causal-chain-entry");
+      expect(entries.length).toBe(1);
+    });
+
+    it("shows the 'View payload' action when the user has the permission", () => {
+      TestBed.overrideProvider(AuthService, {
+        useValue: { hasPermission: () => true },
+      });
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-a");
+
+      expect(el.querySelector(".td-payload-btn")).toBeTruthy();
+    });
+
+    it("does NOT show the 'View payload' action without the permission", () => {
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-a");
+
+      expect(el.querySelector(".td-payload-btn")).toBeFalsy();
+    });
+
+    it("fetches the payload on demand via TrackingChainService.getEventPayload and renders the pretty-printed JSON collapsed by default", () => {
+      TestBed.overrideProvider(AuthService, {
+        useValue: { hasPermission: () => true },
+      });
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-a");
+
+      expect(getEventPayload).not.toHaveBeenCalled();
+      (el.querySelector(".td-payload-btn") as HTMLElement).click();
+      fixture.detectChanges();
+
+      expect(getEventPayload).toHaveBeenCalledWith("corr-1", "evt-a");
+      const details = el.querySelector(
+        ".td-payload-details"
+      ) as HTMLDetailsElement;
+      expect(details).toBeTruthy();
+      expect(details.open).toBe(false);
+      expect(details.textContent).toContain('"foo": "bar"');
+      expect(details.textContent).toContain("inline");
+    });
+
+    it("shows 'Payload expired' for a 410 scrubbed response", () => {
+      TestBed.overrideProvider(AuthService, {
+        useValue: { hasPermission: () => true },
+      });
+      getEventPayload.mockReturnValue(
+        throwError(
+          () =>
+            ({ status: 410, error: { error: "scrubbed" } }) as HttpErrorResponse
+        )
+      );
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-a");
+
+      (el.querySelector(".td-payload-btn") as HTMLElement).click();
+      fixture.detectChanges();
+
+      expect(el.querySelector(".td-payload-status")?.textContent).toContain(
+        "Payload expired (30-day retention)"
+      );
+    });
+
+    it("shows a claim-check message for a 404 unresolved response", () => {
+      TestBed.overrideProvider(AuthService, {
+        useValue: { hasPermission: () => true },
+      });
+      getEventPayload.mockReturnValue(
+        throwError(
+          () =>
+            ({
+              status: 404,
+              error: {
+                error:
+                  "payload capture failed to resolve for event evt-a (payload_status=unresolved — claim-check expired or cache unreachable)",
+              },
+            }) as HttpErrorResponse
+        )
+      );
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-a");
+
+      (el.querySelector(".td-payload-btn") as HTMLElement).click();
+      fixture.detectChanges();
+
+      expect(el.querySelector(".td-payload-status")?.textContent).toContain(
+        "Payload was not captured (claim-check expired)"
+      );
+    });
+
+    it("shows a generic not-captured message for a 404 none response", () => {
+      TestBed.overrideProvider(AuthService, {
+        useValue: { hasPermission: () => true },
+      });
+      getEventPayload.mockReturnValue(
+        throwError(
+          () =>
+            ({
+              status: 404,
+              error: {
+                error:
+                  "payload was never captured for event evt-a (payload_status=none)",
+              },
+            }) as HttpErrorResponse
+        )
+      );
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-a");
+
+      (el.querySelector(".td-payload-btn") as HTMLElement).click();
+      fixture.detectChanges();
+
+      expect(el.querySelector(".td-payload-status")?.textContent).toContain(
+        "Payload was not captured"
+      );
+    });
+
+    it("shows a generic error message for other failures", () => {
+      TestBed.overrideProvider(AuthService, {
+        useValue: { hasPermission: () => true },
+      });
+      getEventPayload.mockReturnValue(
+        throwError(
+          () => ({ status: 500, error: { error: "boom" } }) as HttpErrorResponse
+        )
+      );
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-a");
+
+      (el.querySelector(".td-payload-btn") as HTMLElement).click();
+      fixture.detectChanges();
+
+      expect(el.querySelector(".td-payload-status")?.textContent).toContain(
+        "Failed to load payload."
+      );
+    });
+
+    it("resets the payload state when the selection changes", () => {
+      TestBed.overrideProvider(AuthService, {
+        useValue: { hasPermission: () => true },
+      });
+      getEventPayload.mockReturnValue(NEVER); // stays "loading" so the reset is observable
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el, selection } = selectEvent("evt-a");
+
+      (el.querySelector(".td-payload-btn") as HTMLElement).click();
+      fixture.detectChanges();
+      expect(el.querySelector(".td-payload-status")?.textContent).toContain(
+        "Loading"
+      );
+
+      selection.select("evt-b", "causal");
+      fixture.detectChanges();
+
+      expect(el.querySelector(".td-payload-status")).toBeFalsy();
+      expect(el.querySelector(".td-payload-details")).toBeFalsy();
+    });
+
+    it("renders the 'Open connector' deep link for a resolvable event, and none for one that doesn't resolve", () => {
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+
+      const connector = selectEvent("evt-connector");
+      expect(
+        connector.el.querySelector(".td-deep-link-btn")?.textContent?.trim()
+      ).toBe("Open connector");
+
+      const noLink = selectEvent("evt-a");
+      expect(noLink.el.querySelector(".td-deep-link-btn")).toBeFalsy();
+    });
+  });
+
+  describe("Step log panel (T04)", () => {
+    it("embeds the step log inside the run tab, fed by the already-loaded chain", () => {
+      getChain.mockReturnValue(
+        of({
+          ...fixtureChain,
+          events: [
+            ...fixtureChain.events,
+            event({
+              event_id: "evt-run",
+              producer: "workflow-service",
+              domain: "workflow",
+              kind: "execution_started",
+              rule: 19,
+              workflow_id: "acme:order-workflow:abc123",
+              run_id: "run-9",
+            }),
+          ],
+        })
+      );
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const tabs = Array.from(
+        el.querySelectorAll<HTMLButtonElement>(".td-tab")
+      );
+      const runTab = tabs.find((b) => b.textContent?.trim() === "Run view");
+
+      runTab?.click();
+      fixture.detectChanges();
+
+      expect(el.querySelector("app-step-log")).toBeTruthy();
+      // Same chain fetch as the other tabs — no new fetch for the step log.
+      expect(getChain).toHaveBeenCalledTimes(1);
     });
   });
 });

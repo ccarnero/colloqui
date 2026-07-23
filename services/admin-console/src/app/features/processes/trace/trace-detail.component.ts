@@ -1,25 +1,52 @@
 import { DecimalPipe } from "@angular/common";
+import type { HttpErrorResponse } from "@angular/common/http";
 import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  effect,
   inject,
   type OnInit,
   signal,
 } from "@angular/core";
-import { ActivatedRoute } from "@angular/router";
+import { ActivatedRoute, RouterLink } from "@angular/router";
+import { AuthService } from "../../../core/services/auth.service";
 import {
+  type IEventPayloadResponse,
   type ITrackedEvent,
   type ITrackingChainResponse,
   TrackingChainService,
 } from "../../../core/services/tracking-chain.service";
 import { RunViewComponent } from "../run-view/run-view.component";
+import { computeCausalChain } from "./causal-graph/causal-chain";
 import { CausalGraphComponent } from "./causal-graph/causal-graph.component";
+import { resolveTrackedEventDeepLink } from "./causal-graph/causal-graph-deep-link";
 import { findWorkflowRuns } from "./domain/find-workflow-runs";
 import { MessageTraceComponent } from "./message-trace.component";
+import { StepLogComponent } from "./step-log/step-log.component";
 import { TraceSelectionService } from "./trace-selection.service";
 import { TraceWaterfallComponent } from "./waterfall/trace-waterfall.component";
 import { computeEventTimingPercent } from "./waterfall/waterfall-geometry";
+
+/** Tenant-admin permission gating the payload viewer (SPEC.md
+ * `manual-loops/payload-capture.md` T05 — reuses the console's existing
+ * `AuthService.hasPermission()` gate). T04
+ * (`manual-loops/admin-console/console-redesign-trace.md`) migrated this
+ * gate + the on-demand payload fetch it guards from
+ * `CausalGraphComponent`'s local detail card into this shared inspector
+ * (see the class header comment). */
+const PAYLOAD_PERMISSION = "tracking:payload:read";
+
+/** Local view-state for the on-demand payload fetch, keyed to whichever
+ * event is currently selected — reset whenever the selection changes
+ * (migrated from `CausalGraphComponent`, T04). */
+type PayloadViewState =
+  | { readonly kind: "idle" }
+  | { readonly kind: "loading" }
+  | { readonly kind: "loaded"; readonly response: IEventPayloadResponse }
+  | { readonly kind: "expired" }
+  | { readonly kind: "not-captured"; readonly message: string }
+  | { readonly kind: "error" };
 
 /** The four ways to look at a correlation's tracked-event chain — "run"
  * only appears when the chain contains a workflow run (T06 of
@@ -50,23 +77,38 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
  * T02 (manual-loops/admin-console/console-redesign-trace.md) adds the
  * shared TraceSelectionService (component-provided below — see that
  * file's header comment for the provider-scope justification) and a
- * docked inspector panel SHELL that reacts to it. The waterfall/causal/
- * run-view children have zero selection-state changes from THIS task —
- * the causal graph's pre-existing local "selected" signal (T01 finding,
- * item 2) is migrated onto TraceSelectionService in T04, and the
- * waterfall's click-to-select affordance (it currently has none) is ADDED
- * in T03. This task only builds the shell + service; nothing here reads
- * or writes a view-local selection signal.
+ * docked inspector panel SHELL that reacts to it.
  *
  * T03 adds the inspector's waterfall-mode content (decision 3 + the
  * ORCHESTRATOR RULING): base event fields (whatever ITrackedEvent carries
  * — SPEC.md T01 finding item 3's "base dl" field mapping) plus timing % of
  * the chain's total span, computed by computeEventTimingPercent
  * (waterfall/waterfall-geometry.ts) — the SAME span-matching data the
- * waterfall bars already render from, not a re-derived heuristic. This
- * content renders ONLY when selection.sourceView() === "waterfall";
- * causal/run-view/legacy contextual content stays the T02 placeholder
- * until T04-T06.
+ * waterfall bars already render from, not a re-derived heuristic.
+ *
+ * T04 adds:
+ * - The inspector's CAUSAL-mode content (decision 3's "causal chain in
+ *   causal graph"): the same base `dl` fields (the mock's base section
+ *   applies "everywhere", decision 3), a "Causal chain" block derived by
+ *   `computeCausalChain` (`causal-graph/causal-chain.ts`, walking
+ *   `causation_id` parent links), the on-demand payload viewer, and the
+ *   "Open connector" deep link — all MIGRATED here from
+ *   `CausalGraphComponent`'s old local detail card (T01 finding item 2:
+ *   that component used to own a `selected` signal + inline
+ *   `.cg-detail` card; decision 2 forbids view-local selection state).
+ *   `CausalGraphComponent` itself is now presentation-only: it calls
+ *   `TraceSelectionService.select(eventId, "causal")` on node click and
+ *   reads the service's signal for node highlight, same pattern as
+ *   `TraceWaterfallComponent` (T03).
+ * - The STEP LOG panel (`StepLogComponent`), embedded in the "run" tab
+ *   branch below `<app-run-view>`. PLACEMENT CHOICE (documented per the
+ *   task instructions): the ORCHESTRATOR RULING under decision 5(a) places
+ *   the step log INSIDE the "run" tab, matching the design mock exactly
+ *   (`Rediseño Terminal.dc.html` lines 932-943) — T05 has not yet
+ *   restyled/rebuilt the run-view canvas into this trace screen's own tab
+ *   area, so this task wires the log directly into the existing "run"
+ *   branch, fed by the SAME already-loaded `chain()` the waterfall/causal
+ *   tabs use (no new fetch). T05 restyles the run tab area around it.
  */
 @Component({
   selector: "app-trace-detail",
@@ -81,7 +123,9 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
     MessageTraceComponent,
     TraceWaterfallComponent,
     RunViewComponent,
+    StepLogComponent,
     DecimalPipe,
+    RouterLink,
   ],
   host: {
     // Esc clears the selection (closes the inspector) from anywhere in the
@@ -131,6 +175,12 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
                  header falls back to the raw workflow id instead of the name. -->
             <app-run-view [workflowId]="run.workflowId" [runId]="run.runId" />
           }
+          @if (chain(); as c) {
+            <!-- T04: step log sub-panel, per the ORCHESTRATOR RULING under
+                 decision 5(a) — see this component's header comment for the
+                 placement choice. -->
+            <app-step-log [chain]="c" />
+          }
         } @else {
           @if (loading()) {
             <p class="td-muted">Loading…</p>
@@ -153,7 +203,8 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
            TraceSelectionService.selectedEventId() is set. Per-view
            context content (payload, timing %, step result, causal chain,
            Temporal/builder deep links — decisions 3/4) is filled in by
-           T03-T06; T03 adds the waterfall-mode content below. -->
+           T03-T06; T03 added the waterfall-mode content, T04 adds the
+           causal-mode content below. -->
       <aside class="td-inspector" aria-label="Event inspector">
         @if (selection.selectedEventId(); as selectedId) {
           <header class="td-inspector-head">
@@ -208,10 +259,114 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
                 <dt>subject</dt>
                 <dd>{{ event.subject }}</dd>
               </dl>
+            } @else if (isCausalSelection() && selectedEvent(); as event) {
+              <!-- T04 causal-mode content: base fields (same "everywhere"
+                   dl as waterfall-mode, decision 3), the derived causal
+                   chain, the on-demand payload viewer, and the "Open
+                   connector" deep link — all migrated from
+                   CausalGraphComponent's old local detail card. -->
+              <dl class="td-base">
+                <dt>event_id</dt>
+                <dd>{{ event.event_id }}</dd>
+                <dt>kind</dt>
+                <dd>{{ event.kind ?? "—" }}</dd>
+                <dt>causation</dt>
+                <dd>{{ event.causation_id ?? "—" }}</dd>
+                <dt>depth</dt>
+                <dd>{{ event.causation_depth ?? "—" }}</dd>
+                <dt>tech</dt>
+                <dd>{{ event.tech }}</dd>
+                <dt>business_fn</dt>
+                <dd>{{ event.business_fn }}</dd>
+                <dt>claim_check</dt>
+                <dd>{{ event.is_claim_check }}</dd>
+                <dt>compliance</dt>
+                <dd>
+                  {{ event.compliance }}
+                  @if (event.tenant === null) {
+                    <span class="td-flag">null tenant</span>
+                  }
+                </dd>
+                <dt>subject</dt>
+                <dd>{{ event.subject }}</dd>
+              </dl>
+
+              <div class="td-causal-chain" aria-label="Causal chain">
+                <h4 class="td-causal-chain-title">Causal chain</h4>
+                <ol class="td-causal-chain-list">
+                  @for (
+                    entry of selectedCausalChainEntries();
+                    track entry.eventId
+                  ) {
+                    <li
+                      class="td-causal-chain-entry"
+                      [class.td-causal-chain-entry--current]="entry.isSelected"
+                    >
+                      <span class="td-causal-chain-kind">{{ entry.kind }}</span>
+                      @if (!entry.causationId) {
+                        <span class="td-causal-chain-root">root</span>
+                      }
+                    </li>
+                  }
+                </ol>
+                @if (selectedCausalChainRootUnresolvedParentId(); as missingId) {
+                  <p class="td-causal-chain-orphan">
+                    missing parent: {{ missingId }}
+                  </p>
+                }
+              </div>
+
+              @if (canViewPayload()) {
+                <div class="td-payload">
+                  <button
+                    type="button"
+                    class="td-payload-btn"
+                    (click)="viewPayload(event.event_id)"
+                  >
+                    View payload
+                  </button>
+
+                  @switch (payloadState().kind) {
+                    @case ("loading") {
+                      <p class="td-payload-status">Loading payload…</p>
+                    }
+                    @case ("expired") {
+                      <p class="td-payload-status">
+                        Payload expired (30-day retention)
+                      </p>
+                    }
+                    @case ("not-captured") {
+                      <p class="td-payload-status">
+                        {{ notCapturedMessage() }}
+                      </p>
+                    }
+                    @case ("error") {
+                      <p class="td-payload-status td-payload-error">
+                        Failed to load payload.
+                      </p>
+                    }
+                    @case ("loaded") {
+                      <details class="td-payload-details">
+                        <summary>
+                          Payload ({{ loadedResponse()?.payload_status }})
+                        </summary>
+                        <pre class="td-payload-pre">{{ payloadJson() }}</pre>
+                      </details>
+                    }
+                  }
+                </div>
+              }
+
+              @if (causalDeepLink(); as link) {
+                <div class="td-deep-link">
+                  <a class="td-deep-link-btn" [routerLink]="link.route">
+                    {{ link.label }}
+                  </a>
+                </div>
+              }
             } @else {
               <p class="td-muted">
-                Inspector content (payload, timing, subscribers, deep links)
-                lands in T04-T06.
+                Inspector content (step result, deep links) lands in T05-T06.
               </p>
             }
           </div>
@@ -396,15 +551,125 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
       color: var(--rd-text-1, #ededed);
       word-break: break-all;
     }
+    .td-flag {
+      display: inline-block;
+      margin-left: var(--rd-space-3, 6px);
+      padding: 1px var(--rd-space-4, 6px);
+      border-radius: var(--rd-radius-3, 4px);
+      background: var(--rd-red-soft, #3a1a1a);
+      color: var(--rd-red, #ff6b6b);
+      font-size: var(--rd-text-size-2xs, 10px);
+    }
+
+    .td-causal-chain {
+      margin-top: var(--rd-space-6, 12px);
+      padding-top: var(--rd-space-6, 12px);
+      border-top: 1px solid var(--rd-line-2, #161616);
+    }
+    .td-causal-chain-title {
+      margin: 0 0 var(--rd-space-4, 8px);
+      font-size: var(--rd-text-size-sm, 12px);
+      font-weight: 600;
+      color: var(--rd-text-1, #ededed);
+    }
+    .td-causal-chain-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--rd-space-3, 6px);
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      font-size: var(--rd-text-size-sm, 12px);
+    }
+    .td-causal-chain-entry {
+      display: flex;
+      align-items: center;
+      gap: var(--rd-space-3, 6px);
+      font-family: var(--rd-font-mono);
+      color: var(--rd-text-2, #a1a1a1);
+    }
+    .td-causal-chain-entry--current {
+      color: var(--rd-text-1, #ededed);
+      font-weight: 600;
+    }
+    .td-causal-chain-root {
+      font-family: inherit;
+      font-size: var(--rd-text-size-2xs, 10px);
+      color: var(--rd-text-3, #7a7a7a);
+      background: var(--rd-hover, #1a1a1a);
+      border-radius: var(--rd-radius-3, 4px);
+      padding: 1px var(--rd-space-3, 6px);
+    }
+    .td-causal-chain-orphan {
+      margin: var(--rd-space-4, 8px) 0 0;
+      color: var(--rd-red, #ff6b6b);
+      font-size: var(--rd-text-size-2xs, 10px);
+    }
+
+    .td-payload {
+      margin-top: var(--rd-space-6, 12px);
+      padding-top: var(--rd-space-6, 12px);
+      border-top: 1px solid var(--rd-line-2, #161616);
+    }
+    .td-payload-btn {
+      padding: var(--rd-space-3, 4px) var(--rd-space-5, 10px);
+      font-size: var(--rd-text-size-sm, 12px);
+      border: 1px solid var(--rd-accent, #1a66ff);
+      border-radius: var(--rd-radius-5, 6px);
+      background: transparent;
+      color: var(--rd-accent, #1a66ff);
+      cursor: pointer;
+    }
+    .td-payload-status {
+      margin: var(--rd-space-4, 8px) 0 0;
+      color: var(--rd-text-3, #7a7a7a);
+      font-size: var(--rd-text-size-sm, 12px);
+    }
+    .td-payload-error {
+      color: var(--rd-red, #ff6b6b);
+    }
+    .td-payload-details {
+      margin-top: var(--rd-space-4, 8px);
+    }
+    .td-payload-pre {
+      margin: var(--rd-space-3, 6px) 0 0;
+      padding: var(--rd-space-4, 8px);
+      background: var(--rd-panel, #141414);
+      border-radius: var(--rd-radius-5, 6px);
+      max-height: 240px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      font-size: var(--rd-text-size-2xs, 11px);
+    }
+
+    .td-deep-link {
+      margin-top: var(--rd-space-6, 12px);
+      padding-top: var(--rd-space-6, 12px);
+      border-top: 1px solid var(--rd-line-2, #161616);
+    }
+    .td-deep-link-btn {
+      display: inline-block;
+      padding: var(--rd-space-3, 4px) var(--rd-space-5, 10px);
+      font-size: var(--rd-text-size-sm, 12px);
+      border: 1px solid var(--rd-accent, #1a66ff);
+      border-radius: var(--rd-radius-5, 6px);
+      background: transparent;
+      color: var(--rd-accent, #1a66ff);
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+    }
   `,
 })
 export class TraceDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly trackingChainService = inject(TrackingChainService);
+  private readonly auth = inject(AuthService);
 
   /** Single shared selection state for this trace screen's four tabs
    * (decision 2). Public/readonly so the template can read it directly —
-   * no view-local selection signal exists or is added by T02. */
+   * no view-local selection signal exists anywhere in this feature area. */
   readonly selection = inject(TraceSelectionService);
 
   readonly tabs = TABS;
@@ -413,6 +678,32 @@ export class TraceDetailComponent implements OnInit {
   readonly chain = signal<ITrackingChainResponse | null>(null);
   readonly loading = signal(false);
   readonly error = signal<string | null>(null);
+
+  /** Gates the causal-mode "View payload" action — SPEC.md
+   * `manual-loops/payload-capture.md` T05: "visible only when the session
+   * user has the admin permission". Migrated from `CausalGraphComponent`
+   * (T04). */
+  readonly canViewPayload = computed(() =>
+    this.auth.hasPermission(PAYLOAD_PERMISSION)
+  );
+
+  private readonly payload = signal<PayloadViewState>({ kind: "idle" });
+  readonly payloadState = computed(() => this.payload());
+
+  readonly loadedResponse = computed<IEventPayloadResponse | null>(() => {
+    const state = this.payload();
+    return state.kind === "loaded" ? state.response : null;
+  });
+
+  readonly payloadJson = computed(() => {
+    const response = this.loadedResponse();
+    return response ? JSON.stringify(response.payload, null, 2) : "";
+  });
+
+  readonly notCapturedMessage = computed(() => {
+    const state = this.payload();
+    return state.kind === "not-captured" ? state.message : "";
+  });
 
   /** T06 (entry b): distinct workflow runs found in the chain's events.
    * manual-loops/run-view.md T06: "pick the FIRST workflow run" when a
@@ -432,17 +723,23 @@ export class TraceDetailComponent implements OnInit {
   );
 
   /** True when the current selection came from the waterfall tab (T03) —
-   * gates the waterfall-mode inspector content (base fields + timing %);
-   * causal/run-view/legacy content lands in T04-T06. */
+   * gates the waterfall-mode inspector content (base fields + timing %). */
   readonly isWaterfallSelection = computed(
     () => this.selection.sourceView() === "waterfall"
   );
 
-  /** The currently-selected event's full record from the loaded chain — the
-   * base event info the T03 waterfall-mode inspector content renders.
-   * null when nothing is selected, or when the selected id somehow isn't
-   * in the currently-loaded chain (defensive; should not happen since the
-   * chain is the only source of selectable events on this screen). */
+  /** True when the current selection came from the causal-graph tab (T04)
+   * — gates the causal-mode inspector content (base fields + causal chain
+   * + payload + deep link). */
+  readonly isCausalSelection = computed(
+    () => this.selection.sourceView() === "causal"
+  );
+
+  /** The currently-selected event's full record from the loaded chain —
+   * shared by BOTH waterfall-mode and causal-mode inspector content. null
+   * when nothing is selected, or when the selected id somehow isn't in the
+   * currently-loaded chain (defensive; should not happen since the chain
+   * is the only source of selectable events on this screen). */
   readonly selectedEvent = computed<ITrackedEvent | null>(() => {
     const c = this.chain();
     const id = this.selection.selectedEventId();
@@ -466,6 +763,53 @@ export class TraceDetailComponent implements OnInit {
     }
     return computeEventTimingPercent(c, id);
   });
+
+  /** Causal chain derivation for the selected event (T04, decision 3's
+   * "causal chain in causal graph") — reuses `computeCausalChain`
+   * (`causal-graph/causal-chain.ts`), the same `causation_id` walk the
+   * causal graph's own edges are built from. null when nothing is
+   * selected or the chain isn't loaded. */
+  private readonly selectedCausalChain = computed(() => {
+    const c = this.chain();
+    const id = this.selection.selectedEventId();
+    if (!c || !id) {
+      return null;
+    }
+    return computeCausalChain(c.events, id);
+  });
+
+  readonly selectedCausalChainEntries = computed(
+    () => this.selectedCausalChain()?.entries ?? []
+  );
+
+  readonly selectedCausalChainRootUnresolvedParentId = computed(
+    () => this.selectedCausalChain()?.rootUnresolvedParentId ?? null
+  );
+
+  /** "Open <entity>" deep link for the selected event (T05 of
+   * `manual-loops/connector-trace-linking.md`) — `null` hides the button,
+   * same pattern as `canViewPayload()` gating the payload section.
+   * Migrated from `CausalGraphComponent` (T04); only rendered in
+   * causal-mode (its original scope). */
+  readonly causalDeepLink = computed(() => {
+    const event = this.selectedEvent();
+    return event ? resolveTrackedEventDeepLink(event) : null;
+  });
+
+  constructor() {
+    // Selecting a different event (from ANY view, or closing the
+    // inspector) discards any in-flight/loaded payload state — the viewer
+    // never carries state across events (SPEC.md
+    // `manual-loops/payload-capture.md` T05: fetch on demand, never
+    // pre-fetched). Migrated from `CausalGraphComponent.select()`'s reset
+    // (T04) onto a signal effect, since selection now happens in sibling
+    // view components via the shared service rather than a local method
+    // here.
+    effect(() => {
+      this.selection.selectedEventId();
+      this.payload.set({ kind: "idle" });
+    });
+  }
 
   ngOnInit(): void {
     const cid = this.route.snapshot.paramMap.get("correlationId") ?? "";
@@ -493,6 +837,56 @@ export class TraceDetailComponent implements OnInit {
         this.loading.set(false);
       },
     });
+  }
+
+  /**
+   * Fetches the selected event's payload on demand via
+   * `TrackingChainService.getEventPayload` — never pre-fetched with the
+   * chain. Maps the gateway's `payload_status`-driven HTTP responses (T04
+   * of `manual-loops/payload-capture.md`: 200 body, 404
+   * unresolved/none/unknown, 410 scrubbed) to view state. Migrated
+   * verbatim from `CausalGraphComponent.viewPayload` (T04 of
+   * `manual-loops/admin-console/console-redesign-trace.md`).
+   */
+  viewPayload(eventId: string): void {
+    const c = this.chain();
+    if (!c) {
+      console.debug(
+        "[TraceDetailComponent] viewPayload called with no chain loaded",
+        { eventId }
+      );
+      return;
+    }
+    console.debug("[TraceDetailComponent] fetching payload on demand", {
+      eventId,
+      correlationId: c.correlation_id,
+    });
+    this.payload.set({ kind: "loading" });
+    this.trackingChainService
+      .getEventPayload(c.correlation_id, eventId)
+      .subscribe({
+        next: (response) => this.payload.set({ kind: "loaded", response }),
+        error: (err: HttpErrorResponse) => {
+          if (err.status === 410) {
+            this.payload.set({ kind: "expired" });
+            return;
+          }
+          if (err.status === 404) {
+            // The gateway/ingester distinguish unresolved/none/unknown-event
+            // only via the `error` message text (handle-payload-request.ts) —
+            // surface the claim-check-specific message when detectable, else
+            // a generic not-captured message.
+            const reason =
+              typeof err.error?.error === "string" ? err.error.error : "";
+            const message = reason.includes("unresolved")
+              ? "Payload was not captured (claim-check expired)"
+              : "Payload was not captured";
+            this.payload.set({ kind: "not-captured", message });
+            return;
+          }
+          this.payload.set({ kind: "error" });
+        },
+      });
   }
 
   /** × button on the inspector header (T02: shell-only close path). */
