@@ -355,7 +355,7 @@ grep -n "console-redesign-users-analytics-settings" cowork/INDEX.md
 
 - [x] T01 inventory report
 - [x] T02 users
-- [ ] T03 analytics
+- [x] T03 analytics
 - [ ] T04 settings
 - [ ] T05 docs + index
 
