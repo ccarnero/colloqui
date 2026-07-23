@@ -594,3 +594,102 @@ run-view data pipelines, per
   own popup-based detail (unaffected by this loop); only the run tab
   embedded inside `TraceDetailComponent` provides the service and gets
   the docked-inspector behavior.
+
+### Users, Analytics & Settings composition
+
+The Users, Analytics, and Settings-hub screens were rebuilt/restyled on top
+of the `console-redesign-foundation` primitives, per
+`manual-loops/admin-console/console-redesign-users-analytics-settings.md`.
+
+- **Users** (`features/identity/users/users.component.ts`, `/users`) — an
+  `app-inventory-table` of `IUser` rows (Email/Name/Role/Created columns
+  only; `IUser` has no `status`/`last-active` field, so none is rendered),
+  with the header "+ Add User" button (gated on `users:create`, opens the
+  existing `CreateTenantUserDialogComponent`) unchanged. There is no "edit"
+  action anywhere in the code or design — none was added. Since the shared
+  `app-inventory-table` primitive has no per-row action-column type and
+  extending it was out of scope (only `features/identity/users/` could
+  change in that task), a row click opens the new
+  `UserDetailDialogComponent` (`user-detail-dialog.component.ts`), which
+  surfaces the same "Deactivate user" action gated on `users:delete` and
+  calls `TenantUsersService.deleteUser`, matching the design's single
+  row-action exactly.
+- **Analytics** (`features/overview/analytics/analytics.component.ts`,
+  `/analytics`) — rebuilt from real data sources; the previous 100%
+  hard-coded mock component (`apiVolumeData`/`topEndpoints`/`errorBreakdown`)
+  was removed, not restyled. KPI cards and the workflow table are composed
+  from three already-wired services, no new endpoints: `DashboardService.stats()`
+  (`requestsToday`/`activeSessions`/`avgResponseMs`/`errorRate` +
+  `dailyBreakdown`, the same source Dashboard uses),
+  `ChannelAdminService.getUsageTotals()` (fleet-wide ingress/egress totals
+  over 30 days, the same call the Channels fleet strip makes), and
+  `WorkflowApiService.getSummary()` (7-day executions completed/failed plus
+  `topByExecutionCountLast7d`, rendered via `app-inventory-table`). Each
+  service call has its own loading/error signal pair
+  (`channelUsageLoading`/`channelUsageError`,
+  `workflowLoading`/`workflowError`) rendered as a skeleton card or an
+  `alert-error` block rather than failing silently.
+  - **UsageChart reuse via a pure adapter.** The "Requests · daily" chart
+    reuses `UsageChartComponent` (`features/channels/detail/usage-chart.component.ts`)
+    unmodified — no chart library, no fork — fed by a new pure function,
+    `mapDailyBreakdownToUsageRows` (`features/overview/analytics/analytics-daily-breakdown-to-usage-rows.ts`),
+    which adapts `DashboardService`'s `dailyBreakdown` series into
+    `UsageChartComponent`'s `IUsageBucketRow[]` input shape. Only one real
+    daily series exists (`requests`), mapped onto the `"ingress"` direction;
+    `"egress"`/`"dlq"` render as flat, dataless legend entries rather than
+    inventing a split that doesn't exist in the data — a documented,
+    accepted cosmetic side effect of reusing the component as-is.
+- **Settings hub** (`features/settings-hub/settings-hub.component.ts`,
+  `/settings`) — restyled onto `--rd-*` tokens only; routes
+  (`/users`, `/roles`, `/api-keys`, `/billing`), the 2-column group-card/chip
+  structure, and behavior are unchanged. `usersActive()`/`invitationsPending()`
+  (`SettingsMetricsService`) remain the pre-existing "PHASE 2 DEMO SEEDS"
+  placeholder signals — not a live fetch — kept as-is per the amendment
+  below; only the chip/card presentation was re-tokened.
+
+**Human-signed amendments (2026-07-23, made after T01's inventory
+findings):**
+
+- **Analytics rebuilt from real data, replacing the mocks (decision 2
+  amendment (a)).** T01 found the previous Analytics screen was 100%
+  hard-coded component fields with no service call at all. Rather than
+  restyle the mocks, T03 rebuilt the screen against the three real sources
+  listed above and removed the mocks. The design's own metric set
+  ("Conversaciones", "Resueltas sin humano %", "1ª respuesta p50/p95",
+  "Tokens LLM · 30d", per-agent/per-workflow tables) has no backing data
+  source anywhere in the app today — flagged NO-DATA, not invented (see
+  follow-ups below).
+- **Settings re-scoped to a hub restyle (decision 2 amendment (b)).** The
+  SPEC originally described Settings as a "grouped-form layout" with a
+  field-id snapshot test. T01 found no Settings form exists in code or in
+  the design mock — `settings-hub.component.ts` is a nav hub of link cards,
+  and the design's "Settings" tab renders the Users table underneath it,
+  not a distinct form screen. T04 re-scoped to restyling the existing
+  card/chip grid with tokens/primitives only; its test suite asserts the
+  chip routes/labels and permission-independent rendering instead of a
+  field-id snapshot.
+- **No user "edit" action exists.** T01 confirmed
+  `features/identity/users/` has never had an edit dialog or edit
+  endpoint — only create (`CreateTenantUserDialogComponent`) and
+  deactivate. T02 did not add one; the SPEC's original "invite/edit/
+  deactivate" wording was corrected to invite + deactivate.
+
+Follow-ups (flagged by T01/T03, not fixed in this loop — front-only SPEC,
+no new endpoints allowed):
+
+- **Analytics' design metric set is NO-DATA.** "Conversaciones", "Resueltas
+  sin humano %", tokens LLM · 30d, and the per-agent/per-workflow token and
+  handoff tables from the design mock have no backing field or endpoint in
+  any current service — a backend follow-up, not a client derivation.
+- **`app-detail-dialog` has no action-projection slot.** `UserDetailDialogComponent`
+  had to be built as its own component (styled after the shared
+  `app-detail-dialog` primitive) rather than reusing it directly, because
+  the shared primitive has no slot for a row action button like
+  "Deactivate". Extending `app-detail-dialog` with an optional action slot
+  would let future detail dialogs (Users and beyond) reuse it directly
+  instead of each hand-rolling a near-identical dialog.
+- **Users table has no last-active/status columns.** `IUser` carries no
+  `status` or `last_active`/`last-active` field; adding either would need a
+  backend field first (T01 finding 1) — moot for this loop since neither
+  the current code nor the design mock shows those columns, but flagged so
+  a future design iteration doesn't assume the data already exists.

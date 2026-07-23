@@ -760,6 +760,72 @@ polish):
   polish needed once T05's run-view restyle and the step log are reviewed
   together is tracked here rather than assumed complete.
 
+## Change: console redesign users-analytics-settings (console-redesign-users-analytics-settings)
+
+Manual-loop change (not SDD) restyling Users onto the inventory-table
+primitive, rebuilding Analytics from real data sources, and restyling the
+Settings hub, on top of the `console-redesign-foundation` primitives: Users
+(`features/identity/users/users.component.ts`, `/users`) as an
+`app-inventory-table` of `IUser` rows (Email/Name/Role/Created), the
+existing "+ Add User" dialog unchanged, and a new
+`UserDetailDialogComponent` opened on row click surfacing the same
+"Deactivate user" action (`users:delete`-gated); Analytics
+(`features/overview/analytics/analytics.component.ts`, `/analytics`)
+rebuilt from `DashboardService.stats()`, `ChannelAdminService.getUsageTotals()`,
+and `WorkflowApiService.getSummary()` (all already-wired elsewhere, no new
+endpoints), with its "Requests · daily" chart reusing the existing
+`UsageChartComponent` unmodified via a new pure adapter,
+`mapDailyBreakdownToUsageRows` (`analytics-daily-breakdown-to-usage-rows.ts`);
+Settings hub (`features/settings-hub/settings-hub.component.ts`, `/settings`)
+re-tokened onto `--rd-*` with routes/behavior unchanged. Full task queue,
+gates, and human decisions:
+`manual-loops/admin-console/console-redesign-users-analytics-settings.md`.
+Operational contract (composition, amendments, follow-ups):
+`services/admin-console/README.md` "Users, Analytics & Settings
+composition". Engram topic: `admin-console/redesign-users-analytics-settings`.
+
+Two human-signed amendments (both dated 2026-07-23, made after T01's
+inventory findings) diverge from the SPEC's original wording:
+
+- **Analytics rebuilt from real data, not restyled mocks.** T01 found the
+  previous Analytics screen was 100% hard-coded component fields
+  (`apiVolumeData`/`topEndpoints`/`errorBreakdown`) with zero service calls.
+  Rather than restyle the mocks under new primitives, T03 rebuilt the
+  screen against `DashboardService`/`ChannelAdminService`/`WorkflowApiService`
+  and removed the mocks entirely. The design's own metric set
+  (conversaciones / resueltas sin humano % / tokens LLM · 30d / per-agent
+  tables) has no backing data source anywhere in the app today — flagged
+  NO-DATA rather than invented, tracked as a backend follow-up below.
+- **Settings re-scoped from "grouped-form layout" to a hub restyle.** T01
+  found `settings-hub.component.ts` has no form fields, validation, or save
+  path — it is a nav hub of link cards — and the design mock has no
+  dedicated Settings screen at all (the "Settings" tab renders the Users
+  table underneath it). T04 re-scoped to restyling the existing card/chip
+  grid with tokens/primitives; the SPEC's field-id snapshot test was
+  replaced with chip route/label and rendering assertions.
+
+Also corrected by T01 (not a new amendment, a factual fix to prior-art
+wording): there is no user "edit" action or edit dialog anywhere in
+`features/identity/users/`, in the design mock, or in `TenantUsersService`
+(create + deactivate only) — the SPEC's "invite/edit/deactivate" wording
+was corrected to invite + deactivate, and none was added.
+
+Follow-ups (flagged by T01/T03, not fixed in this loop — front-only SPEC,
+no new endpoints allowed):
+
+- Analytics' design metric set (conversaciones / resueltas sin humano % /
+  tokens LLM · 30d / per-agent and per-workflow tables) has no backing
+  field or endpoint anywhere in the platform — a backend follow-up.
+- The shared `app-detail-dialog` primitive has no action-projection slot,
+  so `UserDetailDialogComponent` had to be built as its own component
+  (styled after `app-detail-dialog`) instead of reusing it directly;
+  extending the primitive with an optional action slot would let future
+  detail dialogs reuse it directly.
+- `IUser` has no `status` or `last_active`/`last-active` field — a future
+  design iteration adding those columns needs a backend field first (moot
+  for this loop since neither the current code nor the design mock shows
+  them).
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.
