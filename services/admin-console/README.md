@@ -502,3 +502,95 @@ inventory findings):**
   and hides only the left sub-nav. The confirmed rule follows the
   screenshot: sub-nav hides, header/tabs stay, floating chrome overlays
   the canvas below the header.
+
+### Trace composition
+
+The trace screens (`processes/trace/:correlationId`,
+`processes/runs/:workflowId/:runId`, under `features/processes/trace/`
+and `features/processes/run-view/`) were rebuilt on top of the
+`console-redesign-foundation` primitives and the existing tracking-chain/
+run-view data pipelines, per
+`manual-loops/admin-console/console-redesign-trace.md`.
+
+- **Up to four tabs (orchestrator ruling, applying the "design wins" + "real
+  data only" precedents, post-T01)** — `TraceDetailComponent` defines three
+  static tabs (`TABS`) plus a **run** tab that `visibleTabs()` appends only
+  when the chain contains a workflow run
+  (`trace-detail.component.ts:877-879`), matching the binding visual
+  contract (`Rediseño Terminal.dc.html`'s `traceTabs` script) rather than
+  the SPEC Goal section's original four-view wording:
+  - **Waterfall** — time-ordered bars per event (`TraceWaterfallComponent`),
+    now clickable (selection wiring added in this loop; the pre-existing
+    component had no `(click)` handler at all).
+  - **Causal graph** — `causation_id`/`causation_depth` node/edge graph
+    (`CausalGraphComponent`), migrated off its own local `selected` signal
+    and inline detail card onto the shared selection service; payload
+    fetch-on-demand and the `tracking:payload:read` permission gate moved
+    into the inspector.
+  - **Legacy** — the pre-existing `MessageTraceComponent` pipeline
+    (`message-trace.service.ts`/`assemble-trace.ts`), left unmodified; it
+    keeps its own data source (not `TrackingChainService`) and its own
+    richer `{service, durable, role, health}` subscriber shape, which is
+    NOT available on the other three tabs (see subscriber note below).
+  - **Run** — the run-view canvas (`RunViewComponent`) embedded as a tab,
+    plus a **step-log sub-panel inside the run tab** (not a fifth tab —
+    the design mock places "Step log" below the run canvas on the same
+    `run` tab selection). The step log reuses the run's already-loaded
+    `IRunResponse`/`IRunLayout` — no new fetch.
+- **`TraceSelectionService` — single selection owner.** Selected event id
+  + source view live ONLY in this signal-based, component-provided
+  service (scoped to the trace screen, not root-provided); no view holds
+  its own selected-event state. Waterfall, causal graph, and run-view all
+  read/write through it; selecting in one view highlights the same event
+  in the others and drives the shared inspector. The run-view canvas's
+  own two prior selection signals (cast-chip highlight, node-click popup)
+  and the causal graph's local `selected`/inline detail card were removed
+  in favor of this single source.
+- **Docked inspector — context-aware content.** One shared docked panel
+  renders: base event header (kind/service/time), the base dl
+  (event_id/causation/depth/tech/business_fn/claim_check/compliance/
+  subject/stream/persisted), a "View payload" toggle that triggers the
+  SAME on-demand `TrackingChainService.getEventPayload` fetch the causal
+  graph used before this loop (gated by `tracking:payload:read`, handling
+  not-captured/404 and scrubbed/410 states). **Subscribers are NOT yet
+  rendered** — `trace-detail.component.ts` never reads `event.consumed_by`;
+  the field exists only on the `ITrackedEvent` type and in test fixtures.
+  Rendering `consumed_by` as a subscriber list remains an open item (the
+  richer `{service, durable, role, health}` shape stays legacy-tab-only
+  regardless — no backend field carries it on the tracking-chain
+  pipeline). Mode-specific additions: timing %
+  of total in waterfall mode (`computeEventTimingPercent`, derived from
+  the same span-matching `waterfall-geometry.ts` already used for
+  bottleneck detection); causal chain in causal-graph mode
+  (`computeCausalChain`, a pure derivation over `causation_id`/
+  `causation_depth`); step result (status/duration/evaluated value/branch
+  taken) in run mode.
+- **Deep links — gated on real identifiers, never synthesized.**
+  - **Temporal**: rendered via `resolveTemporalDeepLink`, extracted
+    verbatim from the legacy tab's `temporalUrl()` pattern
+    (`environment.temporalUiBaseUrl`/`temporalNamespace`). Gated on both
+    `workflow_id` AND `run_id` being present on the selected event — most
+    chain/waterfall/causal-graph events do not carry them (only
+    `execution_started`-class events do); the run-view tab always has
+    them (`IRunResponse.workflow_id`/`run_id` at the top level). Hidden,
+    never a broken link, when either id is missing.
+  - **Builder**: stays HIDDEN in every mode. No trace-event→builder-canvas
+    node id bridge exists anywhere in the codebase (`ILayoutNode.id` is a
+    synthetic `(branchPath, actionIndex)` key inside the run's own step
+    tree, not a `@foblex/flow` canvas node id) — per the ruling, the
+    builder link is never synthesized/approximated; it ships inert
+    pending that id-bridge follow-up.
+  - **Entity links** (connector/agent/MCP/hosted-service): render in all
+    four modes, including run-mode, via
+    `resolveSelectedStepDeepLink`/the shared `resolveEntityDeepLink` —
+    unchanged from the prior-art mapping (connector `endpoint_call`
+    completions and agent-execution kinds only).
+- **Run-view restyle.** `--rd-*` CSS custom properties replace the
+  renderer's prior hard-coded styling; step status renders as ✓ (ok) / ✕
+  (failed) / – (not_executed) badges sourced from the real `ActionStatus`
+  union (`"ok" | "failed" | "not_executed"`), never an invented state.
+  `TraceSelectionService` is OPTIONAL on the run-view component — the
+  standalone `/processes/runs/:workflowId/:runId` page keeps using its
+  own popup-based detail (unaffected by this loop); only the run tab
+  embedded inside `TraceDetailComponent` provides the service and gets
+  the docked-inspector behavior.

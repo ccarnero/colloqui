@@ -491,7 +491,7 @@ grep -n "console-redesign-trace" cowork/INDEX.md
 - [x] T04 step log + causal graph
 - [x] T05 run-view canvas
 - [x] T06 inspector deep links
-- [ ] T07 docs + index
+- [x] T07 docs + index
 
 ## Out of scope (explicit)
 

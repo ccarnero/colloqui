@@ -682,6 +682,84 @@ NO-DATA):
   it was not migrated to the new `WorkflowApiService.getSummary()` wrapper
   in this loop (only the workflow list view was); doing so is a follow-up.
 
+## Change: console redesign trace (console-redesign-trace)
+
+Manual-loop change (not SDD) rebuilding the trace screens
+(`processes/trace/:correlationId`, `processes/runs/:workflowId/:runId`) on
+top of the `console-redesign-foundation` primitives and a new
+component-provided, signal-based `TraceSelectionService` that becomes the
+SINGLE owner of selected-event state across the four trace tabs
+(waterfall, causal graph, legacy, run — run carries a step-log sub-panel,
+not a fifth tab). Waterfall gained click-to-select (it had none before);
+the causal graph migrated off its local `selected` signal and inline
+detail card onto the shared service, moving payload fetch-on-demand
+(`tracking:payload:read`-gated) and error-branch handling into a shared
+docked inspector; the run-view canvas dropped its two prior local
+selection signals in favor of the same service (kept OPTIONAL there so
+the standalone `/processes/runs/:workflowId/:runId` page's own popup stays
+unaffected) and was restyled with `--rd-*` tokens plus real
+`ActionStatus`-sourced ✓/✕/– status badges. The inspector renders only
+fields with a real data source: `computeEventTimingPercent` (waterfall),
+`computeCausalChain` (causal graph, pure derivation over
+`causation_id`/`causation_depth`), step result (run), and the existing
+on-demand payload fetch. Subscribers (`consumed_by` durable-name list) are
+NOT yet rendered in the inspector — open item, see follow-ups below.
+Temporal deep links use `resolveTemporalDeepLink` (extracted verbatim from
+the legacy tab's URL pattern), gated on `workflow_id`+`run_id` both being
+present; entity deep links (connector/agent/MCP/hosted-service) render in
+all four modes via `resolveSelectedStepDeepLink`. Full task queue, gates,
+and human decisions: `manual-loops/admin-console/console-redesign-trace.md`.
+Operational contract (tab set, selection-service architecture,
+inspector content per mode, deep-link rules): `services/admin-console/README.md`
+"Trace composition". Engram topic: `admin-console/redesign-trace`.
+
+**Orchestrator ruling (2026-07-22, precedent-applied — flagged for human
+confirmation)**, applying the "design wins" + "real data only" precedents
+signed in earlier loops in this series, resolving two SPEC-vs-visual-
+contract discrepancies T01 found:
+
+- **Tab set follows the design mock, not the SPEC's Goal-section wording.**
+  The mock's `traceTabs` script names four tabs — waterfall / causal /
+  legacy / run — with "step log" as a sub-panel INSIDE the run tab (not a
+  fifth tab as the SPEC's Goal section implied), and keeps the legacy tab
+  (unnamed in the SPEC's decisions) so pre-existing screens keep working.
+- **Inspector renders only fields that exist.** Subscribers are NOT yet
+  rendered on the new pipeline — `trace-detail.component.ts` never reads
+  `event.consumed_by` (the field exists only on the `ITrackedEvent` type
+  and in test fixtures); rendering it as a subscriber list remains an open
+  item (the richer `{service, durable, role, health}` shape stays
+  legacy-only regardless — no backend field carries it elsewhere); the
+  builder deep link stays HIDDEN in every
+  mode because no trace-event→builder-canvas node id bridge exists
+  anywhere in the codebase — never synthesized, per the SPEC's own
+  "hidden otherwise, never a broken link" rule.
+
+Follow-ups (flagged during this loop, not fixed — backend/builder gaps or
+polish):
+
+- **Builder deep-link id bridge.** `ILayoutNode.id` is a synthetic
+  `(branchPath, actionIndex)` key scoped to a run's own step tree, not a
+  `@foblex/flow` canvas node id, and the workflow builder accepts no
+  node-focus route/query param today. Opening the builder "focused on the
+  corresponding node" needs either a new client-side id-mapping layer or a
+  human decision to scope the link to "open the workflow, no node focus."
+- **Inspector subscribers block (`consumed_by` list).** The docked
+  inspector does not render subscribers at all today —
+  `trace-detail.component.ts` never reads `event.consumed_by`; the field
+  exists only on the `ITrackedEvent` type and in test fixtures. Wiring the
+  bare `consumed_by` durable-name list into the inspector is still open.
+- **Rich subscriber shape (`{service, durable, role, health}`) is
+  legacy-tab-only.** `ITrackedEvent`/`IRunEvent` carry only
+  `consumed_by: string[]` — the richer shape lives solely in the legacy
+  pipeline's `ITraceNode`/`assemble-trace.ts`, not wired to
+  `ITrackingChainResponse` at all. Shipping the richer shape on the other
+  three tabs needs a backend addition, out of scope per "no new backend
+  fields."
+- **Step-log-inside-run-tab integration polish.** The step log was built
+  as a sub-panel of the run tab per the ruling above; any further visual
+  polish needed once T05's run-view restyle and the step log are reviewed
+  together is tracked here rather than assumed complete.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.
