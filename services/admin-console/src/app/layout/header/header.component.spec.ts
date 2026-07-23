@@ -71,6 +71,26 @@ describe("HeaderComponent", () => {
     expect(el.textContent).toContain("Acme Corp");
   });
 
+  it("renders the breadcrumb row and the tab row as two separate rows (T08 finding 1)", () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const crumbs = el.querySelector(".topbar-crumbs");
+    const tabs = el.querySelector(".tab-nav");
+    expect(crumbs).toBeTruthy();
+    expect(tabs).toBeTruthy();
+    // Row 1 must not contain the tab nav, and row 2 must not contain the
+    // breadcrumb chrome — they are siblings, not nested.
+    expect(crumbs?.querySelector(".tab-nav")).toBeNull();
+    expect(tabs?.querySelector(".crumb-tenant")).toBeNull();
+  });
+
+  it("shows the org mark and the active section label in the breadcrumb row", () => {
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector(".org-mark")?.textContent?.trim()).toBe("Y");
+    expect(el.querySelector(".crumb-section")?.textContent?.trim()).toBe(
+      "Overview"
+    );
+  });
+
   it("calls ThemeService.toggle() when the theme toggle button is clicked", () => {
     const themeService = TestBed.inject(ThemeService);
     const el = fixture.nativeElement as HTMLElement;

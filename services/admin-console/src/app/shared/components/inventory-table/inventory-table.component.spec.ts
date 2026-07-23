@@ -93,4 +93,27 @@ describe("InventoryTableComponent", () => {
     expect(el.querySelectorAll(".table-row").length).toBe(0);
     expect(debugSpy).toHaveBeenCalled();
   });
+
+  it("forwards a status-badge column's per-row color accessor to app-status-badge (T08 finding 5)", () => {
+    const coloredColumns: InventoryTableColumn<IRow>[] = [
+      {
+        key: "status",
+        header: "Estado",
+        type: "status-badge",
+        variant: "badge",
+        value: (r) => r.status,
+        color: (r) => (r.status === "connected" ? "purple" : "gray"),
+      },
+    ];
+    setInputs({ columns: coloredColumns });
+    const el = fixture.nativeElement as HTMLElement;
+    const badges = el.querySelectorAll(
+      "app-status-badge .badge-purple, app-status-badge .badge-gray"
+    );
+    expect(badges.length).toBe(2);
+    expect(el.querySelector(".badge-purple")?.textContent).toContain(
+      "connected"
+    );
+    expect(el.querySelector(".badge-gray")?.textContent).toContain("error");
+  });
 });

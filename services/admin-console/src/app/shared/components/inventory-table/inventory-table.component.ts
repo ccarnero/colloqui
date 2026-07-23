@@ -8,6 +8,7 @@ import {
 import { SparklineComponent } from "../sparkline/sparkline.component";
 import {
   HealthStatus,
+  StatusBadgeColor,
   StatusBadgeComponent,
   StatusBadgeVariant,
 } from "../status-badge/status-badge.component";
@@ -35,6 +36,13 @@ export interface IInventoryTableStatusColumn<T>
   value: (row: T) => string;
   health?: (row: T) => HealthStatus | undefined;
   variant?: StatusBadgeVariant;
+  /**
+   * Explicit badge color per row, mirroring the sparkline column's
+   * per-row `color` accessor below. Forwarded to `StatusBadgeComponent`'s
+   * `color` input so `variant: "badge"` consumers (e.g. role chips —
+   * T08 finding 5) aren't limited to the health-heuristic default.
+   */
+  color?: (row: T) => StatusBadgeColor;
 }
 
 /** Cell rendered via the shared `SparklineComponent`. */
@@ -103,6 +111,7 @@ export type InventoryTableColumn<T> =
                     [status]="col.value(row)"
                     [variant]="col.variant ?? 'dot'"
                     [health]="col.health ? col.health(row) : undefined"
+                    [color]="col.color ? col.color(row) : undefined"
                   />
                 } @else if (isSparklineColumn(col)) {
                   <app-sparkline

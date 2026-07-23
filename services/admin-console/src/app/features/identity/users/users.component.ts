@@ -17,6 +17,7 @@ import {
   InventoryTableComponent,
 } from "../../../shared/components/inventory-table/inventory-table.component";
 import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
+import type { StatusBadgeColor } from "../../../shared/components/status-badge/status-badge.component";
 import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 import { CreateTenantUserDialogComponent } from "./create-tenant-user-dialog.component";
 import {
@@ -113,12 +114,12 @@ export class UsersComponent implements OnInit {
   /**
    * Inventory-table columns for the users list. Only real `IUser` fields
    * are mapped (T01 finding 1) — no status/last-active columns exist.
-   * Role is rendered as plain text: the primitive's "status-badge" column
-   * type only exposes a `health` accessor (ok/warn/error/idle) for the
-   * "dot" variant, not an arbitrary per-role color, so it cannot reproduce
-   * the design's `roleColor`/`roleBg` pill without extending the shared
-   * primitive, which is out of scope for T02 (ONLY
-   * features/identity/users/ may change).
+   * Role renders as a colored chip via the shared `status-badge` family
+   * (T08 finding 5, mock `17-settings-users.png`): the inventory-table's
+   * "status-badge" column type gained an optional per-row `color`
+   * accessor (mirroring the existing sparkline column's `color`
+   * accessor) so this stays a small, symmetric extension of the shared
+   * primitive rather than a users-only fork.
    */
   readonly userColumns: InventoryTableColumn<IUser>[] = [
     {
@@ -138,8 +139,10 @@ export class UsersComponent implements OnInit {
     {
       key: "role",
       header: "Role",
-      type: "text",
+      type: "status-badge",
+      variant: "badge",
       value: (u) => this.formatRole(u.role),
+      color: (u) => this.roleBadgeColor(u.role),
       width: "1.1fr",
     },
     {
@@ -242,6 +245,32 @@ export class UsersComponent implements OnInit {
       .split("_")
       .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
       .join(" ");
+  }
+
+  /**
+   * Maps a role name to a `StatusBadgeColor` for the Role chip (T08
+   * finding 5, mock `17-settings-users.png`: admin=purple, editor=blue,
+   * viewer=gray). Tenant roles are free-form strings (custom roles come
+   * from the tenant_roles table, not a fixed enum), so this matches by
+   * substring rather than an exhaustive switch and falls back to "gray"
+   * for any role that isn't recognizably admin/editor/viewer-flavored.
+   */
+  roleBadgeColor(role: string): StatusBadgeColor {
+    const normalized = role.toLowerCase();
+    if (normalized.includes("admin")) {
+      return "purple";
+    }
+    if (normalized.includes("edit")) {
+      return "blue";
+    }
+    if (normalized.includes("view")) {
+      return "gray";
+    }
+    console.debug(
+      "[UsersComponent] role has no recognized color mapping, defaulting to gray",
+      { role }
+    );
+    return "gray";
   }
 
   private formatCreatedAt(createdAt: string): string {

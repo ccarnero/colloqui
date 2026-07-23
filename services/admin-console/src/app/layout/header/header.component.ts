@@ -37,9 +37,14 @@ const LOG_PREFIX = "[HeaderComponent]";
     MatTooltipModule,
   ],
   template: `
-    <header class="topbar">
-      <!-- Left: mobile toggle + brand -->
-      <div class="topbar-left">
+    <header class="topbar-shell">
+      <!-- Row 1: breadcrumb row (org mark, tenant chip, section label) plus
+           the actions cluster. T08 finding 1: mock 01-dashboard.png and
+           Rediseño Terminal.dc.html (top bar block) render this as a
+           dedicated row above the tab row, not inline with the tabs. The
+           Search box from the mock is NEW-CAPABILITY (T08 finding 2) and is
+           intentionally not built here, findings-only. -->
+      <div class="topbar-crumbs">
         <button
           mat-icon-button
           class="mobile-menu-btn"
@@ -49,29 +54,22 @@ const LOG_PREFIX = "[HeaderComponent]";
         >
           <mat-icon>menu</mat-icon>
         </button>
-        <a class="brand" routerLink="/dashboard">
-          <span class="brand-mark">◆</span>
-          <span class="brand-name">Yoizen</span>
-        </a>
-      </div>
 
-      <!-- Center: section tabs -->
-      <nav class="tab-nav" aria-label="Main navigation">
-        @for (section of NAV_SECTIONS; track section.key) {
-          <a
-            class="tab"
-            [routerLink]="section.landingPath"
-            [class.active]="activeKey() === section.key"
-          >{{ section.label }}</a>
-        }
-      </nav>
+        <a class="org-mark" routerLink="/dashboard" aria-label="Yoizen home">Y</a>
+        <span class="crumb-sep" aria-hidden="true">/</span>
 
-      <!-- Right: tenant + actions + avatar -->
-      <div class="topbar-right">
-        <div class="tenant-badge">
+        <!-- T08 finding 3 (tenant chip resolving to "Unknown"): verified
+             against a real tenant-scoped session and it renders the real
+             slug correctly; see class doc comment below for the full
+             root-cause note. No behavior change made here. -->
+        <span class="crumb-tenant">
           <span class="tenant-dot"></span>
           <span class="tenant-name">{{ tenantService.currentTenant().name }}</span>
-        </div>
+        </span>
+        <span class="crumb-sep" aria-hidden="true">/</span>
+        <span class="crumb-section">{{ activeSectionLabel() }}</span>
+
+        <span class="crumb-spacer"></span>
 
         <!-- Notifications -->
         <button
@@ -156,6 +154,18 @@ const LOG_PREFIX = "[HeaderComponent]";
           </button>
         </mat-menu>
       </div>
+
+      <!-- Row 2: section tabs, per the mock's separate tab row below the
+           breadcrumb row (T08 finding 1). -->
+      <nav class="tab-nav" aria-label="Main navigation">
+        @for (section of NAV_SECTIONS; track section.key) {
+          <a
+            class="tab"
+            [routerLink]="section.landingPath"
+            [class.active]="activeKey() === section.key"
+          >{{ section.label }}</a>
+        }
+      </nav>
     </header>
   `,
   styles: `
@@ -163,25 +173,23 @@ const LOG_PREFIX = "[HeaderComponent]";
       display: block;
     }
 
-    .topbar {
-      height: 52px;
-      background: var(--rd-bg);
-      border-bottom: 1px solid var(--rd-line);
+    .topbar-shell {
       display: flex;
-      align-items: stretch;
-      padding: 0 var(--rd-space-11);
-      gap: 0;
+      flex-direction: column;
+      background: var(--rd-bg);
       position: relative;
       z-index: 100;
     }
 
-    /* ── Left ── */
-    .topbar-left {
+    /* Row 1: breadcrumb row (T08 finding 1 restructure). */
+    .topbar-crumbs {
+      height: 52px;
+      flex-shrink: 0;
       display: flex;
       align-items: center;
-      gap: var(--rd-space-2);
-      margin-right: var(--rd-space-11);
-      flex-shrink: 0;
+      padding: 0 var(--rd-space-11);
+      gap: var(--rd-space-5);
+      border-bottom: 1px solid var(--rd-line);
     }
 
     .mobile-menu-btn {
@@ -195,33 +203,58 @@ const LOG_PREFIX = "[HeaderComponent]";
       }
     }
 
-    .brand {
+    .org-mark {
+      width: 22px;
+      height: 22px;
+      border-radius: var(--rd-radius-6);
+      background: var(--rd-accent);
+      color: var(--rd-text-on-accent);
       display: flex;
       align-items: center;
-      gap: var(--rd-space-4);
+      justify-content: center;
+      font-size: var(--rd-text-size-xs);
+      font-weight: 700;
+      flex-shrink: 0;
       text-decoration: none;
-      padding: 0 var(--rd-space-4);
     }
 
-    .brand-mark {
-      font-size: var(--rd-text-size-xl);
-      color: var(--rd-accent);
-      line-height: 1;
+    .crumb-sep {
+      color: var(--rd-line);
     }
 
-    .brand-name {
-      font-size: var(--rd-text-size-md);
-      font-weight: 600;
+    .crumb-tenant {
+      display: flex;
+      align-items: center;
+      gap: var(--rd-space-3);
+      font-size: var(--rd-text-size-sm);
+      color: var(--rd-text-2);
+    }
+
+    .tenant-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--rd-green);
+      flex-shrink: 0;
+    }
+
+    .crumb-section {
+      font-size: var(--rd-text-size-sm);
+      font-weight: 500;
       color: var(--rd-text-1);
-      letter-spacing: -0.02em;
     }
 
-    /* ── Center tabs ── */
+    .crumb-spacer {
+      flex: 1;
+    }
+
+    /* Row 2: section tabs (T08 finding 1 restructure). */
     .tab-nav {
       display: flex;
       align-items: stretch;
-      flex: 1;
+      padding: 0 var(--rd-space-8);
       gap: 0;
+      border-bottom: 1px solid var(--rd-line);
     }
 
     .tab {
@@ -252,40 +285,6 @@ const LOG_PREFIX = "[HeaderComponent]";
       .tab-nav {
         display: none;
       }
-    }
-
-    /* ── Right ── */
-    .topbar-right {
-      display: flex;
-      align-items: center;
-      gap: var(--rd-space-1);
-      margin-left: auto;
-      flex-shrink: 0;
-    }
-
-    .tenant-badge {
-      display: flex;
-      align-items: center;
-      gap: var(--rd-space-3);
-      background: var(--rd-panel);
-      border: 1px solid var(--rd-line);
-      border-radius: var(--rd-radius-5);
-      padding: var(--rd-space-2) var(--rd-space-5);
-      margin-right: var(--rd-space-4);
-    }
-
-    .tenant-dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--rd-green);
-      flex-shrink: 0;
-    }
-
-    .tenant-name {
-      font-size: var(--rd-text-size-sm);
-      font-weight: 500;
-      color: var(--rd-text-1);
     }
 
     .topbar-btn {
@@ -409,6 +408,18 @@ export class HeaderComponent implements OnInit {
         s.matchPaths.some((p) => url === p || url.startsWith(p + "/"))
       )?.key ?? "overview"
     );
+  });
+
+  /**
+   * Breadcrumb-row section label (T08 finding 1 — mock's row 1 shows the
+   * active top-level section name, e.g. "Overview" or "Settings", not the
+   * page title). Falls back to the first section's label so the crumb
+   * never renders blank if activeKey somehow doesn't match.
+   */
+  readonly activeSectionLabel = computed(() => {
+    const key = this.activeKey();
+    const section = NAV_SECTIONS.find((s) => s.key === key) ?? NAV_SECTIONS[0];
+    return section.label;
   });
 
   ngOnInit(): void {

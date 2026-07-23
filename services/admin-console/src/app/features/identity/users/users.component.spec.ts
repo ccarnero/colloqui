@@ -130,6 +130,38 @@ describe("UsersComponent", () => {
     it("passes loaded users as inventory-table rows", () => {
       expect(fixture.componentInstance.users()).toEqual(USERS);
     });
+
+    it("renders the role column as a status-badge chip, not plain text (T08 finding 5)", () => {
+      const columns = fixture.componentInstance.userColumns;
+      const roleColumn = columns.find((c) => c.key === "role");
+      expect(roleColumn?.type).toBe("status-badge");
+      expect(
+        roleColumn && "variant" in roleColumn ? roleColumn.variant : undefined
+      ).toBe("badge");
+    });
+  });
+
+  describe("role badge color mapping (T08 finding 5)", () => {
+    beforeEach(() => setup());
+
+    it("maps admin-flavored roles to purple", () => {
+      expect(fixture.componentInstance.roleBadgeColor("tenant_admin")).toBe(
+        "purple"
+      );
+      expect(fixture.componentInstance.roleBadgeColor("admin")).toBe("purple");
+    });
+
+    it("maps editor-flavored roles to blue", () => {
+      expect(fixture.componentInstance.roleBadgeColor("editor")).toBe("blue");
+    });
+
+    it("maps viewer-flavored roles to gray", () => {
+      expect(fixture.componentInstance.roleBadgeColor("viewer")).toBe("gray");
+    });
+
+    it("falls back to gray for unrecognized roles", () => {
+      expect(fixture.componentInstance.roleBadgeColor("agent")).toBe("gray");
+    });
   });
 
   describe("empty state", () => {

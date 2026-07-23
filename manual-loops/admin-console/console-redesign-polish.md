@@ -742,6 +742,30 @@ cd services/admin-console && pnpm exec ng test --watch=false
 cd services/admin-console && pnpm exec ng test --watch=false
 ```
 
+**T08 findings (recorded 2026-07-23):**
+
+- Topbar restructured into the mock's two-row chrome (breadcrumb row: org mark
+  + tenant chip + section breadcrumb + bell/theme/help/avatar; separate
+  section-tabs row) in `layout/header/header.component.ts`. The Help button
+  (not in mock row 1) was kept — removing it would be a behavior change.
+- Role column on `/users` now renders via the existing `status-badge`
+  primitive (admin→purple, editor→blue, viewer→gray, substring match on
+  free-form role strings); `inventory-table` gained an optional `color`
+  accessor on the status-badge column type (mirrors the sparkline accessor).
+- **Corrections to T01 findings 1 and 12 — two "bugs" were audit-methodology
+  artifacts, not code defects:** the tenant `Unknown` chip and the "missing"
+  `+ Add User` button both reproduce ONLY under the platform-scope
+  `ADMIN_EMAIL` credential (JWT `scope: "platform"`, no `tenant_id` claim, no
+  tenant permissions — both behaviors are correct for that session). Under the
+  real `TENANT_ADMIN_EMAIL` credential (same k8s `auth-secret`) the chip
+  renders `acme` and the Add User button is visible. T01's audit used the
+  wrong credential. No code change made; future visual audits of
+  tenant-scoped screens must use `TENANT_ADMIN_EMAIL`/`TENANT_ADMIN_PASSWORD`.
+- Trailing row action icon (finding 12): deactivate confirmed reachable via
+  row click → `UserDetailDialogComponent` (gated by `users:delete`) — no
+  duplicate icon added, per the verify-first instruction.
+- `Search… ⌘K` stays unbuilt (NEW-CAPABILITY, decision 3).
+
 ### T09 — Docs + after-audit + index
 
 - Re-run the full visual audit → `manual-loops/admin-console/audit/after/`;
@@ -765,7 +789,7 @@ grep -n "console-redesign-polish" cowork/INDEX.md && ls manual-loops/admin-conso
 - [x] T05 channels + connections parity
 - [x] T06 ai parity
 - [x] T07 trace parity
-- [ ] T08 shell + users/settings parity
+- [x] T08 shell + users/settings parity
 - [ ] T09 docs + after-audit
 
 ## Out of scope (explicit)
