@@ -14,6 +14,8 @@ import {
   computeForkCollapseChips,
   computeNodePositions,
   computeRenderedEdges,
+  formatNodeStatusBadge,
+  formatNodeStatusLabel,
   formatPillLabel,
   type IPositionedNode,
   isArtifactNode,
@@ -1002,5 +1004,27 @@ describe("bug regression: connector/agent artifact label truncates a raw UUID ev
     });
     const boxes = computeArtifactBoxes([spine], []);
     expect(boxes[0]!.label).toBe("connector · d021a4ce…");
+  });
+});
+
+describe("formatNodeStatusBadge — T05 status coloring/badges, real ActionStatus values only", () => {
+  it("returns a checkmark for 'ok'", () => {
+    expect(formatNodeStatusBadge("ok")).toBe("✓");
+  });
+
+  it("returns a cross for 'failed'", () => {
+    expect(formatNodeStatusBadge("failed")).toBe("✕");
+  });
+
+  it("returns a dash for 'not_executed'", () => {
+    expect(formatNodeStatusBadge("not_executed")).toBe("–");
+  });
+
+  it("covers every real ActionStatus value formatNodeStatusLabel also covers (no invented 4th state, e.g. 'running')", () => {
+    const statuses = ["ok", "failed", "not_executed"] as const;
+    for (const status of statuses) {
+      expect(() => formatNodeStatusBadge(status)).not.toThrow();
+      expect(() => formatNodeStatusLabel(status)).not.toThrow();
+    }
   });
 });

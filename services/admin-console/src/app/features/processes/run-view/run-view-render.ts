@@ -343,6 +343,28 @@ export function formatNodeStatusLabel(status: ActionStatus): string {
 }
 
 /**
+ * Status badge glyph (T05 of
+ * `manual-loops/admin-console/console-redesign-trace.md`: "node status
+ * coloring ... step badges"). Real `ActionStatus` values only — the type
+ * carries exactly three ("ok" | "failed" | "not_executed",
+ * `domain/run-view.model.ts`); there is no "running"/in-progress status on
+ * a run's own step (SPEC.md "Out of scope": "Live/streaming trace updates
+ * — loaded traces only"), so no glyph is invented for a state the data
+ * model does not have. `[attr.data-status]` on the node's `<g>` (already
+ * bound) drives the badge's fill color via CSS; this function only picks
+ * the glyph text.
+ */
+export function formatNodeStatusBadge(status: ActionStatus): string {
+  if (status === "ok") {
+    return "✓";
+  }
+  if (status === "failed") {
+    return "✕";
+  }
+  return "–";
+}
+
+/**
  * Edge label: taken/fork-out/join-in labels pass through the domain's own
  * string VERBATIM (e.g. the join's critical-path label, or a fork lane
  * name) — `layout-run.ts` already owns that text and T04 must not

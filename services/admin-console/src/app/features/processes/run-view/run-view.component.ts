@@ -19,8 +19,11 @@ import {
   type IWorkflowDefinitionDto,
   WorkflowApiService,
 } from "../../automation/workflows/services/workflow-api.service";
+import { TraceSelectionService } from "../trace/trace-selection.service";
 import { layoutRun } from "./domain/layout-run";
 import { mergeRun } from "./domain/merge-run";
+import { resolveSelectedStepResult } from "./domain/resolve-selected-step-result";
+import { resolveStepEvents } from "./domain/resolve-step-events";
 import type { ILayoutNode, IRunLayout } from "./domain/run-view.model";
 import { RunViewPopupComponent } from "./run-view-popup.component";
 import type { IAnchorRect } from "./run-view-popup-render";
@@ -35,6 +38,7 @@ import {
   computeNodePositions,
   computeRenderedEdges,
   computeViewBox,
+  formatNodeStatusBadge,
   formatPillLabel,
   formatRunStatusChip,
   type IArtifactBox,
@@ -72,6 +76,20 @@ type RunState =
  * lib), plus the header chips and cast strip DESIGN-run-view.md specifies.
  * Node click emits the clicked node for T05's popup; this component owns
  * no popup itself.
+ *
+ * T05 (`manual-loops/admin-console/console-redesign-trace.md`) restyles
+ * this renderer's colors onto the trace redesign's `--rd-*` tokens (see
+ * the `:host` style block below) and adds TRACE-HOSTED selection: this
+ * component is used in TWO contexts — the trace screen's "run" tab
+ * (`TraceDetailComponent` component-provides `TraceSelectionService`) and
+ * the STANDALONE `/processes/runs/:workflowId/:runId` route
+ * (`RunViewPageComponent`, no such provider). `selection` below is
+ * injected `{ optional: true }` so ONE component correctly serves both:
+ * trace-hosted mode routes node clicks through the shared service instead
+ * of opening the local popup (decision 2: "the node-click popup flow is
+ * REPLACED by inspector selection"); standalone mode is completely
+ * unchanged (the pre-existing T05 popup flow, out of this loop's redesign
+ * scope per the task instructions).
  */
 @Component({
   selector: "app-run-view",
@@ -213,6 +231,7 @@ type RunState =
                 class="rv-node"
                 [class.rv-node-dashed]="node.dashed"
                 [class.rv-node-highlighted]="isHighlighted(node)"
+                [class.rv-node-trace-selected]="isTraceSelected(node)"
                 [class.rv-node-pill]="isPillNode(node.kind)"
                 [attr.data-kind]="node.kind"
                 [attr.data-color]="node.color"
@@ -248,6 +267,21 @@ type RunState =
                   <text class="rv-node-status" x="10" y="34">
                     {{ nodeSubLabel(node) }}
                   </text>
+                  @if (node.kind !== "trigger") {
+                    <!-- T05 status badge (real ActionStatus values only —
+                         "ok"/"failed"/"not_executed", run-view.model.ts;
+                         no glyph for the leading trigger node, which the
+                         domain hardcodes to "ok" as a status-NEUTRAL
+                         placeholder, per that field's own doc comment). -->
+                    <text
+                      class="rv-node-badge"
+                      [attr.x]="nodeWidth - 10"
+                      y="18"
+                      text-anchor="end"
+                    >
+                      {{ formatNodeStatusBadge(node.status) }}
+                    </text>
+                  }
                 }
               </g>
             }
@@ -330,31 +364,50 @@ type RunState =
   styles: `
     :host {
       display: block;
-      /* Node/pill fill+border per DESIGN-run-view.md's color table
-       * (gray=platform, amber=decision, purple=agent, teal=channel),
-       * mapped to the console's EXISTING theme-aware globals
-       * (services/admin-console/src/styles.scss's :root / .light-theme
-       * blocks) rather than new hardcoded hex — run-view visual rewrite
-       * slice 2's color/token approach. \`--yellow\`/\`--purple\`/\`--cyan\`
-       * and their \`-dim\` (0.12-alpha) tints are brand accent colors the
-       * app keeps constant across themes (only surfaces/text swap), so
-       * they stay legible composited over either theme's \`--bg2\`. */
-      --rv-gray-fill: var(--bg3);
-      --rv-gray-border: var(--border2);
-      --rv-amber-fill: var(--yellow-dim);
-      --rv-amber-border: var(--yellow);
-      --rv-purple-fill: var(--purple-dim);
-      --rv-purple-border: var(--purple);
-      --rv-teal-fill: var(--cyan-dim);
-      --rv-teal-border: var(--cyan);
-      --rv-edge-stroke: var(--text3);
-      --rv-critical-stroke: var(--purple);
-      /* BUG 2 fix: cast-chip highlight accent — \`--accent-yz\` is a fixed
-       * brand orange (not swapped per theme, same precedent as
-       * \`--yellow\`/\`--purple\`/\`--cyan\` above), distinct from every
-       * existing node color (gray/amber/purple/teal) so a highlighted
-       * node/artifact box is unambiguous on both light and dark themes. */
-      --rv-highlight: var(--accent-yz);
+      /* T05 restyle (\`manual-loops/admin-console/console-redesign-trace.md\`):
+       * node/pill fill+border per DESIGN-run-view.md's color table
+       * (gray=platform, amber=decision, purple=agent, teal=channel), now
+       * mapped to the trace redesign's \`--rd-*\` tokens
+       * (services/admin-console/src/styles.scss) instead of the console's
+       * legacy \`--bg3\`/\`--border2\`/\`--yellow\`/\`--purple\`/\`--cyan\`
+       * globals every other restyled trace view already moved off of
+       * (\`trace-waterfall.component.ts\`, \`causal-graph.component.ts\`,
+       * \`step-log.component.ts\`) — same "resolve colors from tokens at
+       * runtime via CSS custom properties" approach this file already used,
+       * just re-pointed at the new token namespace, not a rewrite of the
+       * mechanism. "channel = teal" reuses \`--rd-green\` (no separate
+       * \`--rd-cyan\` token exists) — the SAME choice the waterfall legend
+       * already made for its "channel" business-fn group
+       * (\`--rd-group-channel: var(--rd-green)\`, styles.scss), so a channel
+       * step now reads the same hue across trace views instead of
+       * introducing a third teal token nobody else uses. \`--rd-purple-dim\`/
+       * \`--rd-orange\`/\`--rd-orange-dim\` are new tokens this task adds to
+       * styles.scss (documented there) since the \`--rd-*\` palette had no
+       * purple tint or brand-orange transcription yet. */
+      --rv-gray-fill: var(--rd-panel);
+      --rv-gray-border: var(--rd-line-3);
+      --rv-amber-fill: var(--rd-yellow-dim);
+      --rv-amber-border: var(--rd-yellow);
+      --rv-purple-fill: var(--rd-purple-dim);
+      --rv-purple-border: var(--rd-purple);
+      --rv-teal-fill: var(--rd-green-dim);
+      --rv-teal-border: var(--rd-green);
+      --rv-edge-stroke: var(--rd-text-3);
+      --rv-critical-stroke: var(--rd-purple);
+      /* BUG 2 fix (unchanged behavior, restyled token): cast-chip highlight
+       * accent — \`--rd-orange\` transcribes the same fixed brand orange
+       * (\`--accent-yz\`) into the \`--rd-*\` namespace, distinct from every
+       * node color (gray/amber/purple/teal) AND from the trace-selection
+       * accent below, so a cast-highlighted node/artifact box stays
+       * unambiguous on both themes and next to a cross-view selection. */
+      --rv-highlight: var(--rd-orange);
+      /* T05: cross-view selection ring (node click -> shared
+       * TraceSelectionService, trace-hosted mode only) — \`--rd-accent\`, the
+       * SAME accent color the waterfall/causal-graph/step-log selection
+       * highlight already uses (their \`--rd-accent\`/\`--rd-accent-soft\`
+       * outline), so a selected run-view node reads as "the same kind of
+       * selection" as the other three views instead of a fourth new color. */
+      --rv-trace-selected: var(--rd-accent);
     }
     .rv {
       display: flex;
@@ -362,28 +415,28 @@ type RunState =
       gap: 12px;
     }
     .rv-status {
-      font-size: 13px;
-      color: var(--text3, #888);
+      font-size: var(--rd-text-size-base, 13px);
+      color: var(--rd-text-3, #7a7a7a);
     }
     .rv-status-error {
-      color: var(--red, #b3261e);
+      color: var(--rd-red, #f5455c);
     }
     .rv-degraded-banner {
       margin: 0;
-      padding: 8px 12px;
-      border-radius: 6px;
-      background: var(--amber-bg, #fff3cd);
-      color: var(--amber-text, #7a5900);
-      font-size: 12px;
+      padding: var(--rd-space-4, 8px) var(--rd-space-6, 12px);
+      border-radius: var(--rd-radius-5, 6px);
+      background: var(--rd-yellow-dim, #fff3cd);
+      color: var(--rd-yellow, #7a5900);
+      font-size: var(--rd-text-size-sm, 12px);
     }
     .rv-chips {
       display: flex;
       flex-wrap: wrap;
       gap: 8px 16px;
-      border: 1px solid var(--border-subtle, #ddd);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 12px;
+      border: 1px solid var(--rd-line-3, #2e2e2e);
+      border-radius: var(--rd-radius-7, 8px);
+      padding: var(--rd-space-5, 10px) var(--rd-space-7, 14px);
+      font-size: var(--rd-text-size-sm, 12px);
     }
     .rv-chip {
       display: flex;
@@ -391,14 +444,15 @@ type RunState =
       gap: 2px;
     }
     .rv-chip-label {
-      color: var(--text3, #888);
-      font-size: 11px;
+      color: var(--rd-text-3, #7a7a7a);
+      font-size: var(--rd-text-size-xs, 11px);
     }
     .rv-chip-value {
       font-weight: 500;
+      color: var(--rd-text-1, #ededed);
     }
     .rv-mono {
-      font-family: var(--font-mono, monospace);
+      font-family: var(--rd-font-mono, monospace);
     }
     .rv-cast {
       display: flex;
@@ -410,30 +464,33 @@ type RunState =
       gap: 6px;
       align-items: center;
       padding: 4px 10px;
-      border-radius: 999px;
-      border: 1px solid var(--border, #185fa5);
-      background: var(--bg, #fff);
+      border-radius: var(--rd-radius-full, 999px);
+      border: 1px solid var(--rd-line-3, #2e2e2e);
+      background: var(--rd-panel, #0f0f0f);
+      color: var(--rd-text-1, #ededed);
       cursor: pointer;
-      font-size: 11px;
+      font-size: var(--rd-text-size-xs, 11px);
     }
     .rv-cast-chip--selected {
-      outline: 2px solid var(--accent, #185fa5);
+      outline: 2px solid var(--rd-accent, #1a66ff);
     }
+    /* Cast-chip kind border — same "channel reuses --rd-green" choice as
+     * the node color table above (:host comment). */
     .rv-cast-chip[data-color="platform"] {
-      border-color: #868e96;
+      border-color: var(--rd-line-3, #2e2e2e);
     }
     .rv-cast-chip[data-color="agent"] {
-      border-color: #8a63d2;
+      border-color: var(--rd-purple, #bf7af0);
     }
     .rv-cast-chip[data-color="channel"] {
-      border-color: #1a9e8f;
+      border-color: var(--rd-green, #50e3a4);
     }
     .rv-svg {
       display: block;
       max-width: 100%;
       min-height: 320px;
-      background: var(--bg2, #f8f9fa);
-      border-radius: 8px;
+      background: var(--rd-panel, #0f0f0f);
+      border-radius: var(--rd-radius-7, 8px);
     }
     /* Arrow marker head — same fill as the default edge stroke; dashed
      * (not-executed/response) and thick (critical-path) edges recolor it
@@ -471,7 +528,7 @@ type RunState =
      * the spine and artifact columns respectively. */
     .rv-column-header {
       font-size: 11px;
-      fill: var(--text3, #8a8880);
+      fill: var(--rd-text-3, #7a7a7a);
       text-anchor: middle;
     }
     /* Artifact request/response edge pair — same solid/dashed convention
@@ -509,11 +566,11 @@ type RunState =
     .rv-artifact-label {
       font-size: 11px;
       font-weight: 600;
-      fill: var(--text, #26241f);
+      fill: var(--rd-text-1, #ededed);
     }
     .rv-artifact-sublabel {
       font-size: 10px;
-      fill: var(--text3, #8a8880);
+      fill: var(--rd-text-3, #7a7a7a);
     }
     .rv-node {
       cursor: pointer;
@@ -544,6 +601,21 @@ type RunState =
     .rv-node-dashed .rv-node-rect {
       stroke-dasharray: 4 3;
     }
+    /* T05 status coloring: real ActionStatus values only ("ok" | "failed" |
+     * "not_executed", run-view.model.ts — there is no "running" state on a
+     * loaded run's step, SPEC.md "Out of scope": loaded traces only). A
+     * FAILED step's border recolors to \`--rd-red\` regardless of its own
+     * kind color (gray/amber/purple/teal) — failure takes visual
+     * precedence, same "override the kind border for a status that matters
+     * more" precedent \`.rv-node-highlighted\`/\`.rv-node-trace-selected\`
+     * below already establish. "ok"/"not_executed" keep their plain
+     * kind-color border (not_executed is already distinguished by the
+     * dashed rule above) — only the badge glyph (\`.rv-node-badge\` below)
+     * carries their color. */
+    .rv-node[data-status="failed"] .rv-node-rect {
+      stroke: var(--rd-red, #f5455c);
+      stroke-width: 2;
+    }
     /* BUG 2 fix: the old rule only bumped \`stroke-width\` — imperceptible
      * on a node that is already bordered. Recolor to the dedicated
      * highlight accent + a soft glow so the selected step is unmistakable
@@ -552,6 +624,18 @@ type RunState =
       stroke: var(--rv-highlight);
       stroke-width: 3;
       filter: drop-shadow(0 0 3px rgba(253, 100, 33, 0.6));
+    }
+    /* T05: cross-view selection ring (node click -> shared
+     * TraceSelectionService, trace-hosted mode only — SPEC.md "selected
+     * node highlighted from the service signal"). Own selector, not
+     * \`.rv-node-highlighted\` (that ring is the UNRELATED cast-chip
+     * instance highlight — the two can be visually distinguished on the
+     * few runs where both happen to apply, since they use different
+     * accent tokens). */
+    .rv-node-trace-selected .rv-node-rect {
+      stroke: var(--rv-trace-selected);
+      stroke-width: 3;
+      filter: drop-shadow(0 0 3px var(--rd-accent-soft, rgba(26, 102, 255, 0.4)));
     }
     /* Same treatment for the paired right-column artifact box (BUG 2:
      * "also highlight the matching spine artifact box"). Own selector
@@ -572,11 +656,28 @@ type RunState =
     .rv-node-label {
       font-size: 11px;
       font-weight: 600;
-      fill: var(--text, #26241f);
+      fill: var(--rd-text-1, #ededed);
     }
     .rv-node-status {
       font-size: 10px;
-      fill: var(--text3, #8a8880);
+      fill: var(--rd-text-3, #7a7a7a);
+    }
+    /* T05 status badge glyph (formatNodeStatusBadge) — colored per the
+     * SAME real-status attribute selector the border recoloring above uses
+     * ([data-status], bound from the node's own ActionStatus), so the
+     * badge and the border never disagree about a step's outcome. */
+    .rv-node-badge {
+      font-size: 11px;
+      font-weight: 700;
+    }
+    .rv-node[data-status="ok"] .rv-node-badge {
+      fill: var(--rd-green, #50e3a4);
+    }
+    .rv-node[data-status="failed"] .rv-node-badge {
+      fill: var(--rd-red, #f5455c);
+    }
+    .rv-node[data-status="not_executed"] .rv-node-badge {
+      fill: var(--rd-text-3, #7a7a7a);
     }
     .rv-fork-chip {
       font-size: 11px;
@@ -595,7 +696,7 @@ type RunState =
       font-size: 12px;
       font-weight: 500;
       text-anchor: middle;
-      fill: var(--text, #26241f);
+      fill: var(--rd-text-1, #ededed);
     }
     .rv-legend {
       display: flex;
@@ -606,7 +707,7 @@ type RunState =
     .rv-legend-line {
       margin: 0;
       font-size: 11px;
-      color: var(--text3, #8a8880);
+      color: var(--rd-text-3, #7a7a7a);
     }
   `,
 })
@@ -646,6 +747,28 @@ export class RunViewComponent {
   isPillNode = isPillNode;
   formatPillLabel = formatPillLabel;
   pillOffsetX = pillOffsetX;
+  formatNodeStatusBadge = formatNodeStatusBadge;
+
+  /** Shared cross-view selection (T05 of
+   * `manual-loops/admin-console/console-redesign-trace.md`) — OPTIONAL:
+   * `RunViewComponent` is hosted in TWO contexts. In the trace screen's
+   * "run" tab, `TraceDetailComponent` component-provides
+   * `TraceSelectionService` (same provider scope
+   * `TraceWaterfallComponent`/`CausalGraphComponent`/`StepLogComponent`
+   * already use) and this component participates in the shared selection.
+   * At the STANDALONE `/processes/runs/:workflowId/:runId` route
+   * (`RunViewPageComponent`), no such provider exists at all. `{ optional:
+   * true }` is the only way one component correctly serves both: in
+   * standalone mode `this.selection` is `null` and the pre-existing local
+   * popup flow (`selectedNodeSignal`/`anchorRectSignal`, unchanged below)
+   * keeps working; in trace-hosted mode it is the real instance and node
+   * clicks route through it instead (`onNodeClick` below) — per decision
+   * 2's "selection state lives ONLY in TraceSelectionService", this
+   * component never grows a SECOND local selection signal for the
+   * trace-hosted case, it delegates. */
+  private readonly selection = inject(TraceSelectionService, {
+    optional: true,
+  });
 
   protected readonly state = signal<RunState>({ kind: "loading" });
   private readonly selected = signal<string | null>(null);
@@ -873,9 +996,57 @@ export class RunViewComponent {
   resolveCastColor = resolveCastColor;
   nodeSubLabel = nodeSubLabel;
 
+  /** T05 inspector run-mode content (decision 3: "step result in run
+   * view") — resolves the trace screen's shared selection back onto this
+   * run's OWN `ILayoutNode`, real fields only (`resolve-selected-step-
+   * result.ts`). `TraceDetailComponent` reads this via a
+   * `viewChild(RunViewComponent)` signal query rather than a second
+   * selection signal — this is DERIVED READ DATA about the already-loaded
+   * run, not selection state itself, so exposing it here does not violate
+   * decision 2. `null` outside trace-hosted mode (`selection` absent), or
+   * when nothing / an event outside this run is selected. */
+  readonly selectedStepResult = computed(() => {
+    if (!this.selection) {
+      return null;
+    }
+    const s = this.state();
+    if (s.kind !== "loaded") {
+      return null;
+    }
+    return resolveSelectedStepResult(
+      this.positionedNodes(),
+      s.run.events,
+      this.selection.selectedEventId()
+    );
+  });
+
   isHighlighted(node: ILayoutNode): boolean {
     const selected = this.selected();
     return selected !== null && node.instanceId === selected;
+  }
+
+  /** Which node (if any) matches the shared trace-screen selection — drives
+   * the `.rv-node-trace-selected` highlight ring. DISTINCT from
+   * `isHighlighted()` above (that one is the cast-chip instance highlight,
+   * an unrelated concept). Always `false` in standalone mode (`selection`
+   * absent) — no cross-view highlight exists without the service. */
+  isTraceSelected(node: ILayoutNode): boolean {
+    if (!this.selection) {
+      return false;
+    }
+    const selectedId = this.selection.selectedEventId();
+    if (!selectedId) {
+      return false;
+    }
+    const s = this.state();
+    if (s.kind !== "loaded") {
+      return false;
+    }
+    const pair = resolveStepEvents(node, s.run.events);
+    return (
+      pair.started?.eventId === selectedId ||
+      pair.completed?.eventId === selectedId
+    );
   }
 
   /** BUG 2 fix: the right-column artifact box paired with a selected cast
@@ -896,9 +1067,21 @@ export class RunViewComponent {
     this.selected.set(this.selected() === entry.id ? null : entry.id);
   }
 
-  /** Emits the clicked node (unchanged output contract T04 shipped) AND
-   * opens T05's own popup, anchored to the clicked `<g>`'s screen rect. */
+  /** Emits the clicked node (unchanged output contract T04 shipped)
+   * regardless of hosting mode. TRACE-HOSTED mode (`selection` present,
+   * T05 of `manual-loops/admin-console/console-redesign-trace.md`): routes
+   * the click through the shared `TraceSelectionService` instead of
+   * opening the local popup — decision 2 governs the trace screen: "the
+   * node-click popup flow is REPLACED by inspector selection". STANDALONE
+   * mode (`selection` absent, `RunViewPageComponent` at
+   * `/processes/runs/:workflowId/:runId`): unchanged T05 popup flow, out
+   * of this loop's redesign scope per the task instructions. */
   onNodeClick(node: ILayoutNode, event: MouseEvent): void {
+    this.nodeSelected.emit(node);
+    if (this.selection) {
+      this.selectInTraceScreen(node);
+      return;
+    }
     const target = event.currentTarget as Element | null;
     const rect = target?.getBoundingClientRect();
     this.anchorRectSignal.set(
@@ -914,7 +1097,41 @@ export class RunViewComponent {
         : { top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 }
     );
     this.selectedNodeSignal.set(node);
-    this.nodeSelected.emit(node);
+  }
+
+  /** Trace-hosted node click (T05): resolves the node's OWN started/
+   * completed event via `resolveStepEvents` — the SAME mapping
+   * `run-view-popup.component.ts` uses, no second heuristic — preferring
+   * the COMPLETED event as "the corresponding event" (the step's own
+   * outcome) and falling back to STARTED for a step that has no completed
+   * event yet. A step with NEITHER (e.g. a not-executed definition-only
+   * step, or a join pill, which carries no event of its own per
+   * `resolveStepEvents`' header) is a documented no-op — SPEC.md T05: "if
+   * a step has NO mapped event, click is a no-op with console.debug,
+   * nothing invented". */
+  private selectInTraceScreen(node: ILayoutNode): void {
+    const selection = this.selection;
+    if (!selection) {
+      return;
+    }
+    const s = this.state();
+    if (s.kind !== "loaded") {
+      return;
+    }
+    const pair = resolveStepEvents(node, s.run.events);
+    const eventId = pair.completed?.eventId ?? pair.started?.eventId ?? null;
+    if (!eventId) {
+      console.debug(
+        "[RunViewComponent] node click has no mapped event — no-op (trace-hosted mode)",
+        { nodeId: node.id, kind: node.kind, stepName: node.stepName }
+      );
+      return;
+    }
+    console.debug(
+      "[RunViewComponent] node clicked, selecting event via shared TraceSelectionService",
+      { nodeId: node.id, eventId, stepName: node.stepName }
+    );
+    selection.select(eventId, "run");
   }
 
   closePopup(): void {

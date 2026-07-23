@@ -165,6 +165,7 @@ html.light-theme {
   --rd-yellow: #f5a623;
   --rd-yellow-dim: rgba(245, 166, 35, 0.1);
   --rd-purple: #bf7af0;
+  --rd-purple-dim: rgba(191, 122, 240, 0.12);
   --rd-btn-bg: #ededed;
   --rd-btn-fg: #0a0a0a;
 
@@ -175,6 +176,15 @@ html.light-theme {
   --rd-group-platform: var(--rd-accent);
   --rd-group-agent: var(--rd-purple);
   --rd-group-other: var(--rd-text-3);
+
+  // Run-view canvas restyle (T05 of console-redesign-trace.md): the
+  // existing brand accent used for the cast-chip highlight ring
+  // (`--accent-yz: #FD6421`, legacy Yoizen tokens above) transcribed into
+  // the `--rd-*` namespace so `run-view.component.ts` no longer reaches
+  // across into the legacy palette — same value, same precedent as
+  // `--rd-avatar-gradient` above (transcribe, don't invent).
+  --rd-orange: #fd6421;
+  --rd-orange-dim: rgba(253, 100, 33, 0.14);
 
   // Avatar gradient — transcribed from the design file's topbar avatar
   // button (Rediseño Terminal.dc.html, top-bar avatar: linear-gradient(
@@ -269,8 +279,15 @@ html.light-theme {
   --rd-yellow: #b26b00;
   --rd-yellow-dim: rgba(178, 107, 0, 0.08);
   --rd-purple: #8e4ec6;
+  --rd-purple-dim: rgba(142, 78, 198, 0.1);
   --rd-btn-bg: #171717;
   --rd-btn-fg: #ffffff;
+
+  // Run-view canvas restyle (T05) — see the dark-theme block above for the
+  // transcription note; same `--accent-yz` brand value in both themes (the
+  // legacy token is theme-invariant).
+  --rd-orange: #fd6421;
+  --rd-orange-dim: rgba(253, 100, 33, 0.1);
 }
 
 *,

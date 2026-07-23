@@ -8,6 +8,7 @@ import {
   inject,
   type OnInit,
   signal,
+  viewChild,
 } from "@angular/core";
 import { ActivatedRoute, RouterLink } from "@angular/router";
 import { AuthService } from "../../../core/services/auth.service";
@@ -104,11 +105,16 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
  *   branch below `<app-run-view>`. PLACEMENT CHOICE (documented per the
  *   task instructions): the ORCHESTRATOR RULING under decision 5(a) places
  *   the step log INSIDE the "run" tab, matching the design mock exactly
- *   (`Rediseño Terminal.dc.html` lines 932-943) — T05 has not yet
- *   restyled/rebuilt the run-view canvas into this trace screen's own tab
- *   area, so this task wires the log directly into the existing "run"
- *   branch, fed by the SAME already-loaded `chain()` the waterfall/causal
- *   tabs use (no new fetch). T05 restyles the run tab area around it.
+ *   (`Rediseño Terminal.dc.html` lines 932-943) — T05 restyles the run tab
+ *   area around it, wiring the run canvas into the shared selection.
+ *
+ * T05 (`manual-loops/admin-console/console-redesign-trace.md`) adds the
+ * run-mode inspector content (decision 3's "step result in run view"):
+ * the same base dl fields plus a "Step result" block, sourced from
+ * `RunViewComponent.selectedStepResult()` via a `viewChild` signal query
+ * (`runView` below) — this container never fetches run data itself, it
+ * only reads the derived step-result data the embedded run canvas already
+ * computed from its own loaded `IRunResponse`/`IRunLayout`.
  */
 @Component({
   selector: "app-trace-detail",
@@ -203,8 +209,8 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
            TraceSelectionService.selectedEventId() is set. Per-view
            context content (payload, timing %, step result, causal chain,
            Temporal/builder deep links — decisions 3/4) is filled in by
-           T03-T06; T03 added the waterfall-mode content, T04 adds the
-           causal-mode content below. -->
+           T03-T06; T03 added the waterfall-mode content, T04 the
+           causal-mode content, T05 the run-mode content below. -->
       <aside class="td-inspector" aria-label="Event inspector">
         @if (selection.selectedEventId(); as selectedId) {
           <header class="td-inspector-head">
@@ -364,9 +370,74 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
                   </a>
                 </div>
               }
+            } @else if (isRunSelection() && selectedEvent(); as event) {
+              <!-- T05 run-mode content: base fields (same "everywhere" dl
+                   as waterfall/causal-mode, decision 3) plus STEP RESULT
+                   for the selected event's step (decision 3: "step result
+                   in run view"), sourced from RunViewComponent's OWN
+                   already-loaded run data via the runView viewChild query
+                   below — real fields only, nothing invented. -->
+              <dl class="td-base">
+                <dt>event_id</dt>
+                <dd>{{ event.event_id }}</dd>
+                <dt>kind</dt>
+                <dd>{{ event.kind ?? "—" }}</dd>
+                <dt>causation</dt>
+                <dd>{{ event.causation_id ?? "—" }}</dd>
+                <dt>depth</dt>
+                <dd>{{ event.causation_depth ?? "—" }}</dd>
+                <dt>tech</dt>
+                <dd>{{ event.tech }}</dd>
+                <dt>business_fn</dt>
+                <dd>{{ event.business_fn }}</dd>
+                <dt>claim_check</dt>
+                <dd>{{ event.is_claim_check }}</dd>
+                <dt>compliance</dt>
+                <dd>{{ event.compliance }}</dd>
+                <dt>subject</dt>
+                <dd>{{ event.subject }}</dd>
+              </dl>
+
+              @if (runStepResult(); as step) {
+                <div class="td-step-result" aria-label="Step result">
+                  <h4 class="td-step-result-title">Step result</h4>
+                  <dl class="td-base">
+                    <dt>step</dt>
+                    <dd>{{ step.stepName }}</dd>
+                    <dt>kind</dt>
+                    <dd>{{ step.kind }}</dd>
+                    @if (step.actionType) {
+                      <dt>action type</dt>
+                      <dd>{{ step.actionType }}</dd>
+                    }
+                    <dt>status</dt>
+                    <dd>{{ step.status }}</dd>
+                    @if (step.durationMs !== null) {
+                      <dt>duration</dt>
+                      <dd>{{ step.durationMs }} ms</dd>
+                    }
+                    @if (step.branchTaken !== null) {
+                      <dt>branch</dt>
+                      <dd>{{ step.branchTaken }}</dd>
+                    }
+                    @if (step.evaluatedValue !== null) {
+                      <dt>evaluated</dt>
+                      <dd>{{ step.evaluatedValue }}</dd>
+                    }
+                    @if (step.instanceId !== null) {
+                      <dt>instance</dt>
+                      <dd>{{ step.instanceId }}</dd>
+                    }
+                  </dl>
+                </div>
+              } @else {
+                <p class="td-muted">
+                  No step result available for this selection.
+                </p>
+              }
             } @else {
               <p class="td-muted">
-                Inspector content (step result, deep links) lands in T05-T06.
+                Inspector content (deep links) lands in T06.
               </p>
             }
           </div>
@@ -606,6 +677,18 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
       font-size: var(--rd-text-size-2xs, 10px);
     }
 
+    .td-step-result {
+      margin-top: var(--rd-space-6, 12px);
+      padding-top: var(--rd-space-6, 12px);
+      border-top: 1px solid var(--rd-line-2, #161616);
+    }
+    .td-step-result-title {
+      margin: 0 0 var(--rd-space-4, 8px);
+      font-size: var(--rd-text-size-sm, 12px);
+      font-weight: 600;
+      color: var(--rd-text-1, #ededed);
+    }
+
     .td-payload {
       margin-top: var(--rd-space-6, 12px);
       padding-top: var(--rd-space-6, 12px);
@@ -736,10 +819,10 @@ export class TraceDetailComponent implements OnInit {
   );
 
   /** The currently-selected event's full record from the loaded chain —
-   * shared by BOTH waterfall-mode and causal-mode inspector content. null
-   * when nothing is selected, or when the selected id somehow isn't in the
-   * currently-loaded chain (defensive; should not happen since the chain
-   * is the only source of selectable events on this screen). */
+   * shared by waterfall-mode, causal-mode, AND run-mode inspector content.
+   * null when nothing is selected, or when the selected id somehow isn't
+   * in the currently-loaded chain (defensive; should not happen since the
+   * chain is the only source of selectable events on this screen). */
   readonly selectedEvent = computed<ITrackedEvent | null>(() => {
     const c = this.chain();
     const id = this.selection.selectedEventId();
@@ -795,6 +878,34 @@ export class TraceDetailComponent implements OnInit {
     const event = this.selectedEvent();
     return event ? resolveTrackedEventDeepLink(event) : null;
   });
+
+  /** True when the current selection came from the "run" tab — the run
+   * canvas (T05) or the step log panel embedded in it (T04); both source
+   * as "run" (TraceSourceView's own doc comment). Gates the run-mode
+   * inspector content (base fields + step result). */
+  readonly isRunSelection = computed(
+    () => this.selection.sourceView() === "run"
+  );
+
+  /** T05: reactive reference to the embedded run-view canvas — read-only
+   * signal query, NOT a second selection signal (decision 2 forbids one).
+   * Angular's viewChild query finds the component wherever it renders in
+   * the template, including inside the "@if (workflowRun(); as run)"
+   * branch above, and reactively becomes undefined again when that branch
+   * stops rendering (a different tab, or no workflow run in the chain).
+   * Used only to pull RunViewComponent.selectedStepResult() — this
+   * container never fetches run data itself. */
+  private readonly runView = viewChild(RunViewComponent);
+
+  /** Run-mode inspector content (T05, decision 3: "step result in run
+   * view") — the selected event's step, resolved by RunViewComponent
+   * from the run data IT already has loaded (real fields only). null
+   * when the "run" tab isn't rendering a run canvas yet, or the selected
+   * event isn't one of this run's own mapped step events (e.g. a step-log
+   * entry for a chain event this run's own layout has no node for). */
+  readonly runStepResult = computed(
+    () => this.runView()?.selectedStepResult() ?? null
+  );
 
   constructor() {
     // Selecting a different event (from ANY view, or closing the
