@@ -117,6 +117,23 @@ describe("ChannelsComponent", () => {
     expect(el.textContent).toContain("Manage channel accounts");
   });
 
+  describe(
+    "fleet table columns (T01 finding 3, FIX T05 — mock's " +
+      "CUENTA/IDENTIDAD/ESTADO order)",
+    () => {
+      it("renders Account/Identity/Status and drops Channel/Created", async () => {
+        const { fixture } = await renderChannelsComponent([mockActiveAccount]);
+        const el = fixture.nativeElement as HTMLElement;
+        const headers = Array.from(
+          el.querySelectorAll(".table-header-cell")
+        ).map((h) => h.textContent?.trim());
+        expect(headers).toEqual(["Account", "Identity", "Status"]);
+        expect(headers).not.toContain("Channel");
+        expect(headers).not.toContain("Created");
+      });
+    }
+  );
+
   describe("health mapping (Mapping A, decision 3)", () => {
     it("maps isActive=true to the ok health dot", async () => {
       const { fixture } = await renderChannelsComponent([mockActiveAccount]);

@@ -1,16 +1,19 @@
 import "@angular/compiler";
 import { type ComponentFixture, TestBed } from "@angular/core/testing";
 import { MatDialog } from "@angular/material/dialog";
+import { MatSnackBar } from "@angular/material/snack-bar";
 import { provideNoopAnimations } from "@angular/platform-browser/animations";
 import {
   ActivatedRoute,
   convertToParamMap,
   provideRouter,
+  Router,
 } from "@angular/router";
 import { BehaviorSubject, of, tap, throwError } from "rxjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IMcpServer, IMcpUsage } from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
+import { ConfirmDialogComponent } from "../../../shared/components/confirm-dialog/confirm-dialog.component";
 import { McpServerDialogComponent } from "../../../shared/components/mcp-server-dialog/mcp-server-dialog.component";
 import { McpDetailComponent } from "./mcp-detail.component";
 
@@ -57,9 +60,11 @@ describe("McpDetailComponent", () => {
     listMcpServerTools: ReturnType<typeof vi.fn>;
     getMcpServerUsage: ReturnType<typeof vi.fn>;
     updateMcpServer: ReturnType<typeof vi.fn>;
+    deleteMcpServer: ReturnType<typeof vi.fn>;
   };
   let dialogMock: { open: ReturnType<typeof vi.fn> };
   let paramMap$: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
+  let router: Router;
 
   async function setup(
     serverObs = of(makeServer()),
@@ -72,6 +77,7 @@ describe("McpDetailComponent", () => {
       listMcpServerTools: vi.fn().mockReturnValue(toolsObs),
       getMcpServerUsage: vi.fn().mockReturnValue(usageObs),
       updateMcpServer: vi.fn().mockReturnValue(of(makeServer())),
+      deleteMcpServer: vi.fn().mockReturnValue(of(undefined)),
     };
     dialogMock = {
       open: vi.fn().mockReturnValue({ afterClosed: () => of(undefined) }),
@@ -95,6 +101,9 @@ describe("McpDetailComponent", () => {
     // directly, which re-provides (and shadows) MatDialog via a
     // component-scoped injector — only overrideProvider reaches it.
     TestBed.overrideProvider(MatDialog, { useValue: dialogMock });
+
+    router = TestBed.inject(Router);
+    vi.spyOn(router, "navigate").mockResolvedValue(true);
 
     fixture = TestBed.createComponent(McpDetailComponent);
     fixture.detectChanges();
@@ -281,5 +290,103 @@ describe("McpDetailComponent", () => {
     await setup(of(makeServer()), of([]), of(makeUsage({ recentCalls: [] })));
     const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
     expect(text).toContain("No calls in the selected window.");
+  });
+
+  // Regression tests for review objection 1 (MCP Delete capability lost
+  // when the legacy mcp-servers-page.component.ts was deleted): Delete now
+  // lives on the detail header, mirroring channel-detail.component.ts's
+  // confirmDelete()/deleteAccount() precedent.
+  describe("confirmDelete", () => {
+    it("confirm -> calls deleteMcpServer, shows a snackbar, and navigates back to /connections/mcp", async () => {
+      const server = makeServer({ managed_by: null });
+      await setup(of(server));
+      dialogMock.open.mockReturnValue({ afterClosed: () => of(true) });
+      // Same shadowing gotcha as MatDialog (L2 above): McpDetailComponent
+      // imports MatSnackBarModule directly, which re-provides MatSnackBar
+      // via a component-scoped injector — TestBed.inject would resolve a
+      // different instance. Spy on the one the component actually holds.
+      const snackBar = fixture.debugElement.injector.get(MatSnackBar);
+      const snackSpy = vi.spyOn(snackBar, "open");
+
+      fixture.componentInstance.confirmDelete();
+      fixture.detectChanges();
+
+      expect(dialogMock.open).toHaveBeenCalledTimes(1);
+      expect(dialogMock.open.mock.calls[0]?.[0]).toBe(ConfirmDialogComponent);
+      expect(agentAdminService.deleteMcpServer).toHaveBeenCalledWith(server.id);
+      expect(snackSpy).toHaveBeenCalledWith(
+        "MCP server deleted.",
+        undefined,
+        expect.objectContaining({ duration: 2000 })
+      );
+      expect(router.navigate).toHaveBeenCalledWith(["/connections/mcp"]);
+    });
+
+    it("cancel -> does NOT call deleteMcpServer or navigate", async () => {
+      const server = makeServer({ managed_by: null });
+      await setup(of(server));
+      dialogMock.open.mockReturnValue({ afterClosed: () => of(false) });
+
+      fixture.componentInstance.confirmDelete();
+      fixture.detectChanges();
+
+      expect(dialogMock.open).toHaveBeenCalledTimes(1);
+      expect(agentAdminService.deleteMcpServer).not.toHaveBeenCalled();
+      expect(router.navigate).not.toHaveBeenCalled();
+    });
+
+    it("managed server -> blocked with an explanation, no dialog opened, service NOT called", async () => {
+      const server = makeServer({
+        managed_by: "orchestrator",
+        name: "Synced MCP",
+      });
+      await setup(of(server));
+
+      fixture.componentInstance.confirmDelete();
+      fixture.detectChanges();
+
+      expect(dialogMock.open).not.toHaveBeenCalled();
+      expect(agentAdminService.deleteMcpServer).not.toHaveBeenCalled();
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.saveError()).toContain("orchestrator");
+      expect(fixture.componentInstance.saveError()).toContain(
+        "MANAGED_MCP_SERVER"
+      );
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+      expect(text).toContain("MANAGED_MCP_SERVER");
+    });
+
+    it("failure -> shows a visible error banner and does NOT navigate", async () => {
+      const server = makeServer({ managed_by: null });
+      await setup(of(server));
+      dialogMock.open.mockReturnValue({ afterClosed: () => of(true) });
+      agentAdminService.deleteMcpServer.mockReturnValue(
+        throwError(() => new Error("delete rejected"))
+      );
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      fixture.componentInstance.confirmDelete();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.saveError()).toBe(
+        "Couldn't delete MCP server. Please try again."
+      );
+      expect(router.navigate).not.toHaveBeenCalled();
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+      expect(text).toContain("Couldn't delete MCP server. Please try again.");
+
+      errorSpy.mockRestore();
+    });
+
+    it("no-ops and logs when no server is loaded", async () => {
+      await setup(throwError(() => new Error("Not found")));
+      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      fixture.componentInstance.confirmDelete();
+
+      expect(dialogMock.open).not.toHaveBeenCalled();
+      expect(agentAdminService.deleteMcpServer).not.toHaveBeenCalled();
+      errorSpy.mockRestore();
+    });
   });
 });

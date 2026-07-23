@@ -118,6 +118,31 @@ describe("ChannelDetailComponent", () => {
     expect(el.textContent).toContain("Active");
   });
 
+  it(
+    "splits the identity row and the action/time-range row (T01 finding 4, " +
+      "FIX T05 — mock's two-row rhythm)",
+    () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const header = el.querySelector("app-page-header") as HTMLElement;
+      const toolbar = el.querySelector(".detail-toolbar") as HTMLElement;
+      expect(header).toBeTruthy();
+      expect(toolbar).toBeTruthy();
+
+      // Identity row: name + meta chips + status badge, no Edit/Delete/
+      // range/refresh actions leaking into the page-header's own row.
+      expect(header.textContent).toContain("Ventas AR");
+      expect(header.querySelector("app-status-badge")).toBeTruthy();
+      expect(header.textContent).not.toContain("Edit");
+      expect(header.textContent).not.toContain("Refresh");
+
+      // Action/time-range row: Edit/Delete + range selector + Refresh.
+      expect(toolbar.textContent).toContain("Edit");
+      expect(toolbar.textContent).toContain("Delete");
+      expect(toolbar.textContent).toContain("Refresh");
+      expect(toolbar.querySelector("app-range-selector")).toBeTruthy();
+    }
+  );
+
   it("shows a not-found state for an unknown account id, verbose-logged", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     channels.listAccounts.mockReturnValue(of([]));

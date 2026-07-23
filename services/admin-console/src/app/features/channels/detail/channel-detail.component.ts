@@ -113,12 +113,15 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
       </a>
     </div>
 
+    <!-- Identity row (T01 finding 4, FIX T05): mock's clean single row is
+         back arrow (breadcrumb above) + name + type badge + phone identity +
+         status chip only - no actions, no time-range controls in this row. -->
     <app-page-header
       [title]="headerTitle()"
       subtitle="Usage metrics and JetStream activity for this account."
     >
-      <ng-container slot="actions">
-        @if (account(); as acc) {
+      @if (account(); as acc) {
+        <ng-container slot="status">
           <span class="account-meta">
             <span class="account-meta-chip">{{ acc.channel }}</span>
             <span class="account-meta-chip">{{ acc.externalId }}</span>
@@ -128,30 +131,39 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
             variant="dot"
             [health]="accountHealth()"
           />
-          <button mat-stroked-button type="button" (click)="openEdit()">
-            <mat-icon>edit</mat-icon>
-            Edit
-          </button>
-          <button
-            mat-stroked-button
-            type="button"
-            color="warn"
-            (click)="confirmDelete()"
-          >
-            <mat-icon>delete</mat-icon>
-            Delete
-          </button>
-        }
-        <app-range-selector
-          [value]="rangeSelection()"
-          (valueChange)="onRangeChange($event)"
-        />
-        <button mat-stroked-button type="button" (click)="reload()">
-          <mat-icon>refresh</mat-icon>
-          Refresh
-        </button>
-      </ng-container>
+        </ng-container>
+      }
     </app-page-header>
+
+    <!-- Action/time-range row (T01 finding 4, FIX T05): mock's second row -
+         Edit/Delete stay here (the signed "relocated to account-detail
+         header" decision, INDEX) alongside the time-range tabs + Refresh,
+         separated from the identity row above for breathing room. -->
+    <div class="detail-toolbar">
+      @if (account()) {
+        <button mat-stroked-button type="button" (click)="openEdit()">
+          <mat-icon>edit</mat-icon>
+          Edit
+        </button>
+        <button
+          mat-stroked-button
+          type="button"
+          color="warn"
+          (click)="confirmDelete()"
+        >
+          <mat-icon>delete</mat-icon>
+          Delete
+        </button>
+      }
+      <app-range-selector
+        [value]="rangeSelection()"
+        (valueChange)="onRangeChange($event)"
+      />
+      <button mat-stroked-button type="button" (click)="reload()">
+        <mat-icon>refresh</mat-icon>
+        Refresh
+      </button>
+    </div>
 
     @if (accountNotFound()) {
       <div class="error-banner">
@@ -241,6 +253,13 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
       display: inline-flex;
       align-items: center;
       gap: 6px;
+    }
+    .detail-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 20px;
     }
     .account-meta-chip {
       font-family: var(--rd-font-mono, monospace);

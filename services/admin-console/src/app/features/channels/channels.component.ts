@@ -27,7 +27,6 @@ import type {
 import { NeedsAttentionPanelComponent } from "../../shared/components/needs-attention-panel/needs-attention-panel.component";
 import { PageHeaderComponent } from "../../shared/components/page-header/page-header.component";
 import type { HealthStatus } from "../../shared/components/status-badge/status-badge.component";
-import { UtcDatePipe } from "../../shared/pipes/utc-date.pipe";
 import { formatCompact } from "../../shared/utils/format-compact";
 import {
   AccountDialogComponent,
@@ -204,8 +203,6 @@ export class ChannelsComponent implements OnInit {
   private readonly dialog = inject(MatDialog);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly utcDate = new UtcDatePipe();
-
   readonly channelFilter = signal("whatsapp");
   readonly accounts = signal<IChannelAccount[]>([]);
 
@@ -254,6 +251,13 @@ export class ChannelsComponent implements OnInit {
   /**
    * Fleet inventory table columns. See the class-level template comment
    * for the design/data-source mapping (T01 finding 11).
+   *
+   * T01 finding 3, FIX (T05): reorder/rename columns closer to the mock's
+   * CUENTA/IDENTIDAD/ESTADO/MSGS-24H set (Account/Identity/Status) using
+   * only real fields - the msgs-24h/sparkline cells stay DATA-GAP (same
+   * finding, no per-account time-bucketed series exists). Channel and
+   * Created are dropped: Channel is implied by the page context (a
+   * single-channel fleet view) and Created has no slot in the mock.
    */
   readonly accountColumns: InventoryTableColumn<IChannelAccount>[] = [
     {
@@ -266,13 +270,6 @@ export class ChannelsComponent implements OnInit {
       // isActive === true -> ok, isActive === false -> error. warn/idle
       // are unreachable - no backend degradation signal exists today.
       health: (a): HealthStatus => (a.isActive ? "ok" : "error"),
-    },
-    {
-      key: "channel",
-      header: "Channel",
-      type: "mono",
-      value: (a) => a.channel,
-      width: "120px",
     },
     {
       key: "externalId",
@@ -289,13 +286,6 @@ export class ChannelsComponent implements OnInit {
       // state is derivable from the fields available today (T01 finding 11).
       value: (a) => (a.isActive ? "Active" : "Inactive"),
       width: "110px",
-    },
-    {
-      key: "createdAt",
-      header: "Created",
-      type: "mono",
-      value: (a) => this.formatCreatedAt(a.createdAt),
-      width: "160px",
     },
   ];
 
@@ -334,10 +324,6 @@ export class ChannelsComponent implements OnInit {
       `  -H 'x-http-channel-token: ${token}' \\\n` +
       `  -d '{"from":"customer@example.com","text":"hello"}'`
     );
-  }
-
-  private formatCreatedAt(createdAt: string | undefined): string {
-    return this.utcDate.transform(createdAt, "short") ?? "-";
   }
 
   ngOnInit(): void {

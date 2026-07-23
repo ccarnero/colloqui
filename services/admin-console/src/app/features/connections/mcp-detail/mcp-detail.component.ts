@@ -9,7 +9,8 @@ import {
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
-import { ActivatedRoute, RouterLink } from "@angular/router";
+import { MatSnackBar, MatSnackBarModule } from "@angular/material/snack-bar";
+import { ActivatedRoute, Router, RouterLink } from "@angular/router";
 import type {
   IMcpServer,
   IMcpServerTool,
@@ -17,6 +18,10 @@ import type {
   IMcpUsageRecentCall,
 } from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
+import {
+  ConfirmDialogComponent,
+  type IConfirmDialogData,
+} from "../../../shared/components/confirm-dialog/confirm-dialog.component";
 import { KpiCardComponent } from "../../../shared/components/kpi-card/kpi-card.component";
 import { McpServerDialogComponent } from "../../../shared/components/mcp-server-dialog/mcp-server-dialog.component";
 import type {
@@ -60,6 +65,7 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
     MatDialogModule,
     MatIconModule,
     MatProgressSpinnerModule,
+    MatSnackBarModule,
     PageHeaderComponent,
     StatusBadgeComponent,
     KpiCardComponent,
@@ -100,6 +106,14 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
           <button type="button" class="btn btn-outline btn-sm" (click)="openEdit()">
             <mat-icon>edit</mat-icon>
             Edit
+          </button>
+          <button
+            type="button"
+            class="btn btn-outline btn-sm btn-danger"
+            (click)="confirmDelete()"
+          >
+            <mat-icon>delete</mat-icon>
+            Delete
           </button>
         </ng-container>
       </app-page-header>
@@ -207,6 +221,8 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
     .btn { display: inline-flex; align-items: center; gap: var(--rd-space-3, 6px); border-radius: var(--rd-radius-7, 8px); padding: 7px var(--rd-space-6, 12px); font-size: var(--rd-text-size-sm, 12.5px); font-weight: 500; cursor: pointer; font-family: inherit; border: 1px solid var(--rd-line-3); background: transparent; color: var(--rd-text-1); }
     .btn:hover { background: var(--rd-hover); }
     .btn mat-icon { font-size: 14px; width: 14px; height: 14px; }
+    .btn-danger { color: var(--rd-red); border-color: var(--rd-red); }
+    .btn-danger:hover { background: var(--rd-red-dim); }
     .section { margin-top: var(--rd-space-11, 24px); padding: var(--rd-space-8, 16px); border: 1px solid var(--rd-line); border-radius: var(--rd-radius-7, 8px); }
     .section-title { margin: 0 0 var(--rd-space-6, 12px); font-size: var(--rd-text-size-md, 14px); font-weight: 600; color: var(--rd-text-1); }
     .kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--rd-space-6, 12px); }
@@ -234,8 +250,10 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
 })
 export class McpDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly agentAdminService = inject(AgentAdminService);
   private readonly dialog = inject(MatDialog);
+  private readonly snackBar = inject(MatSnackBar);
 
   readonly server = signal<IMcpServer | null>(null);
   readonly loading = signal(true);
@@ -444,5 +462,95 @@ export class McpDetailComponent implements OnInit {
           },
         });
       });
+  }
+
+  /**
+   * Delete action (review objection 1 fix, per the channel-detail.component.ts
+   * precedent: actions move to the detail surface). Guards managed/synced
+   * servers up front — same semantics as the deleted
+   * `mcp-servers-page.component.ts`'s `remove()`: never round-trip to the
+   * backend's guaranteed 409 (mcp-connections.md §2.3, reason
+   * MANAGED_MCP_SERVER), explain why in the existing saveError banner
+   * instead. Unmanaged servers get the standard confirm dialog, then
+   * `deleteMcpServer` + navigate back to the fleet list on success.
+   */
+  confirmDelete(): void {
+    const server = this.server();
+    if (!server) {
+      console.error(
+        "[McpDetailComponent] delete requested with no server loaded"
+      );
+      return;
+    }
+
+    if (server.managed_by) {
+      console.debug(
+        "[McpDetailComponent] delete blocked for managed MCP server",
+        { id: server.id, managedBy: server.managed_by }
+      );
+      this.saveError.set(
+        `"${server.name}" is synced from ${server.managed_by} and would be ` +
+          `recreated automatically on the next sync (reason: ` +
+          `MANAGED_MCP_SERVER). To remove it, delete the source service ` +
+          `from the registry instead.`
+      );
+      return;
+    }
+
+    const data: IConfirmDialogData = {
+      title: "Delete MCP server",
+      message: `Delete "${server.name}"? This action cannot be undone.`,
+      confirmLabel: "Delete",
+      variant: "danger",
+      icon: "warning_amber",
+    };
+    console.debug("[McpDetailComponent] delete confirmation requested", {
+      id: server.id,
+    });
+    this.dialog
+      .open<ConfirmDialogComponent, IConfirmDialogData, boolean>(
+        ConfirmDialogComponent,
+        { data, autoFocus: false, restoreFocus: true }
+      )
+      .afterClosed()
+      .subscribe((confirmed) => {
+        if (confirmed === true) {
+          this.deleteServer(server);
+        } else {
+          console.debug("[McpDetailComponent] delete cancelled", {
+            id: server.id,
+          });
+        }
+      });
+  }
+
+  private deleteServer(server: IMcpServer): void {
+    this.saveError.set(null);
+    this.agentAdminService.deleteMcpServer(server.id).subscribe({
+      next: () => {
+        console.debug(
+          "[McpDetailComponent] MCP server deleted, navigating back to fleet",
+          { id: server.id }
+        );
+        this.snackBar.open("MCP server deleted.", undefined, {
+          duration: 2000,
+        });
+        this.router.navigate(["/connections/mcp"]).catch((error: unknown) => {
+          console.error(
+            "[McpDetailComponent] navigation back to fleet failed",
+            { id: server.id, error }
+          );
+        });
+      },
+      error: (err: unknown) => {
+        console.error("[McpDetailComponent] failed to delete MCP server", {
+          id: server.id,
+          err,
+        });
+        // Same saveError/save-error-banner pattern as openEdit's failure
+        // path — the page must not fail silently.
+        this.saveError.set("Couldn't delete MCP server. Please try again.");
+      },
+    });
   }
 }

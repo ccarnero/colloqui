@@ -93,11 +93,15 @@ export const routes: Routes = [
           { path: "external-http", redirectTo: "http", pathMatch: "full" },
           { path: "http/internal", redirectTo: "http", pathMatch: "full" },
           { path: "http/external", redirectTo: "http", pathMatch: "full" },
+          // T05 (console-redesign-polish.md, SIGNED decision 5b): the
+          // legacy McpServersPageComponent retired — this route now
+          // renders the unified connections fleet (ConnectionsFleetComponent)
+          // pre-filtered to kind=mcp, same URL/data sources.
           {
             path: "mcp",
             loadComponent: () =>
-              import("./features/connections/mcp-servers-page.component").then(
-                (m) => m.McpServersPageComponent
+              import("./features/connections/mcp-fleet-page.component").then(
+                (m) => m.McpFleetPageComponent
               ),
           },
           {
