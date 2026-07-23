@@ -198,6 +198,14 @@ describe("WorkflowsComponent redesigned list view", () => {
       const executionsCell = cells[3];
       expect(executionsCell.textContent?.trim()).toBe("");
     });
+
+    it("renders a trailing chevron affordance cell per row (T04, mock 10 parity)", async () => {
+      await renderWithData([buildWorkflow({ id: "wf1" })], EMPTY_SUMMARY);
+      const el = fixture.nativeElement as HTMLElement;
+      const row = el.querySelector(".table-row") as HTMLElement;
+      const cells = Array.from(row.querySelectorAll(".table-cell"));
+      expect(cells[cells.length - 1].textContent?.trim()).toBe("›");
+    });
   });
 
   describe("empty state", () => {

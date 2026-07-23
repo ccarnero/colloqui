@@ -51,6 +51,15 @@ const CHANNEL_USAGE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
  * humano %", "1ª respuesta p50/p95", "Tokens LLM · 30d", per-agent table)
  * has NO backing data source anywhere in the app (T01 finding 2) — per the
  * amendment those are a backend follow-up and are NOT rendered here.
+ *
+ * T04 (`console-redesign-polish.md` T01 finding 2): the mock's
+ * `7d/30d/90d` time-range selector + `Export CSV` button are NOT built —
+ * `DashboardService.stats()` and `WorkflowApiService.getSummary()` take no
+ * day-count parameter (verified), so wiring a range control would require
+ * new backend support; catalogued as NEW-CAPABILITY (finding 14), findings
+ * only. The subtitle wording is updated below (FIX, trivial) to describe
+ * the real metric set instead of the excluded "Conversaciones y consumo"
+ * copy.
  */
 @Component({
   selector: "app-analytics",
@@ -65,7 +74,7 @@ const CHANNEL_USAGE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
   template: `
     <app-page-header
       title="Analytics"
-      subtitle="Real usage and performance metrics"
+      subtitle="Usage and consumption · entire tenant"
     />
 
     <!-- KPI row: dashboard stats (requests/sessions/latency/errors),

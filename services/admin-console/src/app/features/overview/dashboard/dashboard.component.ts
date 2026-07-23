@@ -32,6 +32,16 @@ import { PageHeaderComponent } from "../../../shared/components/page-header/page
 import { SparklineComponent } from "../../../shared/components/sparkline/sparkline.component";
 import { formatCompact } from "../../../shared/utils/format-compact";
 
+/**
+ * T04 audit note (`manual-loops/admin-console/console-redesign-polish.md`,
+ * T01 finding 1): after re-checking every delta recorded for `/dashboard`
+ * vs `01-dashboard.png`, the only FIX items are the topbar/tenant-chip
+ * restructure (owned by T08) and the subtitle's "todos los servicios
+ * operativos" aggregate (NEW-CAPABILITY, no per-service health feed —
+ * finding 14). The KPI row, `API usage · 7 days` panel and `Actividad`
+ * panel composition already match the mock (card row -> two-panel row);
+ * no presentation change is made here.
+ */
 @Component({
   selector: "app-dashboard",
   changeDetection: ChangeDetectionStrategy.OnPush,

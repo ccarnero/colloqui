@@ -51,6 +51,16 @@ import {
  * have); this list is read-focused per the design
  * (`design/10-workflows.png`: name/trigger/actions/executions/
  * created/status + chevron, no inline mutation controls).
+ *
+ * T04 (`console-redesign-polish.md` T01 finding 9): the metric-strip KPI
+ * row (Workflows/Active/Completed(7d)/Failed(7d)) has no equivalent in
+ * `10-workflows.png` — the mock goes straight from the header subtitle to
+ * the table. All four numbers are real (client-derived from the workflow
+ * list + the existing summary endpoint), so this is flagged in the
+ * findings as a human call ("useful signal" vs. mock parity), not a clear
+ * FIX — kept as-is pending sign-off, not removed unilaterally. The
+ * trailing chevron column below IS a clear per-row affordance delta and is
+ * added (existing row-click navigation, no new wiring).
  */
 @Component({
   selector: "app-workflows",
@@ -225,6 +235,16 @@ export class WorkflowsComponent implements OnInit {
       value: (wf) => deriveWorkflowStatusLabel(wf),
       health: (wf) => mapWorkflowStatusToHealth(deriveWorkflowStatusLabel(wf)),
       width: "0.9fr",
+    },
+    // Trailing chevron affordance (T04, T01 finding 9): mock 10 shows a
+    // per-row "›" click hint; the row is already fully clickable
+    // (onWorkflowRowClick), this is presentation-only, no new wiring.
+    {
+      key: "chevron",
+      header: "",
+      type: "text",
+      value: () => "›",
+      width: "24px",
     },
   ];
 
