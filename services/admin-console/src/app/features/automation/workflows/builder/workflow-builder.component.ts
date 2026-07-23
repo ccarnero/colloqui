@@ -21,6 +21,7 @@ import {
   FFlowModule,
   type FReassignConnectionEvent,
 } from "@foblex/flow";
+import { WorkflowRunActionsService } from "../detail/workflow-run-actions.service";
 import { deserializeFlow } from "../domain/flow-deserializer";
 import { serializeFlow } from "../domain/flow-serializer";
 import type { ValidationError } from "../domain/validation/validation.types";
@@ -209,9 +210,75 @@ function pruneConflictingConnections(
               {{ saveStateLabel() }}
             </div>
 
+            <!-- Segmented control (T02): replaces the detail wrapper's
+                 sub-tabs row for this route — mock's "Editor / Runs /
+                 Settings" navigation, targeting the same child routes the
+                 wrapper's sub-tabs used (:id/builder, :id/executions,
+                 :id/settings). Only rendered once a persisted workflow id
+                 is known (unsaved /workflows/new has nothing to navigate
+                 to yet). -->
+            @if (workflowId(); as wfId) {
+              <div
+                class="chrome-pill chrome-segmented"
+                role="tablist"
+                data-testid="builder-segmented-control"
+              >
+                <button
+                  type="button"
+                  class="segment active"
+                  role="tab"
+                  aria-selected="true"
+                  disabled
+                >
+                  Editor
+                </button>
+                <button
+                  type="button"
+                  class="segment"
+                  role="tab"
+                  aria-selected="false"
+                  (click)="goToTab(wfId, 'executions')"
+                >
+                  Runs
+                </button>
+                <button
+                  type="button"
+                  class="segment"
+                  role="tab"
+                  aria-selected="false"
+                  (click)="goToTab(wfId, 'settings')"
+                >
+                  Settings
+                </button>
+              </div>
+            }
+
             <span class="chrome-spacer"></span>
 
             <div class="chrome-pill chrome-actions">
+              <!-- Run now / Pause (T02): relocated here from the detail
+                   wrapper's header, reusing the EXACT wiring
+                   (WorkflowRunActionsService — same dialog, same API
+                   calls) so behavior stays identical on every tab. Only
+                   shown once a persisted workflow id is known. -->
+              @if (workflowId(); as wfId) {
+                <button
+                  mat-flat-button
+                  type="button"
+                  (click)="runNow(wfId)"
+                >
+                  <mat-icon>play_circle</mat-icon>
+                  Run now
+                </button>
+                <button
+                  mat-flat-button
+                  type="button"
+                  (click)="pauseWorkflow(wfId)"
+                >
+                  <mat-icon>pause_circle</mat-icon>
+                  Pause
+                </button>
+              }
               <button
                 mat-flat-button
                 type="button"
@@ -451,6 +518,31 @@ function pruneConflictingConnections(
       flex: 1;
       pointer-events: none;
     }
+    /* Segmented control (T02) — Editor / Runs / Settings, replacing the
+       detail wrapper's sub-tabs row while the builder is full-bleed. */
+    .chrome-segmented {
+      padding: 2px;
+      gap: 2px;
+    }
+    .segment {
+      border: none;
+      background: transparent;
+      color: var(--rd-text-2);
+      font-size: var(--rd-text-size-xs);
+      font-family: inherit;
+      padding: var(--rd-space-2) var(--rd-space-5);
+      border-radius: var(--rd-radius-5);
+      cursor: pointer;
+    }
+    .segment:hover:not(:disabled) {
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
+    }
+    .segment.active {
+      background: var(--rd-accent);
+      color: var(--rd-text-on-accent);
+      cursor: default;
+    }
     .chrome-actions {
       gap: var(--rd-space-3);
     }
@@ -561,6 +653,7 @@ export class WorkflowBuilderComponent implements OnInit {
   private readonly api = inject(WorkflowApiService);
   private readonly snackBar = inject(MatSnackBar);
   private readonly dialog = inject(MatDialog);
+  private readonly runActions = inject(WorkflowRunActionsService);
   private readonly canvas = viewChild(FCanvasComponent);
 
   readonly flow = signal<IWorkflowFlow>({
@@ -570,6 +663,15 @@ export class WorkflowBuilderComponent implements OnInit {
     nodes: {},
     connections: {},
   });
+
+  /**
+   * Resolved `:id` for the workflow being edited (T02) — mirrors the
+   * `WorkflowDetailComponent.id` resolution below, so the floating
+   * chrome's segmented control and Run now/Pause buttons only render once
+   * a persisted workflow is known (nothing to navigate to / act on from
+   * an unsaved `/workflows/new` canvas).
+   */
+  readonly workflowId = signal<string | null>(null);
 
   readonly selectedNodeKey = signal<string | null>(null);
   readonly testPanelOpen = signal(false);
@@ -762,6 +864,13 @@ export class WorkflowBuilderComponent implements OnInit {
       this.route.snapshot.paramMap.get("id") ??
       this.route.parent?.snapshot.paramMap.get("id") ??
       null;
+    this.workflowId.set(id);
+    console.debug(
+      "[WorkflowBuilderComponent] resolved workflow id for floating chrome",
+      {
+        id,
+      }
+    );
     if (id) {
       this.api.get(id).subscribe({
         next: (dto) => {
@@ -1166,5 +1275,49 @@ export class WorkflowBuilderComponent implements OnInit {
       key: this.flow().key,
     });
     this.router.navigate(["/workflows"]);
+  }
+
+  /**
+   * Segmented control navigation (T02) — routes to the same child paths
+   * the detail wrapper's sub-tabs used (`:id/executions`, `:id/settings`).
+   * "Editor" has no target: it is this route, rendered as the disabled
+   * active segment.
+   */
+  protected goToTab(id: string, tab: "executions" | "settings"): void {
+    console.debug("[WorkflowBuilderComponent] segmented control navigation", {
+      id,
+      tab,
+    });
+    void this.router.navigate(["/workflows", id, tab]);
+  }
+
+  /**
+   * Run now (T02) — relocated into the floating chrome, delegating to
+   * `WorkflowRunActionsService` so it fires the EXACT same dialog + API
+   * call as `WorkflowDetailComponent.runNow` on the other tabs.
+   */
+  protected runNow(id: string): void {
+    console.debug(
+      "[WorkflowBuilderComponent] run now clicked (floating chrome)",
+      {
+        id,
+      }
+    );
+    this.runActions.runNow(id);
+  }
+
+  /**
+   * Pause (T02) — relocated into the floating chrome, delegating to
+   * `WorkflowRunActionsService` so it stays byte-identical to
+   * `WorkflowDetailComponent.pause` (currently a no-op, API pending).
+   */
+  protected pauseWorkflow(id: string): void {
+    console.debug(
+      "[WorkflowBuilderComponent] pause clicked (floating chrome)",
+      {
+        id,
+      }
+    );
+    this.runActions.pause(id);
   }
 }

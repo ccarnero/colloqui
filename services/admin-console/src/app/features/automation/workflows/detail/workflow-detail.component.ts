@@ -3,29 +3,45 @@ import {
   Component,
   computed,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
-import { FormControl, ReactiveFormsModule } from "@angular/forms";
-import { MatButtonModule } from "@angular/material/button";
-import { MatDialog, MatDialogModule } from "@angular/material/dialog";
-import { MatFormFieldModule } from "@angular/material/form-field";
-import { MatInputModule } from "@angular/material/input";
+import { toSignal } from "@angular/core/rxjs-interop";
 import {
   ActivatedRoute,
+  NavigationEnd,
   Router,
   RouterOutlet,
 } from "@angular/router";
-import { toSignal } from "@angular/core/rxjs-interop";
+import { filter } from "rxjs/operators";
 import { BreadcrumbsComponent } from "../../../../shared/components/breadcrumbs/breadcrumbs.component";
 import {
-  SubTabsComponent,
   type ISubTab,
+  SubTabsComponent,
 } from "../../../../shared/components/sub-tabs/sub-tabs.component";
 import {
-  WorkflowApiService,
   type IWorkflowDefinitionDto,
+  WorkflowApiService,
 } from "../services/workflow-api.service";
+import { WorkflowRunActionsService } from "./workflow-run-actions.service";
+
+/**
+ * Walks the active child route chain from `route` and returns the deepest
+ * child's route-config `path` segment (e.g. "builder", "executions").
+ * Mirrors `shell.component.ts`'s `readRouteDataFlag` walk pattern for
+ * detecting the currently active nested route (T02).
+ */
+function activeChildPath(route: ActivatedRoute): string | null {
+  let r: ActivatedRoute | null = route.firstChild;
+  let path: string | null = null;
+  while (r) {
+    if (r.snapshot.routeConfig?.path) {
+      path = r.snapshot.routeConfig.path;
+    }
+    r = r.firstChild;
+  }
+  return path;
+}
 
 /**
  * Shell for `/workflows/:id` — the workflow mini-app. Renders:
@@ -34,49 +50,48 @@ import {
  *   - sub-tabs row (Overview / Builder / Executions / Settings)
  *   - <router-outlet/> for the active sub-tab
  *
- * The Builder tab declares `subNavCollapsed: true` in its route data,
- * which the shell-level sub-nav reads to collapse to icon-mode.
+ * T02 (SPEC decision 2): when the active child route is `builder`, this
+ * wrapper chrome (breadcrumb, title row, sub-tabs row) is suppressed so the
+ * builder canvas renders edge-to-edge — the builder's own floating chrome
+ * carries the equivalent navigation (segmented control) and actions
+ * (Run now / Pause) instead. The route itself still sets
+ * `subNavHidden: true` (app.routes.ts) so the shell-level sub-nav rail also
+ * hides; that flag is unrelated to this component's own chrome, which is
+ * suppressed here via `isBuilderActive`.
  */
 @Component({
   selector: "app-workflow-detail",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [
-    RouterOutlet,
-    BreadcrumbsComponent,
-    SubTabsComponent,
-    MatDialogModule,
-    MatFormFieldModule,
-    MatInputModule,
-    ReactiveFormsModule,
-    MatButtonModule,
-  ],
+  imports: [RouterOutlet, BreadcrumbsComponent, SubTabsComponent],
   template: `
     <div class="detail">
-      <app-breadcrumbs [crumbs]="crumbs()" />
+      @if (!isBuilderActive()) {
+        <app-breadcrumbs [crumbs]="crumbs()" />
 
-      <header class="detail-h">
-        <div class="detail-title-block">
-          <h1 class="detail-title">
-            {{ workflow()?.name ?? id() }}
-            @if (workflow(); as wf) {
-              <span class="status-pill" [class]="'status-' + statusOf(wf)">
-                <span class="dot" aria-hidden="true"></span>
-                {{ statusLabel(wf) }}
-              </span>
-            }
-          </h1>
-        </div>
-        <div class="detail-actions">
-          <button class="btn" type="button" (click)="runNow()">Run now</button>
-          <button class="btn" type="button" (click)="pause()">Pause</button>
-          <button class="btn btn-primary" type="button" (click)="goBuilder()">
-            Edit
-          </button>
-        </div>
-      </header>
+        <header class="detail-h">
+          <div class="detail-title-block">
+            <h1 class="detail-title">
+              {{ workflow()?.name ?? id() }}
+              @if (workflow(); as wf) {
+                <span class="status-pill" [class]="'status-' + statusOf(wf)">
+                  <span class="dot" aria-hidden="true"></span>
+                  {{ statusLabel(wf) }}
+                </span>
+              }
+            </h1>
+          </div>
+          <div class="detail-actions">
+            <button class="btn" type="button" (click)="runNow()">Run now</button>
+            <button class="btn" type="button" (click)="pause()">Pause</button>
+            <button class="btn btn-primary" type="button" (click)="goBuilder()">
+              Edit
+            </button>
+          </div>
+        </header>
 
-      <app-sub-tabs [tabs]="tabs()" />
+        <app-sub-tabs [tabs]="tabs()" />
+      }
 
       <router-outlet />
     </div>
@@ -158,7 +173,7 @@ export class WorkflowDetailComponent implements OnInit {
   private readonly api = inject(WorkflowApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly dialog = inject(MatDialog);
+  private readonly runActions = inject(WorkflowRunActionsService);
 
   /** Reactive id from the route param (`:id`). */
   private readonly params = toSignal(this.route.params, {
@@ -183,6 +198,30 @@ export class WorkflowDetailComponent implements OnInit {
     { label: this.workflow()?.name ?? this.id() },
   ]);
 
+  /** Recomputes on every NavigationEnd so `isBuilderActive` stays fresh. */
+  private readonly navEnd = toSignal(
+    this.router.events.pipe(filter((e) => e instanceof NavigationEnd)),
+    { initialValue: null }
+  );
+
+  /**
+   * T02: true while the active nested child route is `builder`. Drives
+   * suppression of the wrapper chrome (breadcrumb, title row, sub-tabs) so
+   * the builder canvas can render edge-to-edge; the builder's own floating
+   * chrome carries the equivalent navigation and actions instead.
+   */
+  readonly isBuilderActive = computed<boolean>(() => {
+    // Touch navEnd so this recomputes on every navigation.
+    this.navEnd();
+    const path = activeChildPath(this.route);
+    const isBuilder = path === "builder";
+    console.debug("[WorkflowDetailComponent] active child route recomputed", {
+      path,
+      isBuilder,
+    });
+    return isBuilder;
+  });
+
   ngOnInit(): void {
     const id = this.id();
     if (id) {
@@ -203,65 +242,31 @@ export class WorkflowDetailComponent implements OnInit {
     return wf.trigger ? "Active" : "Draft";
   }
 
+  /**
+   * Delegates to `WorkflowRunActionsService` (T02) so this wrapper header
+   * and the builder's floating chrome fire the EXACT same dialog + API
+   * call — no wiring duplicated between the two surfaces.
+   */
   protected runNow(): void {
     const id = this.id();
-    if (!id) return;
-
-    const dialogRef = this.dialog.open(RunWorkflowDialogComponent, {
-      width: "400px",
-    });
-
-    dialogRef.afterClosed().subscribe((timeoutSec: number | undefined) => {
-      if (timeoutSec === undefined) return; // Cancel
-      this.api.execute(id, { agentTimeoutSec: timeoutSec }).subscribe({
-        next: () => {
-          // After kicking off, route into Executions so the user sees it.
-          void this.router.navigate(["/workflows", id, "executions"]);
-        },
-        error: () => {
-          /* swallow — could surface a snack later */
-        },
-      });
-    });
+    if (!id) {
+      return;
+    }
+    this.runActions.runNow(id);
   }
 
   protected pause(): void {
-    /* PHASE 3 TODO: wire pause action when API supports it. */
+    const id = this.id();
+    if (!id) {
+      return;
+    }
+    this.runActions.pause(id);
   }
 
   protected goBuilder(): void {
     const id = this.id();
-    if (id) void this.router.navigate(["/workflows", id, "builder"]);
+    if (id) {
+      void this.router.navigate(["/workflows", id, "builder"]);
+    }
   }
-}
-
-@Component({
-  selector: "app-run-workflow-dialog",
-  standalone: true,
-  template: `
-    <h2 mat-dialog-title>Run Workflow</h2>
-    <mat-dialog-content>
-      <mat-form-field appearance="outline" style="width: 100%;">
-        <mat-label>Agent Timeout (seconds)</mat-label>
-        <input matInput type="number" [formControl]="timeoutControl" min="60" max="3600" />
-        <mat-hint>Default: 900 (15 minutes). Max: 3600 (1 hour).</mat-hint>
-      </mat-form-field>
-    </mat-dialog-content>
-    <mat-dialog-actions align="end">
-      <button mat-button mat-dialog-close>Cancel</button>
-      <button mat-raised-button color="primary" [mat-dialog-close]="timeoutControl.value">
-        Execute
-      </button>
-    </mat-dialog-actions>
-  `,
-  imports: [
-    MatDialogModule,
-    MatFormFieldModule,
-    MatInputModule,
-    ReactiveFormsModule,
-    MatButtonModule,
-  ],
-})
-export class RunWorkflowDialogComponent {
-  readonly timeoutControl = new FormControl(900, { nonNullable: true });
 }
