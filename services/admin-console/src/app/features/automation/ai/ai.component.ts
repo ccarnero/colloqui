@@ -179,8 +179,22 @@ const AUTOSAVE_INTERVAL_MS = 800;
         </div>
       }
 
-      <div class="ide-layout" [class.collapsed]="paletteCollapsed()">
-        <aside class="ide-nav">
+      <!--
+        Single scrolling column (mock 07/08/09, SPEC decision 5c): the old
+        fixed 3-pane workstation (icon rail + config-tree sidebar + docked
+        editor pane) is replaced by a Configuration nav list that scrolls
+        WITH the page, followed by every section stacked in mock order —
+        General, Instructions (System Prompt / Rules / Soul / Detected
+        References), Capabilities (Skills / Tools / Built-in Tools / MCP
+        Servers / Knowledge Bases), Advanced (Variables / Versions). Nothing
+        is @switch-gated anymore: every section renders, and the nav's
+        (select) output now scrolls the matching #section-* anchor into view
+        instead of swapping which section is visible (onNavSelect). Form
+        bindings/Monaco instances/save path below are UNCHANGED from the old
+        @switch cases (verbatim reuse, layout-only restructure).
+      -->
+      <div class="single-column-layout">
+        <nav class="config-nav" aria-label="Agent configuration sections">
           <app-ai-editor-nav
             [selection]="selection()"
             [skills]="subagents"
@@ -189,7 +203,7 @@ const AUTOSAVE_INTERVAL_MS = 800;
             [selectedTemplateId]="selectedTemplateId"
             [collapsed]="paletteCollapsed()"
             [editingAgentId]="editingAgentId()"
-            (select)="setSelection($event)"
+            (select)="onNavSelect($event)"
             (addSkill)="addSubagentAndFocus()"
             (addSkillFromCatalog)="addSubagentFromCatalog()"
             (addTool)="addToolAndFocus()"
@@ -198,303 +212,334 @@ const AUTOSAVE_INTERVAL_MS = 800;
             (applyTemplate)="applyTemplateById($event)"
             (toggleCollapsed)="togglePaletteCollapsed()"
           />
-        </aside>
+        </nav>
 
-        <main class="ide-center">
-          <section class="section-card editor-card">
-            @if (loading()) {
-              <div class="loading-overlay">
-                <mat-spinner diameter="24" />
+        <main class="editor-column">
+          @if (loading()) {
+            <div class="loading-overlay">
+              <mat-spinner diameter="24" />
+            </div>
+          }
+
+          <section class="section-card" id="section-general">
+            <div class="section-card-header">
+              <div>
+                <div class="section-card-title">General</div>
+                <div class="section-card-sub">
+                  Name, description, and the LLM connector for this agent.
+                </div>
+              </div>
+            </div>
+            <app-ai-agent-config
+              section="general"
+              [llmConnectors]="llmConnectors()"
+              [editorOptions]="editorOptions"
+              [(agentName)]="agentName"
+              [(description)]="description"
+              [(provider)]="provider"
+              [(model)]="model"
+              [(connectorId)]="connectorId"
+              [(temperature)]="temperature"
+              [(maxTokens)]="maxTokens"
+            />
+          </section>
+
+          <section class="section-card" id="section-instruction-prompt">
+            <div class="section-card-header">
+              <div>
+                <div class="section-card-title">System Prompt</div>
+                <div class="section-card-sub">
+                  The agent's core instructions. Use
+                  <code>&#64;skill:name</code> and
+                  <code>&#64;tool:name</code> to reference skills and tools.
+                </div>
+              </div>
+            </div>
+            <div class="focus-pad">
+              <ngx-monaco-editor
+                class="prompt-editor-tall"
+                [options]="editorOptions"
+                [(ngModel)]="systemPrompt"
+                (onInit)="onPromptEditorInit($event)"
+              />
+            </div>
+          </section>
+
+          <section class="section-card" id="section-instruction-rules">
+            <div class="section-card-header">
+              <div>
+                <div class="section-card-title">Rules</div>
+                <div class="section-card-sub">
+                  Hard constraints and policies the agent must follow.
+                </div>
+              </div>
+            </div>
+            <div class="focus-pad">
+              <ngx-monaco-editor
+                class="prompt-editor-tall"
+                [options]="editorOptions"
+                [(ngModel)]="rules"
+                (onInit)="onPromptEditorInit($event)"
+              />
+            </div>
+          </section>
+
+          <section class="section-card" id="section-instruction-soul">
+            <div class="section-card-header">
+              <div>
+                <div class="section-card-title">Soul</div>
+                <div class="section-card-sub">
+                  Personality, voice, and tone &mdash; how the agent feels
+                  to talk to.
+                </div>
+              </div>
+            </div>
+            <div class="focus-pad">
+              <ngx-monaco-editor
+                class="prompt-editor-tall"
+                [options]="editorOptions"
+                [(ngModel)]="soul"
+                (onInit)="onPromptEditorInit($event)"
+              />
+            </div>
+          </section>
+
+          <section class="section-card" id="section-instruction-mentions">
+            <div class="section-card-header">
+              <div>
+                <div class="section-card-title">Detected References</div>
+                <div class="section-card-sub">
+                  Skills and tools your prompt references, plus quick-insert
+                  chips for everything available.
+                </div>
+              </div>
+            </div>
+            <div class="focus-pad mentions-view">
+              @if (extractedMentions().length > 0) {
+                <div class="mentions-block">
+                  <label class="mentions-label">In your prompt</label>
+                  <div class="mentions-chips">
+                    @for (mention of extractedMentions(); track mention) {
+                      <span
+                        class="mention-chip"
+                        [class.skill]="mention.startsWith('@skill')"
+                        [class.tool]="mention.startsWith('@tool')"
+                      >
+                        {{ mention }}
+                      </span>
+                    }
+                  </div>
+                </div>
+              } @else {
+                <div class="mentions-empty">
+                  Your prompt doesn't reference any skill or tool yet. Use
+                  <code>&#64;skill:name</code> or
+                  <code>&#64;tool:name</code> in the System Prompt to wire
+                  them in.
+                </div>
+              }
+
+              @if (availableSkills().length > 0) {
+                <div class="mentions-block">
+                  <label class="mentions-label">Available skills</label>
+                  <div class="mentions-chips">
+                    @for (skill of availableSkills(); track skill.id) {
+                      <span class="mention-chip ghost">
+                        &#64;skill:{{ skill.id }}
+                      </span>
+                    }
+                  </div>
+                </div>
+              }
+
+              @if (availableTools().length > 0) {
+                <div class="mentions-block">
+                  <label class="mentions-label">Available tools</label>
+                  <div class="mentions-chips">
+                    @for (tool of availableTools(); track tool.id) {
+                      <span class="mention-chip ghost">
+                        &#64;tool:{{ tool.id }}
+                      </span>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          </section>
+
+          <section class="section-card" id="section-skills">
+            <div class="section-card-header">
+              <div>
+                <div class="section-card-title">Skills</div>
+                <div class="section-card-sub">
+                  Focused sub-agents this agent can delegate to.
+                </div>
+              </div>
+            </div>
+            @for (skill of subagents; track $index) {
+              <div class="stacked-item" id="section-skill-{{ $index }}">
+                <app-ai-editor-skill-form
+                  [skill]="skill"
+                  [editorOptions]="editorOptions"
+                  (skillChange)="onSkillFormChange($index, $event)"
+                  (remove)="removeSubagent($index)"
+                  (saveToCatalog)="saveToCatalog(skill)"
+                  (syncFromCatalog)="syncFromCatalog(skill)"
+                />
+              </div>
+            } @empty {
+              <div class="empty-focus">No skills yet.</div>
+            }
+          </section>
+
+          <section class="section-card" id="section-tools">
+            <div class="section-card-header">
+              <div>
+                <div class="section-card-title">Tools</div>
+                <div class="section-card-sub">
+                  HTTP and adapter-backed tools this agent can call.
+                </div>
+              </div>
+            </div>
+            @for (tool of tools; track $index) {
+              <div class="stacked-item" id="section-tool-{{ $index }}">
+                <app-ai-editor-tool-form
+                  [tool]="tool"
+                  (toolChange)="onToolFormChange($index, $event)"
+                  (remove)="removeTool($index)"
+                />
+              </div>
+            } @empty {
+              <div class="empty-focus">No tools yet.</div>
+            }
+          </section>
+
+          <section class="section-card" id="section-builtin-tools">
+            @if (editingAgentId()) {
+              <div class="section-card-header">
+                <div>
+                  <div class="section-card-title">Built-in Tools</div>
+                  <div class="section-card-sub">
+                    Platform-provided tools that the agent can use. Toggle
+                    tools on or off to control which built-in capabilities
+                    are available.
+                  </div>
+                </div>
+              </div>
+              <app-ai-builtin-tools
+                [agentId]="editingAgentId()!"
+                [enabledTools]="currentEnabledTools()"
+                [toolDescriptionOverrides]="currentToolDescriptionOverrides()"
+                (toolsSaved)="onBuiltinToolsSaved($event)"
+                (toolDescriptionsSaved)="onToolDescriptionsSaved($event)"
+              />
+            } @else {
+              <div class="section-card-header">
+                <div>
+                  <div class="section-card-title">Built-in Tools</div>
+                </div>
+              </div>
+              <div class="empty-focus">
+                Save the agent first to configure built-in tools.
               </div>
             }
+          </section>
 
-            @switch (selection().kind) {
-              @case ('general') {
-                <div class="section-card-header">
-                  <div>
-                    <div class="section-card-title">General</div>
-                    <div class="section-card-sub">
-                      Name, description, and the LLM connector for this agent.
-                    </div>
+          <section class="section-card" id="section-mcp-servers">
+            @if (editingAgentId()) {
+              <div class="section-card-header">
+                <div>
+                  <div class="section-card-title">MCP Servers</div>
+                  <div class="section-card-sub">
+                    Model Context Protocol servers that the agent can use to
+                    access external tools and data sources.
                   </div>
                 </div>
-                <app-ai-agent-config
-                  section="general"
-                  [llmConnectors]="llmConnectors()"
-                  [editorOptions]="editorOptions"
-                  [(agentName)]="agentName"
-                  [(description)]="description"
-                  [(provider)]="provider"
-                  [(model)]="model"
-                  [(connectorId)]="connectorId"
-                  [(temperature)]="temperature"
-                  [(maxTokens)]="maxTokens"
+              </div>
+              <app-ai-mcp-servers-selector
+                [agentId]="editingAgentId()!"
+                [enabledMcpServers]="currentMcpServers()"
+                [enabledMcpTools]="currentEnabledMcpTools()"
+                [toolDescriptionOverrides]="
+                  currentToolDescriptionOverrides()
+                "
+                (serversSaved)="onMcpServersSaved($event)"
+                (mcpToolsSaved)="onEnabledMcpToolsSaved($event)"
+                (toolDescriptionsSaved)="onToolDescriptionsSaved($event)"
+              />
+            } @else {
+              <div class="section-card-header">
+                <div>
+                  <div class="section-card-title">MCP Servers</div>
+                </div>
+              </div>
+              <div class="empty-focus">
+                Save the agent first to configure MCP servers.
+              </div>
+            }
+          </section>
+
+          <section class="section-card" id="section-knowledge-bases">
+            <div class="section-card-header">
+              <div>
+                <div class="section-card-title">Knowledge Bases</div>
+                <div class="section-card-sub">
+                  Select knowledge bases for this agent to search at runtime.
+                </div>
+              </div>
+            </div>
+            <app-ai-agent-config
+              section="knowledgeBases"
+              [llmConnectors]="llmConnectors()"
+              [editorOptions]="editorOptions"
+              [knowledgeBaseList]="knowledgeBaseList"
+              [(selectedKbIds)]="selectedKbIds"
+            />
+          </section>
+
+          <section class="section-card" id="section-variables">
+            <div class="section-card-header">
+              <div>
+                <div class="section-card-title">Variables</div>
+                <div class="section-card-sub">
+                  Define the input variables the agent expects and the output
+                  variables it produces.
+                </div>
+              </div>
+            </div>
+            <app-ai-agent-config
+              section="variables"
+              [llmConnectors]="llmConnectors()"
+              [editorOptions]="editorOptions"
+              [(inputVariables)]="inputVariables"
+              [(outputVariables)]="outputVariables"
+            />
+          </section>
+
+          <section class="section-card" id="section-versions">
+            @if (editingAgentId()) {
+              <div class="section-card-header">
+                <div>
+                  <div class="section-card-title">Version History</div>
+                  <div class="section-card-sub">
+                    View past versions, rollback to any version, or delete old versions.
+                  </div>
+                </div>
+              </div>
+              <div class="focus-pad">
+                <app-agent-versions
+                  [agentId]="editingAgentId()!"
+                  (rollback)="rollbackToVersion($event)"
+                  (versionDeleted)="onVersionDeleted($event)"
                 />
-              }
-
-              @case ('instruction-prompt') {
-                <div class="section-card-header">
-                  <div>
-                    <div class="section-card-title">System Prompt</div>
-                    <div class="section-card-sub">
-                      The agent's core instructions. Use
-                      <code>&#64;skill:name</code> and
-                      <code>&#64;tool:name</code> to reference skills and tools.
-                    </div>
-                  </div>
+              </div>
+            } @else {
+              <div class="section-card-header">
+                <div>
+                  <div class="section-card-title">Version History</div>
                 </div>
-                <div class="focus-pad">
-                  <ngx-monaco-editor
-                    class="prompt-editor-tall"
-                    [options]="editorOptions"
-                    [(ngModel)]="systemPrompt"
-                    (onInit)="onPromptEditorInit($event)"
-                  />
-                </div>
-              }
-
-              @case ('instruction-rules') {
-                <div class="section-card-header">
-                  <div>
-                    <div class="section-card-title">Rules</div>
-                    <div class="section-card-sub">
-                      Hard constraints and policies the agent must follow.
-                    </div>
-                  </div>
-                </div>
-                <div class="focus-pad">
-                  <ngx-monaco-editor
-                    class="prompt-editor-tall"
-                    [options]="editorOptions"
-                    [(ngModel)]="rules"
-                    (onInit)="onPromptEditorInit($event)"
-                  />
-                </div>
-              }
-
-              @case ('instruction-soul') {
-                <div class="section-card-header">
-                  <div>
-                    <div class="section-card-title">Soul</div>
-                    <div class="section-card-sub">
-                      Personality, voice, and tone &mdash; how the agent feels
-                      to talk to.
-                    </div>
-                  </div>
-                </div>
-                <div class="focus-pad">
-                  <ngx-monaco-editor
-                    class="prompt-editor-tall"
-                    [options]="editorOptions"
-                    [(ngModel)]="soul"
-                    (onInit)="onPromptEditorInit($event)"
-                  />
-                </div>
-              }
-
-              @case ('instruction-mentions') {
-                <div class="section-card-header">
-                  <div>
-                    <div class="section-card-title">Detected References</div>
-                    <div class="section-card-sub">
-                      Skills and tools your prompt references, plus quick-insert
-                      chips for everything available.
-                    </div>
-                  </div>
-                </div>
-                <div class="focus-pad mentions-view">
-                  @if (extractedMentions().length > 0) {
-                    <div class="mentions-block">
-                      <label class="mentions-label">In your prompt</label>
-                      <div class="mentions-chips">
-                        @for (mention of extractedMentions(); track mention) {
-                          <span
-                            class="mention-chip"
-                            [class.skill]="mention.startsWith('@skill')"
-                            [class.tool]="mention.startsWith('@tool')"
-                          >
-                            {{ mention }}
-                          </span>
-                        }
-                      </div>
-                    </div>
-                  } @else {
-                    <div class="mentions-empty">
-                      Your prompt doesn't reference any skill or tool yet. Use
-                      <code>&#64;skill:name</code> or
-                      <code>&#64;tool:name</code> in the System Prompt to wire
-                      them in.
-                    </div>
-                  }
-
-                  @if (availableSkills().length > 0) {
-                    <div class="mentions-block">
-                      <label class="mentions-label">Available skills</label>
-                      <div class="mentions-chips">
-                        @for (skill of availableSkills(); track skill.id) {
-                          <span class="mention-chip ghost">
-                            &#64;skill:{{ skill.id }}
-                          </span>
-                        }
-                      </div>
-                    </div>
-                  }
-
-                  @if (availableTools().length > 0) {
-                    <div class="mentions-block">
-                      <label class="mentions-label">Available tools</label>
-                      <div class="mentions-chips">
-                        @for (tool of availableTools(); track tool.id) {
-                          <span class="mention-chip ghost">
-                            &#64;tool:{{ tool.id }}
-                          </span>
-                        }
-                      </div>
-                    </div>
-                  }
-                </div>
-              }
-
-              @case ('skill') {
-                @if (focusedSkill(); as skill) {
-                  <app-ai-editor-skill-form
-                    [skill]="skill"
-                    [editorOptions]="editorOptions"
-                    (skillChange)="onSkillFormChange(focusedIndex(), $event)"
-                    (remove)="removeSubagent(focusedIndex())"
-                    (saveToCatalog)="saveToCatalog(focusedSkill()!)"
-                    (syncFromCatalog)="syncFromCatalog(focusedSkill()!)"
-                  />
-                } @else {
-                  <div class="empty-focus">Select a skill from the left panel.</div>
-                }
-              }
-
-              @case ('tool') {
-                @if (focusedTool(); as tool) {
-                  <app-ai-editor-tool-form
-                    [tool]="tool"
-                    (toolChange)="onToolFormChange(focusedIndex(), $event)"
-                    (remove)="removeTool(focusedIndex())"
-                  />
-                } @else {
-                  <div class="empty-focus">Select a tool from the left panel.</div>
-                }
-              }
-
-              @case ('builtin-tools') {
-                @if (editingAgentId()) {
-                  <div class="section-card-header">
-                    <div>
-                      <div class="section-card-title">Built-in Tools</div>
-                      <div class="section-card-sub">
-                        Platform-provided tools that the agent can use. Toggle
-                        tools on or off to control which built-in capabilities
-                        are available.
-                      </div>
-                    </div>
-                  </div>
-                  <app-ai-builtin-tools
-                    [agentId]="editingAgentId()!"
-                    [enabledTools]="currentEnabledTools()"
-                    [toolDescriptionOverrides]="currentToolDescriptionOverrides()"
-                    (toolsSaved)="onBuiltinToolsSaved($event)"
-                    (toolDescriptionsSaved)="onToolDescriptionsSaved($event)"
-                  />
-                } @else {
-                  <div class="empty-focus">
-                    Save the agent first to configure built-in tools.
-                  </div>
-                }
-              }
-
-              @case ('mcp-servers') {
-                @if (editingAgentId()) {
-                  <div class="section-card-header">
-                    <div>
-                      <div class="section-card-title">MCP Servers</div>
-                      <div class="section-card-sub">
-                        Model Context Protocol servers that the agent can use to
-                        access external tools and data sources.
-                      </div>
-                    </div>
-                  </div>
-                  <app-ai-mcp-servers-selector
-                    [agentId]="editingAgentId()!"
-                    [enabledMcpServers]="currentMcpServers()"
-                    [enabledMcpTools]="currentEnabledMcpTools()"
-                    [toolDescriptionOverrides]="
-                      currentToolDescriptionOverrides()
-                    "
-                    (serversSaved)="onMcpServersSaved($event)"
-                    (mcpToolsSaved)="onEnabledMcpToolsSaved($event)"
-                    (toolDescriptionsSaved)="onToolDescriptionsSaved($event)"
-                  />
-                } @else {
-                  <div class="empty-focus">
-                    Save the agent first to configure MCP servers.
-                  </div>
-                }
-              }
-
-              @case ('variables') {
-                <div class="section-card-header">
-                  <div>
-                    <div class="section-card-title">Variables</div>
-                    <div class="section-card-sub">
-                      Define the input variables the agent expects and the output
-                      variables it produces.
-                    </div>
-                  </div>
-                </div>
-                <app-ai-agent-config
-                  section="variables"
-                  [llmConnectors]="llmConnectors()"
-                  [editorOptions]="editorOptions"
-                  [(inputVariables)]="inputVariables"
-                  [(outputVariables)]="outputVariables"
-                />
-              }
-
-              @case ('knowledgeBases') {
-                <div class="section-card-header">
-                  <div>
-                    <div class="section-card-title">Knowledge Bases</div>
-                    <div class="section-card-sub">
-                      Select knowledge bases for this agent to search at runtime.
-                    </div>
-                  </div>
-                </div>
-                <app-ai-agent-config
-                  section="knowledgeBases"
-                  [llmConnectors]="llmConnectors()"
-                  [editorOptions]="editorOptions"
-                  [knowledgeBaseList]="knowledgeBaseList"
-                  [(selectedKbIds)]="selectedKbIds"
-                />
-              }
-
-              @case ('versions') {
-                @if (editingAgentId()) {
-                  <div class="section-card-header">
-                    <div>
-                      <div class="section-card-title">Version History</div>
-                      <div class="section-card-sub">
-                        View past versions, rollback to any version, or delete old versions.
-                      </div>
-                    </div>
-                  </div>
-                  <div class="focus-pad">
-                    <app-agent-versions
-                      [agentId]="editingAgentId()!"
-                      (rollback)="rollbackToVersion($event)"
-                      (versionDeleted)="onVersionDeleted($event)"
-                    />
-                  </div>
-                } @else {
-                  <div class="empty-focus">Save the agent first to see version history.</div>
-                }
-              }
+              </div>
+              <div class="empty-focus">Save the agent first to see version history.</div>
             }
           </section>
         </main>
@@ -560,32 +605,6 @@ export class AiComponent implements OnInit {
 
   // ---- Reactivity helpers (bumped on structural mutations) ----
   private readonly version = signal(0);
-
-  readonly focusedIndex = computed(() => {
-    const sel = this.selection();
-    if (sel.kind === "skill" || sel.kind === "tool") {
-      return sel.index;
-    }
-    return -1;
-  });
-
-  readonly focusedSkill = computed(() => {
-    this.version();
-    const sel = this.selection();
-    if (sel.kind !== "skill") {
-      return null;
-    }
-    return this.subagents[sel.index] ?? null;
-  });
-
-  readonly focusedTool = computed(() => {
-    this.version();
-    const sel = this.selection();
-    if (sel.kind !== "tool") {
-      return null;
-    }
-    return this.tools[sel.index] ?? null;
-  });
 
   readonly extractedMentions = computed(() => {
     this.version();
@@ -794,6 +813,47 @@ export class AiComponent implements OnInit {
 
   setSelection(next: IAgentEditorSelection): void {
     this.selection.set(next);
+  }
+
+  /**
+   * Config-nav click handler for the single-scrolling-column layout (mock
+   * 07/08, SPEC decision 5c). Every section already renders in the DOM, so
+   * "selecting" a nav entry no longer swaps which section is visible — it
+   * just updates the active-highlight state (`setSelection`) and smooth-
+   * scrolls the matching `#section-*` anchor into view.
+   */
+  onNavSelect(next: IAgentEditorSelection): void {
+    this.setSelection(next);
+    const anchorId = this.anchorIdForSelection(next);
+    console.debug("[ai] config nav selection, scrolling to section", {
+      selection: next,
+      anchorId,
+    });
+    const target = document.getElementById(anchorId);
+    if (!target || typeof target.scrollIntoView !== "function") {
+      console.warn(
+        "[ai] no scrollable anchor found for selection, scroll skipped",
+        { anchorId }
+      );
+      return;
+    }
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  private anchorIdForSelection(selection: IAgentEditorSelection): string {
+    switch (selection.kind) {
+      case "skill":
+        return `section-skill-${selection.index}`;
+      case "tool":
+        return `section-tool-${selection.index}`;
+      case "knowledgeBases":
+        // "knowledgeBases" is camelCase but the rendered anchor id is
+        // kebab-case ("section-knowledge-bases") — map it explicitly so
+        // getElementById doesn't miss.
+        return "section-knowledge-bases";
+      default:
+        return `section-${selection.kind}`;
+    }
   }
 
   togglePaletteCollapsed(): void {

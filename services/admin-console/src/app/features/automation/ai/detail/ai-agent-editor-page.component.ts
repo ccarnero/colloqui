@@ -12,11 +12,12 @@ import { AgentTestPanelComponent } from "./agent-test-panel.component";
   selector: "app-ai-agent-editor-page",
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  // Test panel is placed here (not restructuring ai.component.ts's inline
-  // @switch template) as the smaller diff that still satisfies decision 3
-  // (editor + test panel side by side in the agent editor view) — this page
-  // already wraps <app-ai> as the sole editor host for both agents/new and
-  // agents/:id/configure routes.
+  // T06 (SPEC decision 5c): the editor is now the mock's single scrolling
+  // column (mock 07/08) instead of a fixed 3-pane workstation, so the test
+  // panel moves from a docked side pane to the bottom of the SAME scroll
+  // (mock 09 shows "Test run" as the last block in the column). The invoke
+  // wiring in `AgentTestPanelComponent` and the `<app-ai>` save path are
+  // both frozen — only this page's layout (grid -> stacked column) changes.
   imports: [AiComponent, AgentTestPanelComponent],
   template: `
     <div class="editor-layout">
@@ -27,47 +28,36 @@ import { AgentTestPanelComponent } from "./agent-test-panel.component";
           [forcedAgentId]="agentId()"
         />
       </div>
-      <aside class="test-pane">
+      <section class="test-pane" aria-label="Test run">
         <app-agent-test-panel [agentId]="agentId()" />
-      </aside>
+      </section>
     </div>
   `,
   styles: `
     :host {
       display: block;
-      height: 100%;
     }
 
     .editor-layout {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) minmax(320px, 380px);
-      gap: 12px;
-      height: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: var(--rd-space-6, 16px);
       min-height: 0;
     }
 
     .editor-pane {
       min-width: 0;
-      min-height: 0;
     }
 
     .test-pane {
-      min-height: 0;
-      position: sticky;
-      top: 12px;
-      align-self: start;
-      height: calc(100dvh - 180px);
-    }
-
-    @media (max-width: 1180px) {
-      .editor-layout {
-        grid-template-columns: 1fr;
-      }
-
-      .test-pane {
-        height: 480px;
-        position: static;
-      }
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      height: 480px;
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      background: var(--bg2);
+      overflow: hidden;
     }
   `,
 })

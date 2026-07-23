@@ -1,7 +1,7 @@
 import { Component } from "@angular/core";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { provideRouter, Router, type Routes } from "@angular/router";
-import { of, throwError } from "rxjs";
+import { NEVER, of, throwError } from "rxjs";
 import { vi } from "vitest";
 import type { IAgent } from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
@@ -300,6 +300,57 @@ describe("AiAgentsPageComponent", () => {
       const el = fixture.nativeElement as HTMLElement;
       const dot = el.querySelector(".health-dot") as HTMLElement;
       expect(dot.className).toContain("health-dot--warn");
+    });
+  });
+
+  // T01 finding 7 (FIX, T06): the mock's header subtitle is a real summary
+  // (`N agentes · P published · D draft`) built from the same agent list
+  // the KPI strip already reads, replacing the static "Manage your AI
+  // agents" placeholder once data has loaded.
+  describe("header subtitle (T01 finding 7 FIX)", () => {
+    it("renders a real agent/published/draft summary once agents have loaded", async () => {
+      const { fixture } = await renderPage([
+        buildAgent({ id: PUBLISHED_SYNCED_ID, status: "published" }),
+        buildAgent({ id: DRAFT_ID, status: "draft" }),
+        buildAgent({
+          id: MISCONFIGURED_ID,
+          status: "published",
+          model_config: {
+            rules: "Rules",
+            soul: "Soul",
+            subagents: [],
+            llm: { provider: "", model: "", connectorId: null },
+          },
+        }),
+      ]);
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.textContent).toContain("3 agents · 2 published · 1 draft");
+      expect(el.textContent).not.toContain("Manage your AI agents");
+    });
+
+    it("keeps the static placeholder while agents are still loading", async () => {
+      // `listAgents` never emits, so `loading()` stays true and the header
+      // subtitle must not report a "0 agents" summary from an empty list.
+      await TestBed.configureTestingModule({
+        imports: [AiAgentsPageComponent],
+        providers: [
+          provideRouter(testRoutes),
+          {
+            provide: AgentAdminService,
+            useValue: { listAgents: vi.fn().mockReturnValue(NEVER) },
+          },
+          {
+            provide: AgentRuntimeService,
+            useValue: buildAgentRuntimeServiceMock(),
+          },
+          { provide: Router, useValue: { navigate: vi.fn() } },
+        ],
+      }).compileComponents();
+
+      const fixture = TestBed.createComponent(AiAgentsPageComponent);
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.textContent).toContain("Manage your AI agents");
     });
   });
 });

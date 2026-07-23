@@ -106,45 +106,47 @@ code {
 }
 
 // ---------------------------------------------------------------------------
-// IDE layout — left rail + center
-// (the right test-drawer is owned by the parent detail component)
+// Single scrolling column (mock 07/08/09, SPEC decision 5c) — the
+// Configuration nav scrolls WITH the page (sticky within the viewport, not a
+// fixed 3-pane rail) and every section stacks below it in mock order. The
+// old fixed 3-pane workstation (ide-layout/ide-nav/ide-center/editor-card)
+// is retired; the test panel stays owned by the parent detail component
+// (`ai-agent-editor-page.component.ts`), now stacked below this column
+// instead of docked beside it.
 // ---------------------------------------------------------------------------
 
-.ide-layout {
-  display: grid;
-  grid-template-columns: 230px minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-  min-height: 540px;
-  transition: grid-template-columns 0.18s ease;
-}
-
-.ide-layout.collapsed {
-  grid-template-columns: 52px minmax(0, 1fr);
-}
-
-.ide-nav {
-  position: sticky;
-  top: 12px;
-  align-self: start;
-}
-
-.ide-center {
-  min-width: 0;
+.single-column-layout {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--rd-space-6, 16px);
 }
 
-.editor-card {
+.config-nav {
+  position: sticky;
+  top: var(--rd-space-3, 12px);
+  z-index: 2;
+  align-self: flex-start;
+}
+
+.editor-column {
   position: relative;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--bg2);
-  overflow: hidden;
+  gap: var(--rd-space-6, 16px);
+}
+
+// This component's `.section-card` reuses the global card chrome
+// (`src/styles.scss`) and only adds the scroll-anchoring behaviour the
+// single-column layout needs.
+.editor-column .section-card {
+  position: relative;
+  min-width: 0;
+  scroll-margin-top: var(--rd-space-8, 24px);
+}
+
+.stacked-item + .stacked-item {
+  border-top: 1px solid var(--border-subtle);
 }
 
 .loading-overlay {
@@ -282,15 +284,12 @@ code {
 }
 
 // ---------------------------------------------------------------------------
-// Responsive — collapse the IDE to single column under 1080px
+// Responsive — the config nav drops out of sticky mode on narrow viewports
+// so it doesn't eat scroll space above the single scrolling column.
 // ---------------------------------------------------------------------------
 
 @media (max-width: 1080px) {
-  .ide-layout {
-    grid-template-columns: 1fr;
-  }
-
-  .ide-nav {
+  .config-nav {
     position: static;
   }
 }

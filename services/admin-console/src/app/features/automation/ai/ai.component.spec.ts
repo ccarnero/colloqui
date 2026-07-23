@@ -186,4 +186,139 @@ describe("AiComponent", () => {
     expect(draft.systemPrompt).toBe(promptWithMentions);
     expect(draft.systemPrompt).toEqual(promptWithMentions);
   });
+
+  // T06 (SPEC decision 5c): the editor mode is a single scrolling column —
+  // every configuration section renders at once (no @switch-gated single
+  // section), in the mock's order (07/08). This replaces the old fixed
+  // 3-pane workstation assertions.
+  describe("single-column editor layout (T06)", () => {
+    beforeEach(() => {
+      const component = fixture.componentInstance;
+      component.editingAgentId.set(null);
+      component.viewMode.set("editor");
+      fixture.detectChanges();
+    });
+
+    it("renders the config nav and editor column as a single stacked block, not a grid", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector(".single-column-layout")).toBeTruthy();
+      expect(el.querySelector(".config-nav")).toBeTruthy();
+      expect(el.querySelector(".editor-column")).toBeTruthy();
+      // The old 3-pane workstation classes must be gone.
+      expect(el.querySelector(".ide-layout")).toBeNull();
+      expect(el.querySelector(".ide-nav")).toBeNull();
+      expect(el.querySelector(".ide-center")).toBeNull();
+    });
+
+    it("renders every configuration section in mock order, all at once (nothing @switch-dropped)", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const expectedOrder = [
+        "section-general",
+        "section-instruction-prompt",
+        "section-instruction-rules",
+        "section-instruction-soul",
+        "section-instruction-mentions",
+        "section-skills",
+        "section-tools",
+        "section-builtin-tools",
+        "section-mcp-servers",
+        "section-knowledge-bases",
+        "section-variables",
+        "section-versions",
+      ];
+
+      const foundIds = expectedOrder.map((id) => {
+        const node = el.querySelector(`#${id}`);
+        expect(node, `expected #${id} to exist in the DOM`).toBeTruthy();
+        return node;
+      });
+
+      // All twelve sections must render simultaneously, in mock order.
+      for (let i = 1; i < foundIds.length; i++) {
+        const prevIndex = Array.from(
+          el.querySelectorAll(".section-card")
+        ).indexOf(foundIds[i - 1] as Element);
+        const currentIndex = Array.from(
+          el.querySelectorAll(".section-card")
+        ).indexOf(foundIds[i] as Element);
+        expect(currentIndex).toBeGreaterThan(prevIndex);
+      }
+    });
+
+    it("stacks every skill and tool form inline instead of showing only the focused one", () => {
+      const component = fixture.componentInstance;
+      component.subagents = [
+        { name: "Scoring", description: "", systemPrompt: "s1", enabled: true },
+        { name: "Handoff", description: "", systemPrompt: "s2", enabled: true },
+      ];
+      component.tools = [
+        {
+          name: "crm-create",
+          description: "",
+          sourceType: "http",
+          endpointUrl: "",
+          endpointMethod: "GET",
+          adapterRef: null,
+          parameters: [],
+        },
+      ];
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector("#section-skill-0")).toBeTruthy();
+      expect(el.querySelector("#section-skill-1")).toBeTruthy();
+      expect(el.querySelector("#section-tool-0")).toBeTruthy();
+    });
+
+    it("scrolls the matching section anchor into view when the config nav emits a selection", () => {
+      const component = fixture.componentInstance;
+      // jsdom doesn't implement layout, so `scrollIntoView` isn't defined on
+      // Element.prototype by default — stub it there so the DOM node found
+      // via `document.getElementById` inherits a real spy-able function.
+      const scrollSpy = vi.fn();
+      Element.prototype.scrollIntoView = scrollSpy;
+
+      const anchor = document.createElement("div");
+      anchor.id = "section-instruction-rules";
+      document.body.appendChild(anchor);
+
+      component.onNavSelect({ kind: "instruction-rules" });
+
+      expect(component.selection().kind).toBe("instruction-rules");
+      expect(scrollSpy).toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "start",
+      });
+
+      document.body.removeChild(anchor);
+    });
+
+    it("scrolls the knowledge-bases section anchor into view (camelCase selection kind maps to kebab-case anchor id)", () => {
+      const component = fixture.componentInstance;
+      const scrollSpy = vi.fn();
+      Element.prototype.scrollIntoView = scrollSpy;
+
+      const anchor = document.createElement("div");
+      anchor.id = "section-knowledge-bases";
+      document.body.appendChild(anchor);
+
+      component.onNavSelect({ kind: "knowledgeBases" });
+
+      expect(component.selection().kind).toBe("knowledgeBases");
+      expect(scrollSpy).toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "start",
+      });
+
+      document.body.removeChild(anchor);
+    });
+
+    it("does not throw when the selected anchor is missing from the DOM", () => {
+      const component = fixture.componentInstance;
+      expect(() =>
+        component.onNavSelect({ kind: "skill", index: 99 })
+      ).not.toThrow();
+      expect(component.selection()).toEqual({ kind: "skill", index: 99 });
+    });
+  });
 });

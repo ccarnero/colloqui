@@ -76,7 +76,7 @@ const RUNTIME_ATTENTION_SEVERITY: Record<
     NeedsAttentionPanelComponent,
   ],
   template: `
-    <app-page-header title="AI agents" subtitle="Manage your AI agents">
+    <app-page-header title="AI agents" [subtitle]="headerSubtitle()">
       <ng-container slot="actions">
         <button type="button" class="btn btn-primary btn-sm" (click)="onNewAgentClick()">
           <mat-icon>add</mat-icon>
@@ -203,6 +203,22 @@ export class AiAgentsPageComponent implements OnInit {
       this.agents().filter((agent) => agent.status === AGENT_STATUSES.DRAFT)
         .length
   );
+
+  /**
+   * Mock 06's header subtitle is a real summary (`3 agentes · 2 published ·
+   * 1 draft`) built from the same agent list already loaded for the KPI
+   * strip (T01 finding 7, FIX). While the list is still loading there is no
+   * count to report yet, so the static placeholder stays until data lands.
+   */
+  readonly headerSubtitle = computed(() => {
+    if (this.loading()) {
+      return "Manage your AI agents";
+    }
+    const total = this.totalAgents();
+    const published = this.publishedCount();
+    const draft = this.draftCount();
+    return `${total} agent${total === 1 ? "" : "s"} · ${published} published · ${draft} draft`;
+  });
 
   readonly totalSkills = computed(() =>
     this.agents().reduce((sum, agent) => sum + this.getSkillsCount(agent), 0)
