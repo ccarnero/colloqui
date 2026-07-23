@@ -549,10 +549,14 @@ describe("TraceDetailComponent", () => {
 
       expect(el.querySelector(".td-timing")).toBeFalsy();
       expect(el.querySelector(".td-base")).toBeFalsy();
-      // T05 added run-mode content, narrowing the fallback branch to
-      // sources with no inspector content wired at all yet — only
-      // deep links (T06) remain unimplemented.
-      expect(el.querySelector(".td-muted")?.textContent).toContain("T06");
+      // T06 added the "everywhere" deep-links block — it still renders for
+      // an unrecognized/non-mode source view (mode-specific content above
+      // stays empty), showing the "no links" fallback since evt-2 carries
+      // no workflow_id/run_id pair or connector/agent id.
+      expect(el.querySelector(".td-deep-links")).toBeTruthy();
+      expect(el.querySelector(".td-muted")?.textContent).toContain(
+        "No deep links available"
+      );
     });
   });
 
@@ -593,13 +597,29 @@ describe("TraceDetailComponent", () => {
           connector_id: "adapter-9",
           occurred_at: "2026-01-01T00:00:01.000Z",
         }),
+        event({
+          event_id: "evt-temporal",
+          kind: "execution_started",
+          business_fn: "workflow-execution",
+          workflow_id: "acme:order-workflow:abc123",
+          run_id: "run-9",
+          occurred_at: "2026-01-01T00:00:01.100Z",
+        }),
+        event({
+          event_id: "evt-half-temporal",
+          kind: "execution_started",
+          business_fn: "workflow-execution",
+          workflow_id: "acme:order-workflow:abc123",
+          run_id: null,
+          occurred_at: "2026-01-01T00:00:01.200Z",
+        }),
       ],
       spans: [span({})],
       summary: {
-        count: 4,
+        count: 6,
         first_at: "2026-01-01T00:00:00.000Z",
-        last_at: "2026-01-01T00:00:01.000Z",
-        total_ms: 1000,
+        last_at: "2026-01-01T00:00:01.200Z",
+        total_ms: 1200,
         orphan_count: 1,
       },
     };
@@ -835,6 +855,176 @@ describe("TraceDetailComponent", () => {
     });
   });
 
+  describe("Inspector deep links (T06)", () => {
+    const causalChain: ITrackingChainResponse = {
+      correlation_id: "corr-1",
+      tenant: "acme",
+      events: [
+        event({
+          event_id: "evt-a",
+          kind: "webhook_received",
+          business_fn: "ingress",
+          causation_depth: 0,
+        }),
+        event({
+          event_id: "evt-connector",
+          kind: "endpoint_call_completed",
+          business_fn: "connector-invocation",
+          connector_id: "adapter-9",
+        }),
+        event({
+          event_id: "evt-temporal",
+          kind: "execution_started",
+          business_fn: "workflow-execution",
+          workflow_id: "acme:order-workflow:abc123",
+          run_id: "run-9",
+        }),
+        event({
+          event_id: "evt-half-temporal",
+          kind: "execution_started",
+          business_fn: "workflow-execution",
+          workflow_id: "acme:order-workflow:abc123",
+          run_id: null,
+        }),
+      ],
+      spans: [span({})],
+      summary: {
+        count: 4,
+        first_at: "2026-01-01T00:00:00.000Z",
+        last_at: "2026-01-01T00:00:01.200Z",
+        total_ms: 1200,
+        orphan_count: 0,
+      },
+    };
+
+    function selectEvent(eventId: string): {
+      el: HTMLElement;
+      selection: TraceSelectionService;
+    } {
+      const el = fixture.nativeElement as HTMLElement;
+      const selection = fixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+      selection.select(eventId, "causal");
+      fixture.detectChanges();
+      return { el, selection };
+    }
+
+    it("renders 'Open in Temporal' with the same URL shape as the legacy tab, for an event carrying workflow_id/run_id", () => {
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-temporal");
+
+      const link = el.querySelector(
+        ".td-deep-links a[href]"
+      ) as HTMLAnchorElement | null;
+      expect(link?.textContent?.trim()).toBe("Open in Temporal");
+      expect(link?.getAttribute("href")).toBe(
+        "http://localhost:8233/namespaces/default/workflows/acme%3Aorder-workflow%3Aabc123"
+      );
+      expect(link?.getAttribute("target")).toBe("_blank");
+    });
+
+    it("hides the Temporal link when the event carries only ONE of workflow_id/run_id (T01 finding 4: the pair is only populated together)", () => {
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-half-temporal");
+
+      const links = Array.from(
+        el.querySelectorAll(".td-deep-links a")
+      ) as HTMLAnchorElement[];
+      expect(
+        links.some((a) => a.textContent?.trim() === "Open in Temporal")
+      ).toBe(false);
+    });
+
+    it("logs a console.debug when the Temporal link is hidden due to missing ids", () => {
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      selectEvent("evt-a");
+
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[TraceDetailComponent] Temporal deep link hidden — event is missing workflow_id/run_id",
+        expect.objectContaining({ eventId: "evt-a" })
+      );
+      debugSpy.mockRestore();
+    });
+
+    it("hides the Temporal link when no event is selected (nothing rendered, no crash)", () => {
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector(".td-deep-links")).toBeFalsy();
+    });
+
+    it("never renders a builder link — resolveBuilderDeepLink is unconditionally null today (no id bridge, T01 finding 4)", () => {
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+      const { el } = selectEvent("evt-temporal");
+
+      const links = Array.from(
+        el.querySelectorAll(".td-deep-link-btn")
+      ) as HTMLAnchorElement[];
+      expect(links.map((a) => a.textContent?.trim())).not.toContain(
+        "Open in builder"
+      );
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[TraceDetailComponent] Builder deep link hidden — no trace-event -> builder-node id bridge exists (T01 finding 4)",
+        expect.objectContaining({ eventId: "evt-temporal" })
+      );
+      debugSpy.mockRestore();
+    });
+
+    it("never produces a deep-link href/routerLink containing the literal 'undefined' or 'null'", () => {
+      getChain.mockReturnValue(of(causalChain));
+      setup();
+
+      for (const id of [
+        "evt-a",
+        "evt-connector",
+        "evt-temporal",
+        "evt-half-temporal",
+      ]) {
+        const { el } = selectEvent(id);
+        const anchors = Array.from(
+          el.querySelectorAll(".td-deep-links a")
+        ) as HTMLAnchorElement[];
+        for (const a of anchors) {
+          expect(a.getAttribute("href") ?? "").not.toContain("undefined");
+          expect(a.getAttribute("href") ?? "").not.toContain("null");
+        }
+      }
+    });
+
+    it("shows both an entity link and a Temporal link when the event resolves to both (no mutual exclusion)", () => {
+      const bothChain: ITrackingChainResponse = {
+        ...causalChain,
+        events: [
+          ...causalChain.events,
+          event({
+            event_id: "evt-both",
+            kind: "endpoint_call_completed",
+            business_fn: "connector-invocation",
+            connector_id: "adapter-42",
+            workflow_id: "acme:order-workflow:abc123",
+            run_id: "run-9",
+          }),
+        ],
+      };
+      getChain.mockReturnValue(of(bothChain));
+      setup();
+      const { el } = selectEvent("evt-both");
+
+      const labels = Array.from(el.querySelectorAll(".td-deep-link-btn")).map(
+        (a) => a.textContent?.trim()
+      );
+      expect(labels).toContain("Open in Temporal");
+      expect(labels).toContain("Open connector");
+    });
+  });
+
   describe("Step log panel (T04)", () => {
     it("embeds the step log inside the run tab, fed by the already-loaded chain", () => {
       getChain.mockReturnValue(
@@ -1050,6 +1240,40 @@ describe("TraceDetailComponent", () => {
       expect(body.querySelector(".td-base")).toBeTruthy();
       expect(body.querySelector(".td-step-result")).toBeFalsy();
       expect(body.textContent).toContain("No step result available");
+    });
+
+    it("T06: resolves the entity deep link via the run's OWN payload_connector_id (the chain-level ITrackedEvent.connector_id is null for run steps)", () => {
+      const { el, selection } = setupRunTab();
+
+      selection.select("evt-step-completed", "run");
+      fixture.detectChanges();
+
+      const link = el.querySelector(".td-deep-link-btn") as HTMLAnchorElement;
+      expect(link?.textContent?.trim()).toBe("Open connector");
+    });
+
+    it("T06: hides the Temporal link for a run-tab step selection (the step's OWN chain event carries no workflow_id/run_id)", () => {
+      const { el, selection } = setupRunTab();
+
+      selection.select("evt-step-completed", "run");
+      fixture.detectChanges();
+
+      const labels = Array.from(el.querySelectorAll(".td-deep-link-btn")).map(
+        (a) => a.textContent?.trim()
+      );
+      expect(labels).not.toContain("Open in Temporal");
+    });
+
+    it("T06: no entity link for a run-tab selection outside this run's own mapped step events", () => {
+      const { el, selection } = setupRunTab();
+
+      selection.select("evt-1", "run");
+      fixture.detectChanges();
+
+      expect(el.querySelector(".td-deep-link-btn")).toBeFalsy();
+      expect(
+        el.querySelector(".td-deep-links .td-muted")?.textContent
+      ).toContain("No deep links available");
     });
   });
 });

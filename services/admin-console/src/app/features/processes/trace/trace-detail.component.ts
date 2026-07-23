@@ -11,6 +11,7 @@ import {
   viewChild,
 } from "@angular/core";
 import { ActivatedRoute, RouterLink } from "@angular/router";
+import { environment } from "../../../../environments/environment";
 import { AuthService } from "../../../core/services/auth.service";
 import {
   type IEventPayloadResponse,
@@ -18,6 +19,8 @@ import {
   type ITrackingChainResponse,
   TrackingChainService,
 } from "../../../core/services/tracking-chain.service";
+import { resolveBuilderDeepLink } from "../domain/resolve-builder-deep-link";
+import { resolveTemporalDeepLink } from "../domain/resolve-temporal-deep-link";
 import { RunViewComponent } from "../run-view/run-view.component";
 import { computeCausalChain } from "./causal-graph/causal-chain";
 import { CausalGraphComponent } from "./causal-graph/causal-graph.component";
@@ -115,6 +118,19 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
  * (`runView` below) — this container never fetches run data itself, it
  * only reads the derived step-result data the embedded run canvas already
  * computed from its own loaded `IRunResponse`/`IRunLayout`.
+ *
+ * T06 (`manual-loops/admin-console/console-redesign-trace.md`) adds the
+ * inspector's DEEP LINKS block (decision 4 + the ORCHESTRATOR RULING),
+ * rendered "everywhere" a selection exists (see the template's deep-links
+ * block near the end of the inspector body): a real "Open in Temporal"
+ * link when the selected event carries `workflow_id`/`run_id`
+ * (`resolveTemporalDeepLink`, extracted from `message-trace.component.ts`'s
+ * `temporalUrl()` without changing its output), a real "Open
+ * <entity>" link when the event resolves to one (waterfall/causal via
+ * `resolveTrackedEventDeepLink`, run-mode via
+ * `RunViewComponent.selectedStepDeepLink()`), and an ALWAYS-hidden builder
+ * link (`resolveBuilderDeepLink` — no trace-event->builder-node id bridge
+ * exists yet, never synthesized).
  */
 @Component({
   selector: "app-trace-detail",
@@ -210,7 +226,8 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
            context content (payload, timing %, step result, causal chain,
            Temporal/builder deep links — decisions 3/4) is filled in by
            T03-T06; T03 added the waterfall-mode content, T04 the
-           causal-mode content, T05 the run-mode content below. -->
+           causal-mode content, T05 the run-mode content, T06 the deep
+           links block below. -->
       <aside class="td-inspector" aria-label="Event inspector">
         @if (selection.selectedEventId(); as selectedId) {
           <header class="td-inspector-head">
@@ -268,9 +285,10 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
             } @else if (isCausalSelection() && selectedEvent(); as event) {
               <!-- T04 causal-mode content: base fields (same "everywhere"
                    dl as waterfall-mode, decision 3), the derived causal
-                   chain, the on-demand payload viewer, and the "Open
-                   connector" deep link — all migrated from
-                   CausalGraphComponent's old local detail card. -->
+                   chain, and the on-demand payload viewer — migrated from
+                   CausalGraphComponent's old local detail card. Its "Open
+                   connector" deep link now lives in T06's "everywhere"
+                   deep-links block below. -->
               <dl class="td-base">
                 <dt>event_id</dt>
                 <dd>{{ event.event_id }}</dd>
@@ -362,14 +380,6 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
                   }
                 </div>
               }
-
-              @if (causalDeepLink(); as link) {
-                <div class="td-deep-link">
-                  <a class="td-deep-link-btn" [routerLink]="link.route">
-                    {{ link.label }}
-                  </a>
-                </div>
-              }
             } @else if (isRunSelection() && selectedEvent(); as event) {
               <!-- T05 run-mode content: base fields (same "everywhere" dl
                    as waterfall/causal-mode, decision 3) plus STEP RESULT
@@ -435,10 +445,61 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
                   No step result available for this selection.
                 </p>
               }
-            } @else {
-              <p class="td-muted">
-                Inspector content (deep links) lands in T06.
-              </p>
+            }
+
+            @if (selectedEvent(); as event) {
+              <!-- T06 deep links (decision 4 + the ORCHESTRATOR RULING):
+                   rendered "everywhere" a selection exists — unlike T04's
+                   causal-only "Open connector" button it replaces.
+                   TEMPORAL: real link when the event carries
+                   workflow_id/run_id, hidden (+ console.debug) otherwise.
+                   BUILDER: always hidden today — no id bridge exists
+                   (resolve-builder-deep-link.ts), never synthesized.
+                   ENTITY: "Open connector"/"Open agent" when the event
+                   resolves to one (causal/waterfall via
+                   resolveTrackedEventDeepLink, run-mode via the run
+                   canvas's own selectedStepDeepLink()). -->
+              <div class="td-deep-links" aria-label="Deep links">
+                <h4 class="td-deep-links-title">Deep links</h4>
+                @if (selectedTemporalDeepLink(); as temporalUrl) {
+                  <div class="td-deep-link">
+                    <a
+                      class="td-deep-link-btn"
+                      [href]="temporalUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      Open in Temporal
+                    </a>
+                  </div>
+                }
+                @if (selectedEntityDeepLink(); as link) {
+                  <div class="td-deep-link">
+                    <a class="td-deep-link-btn" [routerLink]="link.route">
+                      {{ link.label }}
+                    </a>
+                  </div>
+                }
+                @if (selectedBuilderDeepLink(); as builderLink) {
+                  <div class="td-deep-link">
+                    <a
+                      class="td-deep-link-btn"
+                      [routerLink]="builderLink.route"
+                    >
+                      {{ builderLink.label }}
+                    </a>
+                  </div>
+                }
+                @if (
+                  !selectedTemporalDeepLink() &&
+                  !selectedEntityDeepLink() &&
+                  !selectedBuilderDeepLink()
+                ) {
+                  <p class="td-muted">
+                    No deep links available for this event.
+                  </p>
+                }
+              </div>
             }
           </div>
         } @else {
@@ -726,10 +787,22 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
       font-size: var(--rd-text-size-2xs, 11px);
     }
 
-    .td-deep-link {
+    .td-deep-links {
       margin-top: var(--rd-space-6, 12px);
       padding-top: var(--rd-space-6, 12px);
       border-top: 1px solid var(--rd-line-2, #161616);
+    }
+    .td-deep-links-title {
+      margin: 0 0 var(--rd-space-4, 8px);
+      font-size: var(--rd-text-size-sm, 12px);
+      font-weight: 600;
+      color: var(--rd-text-1, #ededed);
+    }
+    .td-deep-link {
+      margin-top: var(--rd-space-4, 8px);
+    }
+    .td-deep-link:first-of-type {
+      margin-top: 0;
     }
     .td-deep-link-btn {
       display: inline-block;
@@ -813,7 +886,7 @@ export class TraceDetailComponent implements OnInit {
 
   /** True when the current selection came from the causal-graph tab (T04)
    * — gates the causal-mode inspector content (base fields + causal chain
-   * + payload + deep link). */
+   * + payload). */
   readonly isCausalSelection = computed(
     () => this.selection.sourceView() === "causal"
   );
@@ -869,20 +942,11 @@ export class TraceDetailComponent implements OnInit {
     () => this.selectedCausalChain()?.rootUnresolvedParentId ?? null
   );
 
-  /** "Open <entity>" deep link for the selected event (T05 of
-   * `manual-loops/connector-trace-linking.md`) — `null` hides the button,
-   * same pattern as `canViewPayload()` gating the payload section.
-   * Migrated from `CausalGraphComponent` (T04); only rendered in
-   * causal-mode (its original scope). */
-  readonly causalDeepLink = computed(() => {
-    const event = this.selectedEvent();
-    return event ? resolveTrackedEventDeepLink(event) : null;
-  });
-
   /** True when the current selection came from the "run" tab — the run
    * canvas (T05) or the step log panel embedded in it (T04); both source
    * as "run" (TraceSourceView's own doc comment). Gates the run-mode
-   * inspector content (base fields + step result). */
+   * inspector content (base fields + step result) AND the T06
+   * `selectedEntityDeepLink` resolution below. */
   readonly isRunSelection = computed(
     () => this.selection.sourceView() === "run"
   );
@@ -893,8 +957,9 @@ export class TraceDetailComponent implements OnInit {
    * the template, including inside the "@if (workflowRun(); as run)"
    * branch above, and reactively becomes undefined again when that branch
    * stops rendering (a different tab, or no workflow run in the chain).
-   * Used only to pull RunViewComponent.selectedStepResult() — this
-   * container never fetches run data itself. */
+   * Used to pull RunViewComponent.selectedStepResult() (T05) and
+   * .selectedStepDeepLink() (T06) — this container never fetches run data
+   * itself. */
   private readonly runView = viewChild(RunViewComponent);
 
   /** Run-mode inspector content (T05, decision 3: "step result in run
@@ -906,6 +971,61 @@ export class TraceDetailComponent implements OnInit {
   readonly runStepResult = computed(
     () => this.runView()?.selectedStepResult() ?? null
   );
+
+  /** T06 (decision 4 + the ORCHESTRATOR RULING): "Open in Temporal" URL for
+   * the selected event, rendered for EVERY mode (base "everywhere" content,
+   * same as the timing/base-fields sections) — not causal-only like the old
+   * "Open connector" link was. Reuses `resolveTemporalDeepLink`, extracted
+   * verbatim from `message-trace.component.ts`'s `temporalUrl()` (see that
+   * module's header) — same output, new call site. Rendered ONLY when the
+   * selected event carries BOTH `workflow_id` AND `run_id` (T01 finding 4:
+   * these two columns are only populated TOGETHER, on rule-19
+   * workflow-execution-lifecycle events) — `null` otherwise, hiding the
+   * link (never a broken href). */
+  readonly selectedTemporalDeepLink = computed(() => {
+    const event = this.selectedEvent();
+    if (!event) {
+      return null;
+    }
+    const workflowId =
+      event.workflow_id !== null && event.run_id !== null
+        ? event.workflow_id
+        : null;
+    return resolveTemporalDeepLink({
+      temporalUiBaseUrl: environment.temporalUiBaseUrl,
+      temporalNamespace: environment.temporalNamespace,
+      workflowId,
+    });
+  });
+
+  /** T06: the BUILDER deep link — per the ORCHESTRATOR RULING, always
+   * `null` today (`resolve-builder-deep-link.ts`: no trace-event/run-step
+   * -> builder-canvas-node id bridge exists, T01 finding 4). This computed
+   * (and the template branch reading it) exist so the rendering path is
+   * real code, ready for the day a real bridge lands — never synthesizing
+   * a link in the meantime. */
+  readonly selectedBuilderDeepLink = computed(() => resolveBuilderDeepLink());
+
+  /** T06: the "Open <entity>" deep link for the selected event, generalized
+   * from T04's causal-only `causalDeepLink` to ALL modes (base "everywhere"
+   * content, per the third bullet of T06's task instructions — "keep
+   * consistent" with the causal card's old "Open connector" button).
+   * Run-mode selections resolve through `RunViewComponent`'s OWN
+   * `selectedStepDeepLink()` (the run's `IRunEvent.payload_connector_id`/
+   * `payload_agent_id` columns, via `resolve-selected-step-deep-link.ts` —
+   * `ITrackedEvent.connector_id` is only populated for connector-runtime's
+   * OWN `endpoint_call_completed` rows, not the run's `action_completed`
+   * wrapper, so the causal-mode resolution can't reach run-mode events).
+   * Waterfall/causal-mode selections resolve through
+   * `resolveTrackedEventDeepLink` (T05 of
+   * `manual-loops/connector-trace-linking.md`), unchanged. */
+  readonly selectedEntityDeepLink = computed(() => {
+    if (this.isRunSelection()) {
+      return this.runView()?.selectedStepDeepLink() ?? null;
+    }
+    const event = this.selectedEvent();
+    return event ? resolveTrackedEventDeepLink(event) : null;
+  });
 
   constructor() {
     // Selecting a different event (from ANY view, or closing the
@@ -919,6 +1039,35 @@ export class TraceDetailComponent implements OnInit {
     effect(() => {
       this.selection.selectedEventId();
       this.payload.set({ kind: "idle" });
+    });
+
+    // T06 verbose logging (constraint: "Verbose logging on every new code
+    // path; nothing fails silently"): logs once per selection change when
+    // the Temporal deep link is hidden because the selected event doesn't
+    // carry the workflow_id/run_id pair (T01 finding 4), and again when the
+    // builder deep link is hidden (always, today — see
+    // `resolve-builder-deep-link.ts`'s header for why).
+    effect(() => {
+      const event = this.selectedEvent();
+      if (!event) {
+        return;
+      }
+      if (this.selectedTemporalDeepLink() === null) {
+        console.debug(
+          "[TraceDetailComponent] Temporal deep link hidden — event is missing workflow_id/run_id",
+          {
+            eventId: event.event_id,
+            workflowId: event.workflow_id,
+            runId: event.run_id,
+          }
+        );
+      }
+      if (this.selectedBuilderDeepLink() === null) {
+        console.debug(
+          "[TraceDetailComponent] Builder deep link hidden — no trace-event -> builder-node id bridge exists (T01 finding 4)",
+          { eventId: event.event_id }
+        );
+      }
     });
   }
 

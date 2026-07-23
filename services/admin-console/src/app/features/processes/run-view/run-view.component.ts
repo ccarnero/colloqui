@@ -22,6 +22,7 @@ import {
 import { TraceSelectionService } from "../trace/trace-selection.service";
 import { layoutRun } from "./domain/layout-run";
 import { mergeRun } from "./domain/merge-run";
+import { resolveSelectedStepDeepLink } from "./domain/resolve-selected-step-deep-link";
 import { resolveSelectedStepResult } from "./domain/resolve-selected-step-result";
 import { resolveStepEvents } from "./domain/resolve-step-events";
 import type { ILayoutNode, IRunLayout } from "./domain/run-view.model";
@@ -1014,6 +1015,28 @@ export class RunViewComponent {
       return null;
     }
     return resolveSelectedStepResult(
+      this.positionedNodes(),
+      s.run.events,
+      this.selection.selectedEventId()
+    );
+  });
+
+  /** T06 inspector deep-links content: the same event -> node resolution as
+   * `selectedStepResult` above, one step further — the matched node's
+   * "Open <entity>" deep link (`resolve-selected-step-deep-link.ts`), NOT a
+   * builder link (see that module's header: no trace-event/run-step ->
+   * builder-canvas-node id bridge exists — T01 finding 4). `null` outside
+   * trace-hosted mode, when nothing is selected, or when the matched
+   * step/node resolves to neither a connector nor an agent. */
+  readonly selectedStepDeepLink = computed(() => {
+    if (!this.selection) {
+      return null;
+    }
+    const s = this.state();
+    if (s.kind !== "loaded") {
+      return null;
+    }
+    return resolveSelectedStepDeepLink(
       this.positionedNodes(),
       s.run.events,
       this.selection.selectedEventId()
