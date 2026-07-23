@@ -3,9 +3,11 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  inject,
   input,
 } from "@angular/core";
 import type { ITrackingChainResponse } from "../../../../core/services/tracking-chain.service";
+import { TraceSelectionService } from "../trace-selection.service";
 import type { BusinessFnGroup } from "./business-fn-group";
 import {
   computeBottleneck,
@@ -20,11 +22,15 @@ const GROUP_LABEL: Record<BusinessFnGroup, string> = {
   other: "Other",
 };
 
+// Business-fn group swatch colors — matches the design mock's legend
+// (Rediseño Terminal.dc.html, waterfall legend, ~line 761-764). Values are
+// the --rd-group-* tokens defined in styles.scss, which reference the
+// existing --rd-green/--rd-accent/--rd-purple/--rd-text-3 palette tokens.
 const GROUP_COLOR: Record<BusinessFnGroup, string> = {
-  channel: "#2f9e44",
-  platform: "#185fa5",
-  agent: "#9c36b5",
-  other: "#868e96",
+  channel: "var(--rd-group-channel)",
+  platform: "var(--rd-group-platform)",
+  agent: "var(--rd-group-agent)",
+  other: "var(--rd-group-other)",
 };
 
 const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
@@ -42,13 +48,17 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
  *
  * Data-agnostic: the chain is provided by the parent (T07 wires the fetch).
  *
- * No row-selection/detail-card affordance exists here (rows are static —
- * no `(click)` handler, no selected-event state), unlike the causal graph's
- * node click. SPEC.md `manual-loops/payload-capture.md` T05's "View payload"
- * action is therefore wired only into the causal graph's detail card
- * (`causal-graph.component.ts`); adding a first detail-card surface to the
- * waterfall is out of scope for this task (T05 is additive to the existing
- * event-detail card, not a new one).
+ * Row click → `TraceSelectionService.select(eventId, "waterfall")` (T03 of
+ * `manual-loops/admin-console/console-redesign-trace.md`, per the design
+ * mock's clickable waterfall rows — `Rediseño Terminal.dc.html` line 747).
+ * `TraceSelectionService` is component-provided at the ancestor
+ * `TraceDetailComponent` (its own header comment explains the provider
+ * scope); `inject()` here walks the standard hierarchical injector up to
+ * that provider — no local/view-local selection signal exists on this
+ * component (the Constraints' "selection ONLY via TraceSelectionService"
+ * rule forbids one). The selected row's highlight is driven purely by the
+ * service's `selectedEventId`/`sourceView` signals, read directly in the
+ * template.
  */
 @Component({
   selector: "app-trace-waterfall",
@@ -84,7 +94,14 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
 
       <div class="wf-grid" role="table" aria-label="Waterfall trace">
         @for (row of rows(); track row.eventId) {
-          <div class="wf-row" role="row">
+          <div
+            class="wf-row"
+            role="row"
+            tabindex="0"
+            [class.wf-row-selected]="isSelected(row)"
+            (click)="onRowClick(row)"
+            (keydown.enter)="onRowClick(row)"
+          >
             <div
               class="wf-row-label"
               [style.paddingLeft.px]="row.depth * 16"
@@ -155,10 +172,10 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
       flex-wrap: wrap;
       gap: 8px 16px;
       align-items: center;
-      border: 1px solid var(--border-subtle, #ddd);
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 12px;
+      border: 1px solid var(--rd-line-3, #2e2e2e);
+      border-radius: var(--rd-radius-7, 8px);
+      padding: var(--rd-space-5, 10px) var(--rd-space-7, 14px);
+      font-size: var(--rd-text-size-sm, 12px);
     }
     .wf-chip {
       display: flex;
@@ -166,17 +183,18 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
       gap: 2px;
     }
     .wf-chip-label {
-      color: var(--text3, #888);
-      font-size: 11px;
+      color: var(--rd-text-3, #7a7a7a);
+      font-size: var(--rd-text-size-2xs, 11px);
     }
     .wf-chip-value {
       font-weight: 500;
+      color: var(--rd-text-1, #ededed);
     }
     .wf-chip-bottleneck .wf-chip-value {
-      color: var(--red, #b3261e);
+      color: var(--rd-red, #b3261e);
     }
     .wf-mono {
-      font-family: var(--font-mono, monospace);
+      font-family: var(--rd-font-mono, monospace);
     }
     .wf-grid {
       display: flex;
@@ -188,7 +206,19 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
       grid-template-columns: 260px 1fr;
       align-items: center;
       gap: 8px;
-      min-height: 24px;
+      min-height: 28px;
+      border-radius: var(--rd-radius-5, 6px);
+      padding: 0 4px;
+      margin: 0 -4px;
+      cursor: pointer;
+    }
+    .wf-row:hover {
+      background: var(--rd-panel, #141414);
+    }
+    .wf-row-selected {
+      background: var(--rd-accent-soft, rgba(26, 102, 255, 0.12));
+      outline: 1px solid var(--rd-accent, #1a66ff);
+      outline-offset: -1px;
     }
     .wf-row-label {
       display: flex;
@@ -196,21 +226,22 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
       min-width: 0;
     }
     .wf-event-name {
-      font-size: 12px;
+      font-size: var(--rd-text-size-sm, 12px);
       font-weight: 500;
+      color: var(--rd-text-1, #ededed);
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
     .wf-event-service {
-      font-size: 10px;
-      color: var(--text3, #888);
+      font-size: var(--rd-text-size-2xs, 10px);
+      color: var(--rd-text-3, #7a7a7a);
     }
     .wf-track {
       position: relative;
       height: 16px;
-      background: var(--bg2, #f5f5f5);
-      border-radius: 4px;
+      background: var(--rd-line-2, #161616);
+      border-radius: var(--rd-radius-3, 4px);
     }
     .wf-bar {
       position: absolute;
@@ -227,9 +258,9 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
     }
     .wf-legend {
       display: flex;
-      gap: 16px;
-      font-size: 12px;
-      color: var(--text3, #888);
+      gap: var(--rd-space-8, 16px);
+      font-size: var(--rd-text-size-sm, 12px);
+      color: var(--rd-text-3, #7a7a7a);
     }
     .wf-legend-item {
       display: flex;
@@ -246,6 +277,13 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
 })
 export class TraceWaterfallComponent {
   readonly chain = input.required<ITrackingChainResponse>();
+
+  /** Shared cross-view selection (T02/T03) — walks up to the
+   * `TraceDetailComponent`-provided instance; NOT `providedIn: "root"` (see
+   * `TraceSelectionService`'s header comment). No view-local selection
+   * signal is declared here (Constraints: view-local selected state is
+   * automatic rejection). */
+  private readonly selection = inject(TraceSelectionService);
 
   readonly legendGroups = LEGEND_GROUPS;
 
@@ -267,5 +305,23 @@ export class TraceWaterfallComponent {
   /** Bar width in percent, clamped to a visible minimum. */
   barWidth(row: IWaterfallRow): number {
     return Math.max(row.widthPercent, 0.5);
+  }
+
+  /** Selected-row highlight — reads the shared service's signals directly,
+   * no local state. */
+  isSelected(row: IWaterfallRow): boolean {
+    return this.selection.selectedEventId() === row.eventId;
+  }
+
+  /** Row click (and Enter, for keyboard access) → shared selection (T03,
+   * per the design mock's clickable waterfall rows). Verbose logging: every
+   * new selection-triggering path logs the row it selected. */
+  onRowClick(row: IWaterfallRow): void {
+    console.debug("[TraceWaterfallComponent] row clicked, selecting event", {
+      eventId: row.eventId,
+      label: row.label,
+      correlationId: this.chain().correlation_id,
+    });
+    this.selection.select(row.eventId, "waterfall");
   }
 }

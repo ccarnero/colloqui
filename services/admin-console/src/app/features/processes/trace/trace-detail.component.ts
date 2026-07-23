@@ -1,3 +1,4 @@
+import { DecimalPipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
@@ -8,6 +9,7 @@ import {
 } from "@angular/core";
 import { ActivatedRoute } from "@angular/router";
 import {
+  type ITrackedEvent,
   type ITrackingChainResponse,
   TrackingChainService,
 } from "../../../core/services/tracking-chain.service";
@@ -17,6 +19,7 @@ import { findWorkflowRuns } from "./domain/find-workflow-runs";
 import { MessageTraceComponent } from "./message-trace.component";
 import { TraceSelectionService } from "./trace-selection.service";
 import { TraceWaterfallComponent } from "./waterfall/trace-waterfall.component";
+import { computeEventTimingPercent } from "./waterfall/waterfall-geometry";
 
 /** The four ways to look at a correlation's tracked-event chain — "run"
  * only appears when the chain contains a workflow run (T06 of
@@ -54,6 +57,16 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
  * waterfall's click-to-select affordance (it currently has none) is ADDED
  * in T03. This task only builds the shell + service; nothing here reads
  * or writes a view-local selection signal.
+ *
+ * T03 adds the inspector's waterfall-mode content (decision 3 + the
+ * ORCHESTRATOR RULING): base event fields (whatever ITrackedEvent carries
+ * — SPEC.md T01 finding item 3's "base dl" field mapping) plus timing % of
+ * the chain's total span, computed by computeEventTimingPercent
+ * (waterfall/waterfall-geometry.ts) — the SAME span-matching data the
+ * waterfall bars already render from, not a re-derived heuristic. This
+ * content renders ONLY when selection.sourceView() === "waterfall";
+ * causal/run-view/legacy contextual content stays the T02 placeholder
+ * until T04-T06.
  */
 @Component({
   selector: "app-trace-detail",
@@ -68,6 +81,7 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
     MessageTraceComponent,
     TraceWaterfallComponent,
     RunViewComponent,
+    DecimalPipe,
   ],
   host: {
     // Esc clears the selection (closes the inspector) from anywhere in the
@@ -139,9 +153,7 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
            TraceSelectionService.selectedEventId() is set. Per-view
            context content (payload, timing %, step result, causal chain,
            Temporal/builder deep links — decisions 3/4) is filled in by
-           T03-T06; this task only wires the open/closed shell. Docked
-           panel per the design contract (design mock's aside element
-           labelled "Event inspector") — NOT the shared DetailModal. -->
+           T03-T06; T03 adds the waterfall-mode content below. -->
       <aside class="td-inspector" aria-label="Event inspector">
         @if (selection.selectedEventId(); as selectedId) {
           <header class="td-inspector-head">
@@ -159,10 +171,49 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
             </button>
           </header>
           <div class="td-inspector-body">
-            <p class="td-muted">
-              Inspector content (payload, timing, subscribers, deep links)
-              lands in T03-T06.
-            </p>
+            @if (isWaterfallSelection() && selectedEvent(); as event) {
+              <!-- T03 waterfall-mode content: timing % (decision 3), then
+                   base ITrackedEvent fields (mirrors the design mock's base
+                   dl — event_id/causation/depth/tech/business_fn/
+                   claim_check/compliance/subject — using REAL field
+                   values, not the mock's hardcoded placeholders). -->
+              @if (selectedEventTimingPercent(); as pct) {
+                <div class="td-timing">
+                  <span class="td-timing-label">timing</span>
+                  <span class="td-timing-value">{{ pct | number: "1.0-1" }}% of total</span>
+                </div>
+              } @else {
+                <div class="td-timing td-timing--none">
+                  <span class="td-timing-label">timing</span>
+                  <span class="td-timing-value">no duration data</span>
+                </div>
+              }
+              <dl class="td-base">
+                <dt>event_id</dt>
+                <dd>{{ event.event_id }}</dd>
+                <dt>kind</dt>
+                <dd>{{ event.kind ?? "—" }}</dd>
+                <dt>causation</dt>
+                <dd>{{ event.causation_id ?? "—" }}</dd>
+                <dt>depth</dt>
+                <dd>{{ event.causation_depth ?? "—" }}</dd>
+                <dt>tech</dt>
+                <dd>{{ event.tech }}</dd>
+                <dt>business_fn</dt>
+                <dd>{{ event.business_fn }}</dd>
+                <dt>claim_check</dt>
+                <dd>{{ event.is_claim_check }}</dd>
+                <dt>compliance</dt>
+                <dd>{{ event.compliance }}</dd>
+                <dt>subject</dt>
+                <dd>{{ event.subject }}</dd>
+              </dl>
+            } @else {
+              <p class="td-muted">
+                Inspector content (payload, timing, subscribers, deep links)
+                lands in T04-T06.
+              </p>
+            }
           </div>
         } @else {
           <div class="td-inspector-body td-inspector-body--empty">
@@ -173,11 +224,25 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
     </div>
   `,
   styles: `
-    :host { display: block; padding: 16px; }
-    h1 { font-size: 18px; margin: 0; }
-    .td-sub, .td-muted { color: var(--text-muted, #888); font-size: 12px; }
-    .td-head { margin-bottom: 12px; }
-    .td-error { color: var(--text-danger, #b3261e); }
+    :host {
+      display: block;
+      padding: 16px;
+    }
+    h1 {
+      font-size: 18px;
+      margin: 0;
+    }
+    .td-sub,
+    .td-muted {
+      color: var(--text-muted, #888);
+      font-size: 12px;
+    }
+    .td-head {
+      margin-bottom: 12px;
+    }
+    .td-error {
+      color: var(--text-danger, #b3261e);
+    }
 
     .td-tabs {
       display: inline-flex;
@@ -198,8 +263,12 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
       font-family: inherit;
       transition: color 0.15s, background 0.15s;
     }
-    .td-tab:last-child { border-right: none; }
-    .td-tab:hover { color: var(--rd-text-1, #ededed); }
+    .td-tab:last-child {
+      border-right: none;
+    }
+    .td-tab:hover {
+      color: var(--rd-text-1, #ededed);
+    }
     .td-tab.is-active {
       background: var(--rd-hover, #1a1a1a);
       color: var(--rd-text-1, #ededed);
@@ -210,7 +279,10 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
       gap: var(--rd-space-8, 16px);
       align-items: flex-start;
     }
-    .td-main { flex: 1 1 auto; min-width: 0; }
+    .td-main {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
 
     .td-inspector {
       flex: 0 0 320px;
@@ -260,7 +332,9 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
       line-height: 1;
       cursor: pointer;
     }
-    .td-inspector-close:hover { background: var(--rd-hover, #1a1a1a); }
+    .td-inspector-close:hover {
+      background: var(--rd-hover, #1a1a1a);
+    }
     .td-inspector-body {
       padding: var(--rd-space-7, 14px) var(--rd-space-8, 16px);
     }
@@ -274,6 +348,53 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
       margin: 0;
       color: var(--rd-text-3, #7a7a7a);
       font-size: var(--rd-text-size-sm, 12px);
+    }
+
+    .td-timing {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      background: var(--rd-panel, #141414);
+      border: 1px solid var(--rd-line-2, #161616);
+      border-radius: var(--rd-radius-5, 8px);
+      padding: var(--rd-space-4, 8px) var(--rd-space-5, 10px);
+      margin-bottom: var(--rd-space-6, 12px);
+    }
+    .td-timing-label {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-2xs, 9px);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--rd-text-3, #7a7a7a);
+    }
+    .td-timing-value {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-sm, 12px);
+      color: var(--rd-text-1, #ededed);
+    }
+    .td-timing--none .td-timing-value {
+      color: var(--rd-text-3, #7a7a7a);
+    }
+
+    .td-base {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: var(--rd-space-3, 6px) var(--rd-space-5, 10px);
+      margin: 0;
+      font-size: var(--rd-text-size-sm, 12px);
+    }
+    .td-base dt {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-2xs, 10px);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--rd-text-3, #7a7a7a);
+    }
+    .td-base dd {
+      margin: 0;
+      font-family: var(--rd-font-mono);
+      color: var(--rd-text-1, #ededed);
+      word-break: break-all;
     }
   `,
 })
@@ -309,6 +430,42 @@ export class TraceDetailComponent implements OnInit {
   readonly visibleTabs = computed(() =>
     this.workflowRuns().length > 0 ? [...TABS, RUN_TAB] : TABS
   );
+
+  /** True when the current selection came from the waterfall tab (T03) —
+   * gates the waterfall-mode inspector content (base fields + timing %);
+   * causal/run-view/legacy content lands in T04-T06. */
+  readonly isWaterfallSelection = computed(
+    () => this.selection.sourceView() === "waterfall"
+  );
+
+  /** The currently-selected event's full record from the loaded chain — the
+   * base event info the T03 waterfall-mode inspector content renders.
+   * null when nothing is selected, or when the selected id somehow isn't
+   * in the currently-loaded chain (defensive; should not happen since the
+   * chain is the only source of selectable events on this screen). */
+  readonly selectedEvent = computed<ITrackedEvent | null>(() => {
+    const c = this.chain();
+    const id = this.selection.selectedEventId();
+    if (!c || !id) {
+      return null;
+    }
+    return c.events.find((e) => e.event_id === id) ?? null;
+  });
+
+  /** Timing % of the chain's total span for the selected event (T03,
+   * decision 3's "timing % in waterfall" content) — reuses
+   * computeEventTimingPercent (waterfall-geometry.ts), the SAME
+   * span-matching data the waterfall bars render from. null when the
+   * event has no matched duration — the inspector shows no percentage
+   * rather than inventing one. */
+  readonly selectedEventTimingPercent = computed<number | null>(() => {
+    const c = this.chain();
+    const id = this.selection.selectedEventId();
+    if (!c || !id) {
+      return null;
+    }
+    return computeEventTimingPercent(c, id);
+  });
 
   ngOnInit(): void {
     const cid = this.route.snapshot.paramMap.get("correlationId") ?? "";

@@ -153,6 +153,28 @@ export function computeWaterfallRows(
   });
 }
 
+/**
+ * An event's duration as a percent of the chain's total span (T03 inspector
+ * "timing %" content, SPEC decision 3). Reuses `computeWaterfallRows` — the
+ * SAME row/span matching the waterfall bars already render from — rather
+ * than re-deriving a second heuristic (SPEC T01 finding: "reuse
+ * matchEventSpans, do not re-derive a second heuristic").
+ *
+ * Returns `null` when the event has no timing (unmatched span / zero
+ * duration, i.e. a point row) — the inspector shows no percentage rather
+ * than inventing one, per the Constraints' "no invented data" rule.
+ */
+export function computeEventTimingPercent(
+  chain: ITrackingChainResponse,
+  eventId: string
+): number | null {
+  const row = computeWaterfallRows(chain).find((r) => r.eventId === eventId);
+  if (!row || row.isPoint || row.durationMs <= 0) {
+    return null;
+  }
+  return row.widthPercent;
+}
+
 /** Longest span in the chain, and its share of the total chain duration. */
 export function computeBottleneck(
   chain: ITrackingChainResponse

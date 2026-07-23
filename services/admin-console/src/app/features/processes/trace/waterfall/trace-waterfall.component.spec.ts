@@ -6,6 +6,7 @@ import type {
   ITrackedEventSpan,
   ITrackingChainResponse,
 } from "../../../../core/services/tracking-chain.service";
+import { TraceSelectionService } from "../trace-selection.service";
 import { TraceWaterfallComponent } from "./trace-waterfall.component";
 
 function event(overrides: Partial<ITrackedEvent>): ITrackedEvent {
@@ -84,13 +85,19 @@ const fixtureChain: ITrackingChainResponse = {
 
 describe("TraceWaterfallComponent", () => {
   let fixture: ComponentFixture<TraceWaterfallComponent>;
+  let selection: TraceSelectionService;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TraceWaterfallComponent],
+      // Component-provided at the ancestor TraceDetailComponent in the real
+      // app (see TraceSelectionService's header comment); the test provides
+      // its own instance at the module level so DI resolves it here too.
+      providers: [TraceSelectionService],
     }).compileComponents();
     fixture = TestBed.createComponent(TraceWaterfallComponent);
     fixture.componentRef.setInput("chain", fixtureChain);
+    selection = TestBed.inject(TraceSelectionService);
     fixture.detectChanges();
   });
 
@@ -133,5 +140,47 @@ describe("TraceWaterfallComponent", () => {
     expect(legendText).toContain("Platform");
     expect(legendText).toContain("Agent");
     expect(legendText).toContain("Other");
+  });
+
+  describe("row selection (T03)", () => {
+    it("selects the row's event on click, via the shared TraceSelectionService, sourced as 'waterfall'", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const firstRow = el.querySelector<HTMLElement>(".wf-row");
+
+      firstRow?.click();
+      fixture.detectChanges();
+
+      expect(selection.selectedEventId()).toBe("evt-1");
+      expect(selection.sourceView()).toBe("waterfall");
+    });
+
+    it("highlights the row matching the service's selectedEventId, and only that row", () => {
+      selection.select("evt-2", "waterfall");
+      fixture.detectChanges();
+      const el = fixture.nativeElement as HTMLElement;
+      const rows = el.querySelectorAll<HTMLElement>(".wf-row");
+
+      expect(rows[0]?.classList.contains("wf-row-selected")).toBe(false);
+      expect(rows[1]?.classList.contains("wf-row-selected")).toBe(true);
+    });
+
+    it("has no row highlighted when nothing is selected", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const rows = el.querySelectorAll<HTMLElement>(".wf-row");
+
+      for (const row of Array.from(rows)) {
+        expect(row.classList.contains("wf-row-selected")).toBe(false);
+      }
+    });
+
+    it("does NOT hold any view-local selection state — re-selecting via the service from outside the component still drives the highlight", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      selection.select("evt-1", "causal");
+      fixture.detectChanges();
+
+      expect(
+        el.querySelectorAll(".wf-row")[0]?.classList.contains("wf-row-selected")
+      ).toBe(true);
+    });
   });
 });

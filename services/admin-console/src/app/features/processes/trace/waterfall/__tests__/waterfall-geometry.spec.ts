@@ -6,6 +6,7 @@ import type {
 } from "../../../../../core/services/tracking-chain.service";
 import {
   computeBottleneck,
+  computeEventTimingPercent,
   computeWaterfallRows,
   eventEntityId,
   eventKindPrefix,
@@ -314,5 +315,34 @@ describe("computeBottleneck", () => {
       summary: { ...chain.summary, total_ms: 50 },
     };
     expect(computeBottleneck(pointOnlyChain)).toBeNull();
+  });
+});
+
+describe("computeEventTimingPercent", () => {
+  it("returns the event's share of the chain's total duration for a matched span (normal case)", () => {
+    expect(computeEventTimingPercent(chain, "evt-3")).toBeCloseTo(
+      (800 / 900) * 100,
+      5
+    );
+  });
+
+  it("returns null when the event has no matched span (missing timing)", () => {
+    // evt-4 is the dropped completed-side row (matchEventSpans leaves it
+    // unmatched — see the "matchEventSpans" describe block above).
+    expect(computeEventTimingPercent(chain, "evt-4")).toBeNull();
+  });
+
+  it("returns null for an unknown event id", () => {
+    expect(computeEventTimingPercent(chain, "evt-does-not-exist")).toBeNull();
+  });
+
+  it("does not divide by zero when the chain's total_ms is 0 (zero-total case) — falls back to the same 1ms floor computeWaterfallRows uses", () => {
+    const zeroTotalChain: ITrackingChainResponse = {
+      ...chain,
+      summary: { ...chain.summary, total_ms: 0 },
+    };
+    const percent = computeEventTimingPercent(zeroTotalChain, "evt-3");
+    expect(percent).not.toBeNull();
+    expect(Number.isFinite(percent)).toBe(true);
   });
 });

@@ -389,4 +389,90 @@ describe("TraceDetailComponent", () => {
       expect(first).not.toBe(second);
     });
   });
+
+  describe("Inspector waterfall-mode content (T03)", () => {
+    const barChain: ITrackingChainResponse = {
+      correlation_id: "corr-1",
+      tenant: "acme",
+      events: [
+        event({ event_id: "evt-1", causation_depth: 0 }),
+        event({
+          event_id: "evt-2",
+          kind: "execution_started",
+          causation_id: "evt-1",
+          causation_depth: 1,
+          run_id: "run-1",
+          business_fn: "workflow-execution",
+        }),
+      ],
+      spans: [
+        span({ kind_prefix: "received", entity_id: null }),
+        span({
+          kind_prefix: "execution",
+          entity_id: "run-1",
+          duration_ms: 800,
+        }),
+      ],
+      summary: {
+        count: 2,
+        first_at: "2026-01-01T00:00:00.000Z",
+        last_at: "2026-01-01T00:00:00.900Z",
+        total_ms: 900,
+        orphan_count: 0,
+      },
+    };
+
+    it("shows base event fields + timing % when a waterfall selection has a matched span", () => {
+      getChain.mockReturnValue(of(barChain));
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const selection = fixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+
+      selection.select("evt-2", "waterfall");
+      fixture.detectChanges();
+
+      const timing = el.querySelector(".td-timing-value")?.textContent ?? "";
+      expect(timing).toContain("88.9% of total");
+      const base = el.querySelector(".td-base")?.textContent ?? "";
+      expect(base).toContain("evt-2");
+      expect(base).toContain("execution_started");
+      expect(base).toContain("evt-1");
+      expect(base).toContain("workflow-execution");
+    });
+
+    it("shows 'no duration data' instead of a percentage when the waterfall selection has no matched span", () => {
+      getChain.mockReturnValue(of(barChain));
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const selection = fixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+
+      selection.select("evt-1", "waterfall");
+      fixture.detectChanges();
+
+      expect(el.querySelector(".td-timing--none")).toBeTruthy();
+      expect(el.querySelector(".td-timing-value")?.textContent).toContain(
+        "no duration data"
+      );
+    });
+
+    it("does NOT show waterfall-mode content (base fields/timing) for a non-waterfall selection", () => {
+      getChain.mockReturnValue(of(barChain));
+      setup();
+      const el = fixture.nativeElement as HTMLElement;
+      const selection = fixture.debugElement.injector.get(
+        TraceSelectionService
+      );
+
+      selection.select("evt-2", "causal");
+      fixture.detectChanges();
+
+      expect(el.querySelector(".td-timing")).toBeFalsy();
+      expect(el.querySelector(".td-base")).toBeFalsy();
+      expect(el.querySelector(".td-muted")?.textContent).toContain("T04-T06");
+    });
+  });
 });

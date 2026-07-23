@@ -168,6 +168,14 @@ html.light-theme {
   --rd-btn-bg: #ededed;
   --rd-btn-fg: #0a0a0a;
 
+  // Waterfall legend swatches (business-fn group colors), referencing the
+  // existing palette tokens above rather than minting new literal values
+  // (Rediseño Terminal.dc.html, waterfall legend, ~line 761-764).
+  --rd-group-channel: var(--rd-green);
+  --rd-group-platform: var(--rd-accent);
+  --rd-group-agent: var(--rd-purple);
+  --rd-group-other: var(--rd-text-3);
+
   // Avatar gradient — transcribed from the design file's topbar avatar
   // button (Rediseño Terminal.dc.html, top-bar avatar: linear-gradient(
   // 135deg,#1A66FF,#4A3ABF)).
