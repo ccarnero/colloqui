@@ -826,6 +826,148 @@ no new endpoints allowed):
   for this loop since neither the current code nor the design mock shows
   them).
 
+## Change: console redesign polish (console-redesign-polish)
+
+Manual-loop change (not SDD) closing the visual-parity gap left by the
+L0–L7 redesign series: every shipped screen used the new `--rd-*` tokens
+but several fell short of the binding mocks at the LAYOUT level (chrome,
+panel composition, affordance placement), the worst offender being the
+workflow builder rendering inside the legacy detail wrapper with the old
+palette/node-card layout. Full task queue, gates, findings, and human
+decisions: `manual-loops/admin-console/console-redesign-polish.md`.
+Engram topic: `admin-console/redesign-polish`.
+
+**Audit pointers** — before/after screenshots + DOM-marker JSON for every
+mocked screen, captured with the promoted Playwright harness
+(`services/admin-console/scripts/visual-audit.mjs`, added T01):
+
+- Before: `manual-loops/admin-console/audit/before/` (T01, captured against
+  the wrong (`platform`-scope) credential — see the credential-artifact
+  correction below).
+- After: `manual-loops/admin-console/audit/after/` (T09, same 14 routes,
+  captured against the correct tenant-scoped credential; no route had to be
+  skipped — the workflow id (`HQZTIXPG9ySqHJDZi5aZN`), Telegram account id
+  (`bd0d5548-b4ef-422a-b105-dc29ee2a1a8c`), HTTP connector id
+  (`f27086e2-e480-4dc9-a522-cbd5b84487fd`), and trace correlation id
+  (`d74a3f4f-4bfe-439b-8d40-6f4ed9908158`) from the before-audit all still
+  resolved live).
+
+**Audit-credential rule (T08 finding, binding for future visual audits):**
+tenant-scoped screens must use `TENANT_ADMIN_EMAIL`/`TENANT_ADMIN_PASSWORD`
+from the `auth-secret` k8s secret, passed to the harness as its
+`ADMIN_EMAIL`/`ADMIN_PASSWORD`. The platform-scope `ADMIN_EMAIL` credential
+(JWT `scope: "platform"`, no `tenant_id` claim, no tenant permissions)
+produces false findings: T01's audit used it and recorded two "bugs" —
+topbar tenant chip rendering `Unknown`, and a missing `+ Add User` button
+on `/users` — that T08 proved were correct behavior for a platform-scope
+session, not code defects. Under the real tenant credential the chip
+renders `acme` and the Add User button is visible. No code change was made
+for either; both findings are corrected, not fixed.
+
+**Findings resolved** (by task, see the SPEC's T01 findings list for the
+full per-screen detail):
+
+- **T02** — builder double chrome: the detail-view wrapper (breadcrumb,
+  title/Active badge, Run now/Pause/Edit, sub-tabs row) is suppressed on
+  the `builder` child route; its navigation moved into the builder's own
+  floating chrome as the mock's segmented control.
+- **T03** — builder palette replaced with the mock's floating bottom-center
+  icon dock (same node types, same create wiring); node cards gained a
+  type badge and a derived one-line mono config summary; `valid · N nodes`
+  pill from existing validation state.
+- **T04** — dashboard/analytics FIX-class deltas (panel proportions, header
+  rows, table density, subtitle wording); DATA-GAP items (analytics'
+  design metric set, dashboard service-health rollup) stayed excluded.
+- **T05** — channels/connections: sidebar "All" aggregate row,
+  Endpoint/Auth columns on the Connections table, `/connections/mcp`
+  unified into the fleet landing (pre-filtered table + mock's filter-chips,
+  legacy MCP page retired, same URL/data sources per decision 5(b)).
+- **T06** — AI: sidebar count badges; AI agent editor rebuilt to the mock's
+  single scrolling column per decision 5(c) (replacing the fixed 3-pane
+  workstation), test panel remains reachable, save/mention/invoke wiring
+  frozen.
+- **T07** — trace: `Trace` added to the Processes sub-nav; new shared
+  `TraceSummaryStripComponent` (VERDICT/TOTAL/EVENTOS/CANAL/BOTTLENECK,
+  composed from existing pure derivations plus new `computeChainVerdict`)
+  rendered above all four tabs; new time-axis ruler
+  (`computeTimeAxisTicks`) on the Waterfall tab. The "uniform blue"
+  service-color finding was a data-coincidence non-finding — per-`business_fn`
+  coloring already existed. Legacy tab restyle stayed excluded per the task
+  text (old pipeline kept alive by design).
+- **T08** — topbar restructured into the mock's two-row chrome (breadcrumb
+  row + section-tabs row); `/users` Role column now renders as a
+  `status-badge` chip.
+
+**Findings deferred (DATA-GAP, no backend field/endpoint exists today —
+not built, not re-litigated by this loop):**
+
+- Dashboard's "todos los servicios operativos" health-rollup aggregate.
+- Analytics' full design metric set (Conversaciones / Resueltas sin humano
+  % / 1ª respuesta / Tokens LLM · 30d, per-channel/agent/workflow
+  breakdowns) — already an INDEX-signed amendment from
+  `console-redesign-users-analytics-settings`.
+- Channels/Connections fleet KPI rows, sparkline/msgs-24h/calls-24h/degraded
+  columns, and per-account delivery/failed/first-response metrics — already
+  INDEX-signed amendments from `console-redesign-channels`/
+  `console-redesign-connections`.
+- AI agents list invocation-based KPI row and per-agent stats
+  (invocations/p95/tokens/handoff) — already INDEX-signed from
+  `console-redesign-ai`.
+- Builder per-node run-count/error-rate stats line — already INDEX-signed
+  from `console-redesign-processes-builder`.
+- Trace `CANAL` field is the honest existing proxy (ingress event `tech`,
+  TAXONOMY.md §4 rule 2), not the mock's richer channel-type/account
+  identity — no such field exists on `ITrackedEvent`.
+- **New (T07): trace `VERDICT`'s `failed` delivery state.** The reduced
+  3-state `computeChainVerdict` (received / published-unconfirmed /
+  replied) has no equivalent of the legacy `assemble-trace.ts`
+  `deriveVerdict`'s `failed` branch — that reads a legacy audit-row
+  `delivery` field with no equivalent on `ITrackedEvent`. A failed send
+  today renders as `published-unconfirmed` in the strip. Needs a
+  delivery/outcome signal added to chain events — backend follow-up.
+- `/connections/http/:id` and `/connections/mcp/:id` have no dedicated
+  detail mock anywhere in `01`–`19` — a documentation gap in the visual
+  contract itself, not a code bug; T05 used `03-channel-account-detail.png`'s
+  rhythm as the closest analog.
+- `/workflows` list KPI row (4-card strip not in the mock) and per-row `>`
+  chevron affordance — flagged in T01 as queue gaps with no task owner;
+  left as-is, human call pending on whether to keep or drop the extra
+  chrome.
+- Causal graph tab's own header chips duplicate 4 of the 5 new
+  shared-strip cells — low-risk, non-blocking, flagged for a future loop
+  to simplify once the shared strip is confirmed to fully replace it.
+- Run view tab's Temporal-SDK-specific fields (`temporal id`/`task queue`/
+  `attempt count`) — not confirmed present on `RunViewComponent`'s data
+  source; not pursued without verification.
+- Legacy tab full token migration (`--rd-*` restyle) — excluded per the
+  task text; audited only as far as a `diagnostics:read`-gated session in
+  this loop allowed (deny state confirmed correctly gated, no row-level
+  content audit possible).
+
+**NEW-CAPABILITY backlog awaiting human sign-off** (consolidated from T01
+finding 14, decision 5(a) — none of these are built without explicit
+approval):
+
+- Topbar `Search… ⌘K` box.
+- Dashboard service-health rollup ("todos los servicios operativos").
+- Analytics `7d/30d/90d` time-range selector + `Export CSV` (verify
+  whether `DashboardService`/`ChannelAdminService`/`WorkflowApiService`
+  already accept a day-count param before building).
+- `/connections/mcp`'s transport/status filter-chip row, superseded by
+  T05's decision to unify MCP into the fleet landing instead (decision
+  5(b)) — kept here as a backlog item only if a future loop reverses that
+  direction.
+- AI agents list `Sync from seed` button.
+- AI editor version-management UI: version banner (`v14 · draft sobre v13
+  published`), `unsaved` badge, `Diff vs v13`, `Reset`, `Versions` nav
+  entry, `autosave on` indicator.
+- Workflow builder `Publish` action.
+- **T07 delivery signal**: a `failed`-verdict source field on
+  `ITrackedEvent`/chain events (distinct from the reduced 3-state
+  `computeChainVerdict`) — needed before the trace summary strip's
+  `VERDICT` cell can distinguish a failed send from
+  `published-unconfirmed`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

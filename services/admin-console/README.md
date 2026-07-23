@@ -693,3 +693,68 @@ no new endpoints allowed):
   backend field first (T01 finding 1) — moot for this loop since neither
   the current code nor the design mock shows those columns, but flagged so
   a future design iteration doesn't assume the data already exists.
+
+## Redesign polish loop (layout parity pass)
+
+`manual-loops/admin-console/console-redesign-polish.md` closed the
+LAYOUT-level gap the L0–L7 series left behind: shipped screens already used
+`--rd-*` tokens but several diverged from the binding mocks in chrome,
+panel composition, or affordance placement. The loop's audit harness
+(`scripts/visual-audit.mjs`, promoted from a session script by T01) and its
+before/after screenshots live under
+`manual-loops/admin-console/audit/{before,after}/`; the full findings list,
+resolved-vs-deferred breakdown, and NEW-CAPABILITY backlog are catalogued
+in `cowork/INDEX.md`, "Change: console redesign polish". Per-area changes:
+
+- **Builder full-bleed + floating dock (T02/T03).** The workflow-detail
+  wrapper (breadcrumb, title/Active badge, Run now/Pause/Edit, sub-tabs
+  row) is suppressed while the `builder` child route is active — its
+  navigation moves into the builder's own floating chrome as a segmented
+  control (Editor / Runs / Settings). The full-height left palette sidebar
+  is replaced with a floating bottom-center icon dock (same node types,
+  same create wiring). Node cards gained a type badge and a pure,
+  per-type, derived one-line mono config summary; the stats line stays
+  hidden (still NO-DATA, unchanged from the processes-builder loop).
+- **Dashboard/analytics (T04).** FIX-class deltas only: panel proportions,
+  header rows, table density, and subtitle wording brought in line with
+  the mock. DATA-GAP items (analytics' design metric set, the dashboard
+  service-health rollup) stayed excluded, unchanged from prior loops.
+- **Channels/Connections incl. unified MCP fleet (T05).** Sidebars gained
+  an "All channels"/"All connections" aggregate row; the Connections table
+  swapped in Endpoint/Auth columns (both real fields). `/connections/mcp`
+  is now the unified fleet table pre-filtered to MCP with the mock's
+  filter-chips — the legacy standalone MCP page retired at the same URL,
+  same data sources (decision 5(b), human-signed).
+- **AI editor single-column rebuild (T06).** `/ai/agents/new` and
+  `/ai/agents/:id/configure` moved from the fixed 3-pane workstation
+  (icon rail + config-tree sidebar + editor + docked test panel) to the
+  mock's single scrolling column, with the test panel still reachable
+  further down the same scroll (decision 5(c), human-signed). Save paths,
+  mention decorations, and the invoke wiring are unchanged — this was a
+  container/layout rebuild only. The AI sidebar also gained count badges
+  for parity with Channels/Connections/Users/Roles.
+- **Trace summary strip + time ruler + nav entry (T07).** `Trace` is now
+  reachable from the Processes sub-nav (previously URL-only). A new shared
+  `TraceSummaryStripComponent` (VERDICT / TOTAL / EVENTOS / CANAL /
+  BOTTLENECK) renders above all four tabs, composed from existing pure
+  derivations plus a new `computeChainVerdict` (a reduced 3-state
+  received/published-unconfirmed/replied derivation — see the DATA-GAP
+  note in INDEX for the `failed`-verdict follow-up). The Waterfall tab
+  gained a `computeTimeAxisTicks`-driven ruler row. The Legacy tab's
+  restyle stayed excluded, per the task text (old pipeline kept alive by
+  design).
+- **Two-row topbar + Users chips (T08).** The global topbar is now the
+  mock's two-row chrome (breadcrumb row: org mark + tenant chip + section
+  breadcrumb + bell/theme/help/avatar; a separate section-tabs row). The
+  `/users` Role column now renders via the existing `status-badge`
+  primitive instead of plain text. Two T01 "bugs" — the topbar tenant chip
+  showing `Unknown` and a missing `+ Add User` button — turned out to be
+  credential artifacts of auditing with the platform-scope `ADMIN_EMAIL`
+  instead of a tenant-scoped credential; no code change was needed for
+  either (see INDEX for detail). This is now the binding rule for future
+  visual audits of tenant-scoped screens: use
+  `TENANT_ADMIN_EMAIL`/`TENANT_ADMIN_PASSWORD`.
+- **Unbuilt by design.** Every NEW-CAPABILITY finding (topbar `Search…
+  ⌘K`, dashboard health rollup, analytics time-range selector, AI `Sync
+  from seed`, AI editor version-management UI, builder `Publish`) stays a
+  finding only, catalogued in INDEX for human sign-off — decision 5(a).

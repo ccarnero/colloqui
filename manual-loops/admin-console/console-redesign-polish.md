@@ -790,7 +790,7 @@ grep -n "console-redesign-polish" cowork/INDEX.md && ls manual-loops/admin-conso
 - [x] T06 ai parity
 - [x] T07 trace parity
 - [x] T08 shell + users/settings parity
-- [ ] T09 docs + after-audit
+- [x] T09 docs + after-audit
 
 ## Out of scope (explicit)
 

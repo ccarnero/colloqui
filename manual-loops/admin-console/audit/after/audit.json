@@ -1,0 +1,170 @@
+[
+  {
+    "path": "/dashboard",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 4,
+      "app-sparkline": 3,
+      "app-inventory-table": 1,
+      "app-activity-feed": 1,
+      "app-needs-attention-panel": 0,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/analytics",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 8,
+      "app-sparkline": 0,
+      "app-inventory-table": 1,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 0,
+      "app-usage-chart": 1
+    }
+  },
+  {
+    "path": "/channels/telegram",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 3,
+      "app-sparkline": 0,
+      "app-inventory-table": 1,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 1,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/channels/telegram/accounts/bd0d5548-b4ef-422a-b105-dc29ee2a1a8c",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 0,
+      "app-sparkline": 0,
+      "app-inventory-table": 0,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 0,
+      "app-usage-chart": 1
+    }
+  },
+  {
+    "path": "/connections",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 3,
+      "app-sparkline": 0,
+      "app-inventory-table": 1,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 1,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/connections/http/f27086e2-e480-4dc9-a522-cbd5b84487fd",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 0,
+      "app-sparkline": 0,
+      "app-inventory-table": 0,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 0,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/connections/mcp",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 3,
+      "app-sparkline": 0,
+      "app-inventory-table": 1,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 1,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/ai/agents",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 4,
+      "app-sparkline": 0,
+      "app-inventory-table": 1,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 1,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/ai/agents/new",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 0,
+      "app-sparkline": 0,
+      "app-inventory-table": 0,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 0,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/workflows",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 4,
+      "app-sparkline": 0,
+      "app-inventory-table": 1,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 1,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/workflows/HQZTIXPG9ySqHJDZi5aZN/builder",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 0,
+      "app-sparkline": 0,
+      "app-inventory-table": 0,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 0,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/processes/trace/d74a3f4f-4bfe-439b-8d40-6f4ed9908158",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 0,
+      "app-sparkline": 0,
+      "app-inventory-table": 0,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 0,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/users",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 0,
+      "app-sparkline": 0,
+      "app-inventory-table": 1,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 0,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/settings",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 0,
+      "app-sparkline": 0,
+      "app-inventory-table": 0,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 0,
+      "app-usage-chart": 0
+    }
+  }
+]
