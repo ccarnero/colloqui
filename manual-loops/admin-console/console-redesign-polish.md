@@ -460,6 +460,137 @@ simply rendering its documented empty/zero state.
       INDEX-documented tab set; mock's tab-strip styling was not visible in this
       crop (scrolled below it) — re-verify once summary-strip changes land.
 
+    **T07 findings (recorded 2026-07-23, re-screenshot of all four tabs at
+    `/tmp/claude-501/trace-tabs/trace-tab-{waterfall,causal-graph,legacy,
+    run-view}.png`, compared against mocks `12`-`16` + the design HTML's
+    `showTrace`/`showWaterfall`/`showCausal`/`showLegacy`/`showRun` sections,
+    `Rediseño Terminal.dc.html` lines 683-945):**
+
+    - **Correction to the "Service color-coding" finding above**: this was
+      wrong — `TraceWaterfallComponent` (`waterfall/trace-waterfall.component.ts`)
+      already colors bars/diamonds by `business_fn` group
+      (channel=green/platform=blue/agent=purple/other=gray, `--rd-group-*`
+      tokens) and already renders a matching legend footer. The captured
+      trace's rows all happened to be `workflow-service`/platform-group
+      events, so the live screenshot LOOKED uniformly blue by data
+      coincidence, and the legend row itself was below the fold (viewport
+      screenshot, same "off-screen" class of non-finding as dashboard's
+      recent-workflows table, T01 finding 1). **No action needed** — not a
+      code gap.
+    - Mock's 5-cell summary strip is explicitly **shared** across all four
+      tabs (`Rediseño Terminal.dc.html` line 717's own comment: "Summary
+      strip (shared)") — confirmed in the newly-captured Causal
+      graph/Legacy/Run view screenshots, which show the identical strip.
+      **FIX (T07), implemented**: new `TraceSummaryStripComponent`
+      (`summary-strip/trace-summary-strip.component.ts`), rendered once in
+      `TraceDetailComponent` above the tab body, for every tab. Composed
+      from pure derivations, reused (not rebuilt) where they already
+      existed:
+      - `TOTAL` → `chain.summary.total_ms` (already used by the Waterfall
+        tab's own header chip).
+      - `EVENTOS` → `chain.summary.count` (the real chain-level count field
+        — more precise than "count of rendered waterfall rows" as the
+        earlier finding speculated) `· spans {closed}/{total}` via the
+        Causal graph tab's existing `computeChainCompleteness`
+        (`causal-graph/causal-graph-geometry.ts`, previously only rendered
+        inside that tab's own header).
+      - `CANAL` → the Causal graph tab's existing `computeChannel`
+        (same file) — the ingress event's `tech` field (e.g. `telegram`,
+        `http-generic`), TAXONOMY.md §4 rule 2. This is a real, already-
+        established, already-tested proxy, **not** a true channel/account
+        identity (mock shows `whatsapp · Ventas AR`) — no channel-type or
+        account field exists on `ITrackedEvent`. **DATA-GAP** for the
+        richer identity remains (same class as T01 finding 3's channel
+        DATA-GAPs); `CANAL` in the strip is the honest existing proxy.
+      - `BOTTLENECK` → the Waterfall tab's existing `computeBottleneck`
+        (`waterfall/waterfall-geometry.ts`, previously only rendered
+        inside that tab's own header).
+      - `VERDICT` → **new** `computeChainVerdict`
+        (`summary-strip/compute-chain-verdict.ts`) — a REDUCED 3-state
+        derivation (received / published-unconfirmed / replied) against
+        `ITrackedEvent.kind`. The legacy `assemble-trace.ts` `deriveVerdict`
+        additionally distinguishes a `failed` delivery, but that branch
+        reads the legacy audit-row `delivery` field, which has NO equivalent
+        on `ITrackedEvent` — a failed send renders as
+        `published-unconfirmed` in the strip. **DATA-GAP (review-corrected
+        2026-07-23):** the `failed` verdict needs a delivery/outcome signal
+        on the chain events — backend follow-up, catalogued in T09.
+        Returns `null` — strip shows "no verdict data" — for chains with no
+        `received`/`send`/`sent` kind at all (the common case for
+        `http-generic`/workflow-only executions, including the very trace
+        captured live): **not** the `ActionStatus` this finding originally
+        guessed at (that type is scoped to `RunViewComponent`'s own derived
+        run data, only exists when a workflow run is present, and isn't a
+        general chain-level signal) — verified before building, per the
+        Constraints.
+    - Time-axis ruler: **FIX (T07), implemented** — new pure
+      `computeTimeAxisTicks` (`waterfall/waterfall-time-axis.ts`, 5 ticks at
+      0/25/50/75/100% of `chain.summary.total_ms`, the SAME total the rows
+      already position their bars against), rendered as a `.wf-ruler` row
+      in `TraceWaterfallComponent`, aligned to the grid via the same 260px
+      label-column width as `.wf-row`.
+    - **Causal graph tab** (`13-trace-causal-graph.png` vs live capture):
+      mock renders a hand-laid-out SVG tree (root → 2 children → 3
+      grandchildren, fixed node positions). Live's `CausalGraphComponent`
+      already renders a comparable causal-spine SVG DAG (edges +
+      rectangular nodes, causation-depth-based layout,
+      `causal-graph-geometry.ts`) with its own header chips
+      (correlation/channel/events/duration/completeness) — structurally the
+      same paradigm as the mock (SVG DAG, not a different composition), just
+      a different layout ALGORITHM (this codebase's chain events fan out
+      much wider than the mock's curated example). **No FIX-class delta** —
+      already the right composition; not attempting a mock-pixel-identical
+      tree layout (would require inventing a specific layout algorithm not
+      specified anywhere, out of scope). The tab's own header chips
+      duplicate 4 of the 5 new shared-strip cells (correlation/channel/
+      events/duration) — left as-is (low-risk, already tested,
+      non-blocking); flagged here as a minor follow-up for a future loop to
+      simplify once the shared strip is confirmed to fully replace it.
+    - **Legacy tab** (`16-trace-legacy.png` vs live capture): the live
+      session's admin user does NOT have the `diagnostics:read` permission
+      this tab requires (`message-trace.component.ts`'s `PERMISSION`
+      constant) — the captured screenshot is the real, correctly-gated
+      "Access restricted" deny state, not a layout bug. No row-level
+      content could be audited against the mock's lookup UI/recent-traces/
+      forward-reverse toggle/node-list composition in this session.
+      **Excluded per the task text** ("LEGACY tab: it's the old pipeline
+      kept alive by design — restyle-level fixes only if trivially
+      token-swappable, else document as excluded"): the deny-state markup
+      itself already uses a real (non-rd, pre-existing) token
+      (`var(--text-danger,#b3261e)`), and `MessageTraceComponent`'s wider
+      styling predates the `--rd-*` system entirely (also true of
+      `CausalGraphComponent`'s own chip/node styles) — a full token
+      migration of either component is a bigger, separately-scoped
+      restyle, not a trivial swap; documented here as excluded, needs a
+      `diagnostics:read`-permitted session to actually audit content parity.
+    - **Run view tab** (`14-trace-run-view.png` vs live capture): mock's
+      "Run view" tab shows a Temporal-run metadata card (run id, workflow
+      name, status badge, duration, node count, "Open in Temporal"/"Abrir en
+      el builder" links, then a 6-field temporal-id/task-queue/attempt/
+      started/closed/persisted row) plus a canvas DAG plus a `Step log`
+      table below (`Rediseño Terminal.dc.html` lines 885-943). Live's
+      `RunViewComponent` + embedded `StepLogComponent` (per
+      `trace-detail.component.ts`'s documented placement choice) already
+      render a materially richer real-data run canvas: a run header
+      (workflow name/run id/status/duration/entry-channel/correlation), a
+      row of collapsed-artifact connector/channel chips (click-to-expand,
+      "×2" occurrence counts), the fanout/join/critical-path DAG with
+      per-node status icons and a bottom legend
+      (`solid = request/taken · dashed = response/not executed · thick =
+      critical path · amber = decision`), and the step log panel below it.
+      This is the SAME composition paradigm as the mock (metadata header →
+      canvas → step log) with MORE real data surfaced than the mock's
+      curated example shows — **no FIX-class delta**; the specific field
+      SET differs (live's header uses workflow/run-service fields, mock's
+      uses raw Temporal SDK fields: `temporal id`/`task queue`/`attempt`) —
+      cataloguing this as a **DATA-GAP-flavored non-finding**: no evidence
+      `RunViewComponent`'s data source carries a distinct "Temporal task
+      queue"/"attempt count" pair separate from what it already renders: not
+      pursued (would need verification against `run-view.service.ts`'s
+      actual response shape, out of this task's time budget — flag for a
+      future loop if the human wants pixel-parity on this specific field
+      set).
+
 12. **`/users` vs `17-settings-users.png`** — confirms the already-signed finding
     in INDEX (`console-redesign-users-analytics-settings`) that mock `17` is
     actually the Users list, not a dedicated Settings screen.
@@ -633,7 +764,7 @@ grep -n "console-redesign-polish" cowork/INDEX.md && ls manual-loops/admin-conso
 - [x] T04 dashboard + analytics parity
 - [x] T05 channels + connections parity
 - [x] T06 ai parity
-- [ ] T07 trace parity
+- [x] T07 trace parity
 - [ ] T08 shell + users/settings parity
 - [ ] T09 docs + after-audit
 

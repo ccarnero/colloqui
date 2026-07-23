@@ -5,11 +5,7 @@
  *  - "count-danger":  red number (something needs you now)
  *  - "dot":           a single colored status dot (no number)
  */
-export type NavIndicatorKind =
-  | "count"
-  | "count-warn"
-  | "count-danger"
-  | "dot";
+export type NavIndicatorKind = "count" | "count-warn" | "count-danger" | "dot";
 
 /**
  * Declares that a nav item should display a live indicator.
@@ -138,6 +134,15 @@ export const NAV_SECTIONS: INavSection[] = [
       {
         label: "Schedules",
         route: "/schedules",
+      },
+      // T07 (manual-loops/admin-console/console-redesign-polish.md, T01
+      // finding 11): mock's Processes sub-nav includes a "Trace" entry —
+      // live had none, Trace was reachable only by direct URL. Lands on
+      // /processes/trace (no correlation id), the existing lookup screen
+      // (MessageTraceComponent).
+      {
+        label: "Trace",
+        route: "/processes/trace",
       },
     ],
   },

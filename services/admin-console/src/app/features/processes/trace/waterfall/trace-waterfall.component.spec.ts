@@ -133,6 +133,14 @@ describe("TraceWaterfallComponent", () => {
     expect(secondTrack?.querySelector("svg.wf-bar")).toBeTruthy();
   });
 
+  it("renders a 5-tick time-axis ruler above the grid, scaled off the chain's total_ms (T07)", () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const ticks = el.querySelectorAll(".wf-ruler-tick");
+    expect(ticks.length).toBe(5);
+    expect(ticks[0]?.textContent).toContain("0ms");
+    expect(ticks[4]?.textContent).toContain("900ms");
+  });
+
   it("renders the legend with channel/platform/agent/other entries", () => {
     const el = fixture.nativeElement as HTMLElement;
     const legendText = el.querySelector(".wf-legend")?.textContent ?? "";

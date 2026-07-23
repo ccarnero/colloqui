@@ -28,6 +28,7 @@ import { resolveTrackedEventDeepLink } from "./causal-graph/causal-graph-deep-li
 import { findWorkflowRuns } from "./domain/find-workflow-runs";
 import { MessageTraceComponent } from "./message-trace.component";
 import { StepLogComponent } from "./step-log/step-log.component";
+import { TraceSummaryStripComponent } from "./summary-strip/trace-summary-strip.component";
 import { TraceSelectionService } from "./trace-selection.service";
 import { TraceWaterfallComponent } from "./waterfall/trace-waterfall.component";
 import { computeEventTimingPercent } from "./waterfall/waterfall-geometry";
@@ -146,6 +147,7 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
     TraceWaterfallComponent,
     RunViewComponent,
     StepLogComponent,
+    TraceSummaryStripComponent,
     DecimalPipe,
     RouterLink,
   ],
@@ -182,6 +184,15 @@ const RUN_TAB = { id: "run" as const, label: "Run view" };
         </button>
       }
     </div>
+
+    <!-- T07 (T01 finding 11): shared 5-cell summary strip, identical for all
+         four tabs, per mock's "Summary strip (shared)" comment
+         (Rediseño Terminal.dc.html lines 717-724). Only rendered once the
+         chain has loaded — every cell derives from ITrackingChainResponse
+         data already fetched above, nothing new fetched. -->
+    @if (chain(); as summaryChain) {
+      <app-trace-summary-strip [chain]="summaryChain" />
+    }
 
     <div class="td-body">
       <div class="td-main">

@@ -14,6 +14,10 @@ import {
   computeWaterfallRows,
   type IWaterfallRow,
 } from "./waterfall-geometry";
+import {
+  computeTimeAxisTicks,
+  type ITimeAxisTick,
+} from "./waterfall-time-axis";
 
 const GROUP_LABEL: Record<BusinessFnGroup, string> = {
   channel: "Channel",
@@ -59,6 +63,13 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
  * rule forbids one). The selected row's highlight is driven purely by the
  * service's `selectedEventId`/`sourceView` signals, read directly in the
  * template.
+ *
+ * T07 (`manual-loops/admin-console/console-redesign-polish.md`, T01 finding
+ * 11) adds the time-axis ruler row (`.wf-ruler`) above the grid, matching
+ * the mock's ms-tick header (`Rediseño Terminal.dc.html` lines 734-744) —
+ * pure geometry off the SAME `chain().summary.total_ms` the rows already
+ * position their bars against (`waterfall-time-axis.ts`), aligned to the
+ * grid via the SAME 260px label-column width as `.wf-row`.
  */
 @Component({
   selector: "app-trace-waterfall",
@@ -91,6 +102,18 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
           </span>
         }
       </header>
+
+      <div class="wf-ruler" role="presentation" aria-hidden="true">
+        <span class="wf-ruler-spacer"></span>
+        <div class="wf-ruler-track">
+          @for (tick of timeAxisTicks(); track tick.percent) {
+            <span class="wf-ruler-tick" [style.left.%]="tick.percent">{{
+              tick.ms | number: "1.0-0"
+            }}ms</span>
+          }
+        </div>
+        <span class="wf-ruler-spacer"></span>
+      </div>
 
       <div class="wf-grid" role="table" aria-label="Waterfall trace">
         @for (row of rows(); track row.eventId) {
@@ -196,6 +219,31 @@ const LEGEND_GROUPS: readonly BusinessFnGroup[] = [
     .wf-mono {
       font-family: var(--rd-font-mono, monospace);
     }
+    .wf-ruler {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      align-items: center;
+      gap: 8px;
+    }
+    .wf-ruler-track {
+      position: relative;
+      height: 14px;
+    }
+    .wf-ruler-tick {
+      position: absolute;
+      top: 0;
+      transform: translateX(-50%);
+      font-family: var(--rd-font-mono, monospace);
+      font-size: var(--rd-text-size-2xs, 9px);
+      color: var(--rd-text-3, #7a7a7a);
+      white-space: nowrap;
+    }
+    .wf-ruler-tick:first-child {
+      transform: translateX(0);
+    }
+    .wf-ruler-tick:last-child {
+      transform: translateX(-100%);
+    }
     .wf-grid {
       display: flex;
       flex-direction: column;
@@ -289,6 +337,12 @@ export class TraceWaterfallComponent {
 
   readonly rows = computed(() => computeWaterfallRows(this.chain()));
   readonly bottleneck = computed(() => computeBottleneck(this.chain()));
+
+  /** T07: time-axis ruler ticks, pure geometry off the chain's total_ms
+   * (`waterfall-time-axis.ts`) — see this component's header comment. */
+  readonly timeAxisTicks = computed<readonly ITimeAxisTick[]>(() =>
+    computeTimeAxisTicks(this.chain().summary.total_ms)
+  );
 
   colorFor(row: IWaterfallRow): string {
     return GROUP_COLOR[row.group];
