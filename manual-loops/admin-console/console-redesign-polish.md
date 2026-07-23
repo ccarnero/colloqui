@@ -35,6 +35,18 @@ mock finds no structural difference that is not a signed data-gap exclusion.
    for human sign-off, not something to build.
 4. All L0–L7 behavior contracts stay frozen: routes, save paths, selection
    services, permission gates, byte-compatible workflow saves.
+5. **SIGNED 2026-07-23 (post-T01):**
+   (a) NO new capabilities in this loop — every NEW-CAPABILITY finding from
+   T01 item 14 stays unbuilt, catalogued in the INDEX as backlog.
+   (b) T05: `/connections/mcp` is UNIFIED into the fleet — the route renders
+   the existing unified fleet table pre-filtered to MCP with the mock's
+   filter-chips; the legacy MCP page retires (same URL, same data sources).
+   (c) T06: the AI agent editor is REBUILT to the mock's single scrolling
+   column (07/08) — the 3-pane workstation layout is replaced; the test
+   panel remains reachable per mock 09's composition. Save paths, mention
+   decorations, and the invoke wiring stay frozen (behavior contracts,
+   decision 4).
+   (d) T04 scope now includes the `/workflows` list (mock 10) parity.
 
 ## Prior art (REUSE, do not duplicate)
 
