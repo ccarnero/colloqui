@@ -19,9 +19,23 @@ keeping current behavior, permissions, and data sources.
    `manual-loops/admin-console/design/Rediseño Terminal.dc.html` (+ screenshots
    `18-analytics.png`, `19-analytics-tables.png`, `17-settings-users.png`).
 2. These are restyles: no new capabilities, columns, metrics, or settings.
+   **AMENDED 2026-07-23 (human sign-off, post-T01 findings 2-3):**
+   (a) Analytics: the current screen is 100% hard-coded mock data. T03
+   rebuilds it from REAL metrics already available (dashboard service stats,
+   channel usage totals, workflows summary) composed with kpi-card +
+   UsageChart; the mocks are removed. The design's metric set
+   (conversaciones / resueltas sin humano / tokens LLM / per-agent tables)
+   has no data source — backend follow-up, never invented.
+   (b) Settings: there is no Settings form screen (in code or design). T04
+   re-scopes to restyling the existing settings-hub navigation cards with
+   tokens/primitives; the field-id snapshot test is replaced by link +
+   permission assertions.
 3. Analytics charts reuse whatever chart approach exists today; if none, use
    the foundation Sparkline plus simple SVG bar/line composition — no chart
    library without human sign-off.
+   **RESOLVED 2026-07-23 (post-T01): reuse the existing `UsageChartComponent`
+   multi-series SVG area+line pattern (features/channels/detail/) — no new
+   chart library needed.**
 4. No new API endpoints.
 
 ## Prior art (validated 2026-07-21 — REUSE, do not duplicate)
