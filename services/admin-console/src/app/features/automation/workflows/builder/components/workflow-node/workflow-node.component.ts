@@ -13,6 +13,8 @@ import {
   type IWorkflowNode,
 } from "../../../domain/workflow-node.types";
 import { isKnownNodeTypeColor, nodeTypeColorToken } from "./node-type-color";
+import { nodeTypeShortLabel } from "./node-type-short-label";
+import { summarizeNodeConfig } from "./summarize-node-config";
 import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
 
 @Component({
@@ -38,11 +40,20 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
         <div class="wf-node-icon-wrap">
           <mat-icon>{{ node().icon }}</mat-icon>
         </div>
-        <div class="wf-node-info">
-          <div class="wf-node-name">{{ node().name }}</div>
-          <div class="wf-node-type">{{ typeLabel() }}</div>
-        </div>
+        <div class="wf-node-name">{{ node().name }}</div>
+        <span
+          class="wf-node-type-badge"
+          data-testid="wf-node-type-badge"
+          [style.color]="accentColor()"
+          [style.border-color]="accentColor()"
+        >{{ typeBadgeLabel() }}</span>
       </div>
+
+      @if (configSummary(); as summary) {
+        <div class="wf-node-summary" data-testid="wf-node-summary">
+          {{ summary }}
+        </div>
+      }
 
       <div
         class="wf-node-output"
@@ -125,12 +136,9 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
       height: 18px;
       color: var(--rd-accent);
     }
-    .wf-node-info {
-      display: flex;
-      flex-direction: column;
-      min-width: 0;
-    }
     .wf-node-name {
+      flex: 1;
+      min-width: 0;
       font-size: var(--rd-text-size-base);
       font-weight: 600;
       color: var(--rd-text-1);
@@ -138,9 +146,30 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .wf-node-type {
-      font-size: var(--rd-text-size-xs);
+    /* Type badge (SPEC T03) — "TRIGGER" for the inbound-channel trigger
+       node, else the short type label (node-type-short-label.ts), colored
+       via the EXISTING nodeTypeColorToken mapping (decision 4, AMENDED). */
+    .wf-node-type-badge {
+      flex-shrink: 0;
+      font-family: var(--rd-font-mono);
+      font-size: 9px;
+      letter-spacing: 0.5px;
+      border: 1px solid;
+      border-radius: var(--rd-radius-5);
+      padding: 1px 6px;
+      opacity: 0.9;
+    }
+    /* One-line mono config summary (SPEC T03) — derived purely from
+       existing per-type configuration fields, see summarize-node-config.ts.
+       Hidden entirely when empty (nothing meaningful to show yet). */
+    .wf-node-summary {
+      padding: 0 16px 9px;
+      font-family: var(--rd-font-mono);
+      font-size: 10.5px;
       color: var(--rd-text-3);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
     /* Port dot fill color is bound to accentColor() via [style.background]
        (SPEC decision 4, AMENDED); the base rule below only sets
@@ -254,44 +283,45 @@ export class WorkflowNodeComponent {
         );
       }
     });
-  }
 
-  typeLabel(): string {
-    const labels: Record<string, string> = {
-      channel: "Channel",
-      jsFunction: "JS Function",
-      endpointCall: "HTTP Connector",
-      serviceCall: "Service Call",
-      serviceBusCall: "Publish Event",
-      agentCall: "Agent",
-      branch: "Parallel Branch",
-      conditional: "Conditional",
-    };
-    const label = labels[this.node().type] ?? this.node().type;
-    if (this.node().type === this.channelType) {
-      const channel = this.channelSubtitle();
-      if (channel) {
-        return `${label} · ${channel}`;
-      }
-    }
-    return label;
+    // Verbose logging per SPEC T03: trace the derived config summary so an
+    // empty (hidden) summary line is traceable back to "no meaningful
+    // config yet" rather than a silent rendering bug.
+    effect(() => {
+      const summary = this.configSummary();
+      console.debug("[WorkflowNodeComponent] config summary derived", {
+        nodeKey: this.node().key,
+        type: this.node().type,
+        summary: summary || "(empty — hidden)",
+      });
+    });
   }
 
   /**
-   * Concrete channel type shown alongside the generic "Channel" label.
-   * Outbound channelSend nodes store a single channel string; inbound
-   * trigger nodes store a list of listened channels.
+   * A node is "the trigger" when it's the inbound-channel entry point of
+   * the flow (mirrors `WorkflowBuilderComponent.triggerAccountIds`' own
+   * CHANNEL + direction==="inbound" check — same signal, no new state).
    */
-  private channelSubtitle(): string | null {
-    const configuration = this.node().configuration;
-    const outbound = configuration?.["channel"];
-    if (typeof outbound === "string" && outbound) {
-      return outbound;
-    }
-    const inbound = configuration?.["channels"];
-    if (Array.isArray(inbound) && inbound.length > 0) {
-      return inbound.filter((c) => typeof c === "string" && c).join(", ");
-    }
-    return null;
-  }
+  readonly isTriggerNode = computed(
+    () =>
+      this.node().type === this.channelType &&
+      this.node().configuration["direction"] === "inbound"
+  );
+
+  /**
+   * Node-card type badge text (SPEC T03, mock's `bn.tag`): "TRIGGER" for
+   * the trigger node, else the short type label shared with the palette
+   * dock (node-type-short-label.ts). Colored via `accentColor()`
+   * (EXISTING nodeTypeColorToken mapping, decision 4 AMENDED).
+   */
+  readonly typeBadgeLabel = computed(() =>
+    this.isTriggerNode() ? "TRIGGER" : nodeTypeShortLabel(this.node().type)
+  );
+
+  /**
+   * One-line mono config summary (SPEC T03) — derived purely from this
+   * node's EXISTING configuration fields via the pure `summarizeNodeConfig`
+   * function; empty string when there is nothing meaningful yet.
+   */
+  readonly configSummary = computed(() => summarizeNodeConfig(this.node()));
 }

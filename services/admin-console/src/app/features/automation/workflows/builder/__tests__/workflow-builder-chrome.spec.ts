@@ -3,7 +3,20 @@ import { provideHttpClientTesting } from "@angular/common/http/testing";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { ActivatedRoute, provideRouter, Router } from "@angular/router";
 import { vi } from "vitest";
+import { EWorkflowNodeType } from "../../domain/workflow-node.types";
 import { WorkflowBuilderComponent } from "../workflow-builder.component";
+
+/**
+ * jsdom has no ResizeObserver; @foblex/flow's FNodeDirective observes node
+ * size on mount, needed once this suite renders an actual node card.
+ */
+class ResizeObserverStub {
+  observe(): void {}
+  unobserve(): void {}
+  disconnect(): void {}
+}
+(globalThis as { ResizeObserver?: unknown }).ResizeObserver ??=
+  ResizeObserverStub;
 
 /**
  * T03 — floating chrome (back / workflow name / save state) rendered over
@@ -88,5 +101,39 @@ describe("WorkflowBuilderComponent — floating chrome (T03)", () => {
     expect(el.querySelector('[aria-label="Zoom in"]')).toBeTruthy();
     expect(el.querySelector('[aria-label="Zoom out"]')).toBeTruthy();
     expect(el.querySelector(".zoom-readout")?.textContent).toContain("%");
+  });
+
+  /**
+   * T03 — "N nodes" pill (T01 finding 10). No "valid" prefix: the builder
+   * only computes validationErrors from saveWorkflow(), so claiming
+   * "valid" before any save would invent an unverified state.
+   */
+  it("renders the node-count pill with 0 nodes on a fresh canvas", () => {
+    const el = fixture.nativeElement as HTMLElement;
+    const pill = el.querySelector('[data-testid="builder-node-count-pill"]');
+    expect(pill).toBeTruthy();
+    expect(pill!.textContent).toContain("0 nodes");
+    expect(pill!.textContent).not.toContain("valid");
+  });
+
+  it("updates the node-count pill as nodes are added", () => {
+    fixture.componentInstance.flow.update((f) => ({
+      ...f,
+      nodes: {
+        "n-1": {
+          key: "n-1",
+          type: EWorkflowNodeType.CHANNEL,
+          name: "n1",
+          icon: "swap_horiz",
+          position: { x: 0, y: 0 },
+          configuration: {},
+        },
+      },
+    }));
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const pill = el.querySelector('[data-testid="builder-node-count-pill"]');
+    expect(pill!.textContent).toContain("1 nodes");
   });
 });

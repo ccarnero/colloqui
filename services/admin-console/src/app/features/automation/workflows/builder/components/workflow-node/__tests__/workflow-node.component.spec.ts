@@ -136,4 +136,90 @@ describe("WorkflowNodeComponent", () => {
     expect(badge?.textContent).toContain("24h: 312");
     expect(el.querySelector(".wf-node-stats-dot.is-ok")).toBeTruthy();
   });
+
+  /**
+   * T03 — mock-parity node card: leading icon chip (reuse node().icon,
+   * unchanged), type badge (short type label, or TRIGGER for the trigger
+   * node), one-line mono config summary from summarizeNodeConfig.
+   */
+  it("renders the leading icon chip from node().icon", () => {
+    fixture.componentInstance.node = makeNode({ icon: "http" });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(
+      el.querySelector(".wf-node-icon-wrap mat-icon")?.textContent?.trim()
+    ).toBe("http");
+  });
+
+  it("shows the short type label as the type badge for a non-trigger node", () => {
+    fixture.componentInstance.node = makeNode({
+      type: EWorkflowNodeType.JS_FUNCTION,
+    });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const badge = el.querySelector('[data-testid="wf-node-type-badge"]');
+    expect(badge?.textContent?.trim()).toBe("JS");
+  });
+
+  it("shows TRIGGER for the inbound-channel trigger node instead of the short label", () => {
+    fixture.componentInstance.node = makeNode({
+      type: EWorkflowNodeType.CHANNEL,
+      configuration: { direction: "inbound" },
+    });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const badge = el.querySelector('[data-testid="wf-node-type-badge"]');
+    expect(badge?.textContent?.trim()).toBe("TRIGGER");
+  });
+
+  it("shows CHAN (not TRIGGER) for an outbound channel node", () => {
+    fixture.componentInstance.node = makeNode({
+      type: EWorkflowNodeType.CHANNEL,
+      configuration: { direction: "outbound", channel: "whatsapp" },
+    });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const badge = el.querySelector('[data-testid="wf-node-type-badge"]');
+    expect(badge?.textContent?.trim()).toBe("CHAN");
+  });
+
+  it("colors the type badge with the same accent token as the border/ports", () => {
+    fixture.componentInstance.node = makeNode({
+      type: EWorkflowNodeType.AGENT_CALL,
+    });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const badge = el.querySelector<HTMLElement>(
+      '[data-testid="wf-node-type-badge"]'
+    );
+    expect(badge?.style.color).toBe("var(--rd-purple)");
+  });
+
+  it("renders the one-line mono config summary when the node has meaningful config", () => {
+    fixture.componentInstance.node = makeNode({
+      type: EWorkflowNodeType.ENDPOINT_CALL,
+      configuration: { method: "GET", url: "https://api.example.com/user" },
+    });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const summary = el.querySelector('[data-testid="wf-node-summary"]');
+    expect(summary?.textContent?.trim()).toBe("GET · api.example.com");
+  });
+
+  it("hides the config summary line entirely when there is nothing meaningful to show", () => {
+    fixture.componentInstance.node = makeNode({
+      type: EWorkflowNodeType.ENDPOINT_CALL,
+      configuration: { method: "", url: "" },
+    });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    expect(el.querySelector('[data-testid="wf-node-summary"]')).toBeNull();
+  });
 });

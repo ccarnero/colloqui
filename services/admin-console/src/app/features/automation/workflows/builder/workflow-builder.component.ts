@@ -119,9 +119,6 @@ function pruneConflictingConnections(
   template: `
     <div class="builder-shell">
       <div class="builder-body">
-        <!-- Palette -->
-        <app-workflow-palette />
-
         <!-- Canvas -->
         <div class="builder-canvas-wrap">
           <app-variables-reference [groups]="variableGroups()" />
@@ -255,6 +252,21 @@ function pruneConflictingConnections(
 
             <span class="chrome-spacer"></span>
 
+            <!-- Node-count pill (SPEC T03, T01 finding 10): N = current
+                 node count (real, from the nodes() computed). No "valid"
+                 prefix: per SPEC, that word is only warranted when the
+                 builder exposes an already-computed validation state
+                 without a new run; validationErrors here is only ever
+                 populated by saveWorkflow(), so showing "valid" before any
+                 save would invent a state nothing has actually verified
+                 yet. -->
+            <span
+              class="chrome-pill chrome-node-count"
+              data-testid="builder-node-count-pill"
+            >
+              {{ nodeCountLabel() }}
+            </span>
+
             <div class="chrome-pill chrome-actions">
               <!-- Run now / Pause (T02): relocated here from the detail
                    wrapper's header, reusing the EXACT wiring
@@ -330,6 +342,12 @@ function pruneConflictingConnections(
               <mat-icon>fit_screen</mat-icon>
             </button>
           </div>
+
+          <!-- Floating bottom-center: palette dock (SPEC T03, T01 finding
+               10) — replaces the old full-height left sidebar palette. A
+               sibling of f-flow, positioned by the component's own host
+               styles; SAME create wiring (fExternalItem/fData) as before. -->
+          <app-workflow-palette />
 
           <!-- Floating inspector (SPEC T05 — T01 finding 2: replaces the old
                300px sidebar; embeds the EXISTING WorkflowNodeConfigComponent
@@ -518,6 +536,13 @@ function pruneConflictingConnections(
       flex: 1;
       pointer-events: none;
     }
+    /* Node-count pill (SPEC T03) — see the template comment above for why
+       it never claims "valid" without a real validation run. */
+    .chrome-node-count {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-2);
+    }
     /* Segmented control (T02) — Editor / Runs / Settings, replacing the
        detail wrapper's sub-tabs row while the builder is full-bleed. */
     .chrome-segmented {
@@ -702,6 +727,19 @@ export class WorkflowBuilderComponent implements OnInit {
   });
 
   readonly nodes = computed(() => Object.values(this.flow().nodes));
+
+  /**
+   * Floating chrome node-count pill (SPEC T03, T01 finding 10). Always
+   * "N nodes" from the real node count — no "valid" prefix, because
+   * validateWorkflow() only ever runs from saveWorkflow() (see
+   * validationErrors below); showing "valid" here would claim a
+   * verification that has not actually happened for the current canvas
+   * state.
+   */
+  readonly nodeCountLabel = computed<string>(() => {
+    const count = this.nodes().length;
+    return `${count} nodes`;
+  });
 
   readonly connections = computed(() => Object.values(this.flow().connections));
 
