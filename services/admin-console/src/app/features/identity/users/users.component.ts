@@ -5,40 +5,42 @@ import {
   type OnInit,
   signal,
 } from "@angular/core";
-import { FormsModule } from "@angular/forms";
-import { MatButtonModule } from "@angular/material/button";
 import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
-import { MatPaginatorModule } from "@angular/material/paginator";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
-import { MatTableModule } from "@angular/material/table";
-import { MatTabsModule } from "@angular/material/tabs";
 import type { IUser } from "../../../core/models";
 import { AuthService } from "../../../core/services/auth.service";
 import { TenantService } from "../../../core/services/tenant.service";
 import { TenantUsersService } from "../../../core/services/tenant-users.service";
-import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import {
-  type StatusBadgeColor,
-  StatusBadgeComponent,
-} from "../../../shared/components/status-badge/status-badge.component";
+  type InventoryTableColumn,
+  InventoryTableComponent,
+} from "../../../shared/components/inventory-table/inventory-table.component";
+import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
 import { CreateTenantUserDialogComponent } from "./create-tenant-user-dialog.component";
+import {
+  type IUserDetailDialogResult,
+  UserDetailDialogComponent,
+} from "./user-detail-dialog.component";
 
+/**
+ * Users screen, restyled onto the inventory-table primitive per design
+ * `Rediseño Terminal.dc.html` lines 658-681 (columns Email/Name/Role/
+ * Created, single "Deactivate user" row action, "Add user" header
+ * action). T01 finding 1: `IUser` has no status/last-active field — those
+ * columns are intentionally not rendered (they don't exist), and there is
+ * no "edit" action (never existed, T01 finding 6).
+ */
 @Component({
   selector: "app-users",
+  standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
-    UtcDatePipe,
-    FormsModule,
-    MatTableModule,
-    MatButtonModule,
     MatIconModule,
-    MatTabsModule,
-    MatPaginatorModule,
     MatDialogModule,
     MatProgressSpinnerModule,
-    StatusBadgeComponent,
+    InventoryTableComponent,
     PageHeaderComponent,
   ],
   template: `
@@ -62,7 +64,7 @@ import { CreateTenantUserDialogComponent } from "./create-tenant-user-dialog.com
     @if (loading()) {
       <div class="table-wrap" style="padding: 32px; text-align: center">
         <mat-spinner diameter="32" />
-        <p style="margin-top: 12px; color: var(--text3)">
+        <p style="margin-top: 12px; color: var(--rd-text-3)">
           Loading users...
         </p>
       </div>
@@ -81,98 +83,81 @@ import { CreateTenantUserDialogComponent } from "./create-tenant-user-dialog.com
           </button>
         </div>
       </div>
-    } @else if (users().length === 0) {
-      <div class="table-wrap" style="padding: 32px; text-align: center">
-        <mat-icon
-          style="font-size: 40px; width: 40px; height: 40px; color: var(--text3)"
-        >
-          people_outline
-        </mat-icon>
-        <p style="margin-top: 12px; font-weight: 600">No users yet</p>
-        <p style="color: var(--text3); margin-top: 4px">
-          Invite users to collaborate on this tenant.
-        </p>
-      </div>
     } @else {
-      <div class="table-wrap">
-        <table mat-table [dataSource]="users()">
-          <ng-container matColumnDef="email">
-            <th mat-header-cell *matHeaderCellDef>Email</th>
-            <td mat-cell *matCellDef="let u">{{ u.email }}</td>
-          </ng-container>
-          <ng-container matColumnDef="display_name">
-            <th mat-header-cell *matHeaderCellDef>Name</th>
-            <td mat-cell *matCellDef="let u">
-              {{ u.display_name || "—" }}
-            </td>
-          </ng-container>
-          <ng-container matColumnDef="role">
-            <th mat-header-cell *matHeaderCellDef>Role</th>
-            <td mat-cell *matCellDef="let u">
-              <app-status-badge
-                [status]="formatRole(u.role)"
-                [color]="roleColor(u.role)"
-              />
-            </td>
-          </ng-container>
-          <ng-container matColumnDef="created_at">
-            <th mat-header-cell *matHeaderCellDef>Created</th>
-            <td mat-cell *matCellDef="let u" style="color: var(--text3)">
-              {{ u.created_at | utcDate: "mediumDate" }}
-            </td>
-          </ng-container>
-          <ng-container matColumnDef="actions">
-            <th mat-header-cell *matHeaderCellDef></th>
-            <td mat-cell *matCellDef="let u">
-              @if (authService.hasPermission("users:delete")) {
-                <button
-                  mat-icon-button
-                  color="warn"
-                  type="button"
-                  aria-label="Deactivate user"
-                  (click)="deactivateUser(u.id)"
-                >
-                  <mat-icon>person_off</mat-icon>
-                </button>
-              }
-            </td>
-          </ng-container>
-          <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
-          <tr mat-row *matRowDef="let row; columns: displayedColumns"></tr>
-        </table>
-        <mat-paginator
-          [length]="users().length"
-          [pageSize]="10"
-          [pageSizeOptions]="[10, 25, 50]"
-          showFirstLastButtons
-        />
-      </div>
+      <app-inventory-table
+        [columns]="userColumns"
+        [rows]="users()"
+        ariaLabel="Tenant users"
+        emptyMessage="No users yet. Invite users to collaborate on this tenant."
+        (rowClick)="onUserRowClick($event)"
+      />
+    }
+  `,
+  styles: `
+    app-inventory-table {
+      display: block;
     }
   `,
 })
 export class UsersComponent implements OnInit {
   private readonly tenantUsers = inject(TenantUsersService);
   private readonly dialog = inject(MatDialog);
+  private readonly utcDate = new UtcDatePipe();
   protected readonly authService = inject(AuthService);
   protected readonly tenant = inject(TenantService);
-
-  readonly displayedColumns = [
-    "email",
-    "display_name",
-    "role",
-    "created_at",
-    "actions",
-  ];
 
   readonly users = signal<IUser[]>([]);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
+
+  /**
+   * Inventory-table columns for the users list. Only real `IUser` fields
+   * are mapped (T01 finding 1) — no status/last-active columns exist.
+   * Role is rendered as plain text: the primitive's "status-badge" column
+   * type only exposes a `health` accessor (ok/warn/error/idle) for the
+   * "dot" variant, not an arbitrary per-role color, so it cannot reproduce
+   * the design's `roleColor`/`roleBg` pill without extending the shared
+   * primitive, which is out of scope for T02 (ONLY
+   * features/identity/users/ may change).
+   */
+  readonly userColumns: InventoryTableColumn<IUser>[] = [
+    {
+      key: "email",
+      header: "Email",
+      type: "mono",
+      value: (u) => u.email,
+      width: "2fr",
+    },
+    {
+      key: "name",
+      header: "Name",
+      type: "text",
+      value: (u) => u.display_name || "—",
+      width: "1.4fr",
+    },
+    {
+      key: "role",
+      header: "Role",
+      type: "text",
+      value: (u) => this.formatRole(u.role),
+      width: "1.1fr",
+    },
+    {
+      key: "created",
+      header: "Created",
+      type: "mono",
+      value: (u) => this.formatCreatedAt(u.created_at),
+      width: "1fr",
+    },
+  ];
 
   ngOnInit(): void {
     this.loadUsers();
   }
 
   openCreateDialog(): void {
+    // Verbose logging: existing invite flow unchanged, T01 finding 1.
+    console.debug("[UsersComponent] opening create-user dialog");
     const ref = this.dialog.open(CreateTenantUserDialogComponent, {
       width: "480px",
       data: { tenantId: this.authService.tenantId() },
@@ -180,14 +165,75 @@ export class UsersComponent implements OnInit {
 
     ref.afterClosed().subscribe((created: IUser | undefined) => {
       if (created) {
+        console.debug("[UsersComponent] user created, reloading list", {
+          userId: created.id,
+        });
         this.loadUsers();
+      } else {
+        console.debug(
+          "[UsersComponent] create-user dialog closed without creating"
+        );
       }
     });
   }
 
+  /**
+   * Design (Rediseño Terminal.dc.html lines 658-681) shows "Deactivate
+   * user" as a per-row icon button, but the shared `app-inventory-table`
+   * primitive has no action-column type and is out of scope to extend for
+   * T02 (ONLY features/identity/users/ may change). Smallest faithful
+   * substitute: row click opens a row-detail dialog
+   * (`UserDetailDialogComponent`, styled after the shared
+   * `app-detail-dialog` primitive) that surfaces the same Deactivate
+   * action, gated the same way (`users:delete`).
+   */
+  onUserRowClick(user: IUser): void {
+    console.debug("[UsersComponent] user row clicked, opening detail dialog", {
+      userId: user.id,
+    });
+    const canDeactivate = this.authService.hasPermission("users:delete");
+    const ref = this.dialog.open(UserDetailDialogComponent, {
+      width: "420px",
+      panelClass: "rd-dialog-panel",
+      data: {
+        user,
+        canDeactivate,
+        formatRole: (role: string) => this.formatRole(role),
+        formatCreatedAt: (createdAt: string) => this.formatCreatedAt(createdAt),
+      },
+    });
+
+    ref
+      .afterClosed()
+      .subscribe((result: IUserDetailDialogResult | undefined) => {
+        if (result?.action === "deactivate") {
+          this.deactivateUser(result.userId);
+        } else {
+          console.debug(
+            "[UsersComponent] user detail dialog closed, no action",
+            {
+              userId: user.id,
+            }
+          );
+        }
+      });
+  }
+
   deactivateUser(id: string): void {
+    console.debug("[UsersComponent] deactivating user", { userId: id });
     this.tenantUsers.deleteUser(id).subscribe({
-      next: () => this.loadUsers(),
+      next: () => {
+        console.debug("[UsersComponent] user deactivated, reloading list", {
+          userId: id,
+        });
+        this.loadUsers();
+      },
+      error: (err) => {
+        console.error("[UsersComponent] failed to deactivate user", {
+          userId: id,
+          error: err,
+        });
+      },
     });
   }
 
@@ -198,24 +244,26 @@ export class UsersComponent implements OnInit {
       .join(" ");
   }
 
-  roleColor(role: string): StatusBadgeColor {
-    if (role === "tenant_admin") {
-      return "purple";
-    }
-    return "blue";
+  private formatCreatedAt(createdAt: string): string {
+    return this.utcDate.transform(createdAt, "mediumDate") ?? "—";
   }
 
   protected loadUsers(): void {
     this.loading.set(true);
     this.error.set(null);
+    console.debug("[UsersComponent] loading users");
     this.tenantUsers.listUsers().subscribe({
       next: (data) => {
         this.users.set(data);
         this.loading.set(false);
+        console.debug("[UsersComponent] users loaded", { count: data.length });
       },
       error: (err) => {
         this.error.set(err?.message ?? "Failed to load users");
         this.loading.set(false);
+        console.error("[UsersComponent] failed to load users", {
+          error: err,
+        });
       },
     });
   }
