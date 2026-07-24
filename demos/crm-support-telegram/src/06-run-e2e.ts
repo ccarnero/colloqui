@@ -1,20 +1,22 @@
 /**
- * 06-run-e2e — the end-to-end proof for the crm-support-telegram demo (SPEC
- * T07, run via `./run.sh`). Resolves every artifact 01-05 provisioned (by
- * name/slug, like `05-workflow.ts`), seeds a standard-then-VIP HubSpot
- * contact, drives two simulated Telegram inbound messages through the real
- * workflow, polls the workflow-execution API for each completed run, and
- * asserts on the SAME action-result context the admin-console run-view
- * shows a human — then cleans up every HubSpot artifact it created and
- * prints the run-view URL for the demo's money shot.
+ * 06-run-e2e — the end-to-end proof for the crm-support-telegram demo, run
+ * via `./run.sh`. Resolves every artifact the manifest provisions (by
+ * name/slug) — see `manifest.yaml`, applied with `yoizen manifests apply -f
+ * manifest.yaml --secrets-from-env` (T06: the manifest is now the ONLY
+ * provisioning path, the `0N-*.sh`/`setup.sh` scripts this stage originally
+ * ran after are DELETED) — seeds a standard-then-VIP HubSpot contact, drives
+ * two simulated Telegram inbound messages through the real workflow, polls
+ * the workflow-execution API for each completed run, and asserts on the SAME
+ * action-result context the admin-console run-view shows a human — then
+ * cleans up every HubSpot artifact it created and prints the run-view URL
+ * for the demo's money shot.
  *
- * Adapted from `demos/crm-support-telegram/src/0{1,2,4,5}-*.ts` (stage
- * structure, lib helpers, client bootstrap with the Host-header fetch
- * wrapper, locally-mirrored connector-invoke types — SDK gap, T03) and
- * `integrations/channels/telegram-transform-reply/src/setup.ts`'s `simulateInbound()`
- * (the `client.webhooks.ingest()` call + execution-polling loop this stage
- * generalizes to two runs with real assertions). Copied and adapted, NOT
- * imported across trees (`demos/README.md`).
+ * Adapted from `integrations/channels/telegram-transform-reply/src/setup.ts`'s
+ * `simulateInbound()` (the `client.webhooks.ingest()` call + execution-
+ * polling loop this stage generalizes to two runs with real assertions) and
+ * this demo's own `lib/` helpers (stage structure, client bootstrap with the
+ * Host-header fetch wrapper, locally-mirrored connector-invoke types — SDK
+ * gap). Copied and adapted, NOT imported across trees (`demos/README.md`).
  *
  * ----------------------------------------------------------------------
  * DESIGN NOTES / DEVIATIONS FROM THE SPEC'S LITERAL WORDING (see
@@ -32,9 +34,9 @@
  *    `webhook-ingress.service.ts` `resolveAccount()`) a real Telegram
  *    delivery would exercise. It is MORE reliable for an automated E2E
  *    script than depending on the `TG_PUBLIC_URL` tunnel's uptime — that
- *    tunnel path is already covered by `01-telegram-channel.sh`'s
- *    `webhook_registered` assertion (enforced as a hard failure by
- *    `setup.sh`).
+ *    tunnel path is already covered by `bootstrap.sh`'s (T06) webhook
+ *    registration stage, which fails loud (`webhookRegistered=false` logged
+ *    as a warning) rather than silently skipping it.
  *
  * 2. "Contact searched (cache miss then hit on second message)" is NOT
  *    assertable on the `searchContact` workflow action: T03 made
@@ -152,8 +154,13 @@ interface RunResultContext {
 
 // ----- Configuration (override via env) -------------------------------------
 const WORKFLOW_NAME = process.env.CRM_WORKFLOW_NAME ?? "crm-support-telegram";
+// T06 fix: the manifest-created channel account's name is the slug
+// `crm-support-telegram-bot` (manifest.yaml's `channels[0].name`,
+// `bootstrap.ts`'s `TELEGRAM_CHANNEL_NAME`) — NOT the deleted script's
+// display name `"CRM Support Telegram Bot"`, which no live account carries
+// anymore post-migration.
 const TG_ACCOUNT_NAME =
-  process.env.TG_ACCOUNT_NAME ?? "CRM Support Telegram Bot";
+  process.env.TG_ACCOUNT_NAME ?? "crm-support-telegram-bot";
 const HUBSPOT_CONNECTOR_NAME = "demo-hubspot";
 const AGENT_NAME = process.env.CRM_AGENT_NAME ?? "crm-support-agent";
 const SCORER_SERVICE_NAME =
@@ -200,12 +207,16 @@ const HUBSPOT_CREATE_CONTACT_ENDPOINT = {
   path: "/crm/v3/objects/contacts",
 };
 
-// Same cache files 01-telegram-channel.ts writes — reused here read-only so
-// this script never re-implements chat-id discovery or webhook-secret
-// capture, it just resolves what 01 already resolved.
+// Same chat-id cache file `bootstrap.ts` writes (T06) — reused here
+// read-only so this script never re-implements chat-id discovery, it just
+// resolves what bootstrap already resolved. The webhook SECRET is no longer
+// cached to a file at all (T06 fix — see Stage 2 below): `bootstrap.ts`
+// fetches it live from the manifest-created channel account on every run
+// rather than writing a `.telegram-channel-secret` file, so this script
+// resolves the SAME way, live, instead of depending on a cache file nothing
+// produces anymore.
 const demoDir = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const CHAT_ID_CACHE_FILE = path.join(demoDir, ".telegram-test-chat-id");
-const SECRET_FILE = path.join(demoDir, ".telegram-channel-secret");
 
 function loadFromFile(file: string): string {
   try {
@@ -383,19 +394,12 @@ async function main(): Promise<void> {
       loadFromFile(CHAT_ID_CACHE_FILE);
     if (!testChatIdRaw) {
       fail(
-        "TELEGRAM_TEST_CHAT_ID could not be resolved — run ./setup.sh (01-telegram-channel.sh) first, or set it explicitly."
+        `TELEGRAM_TEST_CHAT_ID could not be resolved — run ./bootstrap.sh (its chat-id discovery stage caches it to ${CHAT_ID_CACHE_FILE}), or set it explicitly.`
       );
     }
     const testChatId = Number(testChatIdRaw);
     if (!Number.isFinite(testChatId)) {
       fail(`TELEGRAM_TEST_CHAT_ID is not numeric: '${testChatIdRaw}'`);
-    }
-
-    const appSecret = loadFromFile(SECRET_FILE);
-    if (!appSecret) {
-      fail(
-        "no cached Telegram webhook secret found (.telegram-channel-secret) — run ./setup.sh (01-telegram-channel.sh) first."
-      );
     }
 
     const fetchWithHostHeader: typeof fetch = (input, init) => {
@@ -413,7 +417,46 @@ async function main(): Promise<void> {
       fetch: hostHeader ? fetchWithHostHeader : undefined,
     });
 
-    // ----- Stage 2: resolve every artifact 01-05 provisioned ---------------
+    // ----- Stage 1.5: verify the manifest has been applied (T06) -----------
+    // Fails fast with the exact recovery order, instead of letting each
+    // individual resolution stage below drill down to a stale "run 0N-*.sh"
+    // message — those scripts are DELETED (T06); `manifest.yaml` is the only
+    // provisioning path now.
+    const PREREQ_INSTRUCTION =
+      "bootstrap.sh -> yoizen manifests apply -f manifest.yaml --secrets-from-env -> run.sh";
+    await runStage(
+      "verify manifest applied (workflow + service present)",
+      async () => {
+        let workflowFound = false;
+        for await (const wf of client.workflows.list()) {
+          if (wf.name === WORKFLOW_NAME) {
+            workflowFound = true;
+            break;
+          }
+        }
+        let serviceFound = false;
+        for await (const service of client.registry.services.list()) {
+          if (service.name === SCORER_SERVICE_NAME) {
+            serviceFound = true;
+            break;
+          }
+        }
+        if (!workflowFound || !serviceFound) {
+          const missing = [
+            !workflowFound ? `workflow '${WORKFLOW_NAME}'` : undefined,
+            !serviceFound ? `service '${SCORER_SERVICE_NAME}'` : undefined,
+          ]
+            .filter((v): v is string => v !== undefined)
+            .join(" and ");
+          fail(
+            `manifest not applied — missing ${missing}. Run: ${PREREQ_INSTRUCTION}`
+          );
+        }
+        log("manifest applied — workflow and service both present");
+      }
+    );
+
+    // ----- Stage 2: resolve every artifact the manifest provisioned --------
     const telegram = await runStage(
       `resolve telegram account '${TG_ACCOUNT_NAME}'`,
       async () => {
@@ -428,11 +471,23 @@ async function main(): Promise<void> {
         );
         if (!account) {
           fail(
-            `telegram account '${TG_ACCOUNT_NAME}' not found — run ./setup.sh (01-telegram-channel.sh) first`
+            `telegram account '${TG_ACCOUNT_NAME}' not found — run: ${PREREQ_INSTRUCTION}`
+          );
+        }
+        // T06 fix: resolved LIVE from the manifest-created account, never a
+        // `.telegram-channel-secret` cache file (nothing writes one anymore
+        // — see the CHAT_ID_CACHE_FILE comment above).
+        if (!account.appSecret) {
+          fail(
+            `telegram account '${TG_ACCOUNT_NAME}' exposes no appSecret — cannot sign the simulated inbound webhook`
           );
         }
         log(`telegram account=${account.id} externalId=${account.externalId}`);
-        return { accountId: account.id, externalId: account.externalId };
+        return {
+          accountId: account.id,
+          externalId: account.externalId,
+          appSecret: account.appSecret,
+        };
       }
     );
 
@@ -450,7 +505,7 @@ async function main(): Promise<void> {
         );
         if (!connector) {
           fail(
-            `connector '${HUBSPOT_CONNECTOR_NAME}' not found — run ./setup.sh (02-hubspot-connector.sh) first`
+            `connector '${HUBSPOT_CONNECTOR_NAME}' not found — run: ${PREREQ_INSTRUCTION}`
           );
         }
         const findEndpoint = (target: { method: string; path: string }) =>
@@ -463,7 +518,7 @@ async function main(): Promise<void> {
         const tickets = findEndpoint(HUBSPOT_TICKETS_ENDPOINT);
         if (!search || !create || !deals || !tickets) {
           fail(
-            `connector '${HUBSPOT_CONNECTOR_NAME}' is missing a required endpoint — run ./setup.sh (02-hubspot-connector.sh) first`
+            `connector '${HUBSPOT_CONNECTOR_NAME}' is missing a required endpoint — run: ${PREREQ_INSTRUCTION}`
           );
         }
         log(
@@ -491,7 +546,7 @@ async function main(): Promise<void> {
         }
         if (!found) {
           fail(
-            `agent '${AGENT_NAME}' not found — run ./setup.sh (03-ai-agent.sh) first`
+            `agent '${AGENT_NAME}' not found — run: ${PREREQ_INSTRUCTION}`
           );
         }
         log(`agent=${found.id}`);
@@ -509,7 +564,7 @@ async function main(): Promise<void> {
         const service = services.find((s) => s.name === SCORER_SERVICE_NAME);
         if (!service) {
           fail(
-            `registered service '${SCORER_SERVICE_NAME}' not found — run ./setup.sh (04-priority-scorer.sh) first`
+            `registered service '${SCORER_SERVICE_NAME}' not found — run: ${PREREQ_INSTRUCTION}`
           );
         }
         log(`scorer service=${service.id}`);
@@ -529,7 +584,7 @@ async function main(): Promise<void> {
         }
         if (!found) {
           fail(
-            `workflow '${WORKFLOW_NAME}' not found — run ./setup.sh (05-workflow.sh) first`
+            `workflow '${WORKFLOW_NAME}' not found — run: ${PREREQ_INSTRUCTION}`
           );
         }
         log(`workflow=${found.id}`);
@@ -759,7 +814,7 @@ async function main(): Promise<void> {
           tenant,
           channel: "telegram",
           instance: telegram.externalId,
-          headers: { "x-telegram-bot-api-secret-token": appSecret },
+          headers: { "x-telegram-bot-api-secret-token": telegram.appSecret },
           body: update,
         });
         record(
@@ -915,7 +970,7 @@ async function main(): Promise<void> {
           tenant,
           channel: "telegram",
           instance: telegram.externalId,
-          headers: { "x-telegram-bot-api-secret-token": appSecret },
+          headers: { "x-telegram-bot-api-secret-token": telegram.appSecret },
           body: update,
         });
         record(

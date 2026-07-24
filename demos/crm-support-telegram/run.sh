@@ -3,23 +3,24 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # =============================================================================
-# run.sh — end-to-end proof for the crm-support-telegram demo (SPEC T07)
+# run.sh — end-to-end proof for the crm-support-telegram demo
 # =============================================================================
 #
 # Thin bash wrapper over src/06-run-e2e.ts (mirrors sdk/examples/reference-pattern
-# and this demo's own 0N-*.sh convention — see their header comments). All
-# driver logic (contact/deal seeding, simulated inbound x2, execution
-# polling, assertions, HubSpot cleanup, admin-console run-view URLs) lives
-# there; this script only resolves env and execs the TypeScript entrypoint.
+# and this demo's own bootstrap.sh/run.sh convention — see their header
+# comments). All driver logic (contact/deal seeding, simulated inbound x2,
+# execution polling, assertions, HubSpot cleanup, admin-console run-view
+# URLs) lives there; this script only resolves env and execs the TypeScript
+# entrypoint.
 #
-# PREREQUISITE: `./setup.sh` must have completed successfully at least once
-# — 06-run-e2e.ts resolves every platform artifact (telegram account,
-# demo-hubspot connector, crm-support-agent, priority-scorer service,
-# crm-support-telegram workflow) BY NAME and fails fast naming the missing
-# 0N-*.sh if any is absent, exactly like 05-workflow.ts already does.
+# PREREQUISITE (T06): the manifest must have been applied at least once —
+# `./bootstrap.sh` -> `yoizen manifests apply -f manifest.yaml
+# --secrets-from-env` -> `./run.sh`. 06-run-e2e.ts verifies this itself as
+# its first real stage (workflow + service present by name) and fails fast
+# with this exact order if either is missing, before drilling into any
+# individual artifact resolution.
 #
-# Env sourcing (SPEC T07): same convention as setup.sh — see
-# lib/resolve-demo-env.sh.
+# Env sourcing: same convention as bootstrap.sh — see lib/resolve-demo-env.sh.
 #
 # E2E CLEANUP (SPEC): every HubSpot artifact this run creates directly
 # (seeded contact, seeded VIP deals) is tagged "[E2E] ..." and deleted in a

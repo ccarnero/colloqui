@@ -478,7 +478,15 @@ duplicate instead of adopting.
   {{executionId}}/{{workflow.tenant}} idempotency args preserved). G5: apply
   created the workflow (1/8), second apply full 0/9 noop — ENTIRE demo now
   converges declaratively. Review: 2×APPROVED round 1.
-- [ ] T06 delete setup scripts + rewire run.sh + README core
+- [x] T06 delete setup scripts + rewire run.sh + README core — 2026-07-24.
+  11 script-era files git-rm'd; two functional breaks the deletions exposed
+  were fixed (webhook appSecret now resolved live from the channel account
+  instead of the deleted .telegram-channel-secret cache; TG_ACCOUNT_NAME
+  corrected to the manifest slug); manifest-applied prerequisite check with
+  bootstrap → apply → run guidance; README provisioning/env/inventory
+  rewritten. G5 post-deletion: apply 0/9 noop, plan clean; bootstrap still
+  idempotent. Review: 2×APPROVED (note for T07: stale setup.sh mentions in
+  bootstrap.sh + lib/resolve-demo-env.sh comments).
 - [ ] T07 docs + index
 
 ## Out of scope (explicit)
