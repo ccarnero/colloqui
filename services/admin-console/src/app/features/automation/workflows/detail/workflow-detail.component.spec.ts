@@ -89,6 +89,29 @@ describe("WorkflowDetailComponent — builder full-bleed chrome suppression (T02
     expect(el.textContent).toContain("child");
   });
 
+  /**
+   * Regression — the wrapper's flex gap still applied between the zero-size
+   * router-outlet element and the builder even with the chrome suppressed,
+   * pushing the full-height canvas 12px past the viewport bottom.
+   */
+  it("zeroes the wrapper flex gap on the builder child route (full-bleed class)", async () => {
+    await harness.navigateByUrl("/workflows/wf-1/builder");
+    harness.detectChanges();
+
+    const el = harness.routeNativeElement as HTMLElement;
+    expect(el.querySelector(".detail")?.classList.contains("full-bleed")).toBe(
+      true
+    );
+
+    await harness.navigateByUrl("/workflows/wf-1/overview");
+    harness.detectChanges();
+    expect(
+      (harness.routeNativeElement as HTMLElement)
+        .querySelector(".detail")
+        ?.classList.contains("full-bleed")
+    ).toBe(false);
+  });
+
   it("renders the wrapper chrome on the executions child route", async () => {
     await harness.navigateByUrl("/workflows/wf-1/executions");
     harness.detectChanges();

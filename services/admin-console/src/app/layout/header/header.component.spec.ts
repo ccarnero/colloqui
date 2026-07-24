@@ -83,6 +83,22 @@ describe("HeaderComponent", () => {
     expect(tabs?.querySelector(".crumb-tenant")).toBeNull();
   });
 
+  /**
+   * Regression — full-bleed views (workflow builder) subtract the header
+   * height via the shared --rd-topbar-h token, which is only accurate while
+   * BOTH rows keep fixed token-driven heights. jsdom does no layout, so this
+   * asserts against the compiled stylesheet: a tripwire against reverting a
+   * row to content-driven height and desyncing the token.
+   */
+  it("keeps both topbar rows at fixed token-driven heights (--rd-topbar-h sync)", () => {
+    const css = Array.from(document.head.querySelectorAll("style"))
+      .map((s) => s.textContent ?? "")
+      .filter((t) => t.includes(".topbar-crumbs"))
+      .join("\n");
+    expect(css).toContain("var(--rd-topbar-crumbs-h");
+    expect(css).toContain("var(--rd-topbar-tabs-h");
+  });
+
   it("shows the org mark and the active section label in the breadcrumb row", () => {
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector(".org-mark")?.textContent?.trim()).toBe("Y");

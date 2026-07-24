@@ -394,10 +394,11 @@ function pruneConflictingConnections(
        * main.workspace often collapses to 0. The builder route is
        * full-bleed (shell.component.ts's subNavHidden flag zeroes the
        * shell-main padding), so the only chrome left above this component
-       * is the 52px app header — see layout/header/header.component.ts's
-       * .topbar height.
+       * is the two-row app header — its height is the shared
+       * --rd-topbar-h token (styles.scss), kept in sync with
+       * layout/header/header.component.ts's fixed row heights.
        */
-      height: calc(100dvh - 52px);
+      height: calc(100dvh - var(--rd-topbar-h, 75px));
       min-height: 320px;
     }
     .builder-shell {
@@ -421,6 +422,14 @@ function pruneConflictingConnections(
       overflow: hidden;
       display: flex;
       flex-direction: column;
+    }
+    app-variables-reference {
+      /* The floating top chrome (absolute, top --rd-space-8, 50px pill row)
+         overlays the top of the canvas wrap; without this clearance the
+         collapsed panel renders clipped BEHIND the floating pills. 50px is
+         the chrome pill height (36px controls + vertical padding/border —
+         see .chrome-pill / .chrome-icon-btn below). */
+      margin-top: calc(var(--rd-space-8) + 50px + var(--rd-space-4));
     }
     f-flow {
       display: block;

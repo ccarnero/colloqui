@@ -181,9 +181,11 @@ const LOG_PREFIX = "[HeaderComponent]";
       z-index: 100;
     }
 
-    /* Row 1: breadcrumb row (T08 finding 1 restructure). */
+    /* Row 1: breadcrumb row (T08 finding 1 restructure). Height comes from
+       the shared topbar tokens (styles.scss) so full-bleed views can
+       subtract the real header height. */
     .topbar-crumbs {
-      height: 52px;
+      height: var(--rd-topbar-crumbs-h, 52px);
       flex-shrink: 0;
       display: flex;
       align-items: center;
@@ -248,9 +250,12 @@ const LOG_PREFIX = "[HeaderComponent]";
       flex: 1;
     }
 
-    /* Row 2: section tabs (T08 finding 1 restructure). */
+    /* Row 2: section tabs (T08 finding 1 restructure). Fixed height (shared
+       topbar token) — content-driven height here would desync
+       --rd-topbar-h from reality. */
     .tab-nav {
       display: flex;
+      height: var(--rd-topbar-tabs-h, 21px);
       align-items: stretch;
       padding: 0 var(--rd-space-8);
       gap: 0;

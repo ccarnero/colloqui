@@ -136,4 +136,46 @@ describe("WorkflowBuilderComponent — floating chrome (T03)", () => {
     const pill = el.querySelector('[data-testid="builder-node-count-pill"]');
     expect(pill!.textContent).toContain("1 nodes");
   });
+
+  /**
+   * Regression — after T08's two-row topbar, the builder still assumed a
+   * 52px header (host height calc) and the floating top chrome overlapped
+   * the collapsed Variables Reference panel, rendering its text clipped
+   * behind the pills. jsdom does no layout, so these assert against the
+   * component's compiled stylesheet (injected into document.head by
+   * Angular) — a tripwire against reintroducing the stale hard-coded
+   * offsets, not a pixel test.
+   */
+  describe("full-bleed offsets vs the two-row topbar (regression)", () => {
+    function builderStyleText(): string {
+      return Array.from(document.head.querySelectorAll("style"))
+        .map((s) => s.textContent ?? "")
+        .filter((t) => t.includes(".builder-shell"))
+        .join("\n");
+    }
+
+    it("derives the host height from the shared --rd-topbar-h token, not a hard-coded 52px header", () => {
+      const css = builderStyleText();
+      expect(css).toContain("calc(100dvh - var(--rd-topbar-h");
+      expect(css).not.toContain("100dvh - 52px");
+    });
+
+    it("clears the floating top chrome above the variables-reference panel", () => {
+      const css = builderStyleText();
+      const vrRule = css
+        .split("}")
+        .find((rule) => rule.includes("app-variables-reference"));
+      expect(vrRule).toBeTruthy();
+      expect(vrRule).toContain("margin-top");
+      expect(vrRule).toContain("var(--rd-space-8)");
+    });
+
+    it("still renders the variables-reference panel inside the canvas wrap", () => {
+      const el = fixture.nativeElement as HTMLElement;
+      const vr = el.querySelector(
+        ".builder-canvas-wrap app-variables-reference"
+      );
+      expect(vr).toBeTruthy();
+    });
+  });
 });

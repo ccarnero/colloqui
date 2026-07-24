@@ -231,6 +231,16 @@ html.light-theme {
   --rd-space-11: 24px;
   --rd-space-12: 28px;
 
+  // Topbar (two-row header, T08). Row heights are fixed here as the single
+  // source of truth so full-bleed views (workflow builder) and fixed-position
+  // offsets (mobile sub-nav) can subtract a deterministic header height
+  // instead of hard-coding stale pixel values.
+  --rd-topbar-crumbs-h: 52px;
+  --rd-topbar-tabs-h: 21px;
+  // Row heights already include their 1px bottom borders (global
+  // border-box sizing), so the total is a plain sum.
+  --rd-topbar-h: calc(var(--rd-topbar-crumbs-h) + var(--rd-topbar-tabs-h));
+
   // Radii scale
   --rd-radius-1: 2px;
   --rd-radius-2: 3px;

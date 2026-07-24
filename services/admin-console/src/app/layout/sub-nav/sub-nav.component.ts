@@ -257,7 +257,9 @@ interface ISubNavPageVm {
     @media (max-width: 900px) {
       .sub-nav {
         position: fixed;
-        top: 52px;
+        /* Below the full two-row topbar (shared token, styles.scss) — a
+           hard-coded 52px would underlap the header's tab row (T08). */
+        top: var(--rd-topbar-h, 75px);
         left: -200px;
         bottom: 0;
         z-index: 40;

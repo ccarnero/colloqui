@@ -1,578 +1,327 @@
-# SPEC — crm-support-telegram demo (demos/)
+# SPEC — crm-support-telegram: manifest migration + docs (demos/)
 
 > Task queue for the `/manual-loop` command. One task at a time, gated by tests
 > and dual review. Queues live in `manual-loops/`.
-> Depends on: `manual-loops/connector-invoke-api.md` (shipped, done 8/8 — `connectors.invoke()` sync/async).
-> Origin: user decisions 2026-07-13/14 (Cowork sessions, demo showcase design).
+> REPLACES the original crm-support-telegram SPEC (user decision 2026-07-24:
+> overwrite). The original loop shipped T01–T07 (script-based provisioning);
+> its task history and platform-gap findings live in git history and in the
+> engram topic 'demo/crm-telegram-showcase' — they remain binding prior art.
+> Depends on: `manual-loops/provisioning-manifest-gaps.md`, `-2.md`, `-3.md`
+> (shipped — the manifest v1 apply engine now carries connectors with
+> authConfig + endpoints + cache strategies, agents with KB/skills/memory,
+> knowledgeBases, systemVariables, services, workflows with manifest-time
+> ref substitution, and secrets via `--secrets-from-env`).
 > Engram topic: 'demo/crm-telegram-showcase'.
-> SEQUENCING OVERRIDE (user decision 2026-07-15): the remaining T08 runs AFTER
-> `manual-loops/samples-reorg.md` completes — that loop's T07 rewrote this
-> SPEC's citations of the old flat sample layout to the new `integrations/`
-> and `sdk/examples/` paths, so T08 documents against the final layout.
 
 ## Goal
 
-A commercial showcase demo, first citizen of a NEW top-level `demos/` folder:
-end-to-end customer support over Telegram against a REAL cloud CRM.
+Retake the commercial showcase demo `demos/crm-support-telegram/` and migrate
+its provisioning from the five sequential setup scripts
+(`01-telegram-channel.sh` … `05-workflow.sh` + `setup.sh`) to a single
+declarative `manifest.yaml` applied with
+`yoizen manifests apply -f manifest.yaml --secrets-from-env` — the same
+end-state `integrations/channels/telegram-transform-reply` reached in its
+migration (setup scripts DELETED, manifest is the only provisioning path).
+Then finish the docs + index work the original loop left pending (its T08).
 
-1. A customer writes to a Telegram bot; an AI agent (knowledge base, per-user
-   memory, skills, system variables) leads the conversation.
-2. A low-code workflow, visible in the builder, enriches every turn: HubSpot
-   contact lookup (`endpointCall`), priority score (`serviceCall`), agent reply
-   (`agentCall`), VIP conditional, `channelSend` back to Telegram.
-3. A hosted service `priority-scorer` (code + `@yoizen/platform-sdk`) shows the
-   code-over-low-code advantage: parallel `connectors.invoke()` sync fan-out to
-   HubSpot deals/tickets (cache + trace preserved), readable business rules for
-   the score, and ticket creation via ASYNC invoke with `idempotencyKey` +
-   webhook confirmation.
-4. Demo closes on two screens: the single trace in admin-console run-view
-   (workflow AND code calls together) and the real ticket in HubSpot.
+The demo itself does not change: Telegram support conversation led by an AI
+agent (KB, per-user memory, skill, system variables), a low-code workflow
+enriching every turn (HubSpot `endpointCall` → `jsFunction` → `serviceCall`
+priority-scorer → `agentCall` → VIP `conditional` → `channelSend`), and the
+`priority-scorer` hosted service showing code-over-low-code with sync/async
+`connectors.invoke()`. Demo closes on the run-view trace and the real HubSpot
+ticket.
 
 ## User decisions (human boundary — do not reinterpret)
 
-1. Demo lives in a NEW top-level `demos/` folder (NOT `integrations/` or
-   `sdk/examples/`) — first of several demos to come.
-2. Artifact creation is SEQUENTIAL: one `.sh` per artifact plus one
-   orchestrator `setup.sh` that runs them all in order.
-3. External system: HubSpot Free CRM (contacts, deals, tickets APIs) at ZERO
-   cost. Auth via account Service Key (Bearer `pat-na1-…`, public beta since
-   2026-02-10, created under Development > Keys > Service keys with object
-   scopes); legacy private-app token is the equally-free fallback if the
-   portal lacks the beta — both are interchangeable Bearer tokens for the
-   connector.
-4. The AI agent LEADS the conversation; the workflow silently enriches each
-   turn — not intent-routing with a passive agent.
-5. Ticket creation uses async `connectors.invoke()` with `idempotencyKey`
-   (at-least-once semantics) + webhook confirmation back to the scorer.
-6. Delivery method: manual-loop (this SPEC), not SDD.
+1. This SPEC OVERWRITES the original; delivery method stays manual-loop.
+2. End state mirrors `telegram-transform-reply`: `manifest.yaml` +
+   `yoizen` CLI, setup scripts (`01`–`05`, `setup.sh`, and their `src/NN-*.ts`
+   drivers) DELETED, not kept as fallback.
+3. `run.sh` (e2e driver) SURVIVES the migration — run-side behavior
+   (simulated inbound, assertions, HubSpot seeding/cleanup) is not
+   provisioning and stays script-based, like `telegram-transform-reply`'s
+   run-side driver did.
+4. Anything genuinely out-of-band for the manifest engine (HubSpot custom
+   contact property `telegram_user_id`, priority-scorer image build, Telegram
+   webhook liveness/`TELEGRAM_TEST_CHAT_ID` discovery) is allowed to live in a
+   SINGLE `bootstrap.sh` (thin wrapper over `src/bootstrap.ts`) — but T01
+   must first prove each item cannot be carried by the manifest before it
+   lands there.
+5. External system stays HubSpot Free CRM with Service Key (or legacy
+   private-app token) — Bearer auth, outbound REST only, zero cost.
+6. No platform/SDK/admin-console changes. A manifest-engine gap that blocks a
+   resource kind this demo needs = STOP, record findings, escalate (candidate
+   `provisioning-manifest-gaps-4`), do NOT fall back to keeping that setup
+   script.
 
-## Prior art (validated 2026-07-14 — REUSE, do not duplicate)
+## Prior art (validated — REUSE, do not duplicate)
 
-- `integrations/ai/ai-call-center-supervisor/src/setup.ts` (~line 917
-  `buildWorkflowBody`; STAND-BY sample, see its `STANDBY.md` — script kept
-  untouched) — the exact workflow action sequence (`serviceCall` →
-  `jsFunction` → `agentCall` → `conditional` → `channelSend`) and Telegram
-  outbound `sendBase` shape.
-- `integrations/channels/telegram-transform-reply/` — Telegram inbound +
-  reply to the SAME user; the reference migrated integration (declarative
-  `manifest.yaml` applied via the `yoizen` CLI, no setup script); webhook
-  registration and `TELEGRAM_TEST_CHAT_ID` requirement documented in its
-  `README.md` "Run / exercise".
-- `integrations/http/http-connectors/` — connector + endpoints + cache
-  strategies provisioning via SDK (STAND-BY sample, see its `STANDBY.md` —
-  script kept untouched).
-- `integrations/http/hosted-services-api/` — Knative hosted service
-  registration via `client.registry.services`; PORT is reserved by Knative
-  (never set it) (STAND-BY sample, see its `STANDBY.md` — script kept
-  untouched).
-- `sdk/examples/reference-pattern/` — the reference TS-SDK sample pattern:
-  thin bash wrappers over `src/*.ts`, logging helpers, `requireEnv`/`fail`,
-  stage functions.
-- `sdk/README.md` "`connectors.invoke()`" section + `services/connector-runtime/README.md` —
-  invoke contract: sync result `{ invocationId, status, data, headers, cacheResult }`;
-  async 202 + Redis parking (TTL 900s) + webhook + `invocations.get()` fallback.
-- `serviceCall.serviceId` must be the `registered_services` UUID (resolve by
-  slug at setup time); pass `serviceSlug` too.
-- `agentCall` args support per-user `conversationId`/`userId` — use
-  `{{request.from}}` (the supervisor sample hardcodes them; we must not).
+- `integrations/channels/telegram-transform-reply/manifest.yaml` — the
+  reference migrated integration: channel + `secretRef` + workflow pinned via
+  ARRAY `channelRef` substitution; secret binding scoped
+  `kind: channel, owner: <channel name>`; binding NAME == env var read by
+  `--secrets-from-env`; header comments document the accessToken/externalId
+  end-state vs the deleted setup script.
+- `integrations/http/http-connectors/manifest.yaml` — connector with
+  authConfig + endpoints + cache strategies, declaratively.
+- `integrations/ai/ai-skill-support-agent/manifest.yaml` and
+  `integrations/ai/ai-knowledge-base-agent/manifest.yaml` — agents wired to
+  knowledgeBases + skills declaratively.
+- `integrations/ai/ai-call-center-supervisor/manifest.yaml` — the closest
+  full-shape sibling: channels + connectors + agents + systemVariables +
+  services + workflows + secrets in ONE manifest.
+- `integrations/http/hosted-services-api/manifest.yaml` — `services:` kind
+  (Knative registration; PORT is reserved, never set it).
+- `demos/crm-support-telegram/src/01-…05-*.ts` (to be deleted) — the exact
+  resource shapes to translate: connector endpoints incl. the
+  `associations/.../batch/read` POST endpoints with `keyBody: true` 60s
+  cache, uncached `search-contact`, agent prompt + KB seed docs + skill +
+  system variables, scorer registration envVars (precomputed in-cluster
+  URLs), workflow body incl. `{{executionId}}`/`{{workflow.tenant}}`
+  idempotency-key args and the account-scoped trigger.
+- Original-loop findings (git history of this file + engram topic
+  'demo/crm-telegram-showcase'): gateway `UpdateAgentDto` drops
+  `knowledge_base_ids` (wire KB at CREATE), `PATCH /admin/skills/:id` 500s,
+  KB ingestion-worker stalls, `sdk/dist` staleness, `.dockerignore` excludes
+  `**/dist`, OrbStack `*.svc.cluster.local` host resolution. Verify which of
+  these the manifest writers already absorb before re-working around them.
+- `yoizen` CLI: `manifests validate|plan|apply -f <file> [--secrets-from-env]`,
+  `secrets put`. Secret binding names are slug-cased — invoke as
+  `env 'telegram-bot-token=…' bunx yoizen …` when the env var name differs.
 
 ## Constraints (apply to every task)
 
-- All artifacts in English (scripts, code, docs, workflow/agent names).
-- Mirror the `sdk/examples/reference-pattern` pattern: each `NN-<artifact>.sh`
-  is a thin bash wrapper over `src/NN-<artifact>.ts` built on
-  `@yoizen/platform-sdk`.
-- Every provisioning script is IDEMPOTENT (create-or-update by name/externalId):
-  running any script twice never duplicates artifacts.
-- No secrets in the repo — everything env-driven (`HUBSPOT_SERVICE_KEY`,
-  `TELEGRAM_BOT_TOKEN`, `TELEGRAM_TEST_CHAT_ID`, `OPENAI_API_KEY`, `TG_PUBLIC_URL`).
+- All artifacts in English (manifest comments, code, docs, scripts).
+- The manifest is the SINGLE source of truth for platform resources; `run.sh`
+  and `bootstrap.sh` resolve ids by name/slug via the SDK, never create
+  platform artifacts.
+- Idempotency contract upgrades from "script re-run safe" to MANIFEST NOOP:
+  a second `yoizen manifests apply` immediately after a successful apply must
+  produce a no-op plan (0 creates / 0 updates) — same G5 proof
+  `telegram-transform-reply` shipped with.
+- No secrets in the repo — `--secrets-from-env` at apply time
+  (`HUBSPOT_SERVICE_KEY`, `TELEGRAM_BOT_TOKEN`, `OPENAI_API_KEY`; plus
+  `TELEGRAM_TEST_CHAT_ID`, `TG_PUBLIC_URL` for run-side).
 - Verbose logging on every path; nothing fails silently.
-- NO changes to platform services, SDK, or admin-console. If a platform/SDK gap
-  blocks a task: STOP, record findings in Progress, escalate to the human.
+- NO changes to platform services, SDK, or admin-console (see user decision 6).
 - Never weaken, skip, or delete existing tests — automatic reviewer rejection.
+  (Deleting the setup scripts is sanctioned by decision 2 and is not a test
+  deletion; `priority-scorer` unit tests must survive untouched.)
 
 ## Gates (the `/manual-loop` command runs these verbatim, in order)
 
 ```
-# G1 — demo typecheck (from T01 onward)
+# G1 — demo typecheck (always)
 cd demos/crm-support-telegram && bunx tsc -p tsconfig.json --noEmit
-# G2 — shell lint, all task scripts + orchestrator (from T01 onward)
+# G2 — shell lint, all remaining scripts (always)
 shellcheck demos/crm-support-telegram/*.sh
-# G3 — priority-scorer unit tests (from T05 onward)
+# G3 — priority-scorer unit tests (always — they must survive the migration)
 cd demos/crm-support-telegram/priority-scorer && bun test
-# G4 — TASK E2E: the task's own script runs green against the dev cluster TWICE
-#      (second run proves idempotency: exit 0 and no duplicated artifacts)
-demos/crm-support-telegram/<task-script>.sh && demos/crm-support-telegram/<task-script>.sh
+# G4 — manifest validates and plans cleanly (from T02 onward)
+cd sdk && bun run bin/yoizen.ts manifests validate -f ../demos/crm-support-telegram/manifest.yaml
+# G5 — TASK E2E (per-task, from T02 onward): apply against the dev cluster,
+#      then apply AGAIN — the second plan must be a NO-OP (0 creates/updates)
+cd sdk && bun run bin/yoizen.ts manifests apply -f ../demos/crm-support-telegram/manifest.yaml --secrets-from-env \
+  && bun run bin/yoizen.ts manifests plan -f ../demos/crm-support-telegram/manifest.yaml
 ```
 
-Gate rules OVERRIDE for THIS queue (supersedes the inherited
-`manual-loops/trace-console.md` rules): this loop touches NO platform services,
-so dev-mode/rebuild-redeploy gates (G5a/G5b) do not apply. The task script's
-double green run against the live dev cluster IS the commit gate.
+Gate rules OVERRIDE for THIS queue: this loop touches NO platform services, so
+dev-mode/rebuild-redeploy gates do not apply. The apply + noop-plan proof
+against the live dev cluster IS the commit gate for manifest tasks.
 
-PRECONDITION (before T02, once): dev cluster reachable, HubSpot Service Key
-(or legacy private-app token) and Telegram bot token loaded in env by the HUMAN, `TG_PUBLIC_URL` tunnel
-live (cloudflared `httpHostHeader` must point at the current gateway host — see
-engram `demo/crm-telegram-showcase` for the stale-host gotcha).
+PRECONDITION (before T02, once): dev cluster reachable; HubSpot Service Key,
+Telegram bot token, and OpenAI key loaded in env by the HUMAN; `TG_PUBLIC_URL`
+tunnel live (cloudflared origin port 80 + current gateway host — see engram
+'demo/crm-telegram-showcase' for both gotchas). The EXISTING script-provisioned
+artifacts from the original loop are live on the cluster: the manifest must
+ADOPT them (create-or-update by the same names), not duplicate them — verify
+by name inventory before the first apply, and treat a duplicated artifact as a
+gate failure.
 
-E2E CLEANUP: `run.sh` tags every HubSpot artifact it creates with an `[E2E]`
-subject prefix and deletes them at the end via the connector (trap-guarded,
-idempotent). Provisioned platform artifacts (channel, connector, agent,
-workflow, service) are NOT torn down — they ARE the demo.
-
-Commits only happen after the double green cluster run of the task's script.
+Commits only happen after the task's gates run green against the cluster.
 
 ---
 
 ## Task queue
 
-### T01 — Scaffolding: `demos/` folder + shared lib
+### T01 — Migration audit: script → manifest mapping
 
-- Create `demos/README.md` (one paragraph: what this folder is, how demos
-  differ from `integrations/`/`sdk/examples/` — demos are commercial
-  showcases, `integrations/` are feature references, `sdk/examples/`
-  demonstrate the SDK API surface) and `demos/crm-support-telegram/` with
-  `package.json`,
-  `tsconfig.json`, `src/lib/` (logging, `requireEnv`, `fail`, stage helpers —
-  copied from the `http-bridge` pattern, adapted, NOT imported across trees).
-- `demos/crm-support-telegram/README.md` skeleton: pitch, architecture sketch,
-  env-var table, script inventory (01→05 + setup.sh + run.sh).
-- No cluster interaction in this task — G4 does not apply.
-
-**Accept**
-```
-cd demos/crm-support-telegram && bunx tsc -p tsconfig.json --noEmit
-shellcheck demos/crm-support-telegram/*.sh || test ! -e demos/crm-support-telegram/*.sh
-grep -n "commercial showcase" demos/README.md
-```
-
-### T02 — `01-telegram-channel.sh`: Telegram bot channel
-
-- Thin wrapper over `src/01-telegram-channel.ts`: ensure the Telegram channel
-  account (create-or-update by bot token), register the webhook against
-  `TG_PUBLIC_URL`, auto-discover `TELEGRAM_TEST_CHAT_ID` like
-  `telegram-transform-reply` does (fail fast with the "DM your bot first"
-  message if missing).
-- Print the resolved account id + webhook state as the script's last lines
-  (the orchestrator and later scripts re-resolve by name, never parse stdout).
+- Read the five `src/NN-*.ts` drivers and produce a mapping table (in this
+  SPEC's Progress section): every resource each script creates → the manifest
+  kind + writer that will carry it, citing the sibling manifest that proves
+  the writer supports it (per Prior art).
+- Explicitly disposition the suspected out-of-band items (user decision 4):
+  HubSpot custom property `telegram_user_id`, priority-scorer image build
+  (`dev.local/priority-scorer:local`), Telegram webhook registration +
+  `TELEGRAM_TEST_CHAT_ID` discovery, KB document seeding (check how
+  `ai-knowledge-base-agent/manifest.yaml` carries documents), LLM connector
+  reuse (`sample-<provider>-llm` shared convention — adopt, don't duplicate).
+- Name inventory of the live script-provisioned artifacts (channel, connector,
+  agent, KB, skill, system variables, service, workflow) so the manifest
+  reuses the exact names — the adoption contract for the G5 noop proof.
+- Output: mapping table + `bootstrap.sh` scope (possibly empty) + any
+  manifest-engine gap that forces escalation (user decision 6). No cluster
+  writes; G4/G5 do not apply.
 
 **Accept**
 ```
-demos/crm-support-telegram/01-telegram-channel.sh && demos/crm-support-telegram/01-telegram-channel.sh
+grep -n "T01 mapping" manual-loops/crm-support-telegram.md
 ```
 
-### T03 — `02-hubspot-connector.sh`: HubSpot connector + endpoints
+### T02 — `manifest.yaml`: channel + HubSpot connector + secrets
 
-- Thin wrapper over `src/02-hubspot-connector.ts`: ensure connector
-  `demo-hubspot` (base URL `https://api.hubapi.com`, bearer auth from
-  `HUBSPOT_SERVICE_KEY` header context — required scopes:
-  `crm.objects.contacts.read/write`, `crm.objects.deals.read/write`,
-  `crm.objects.tickets.read/write`, `crm.schemas.contacts.read/write` (the
-  schemas pair is for the custom property below); Service Keys cannot receive
-  HubSpot webhooks, which is fine: this demo is outbound REST only) with endpoints:
-  `search-contact` (POST /crm/v3/objects/contacts/search),
-  `create-contact` (POST /crm/v3/objects/contacts),
-  `list-deals-by-contact` (GET, associations),
-  `list-tickets-by-contact` (GET, associations),
-  `create-ticket` (POST /crm/v3/objects/tickets).
-- Ensure the custom contact property `telegram_user_id` via the HubSpot
-  properties API (idempotent create-if-missing) — it is the search key
-  `search-contact` filters on ({{request.from}}). Standard objects, default
-  pipelines, and built-in associations need NO setup; resolve pipeline/stage
-  ids by API, never hardcode them.
-- Cache strategy on the two read/list endpoints (short TTL, e.g. 60s) so the
-  demo shows `cacheResult` hit/miss; writes stay uncached.
-- Smoke check inside the script: sync `connectors.invoke()` of `search-contact`
-  with a probe payload; assert HTTP 200 from HubSpot.
+- Author `demos/crm-support-telegram/manifest.yaml`
+  (`kind: IntegrationManifest`, `metadata.name: crm-support-telegram`) with:
+  the Telegram channel (secretRef → `telegram-bot-token` binding, channel
+  scope, per the `telegram-transform-reply` pattern), the `demo-hubspot`
+  connector (base URL `https://api.hubapi.com`, bearer auth from the
+  `hubspot-service-key` binding) with the five endpoints exactly as shipped:
+  `search-contact` (POST search, UNCACHED — original-loop decision),
+  `create-contact`, `list-deals-by-contact` + `list-tickets-by-contact`
+  (POST `associations/.../batch/read`, `keyBody: true`, 60s cache),
+  `create-ticket`; secrets block with both bindings.
+- Header comments document the end-state vs the deleted scripts, same style
+  as `telegram-transform-reply/manifest.yaml`.
+- Names must match the live artifacts (T01 inventory) — apply must adopt,
+  not duplicate.
 
 **Accept**
 ```
-demos/crm-support-telegram/02-hubspot-connector.sh && demos/crm-support-telegram/02-hubspot-connector.sh
+cd sdk && bun run bin/yoizen.ts manifests validate -f ../demos/crm-support-telegram/manifest.yaml
 ```
 
-### T04 — `03-ai-agent.sh`: the support agent (KB + skills + memory + system variables)
+### T03 — Manifest: agent + knowledge base + skill + system variables
 
-- Thin wrapper over `src/03-ai-agent.ts`: ensure LLM connector (reuse the
-  shared `sample-<provider>-llm` convention), knowledge base with 5-8 seeded
-  product FAQs, one custom skill (e.g. order-status phrasing guide), system
-  variables (company name, SLA hours), and the published agent wired to all of
-  them. Memory enabled per user.
-- Agent system prompt: leads a support conversation, receives enriched CRM
-  context + priority score in the message envelope, adapts tone for VIP.
-- Follow `ai-knowledge-base-agent` + `ai-skill-support-agent` provisioning
-  paths; the agent must end PUBLISHED (publish lifecycle via agent-admin).
+- Extend the manifest with: the knowledge base + its seeded FAQ documents
+  (per the `ai-knowledge-base-agent` manifest pattern), the custom skill, the
+  system variables (company name, SLA hours), the LLM connector reference
+  (reuse the shared `sample-<provider>-llm` — T01 disposition decides whether
+  it is declared here or assumed present), and the PUBLISHED support agent
+  wired to all of them with per-user memory — same prompt and wiring as the
+  deleted `03-ai-agent.ts`.
+- Honor the original-loop findings if the writers do not already: KB wired at
+  agent CREATE (gateway `UpdateAgentDto` gap), static skill payload
+  (skills PATCH 500), skip reingest for unchanged ready documents.
 
 **Accept**
 ```
-demos/crm-support-telegram/03-ai-agent.sh && demos/crm-support-telegram/03-ai-agent.sh
+cd sdk && bun run bin/yoizen.ts manifests validate -f ../demos/crm-support-telegram/manifest.yaml
 ```
 
-### T05 — `04-priority-scorer.sh`: hosted service (code + SDK invoke)
+### T04 — Manifest: priority-scorer service + `bootstrap.sh` (image build)
 
-- `priority-scorer/` subfolder: its own `package.json`, `src/`, unit tests,
-  Dockerfile-or-buildpack per `hosted-services-api` conventions; never set PORT.
-- Endpoints: `POST /score` — parallel `Promise.all` of SYNC
-  `connectors.invoke()` to `list-deals-by-contact` + `list-tickets-by-contact`,
-  aggregate, compute score with READABLE rules (constants named in business
-  language: `OPEN_DEAL_VALUE_VIP_THRESHOLD`, `UNRESOLVED_TICKETS_ESCALATION_COUNT`);
-  returns `{ score, tier, reasons[] }`. `POST /webhooks/invoke` — receives the
-  async `create-ticket` confirmation; logs outcome. `POST /tickets` — fires the
-  ASYNC `connectors.invoke()` `create-ticket` with `idempotencyKey`
-  (`ticket-<tenant>-<conversationId>-<turn>`) + webhook pointing back at
-  `/webhooks/invoke`; returns `{ invocationId }` immediately.
-- Unit tests: scoring rules (VIP, standard, edge: no deals, HubSpot error →
-  degraded score with `reasons: ["crm-unavailable"]`, never a crash).
-- `04-priority-scorer.sh`: build, register via `client.registry.services`,
-  wait Knative Ready, resolve service UUID by slug, direct-invoke `/score`
-  smoke check.
+- Extend the manifest with the `services:` entry for `priority-scorer`
+  (Knative registration per `hosted-services-api` pattern; never set PORT;
+  envVars carry the precomputed in-cluster gateway + self URLs exactly as the
+  deleted `04-priority-scorer.ts` did — they are deterministic per
+  registry-service naming).
+- `bootstrap.sh` (thin wrapper over `src/bootstrap.ts`) carries ONLY the
+  T01-dispositioned out-of-band items — at minimum the Docker image build/tag
+  (`dev.local/priority-scorer:local`) and the HubSpot custom property
+  `telegram_user_id` ensure — idempotent, verbose, fail-fast. Document in
+  README order: bootstrap → apply → run.
+- `priority-scorer/` code and unit tests remain UNTOUCHED.
 
 **Accept**
 ```
-cd demos/crm-support-telegram/priority-scorer && bun test && bunx tsc -p tsconfig.json --noEmit
-demos/crm-support-telegram/04-priority-scorer.sh && demos/crm-support-telegram/04-priority-scorer.sh
+cd demos/crm-support-telegram/priority-scorer && bun test
+demos/crm-support-telegram/bootstrap.sh && demos/crm-support-telegram/bootstrap.sh
+cd sdk && bun run bin/yoizen.ts manifests validate -f ../demos/crm-support-telegram/manifest.yaml
 ```
 
-### T06 — `05-workflow.sh`: the low-code orchestration
+### T05 — Manifest: the workflow (full graph, refs substituted)
 
-- Thin wrapper over `src/05-workflow.ts`: ensure workflow `crm-support-telegram`:
-  trigger `message_received` on the Telegram account (account-scoped
-  `accountIds`, NEVER a shared unscoped trigger — see the e2e trace
-  contamination lesson in engram) → `endpointCall` `search-contact` →
-  `jsFunction` (extract/normalize contact or mark unknown) → `serviceCall`
-  scorer `/score` (UUID by slug) → `agentCall` (message = user text + enriched
-  context block; `conversationId`/`userId` = `{{request.from}}`) →
-  `conditional` on `tier == "vip"` (VIP branch prepends escalation notice and
-  calls scorer `/tickets`) → `channelSend` reply to `{{request.from}}`.
-- Depends on T02-T05 artifacts; resolve every id by name/slug at run time.
+- Extend the manifest with the `crm-support-telegram` workflow: account-scoped
+  `message_received` trigger pinned via `channelRef` substitution (never a
+  shared unscoped trigger) → `endpointCall` `search-contact` (connector ref
+  substitution) → `jsFunction` normalize → `serviceCall` scorer `/score`
+  (service ref) → `agentCall` (`conversationId`/`userId` =
+  `{{request.from}}`) → `conditional` `tier == "vip"` (escalation notice +
+  scorer `/tickets`) → `channelSend` to `{{request.from}}`.
+- Preserve the shipped runtime-template args verbatim — especially the
+  idempotency-key args `{{executionId}}` / `{{workflow.tenant}}` (original
+  T06 finding: `{{workflow.tenantId}}`/`{{workflow.startTime}}` silently
+  resolve to `""` and collapse the key).
+- This completes the manifest: the G5 apply must now converge the ENTIRE
+  demo and noop on the second plan.
 
 **Accept**
 ```
-demos/crm-support-telegram/05-workflow.sh && demos/crm-support-telegram/05-workflow.sh
+cd sdk && bun run bin/yoizen.ts manifests apply -f ../demos/crm-support-telegram/manifest.yaml --secrets-from-env
+cd sdk && bun run bin/yoizen.ts manifests plan -f ../demos/crm-support-telegram/manifest.yaml
 ```
 
-### T07 — `setup.sh` orchestrator + `run.sh` e2e driver
+### T06 — Delete setup scripts, rewire `run.sh`, README core rewrite
 
-- `setup.sh`: runs 01→05 sequentially, fail-fast, numbered stage log lines;
-  resumable by construction (every child script is idempotent — document that
-  re-running setup.sh after a failure is THE recovery path).
-- `run.sh`: end-to-end proof — simulated inbound (or real Telegram message if
-  `TELEGRAM_TEST_CHAT_ID` live), poll the workflow execution API for the
-  completed run, assert: contact searched (cache miss then hit on second
-  message), score computed, agent replied, reply delivered; VIP path asserted
-  with a seeded high-value contact; `[E2E]`-tagged HubSpot tickets deleted at
-  the end (trap-guarded).
-- `run.sh` prints the admin-console run-view URL for the demo's money shot.
+- DELETE `01-…05-*.sh`, `setup.sh`, and their `src/NN-*.ts` drivers (git rm).
+  Keep `run.sh`, `src/06-run-e2e.ts` (adjust imports/shared lib as needed),
+  `bootstrap.sh`, `priority-scorer/`, `lib`.
+- `run.sh` prerequisites section now checks "manifest applied" (resolve the
+  workflow + service by name via SDK, fail fast with the
+  bootstrap→apply→run instruction) instead of "run setup.sh first".
+- Rewrite `README.md` provisioning sections: bootstrap → `yoizen manifests
+  apply --secrets-from-env` → `run.sh`; env table updated; script inventory
+  reduced to `bootstrap.sh` + `run.sh`.
+- Full-demo convergence proof: G5 apply + noop plan, then `bootstrap.sh`
+  re-run (still idempotent against an applied cluster).
 
 **Accept**
 ```
-demos/crm-support-telegram/setup.sh && demos/crm-support-telegram/setup.sh
-demos/crm-support-telegram/run.sh
+test ! -e demos/crm-support-telegram/setup.sh
+test ! -e demos/crm-support-telegram/01-telegram-channel.sh
+cd sdk && bun run bin/yoizen.ts manifests apply -f ../demos/crm-support-telegram/manifest.yaml --secrets-from-env
+cd sdk && bun run bin/yoizen.ts manifests plan -f ../demos/crm-support-telegram/manifest.yaml
+grep -n "manifests apply" demos/crm-support-telegram/README.md
 ```
 
-### T08 — Docs + index
+### T07 — Docs + index (absorbs the original T08)
 
-- Finish `demos/crm-support-telegram/README.md`: pitch narrative (the two-screen
-  close), architecture diagram (mermaid), env table, script-by-script guide,
-  the async-invoke `idempotencyKey` + 900s polling-window caveats, demo-day
-  runbook (what to click, what to say).
-- `README.es.md` functional Spanish version (neutral/professional Spanish, per
-  the existing samples' convention).
+- Finish `README.md`: pitch narrative (two-screen close), mermaid
+  architecture diagram, env table, bootstrap/apply/run guide, async-invoke
+  `idempotencyKey` + 900s polling-window caveats, demo-day runbook, and a
+  short "declarative provisioning" section selling the manifest as part of
+  the showcase (one YAML, one apply, noop-idempotent).
+- `README.es.md` functional Spanish version (neutral/professional Spanish,
+  per the existing samples' convention).
 - Entry in `cowork/INDEX.md` + link `demos/` from the repo root `README.md`.
 
 **Accept**
 ```
 grep -n "crm-support-telegram" cowork/INDEX.md README.md
 grep -n "idempotencyKey" demos/crm-support-telegram/README.md
+grep -n "manifests apply" demos/crm-support-telegram/README.md
 test -f demos/crm-support-telegram/README.es.md
 ```
 
 ---
 
-- [x] T01 scaffolding demos/ + shared lib
-- [x] T02 01-telegram-channel.sh
-- [x] T03 02-hubspot-connector.sh
-
-### Findings (T03 — platform/SDK gaps, escalated not patched)
-
-- connector-runtime has NO per-invocation path templating (`buildUrl` only
-  appends query params; `resolveRequest` uses the configured path verbatim),
-  so the two association endpoints are `POST /crm/v3/associations/contacts/
-  {deals,tickets}/batch/read` (contact id in body, cached with `keyBody: true`)
-  instead of the SPEC's literal "GET, associations". Verified by both
-  reviewers against connector-runtime source. Follow-up candidate: path
-  templating support.
-- SDK gap: `sdk/src/resources/connectors/index.ts` does not re-export the
-  invoke result types (`ConnectorSyncInvokeResult` etc.); the demo carries a
-  minimal local mirror. Follow-up candidate: add the re-exports.
-- Gotcha: `sdk/dist` (gitignored) can be stale vs `sdk/src` — `connectors.invoke`
-  was missing until `npm run build` in `sdk/`. Demos depend on `file:../../sdk`.
-
-### Findings (T04 — platform/SDK gaps, escalated not patched)
-
-- api-gateway's `UpdateAgentDto`
-  (`services/api-gateway/src/modules/admin/admin.dto.ts`) omits
-  `knowledge_base_ids`, even though its sibling `CreateAgentDto` (same file)
-  and agent-admin-service's OWN `UpdateAgentDto`
-  (`services/agent-admin-service/src/modules/agents/agents.dto.ts`) both
-  declare it. The gateway's global `ValidationPipe`
-  (`whitelist: true, forbidNonWhitelisted: true`,
-  `services/api-gateway/src/main.ts`) rejects a PUT carrying the field with
-  HTTP 400 "property knowledge_base_ids should not exist" — verified live.
-  (The sibling samples `ai-knowledge-base-agent` / `ai-skill-support-agent`
-  assumed this was compile-time-only and "still reaches the wire on update";
-  that is false against the live cluster.) Workaround: the demo wires the KB
-  on agent CREATE and omits `knowledge_base_ids` from the UPDATE body; the
-  repository only writes the column `if (data.knowledge_base_ids !==
-  undefined)` (`agents.postgres.repository.ts`), so the CREATE-time link
-  survives. Follow-up candidate: add the field to the gateway
-  `UpdateAgentDto`.
-- `PATCH /admin/skills/:id` returns HTTP 500 for every payload
-  (`SkillsService.update` builds its SET clause from unstringifiable
-  postgres.js fragments) — pre-documented in
-  `sdk/src/resources/skills/types.ts`. Workaround: the demo's skill payload
-  is static, so it skips the update call on re-run and relies on
-  reuse-by-name for idempotency. Follow-up candidate: fix
-  `SkillsService.update` upstream.
-- NEW: the dev cluster's `agent-admin-service-worker` KB document-ingestion
-  pipeline (NATS JetStream pull consumer,
-  `services/agent-admin-service/src/modules/knowledge-bases/ingestion-worker.service.ts`)
-  showed multi-minute stalls: `reingest()` events sat unprocessed for 4–7+
-  minutes, and one event never processed at all across 9+ minutes AND a
-  worker pod restart (`kubectl delete pod agent-admin-service-worker-*` did
-  not help). The pod's logs carry a continuous, unrelated
-  `JobExecutionStatusConsumer` "Error processing execution status event"
-  loop dating back well before this task, suggesting a broader
-  consumer-health problem in that pod. The actual chunk+embed work completes
-  in seconds once a message is picked up. Workaround (sound idempotency
-  regardless): the demo skips reingest for an already-`ready` document whose
-  `content_text` is unchanged; `CRM_KB_DOC_FORCE_REINGEST=1` forces it.
-  Follow-up candidate: investigate the worker's NATS consumer health / the
-  `JobExecutionStatusConsumer` error loop.
-- [x] T04 03-ai-agent.sh
-
-### Findings (T05 — platform/SDK gaps and new-territory notes, escalated not patched)
-
-- DATA-AVAILABILITY GAP: the `demo-hubspot` connector's `list-deals-by-contact`
-  / `list-tickets-by-contact` endpoints (T03, HubSpot v3
-  `associations/.../batch/read`) return ONLY associated object ids — no deal
-  `amount` or ticket status/pipeline-stage properties, and no connector
-  endpoint exists to fetch those object properties. `OPEN_DEAL_VALUE_VIP_THRESHOLD`
-  and `UNRESOLVED_TICKETS_ESCALATION_COUNT` are therefore evaluated against
-  the COUNT of associated deals/tickets (a proxy for "value"/"unresolved"),
-  not real HubSpot property values — documented in
-  `priority-scorer/src/score.ts`'s header comment. Follow-up candidate: a
-  `get-deal`/`get-ticket` (or batch objects-read-with-properties) connector
-  endpoint if a future iteration needs real dollar amounts or ticket status.
-- NEW TERRITORY (no prior sample builds a custom hosted-service image):
-  `integrations/http/hosted-services-api` only ever registers a public
-  prebuilt image (`ealen/echo-server`). `priority-scorer/Dockerfile` builds the SDK
-  from source in its own build stage because the repo-root `.dockerignore`
-  excludes `**/dist` everywhere ("always reinstalled/rebuilt inside the
-  image") — copying a host-built `sdk/dist` was tried first and rejected by
-  that ignore rule (`CopyIgnoredFile` warning + checksum error), so
-  `sdk-build` stage runs `bun install && bun run build` against `sdk/src`
-  instead. The image is tagged `dev.local/priority-scorer:local` — the exact
-  host `bootstrap-orbstack-osx.sh`'s `configure_local_registry()` configured
-  Knative (`registries-skipping-tag-resolving: dev.local`) to accept without
-  a push, matching `rebuild-redeploy.sh`'s convention for platform services.
-- NEW TERRITORY (in-cluster addressing, verified LIVE against the dev cluster
-  2026-07-14): a hosted service registered via `client.registry.services`
-  needs to reach the platform gateway AND its own public URL from inside its
-  pod to call `connectors.invoke()` and to build the `/tickets` ->
-  `/webhooks/invoke` callback — no prior sample does this (`hosted-services-
-  api`'s echo image never calls back into the platform). Confirmed live via
-  `kubectl run curlimages/curl` probes from both `platform-services-dev` and
-  `acme-dev-ns` namespaces: `http://api-gateway.platform-services-dev.
-  svc.cluster.local` and `http://<knativeName>.<namespace>.svc.cluster.local`
-  both resolve and answer HTTP 200 with NO Host-header override needed
-  (unlike the host-side dev-ingress path every other demo script uses). Also
-  confirmed the Knative-generated public `*.dev.local` hostnames (e.g.
-  `sample-crm-acme.acme-dev-ns.dev.local`) do NOT resolve in-cluster (DNS
-  timeout) — only `*.svc.cluster.local` does. `knativeName`
-  (`${name}-${tenantId}`) and `namespace` (`${tenantId}-${env}-ns`) are fully
-  deterministic per `services/registry-service/src/modules/services/
-  services.service.ts`, so `04-priority-scorer.ts` precomputes both URLs
-  client-side and passes them as `envVars` at registration time — no
-  chicken-and-egg second `update()` call needed.
-- NEW TERRITORY (host-to-cluster reachability for the T05 smoke check): also
-  confirmed live that OrbStack resolves `*.svc.cluster.local` names directly
-  from the macOS HOST (not just from inside pods) — `04-priority-scorer.ts`'s
-  smoke check calls `http://priority-scorer-<tenant>.<tenant>-dev-ns.
-  svc.cluster.local/score` directly from the host with a plain `fetch()`, no
-  gateway route or Host-header trick required. This is OrbStack-specific
-  behavior (see `bootstrap-orbstack-osx.sh`'s "shared Docker daemon" note for
-  the sibling convention) and may not hold on minikube/other dev backends —
-  a future portability pass should treat this as an OrbStack assumption.
-- OBSERVED (not a bug): the smoke check's probe `contactId` doesn't exist in
-  HubSpot, so HubSpot's v3 associations batch/read legitimately answers HTTP
-  207 (partial success / `OBJECT_NOT_FOUND` for that one input) rather than
-  200. The scorer's `fetchAssociatedIds` (`priority-scorer/src/
-  hubspot-associations.ts`) treats any non-200 as `{ ok: false }`, so the
-  smoke check exercises the SAME `reasons: ["crm-unavailable"]` degraded path
-  the unit tests cover for real HubSpot errors — confirmed live twice
-  (`kubectl logs`), never a crash, exactly the SPEC T05 edge case.
-- [x] T05 04-priority-scorer.sh (hosted service)
-- [x] T06 05-workflow.sh
-
-### Findings (T06 — platform/SDK gaps and notes, escalated not patched)
-
-- No new platform/SDK gap found. `endpointCall`'s connector-aware args
-  (`adapterId`/`endpointId`) and `serviceCall`'s `serviceId`+`serviceSlug`
-  resolve-by-slug convention (both `packages/shared/src/workflow.interfaces.ts`
-  and the SDK's loosely-typed `WorkflowAction`, `sdk/src/resources/workflows/
-  types.ts`) worked exactly as documented in `DOCS/workflows/patterns.md` and
-  the `ai-call-center-supervisor` reference — verified live twice against the
-  dev cluster (create then update-in-place, same workflow id both times).
-- The VIP branch's `serviceCall` to the scorer's `POST /tickets` (T05) uses
-  `{{executionId}}` as the `turn` value for `create-ticket`'s idempotency key
-  (`ticket-<tenant>-<conversationId>-<turn>`,
-  `priority-scorer/src/create-ticket.ts`) and `{{workflow.tenant}}` for the
-  tenant. Both are verified against the execution-context source:
-  `WorkflowExecutionContext` is `{ workflow: { name, tenant, application },
-  request, results, variables, causal?, executionId? }`
-  (`packages/shared/src/workflow.interfaces.ts:29-53`), and `runWorkflow`
-  sets `context.executionId` from `workflow_executions.id`
-  (`services/workflow-service/src/temporal/workflows.ts:925`) — unique per
-  workflow execution, and one execution is one conversational turn, so no
-  separate turn counter is needed. `resolvePath`
-  (`workflows.ts:194-204`) walks segments from the context root, so
-  `{{executionId}}` resolves to `context.executionId` and `{{workflow.tenant}}`
-  to `context.workflow.tenant`. NOTE (attempt-1 bug, fixed): the first attempt
-  used `{{workflow.tenantId}}` and `{{workflow.startTime}}`, NEITHER of which
-  exists in the context (`resolvePath` silently coerces a missing path to
-  `""`), which would have collapsed the idempotency key to
-  `ticket--<from>-` and made `POST /tickets` a permanent no-op after the first
-  VIP ticket per user. Documented in `src/05-workflow.ts`'s `createTicket`
-  action comment.
-- The ticket body omits `hs_pipeline`/`hs_pipeline_stage` (HubSpot defaults
-  to the account's default ticket pipeline when they're absent) rather than
-  hardcoding ids — consistent with T03's "resolve pipeline/stage ids by API,
-  never hardcode them" boundary; a future iteration that needs a specific
-  pipeline would resolve it via HubSpot's pipelines API at provisioning time,
-  not inline in the workflow body.
-- [x] T07 setup.sh orchestrator + run.sh e2e (built, NOT executed — human boundary, see below)
-
-### Findings (T07 — platform/SDK gaps, SPEC deviations, and human-boundary notes)
-
-- HUMAN BOUNDARY HONORED: per the task instructions, `setup.sh` was never
-  executed and `run.sh` was never executed end-to-end against the cluster —
-  both are validated via `shellcheck` (G2, clean) and `bunx tsc --noEmit`
-  (G1, clean) only. The SPEC's own G4 gate ("the task's own script runs
-  green against the dev cluster TWICE") is explicitly NOT satisfiable by
-  this agent for T07 — it is reserved for the human's first run (SPEC
-  "Human boundaries": "Human triggers the FIRST full `setup.sh` run... and
-  the first `run.sh` that writes to HubSpot").
-- Simulated inbound uses `client.webhooks.ingest()` (`sdk/src/resources/
-  webhooks/client.ts`), not a raw `fetch` POST to `TG_PUBLIC_URL` — it hits
-  the platform's own gateway route (`POST /api/webhooks/telegram/:tenant/
-  :instance`, `services/api-gateway/src/modules/channels/
-  webhooks.controller.ts`) with the same `x-telegram-bot-api-secret-token`
-  signature verification (`services/channel-service/src/providers/telegram/
-  telegram.provider.ts`, `webhook-ingress.service.ts` `resolveAccount()`) a
-  real Telegram delivery would exercise, and does not depend on the
-  `TG_PUBLIC_URL` tunnel's uptime (already covered by `01-telegram-
-  channel.sh`'s `webhook_registered` assertion). This exact pattern was
-  proven live by `integrations/channels/telegram-transform-reply`'s
-  `simulateInbound()` before that sample's setup script was deleted in its
-  manifest migration (`manual-loops/samples-reorg.md` T06) — the run-side
-  driver (`integrations/channels/telegram-transform-reply/src/index.ts`)
-  keeps the same synthetic-inbound behavior post-migration.
-- SPEC WORDING GAP: "contact searched (cache miss then hit on second
-  message)" cannot be asserted on the `searchContact` workflow action —
-  T03 deliberately made `search-contact` UNCACHED ("search results must
-  always reflect the latest contact state", `02-hubspot-connector.ts`). The
-  cacheable reads (`list-deals-by-contact`/`list-tickets-by-contact`, 60s
-  TTL) are invoked from INSIDE `priority-scorer`'s own process
-  (`priority-scorer/src/hubspot-associations.ts`), never as a workflow
-  action, so their `cacheResult` is invisible to `workflows.getExecution()`
-  and no invocationId is surfaced back for `connectors.invocations.get()`
-  either. `06-run-e2e.ts` instead demonstrates the SAME cache mechanism
-  directly and honestly with two back-to-back sync `connectors.invoke()`
-  calls of `list-deals-by-contact` for the seeded contact, asserting
-  `cacheResult` miss-then-hit — the exact endpoint + cache strategy the
-  scorer itself relies on.
-- PLATFORM OBSERVABILITY GAP: `channelSend`'s local activity
-  (`services/workflow-service/src/temporal/activities/
-  channel-send.activity.ts`) is fire-and-forget — it publishes a NATS
-  command and returns `{ published: true, subject }` immediately; actual
-  Telegram delivery happens asynchronously in channel-service and is never
-  surfaced back into the workflow execution context. "Reply delivered" is
-  therefore asserted as "reply publish confirmed" (`published === true`),
-  the strongest signal `workflows.getExecution()` actually exposes — not a
-  true delivery guarantee. Follow-up candidate: surface a delivery
-  confirmation (or at least a correlatable id) back into
-  `WorkflowExecutionContext.results` for `channelSend`.
-- DEVIATION: VIP-ticket cleanup identifies the created HubSpot ticket via
-  the `invocationId` `results.createTicket.data.invocationId` returns
-  (polled through `connectors.invocations.get()` to the created object's
-  own `id`), NOT via an "[E2E]"-tagged ticket subject as SPEC T07's
-  "E2E CLEANUP" wording literally suggests. `05-workflow.ts`'s ticket
-  `subject` is a fixed, already gate-passed (T06) production string with no
-  template variable to hook a test-only tag onto — tagging it would either
-  permanently prefix every REAL VIP ticket a production run creates, or
-  require re-editing and re-verifying a shipped T06 artifact against the
-  live cluster, which this task could not execute (human boundary). Polling
-  the invocation's own result for the exact created object id is a STRICTER
-  identification method than a subject substring match (zero false
-  positives/negatives), so cleanup stays within the SPEC's actual intent.
-  The CONTACT and VIP DEALS `06-run-e2e.ts` seeds directly (not through the
-  workflow) ARE "[E2E]"-tagged (`firstname`/`dealname`), matching the SPEC
-  literally, since this script fully controls those payloads.
-- NEW TERRITORY: no connector endpoint (T03) covers deal create/associate,
-  ticket delete, deal delete, or contact delete — `06-run-e2e.ts` uses
-  direct `fetch` calls to `api.hubapi.com` with `HUBSPOT_SERVICE_KEY` for
-  all E2E seeding/cleanup of deals, and for deleting the contact/deals/
-  ticket it created, per the task's explicit allowance. Deal association
-  uses HubSpot's v4 default-association route (`PUT /crm/v4/objects/
-  deals/{dealId}/associations/default/contacts/{contactId}`) — no
-  association-type id resolution needed. Deal `hs_pipeline`/`dealstage` are
-  omitted (HubSpot defaults to the account's default pipeline/stage),
-  mirroring T06's ticket-body precedent ("resolve pipeline/stage ids by
-  API, never hardcode them").
-- NEW TERRITORY: the admin-console run-view URL
-  (`processes/runs/:workflowId/:runId`, `services/admin-console/src/app/
-  app.routes.ts`, bound from `WorkflowExecutionListItem.temporalWorkflowId`/
-  `.temporalRunId` per `services/admin-console/src/app/features/automation/
-  workflows/detail/workflow-executions.component.ts`'s routerLink build) is
-  assembled from a computed host
-  (`admin-console.platform-services-<env>.<domain>`) mirroring the SAME
-  `GW_HOST` convention `integrations/lib/resolve-env.sh` already uses for
-  `api-gateway`, against the `admin-console` Knative service
-  (`knative/services/base/admin-console.yaml`). No dedicated Ingress
-  manifest was found in this repo to verify the exact public hostname
-  end-to-end (assumes Knative's default domain templating, same class of
-  assumption `04-priority-scorer.ts`'s in-cluster addressing note already
-  documents) — overridable via `ADMIN_CONSOLE_BASE_URL` if the human's
-  cluster differs. Human should verify this URL resolves on the first
-  `run.sh`.
-- `setup.sh`'s webhook_registered=false hard-fail check greps its own
-  sibling script's documented stdout contract (`01-telegram-channel.sh`'s
-  last diagnostic line) — an explicitly SPEC-sanctioned exception to
-  "the orchestrator and later scripts never parse this script's stdout"
-  (that rule is about artifact-id resolution, which still always goes
-  through the SDK by name; this is a one-off soft-failure detector for the
-  orchestrator's OWN fail-fast contract, not artifact resolution).
-- [ ] T08 docs + index
+- [ ] T01 migration audit (script → manifest mapping)
+- [ ] T02 manifest: channel + HubSpot connector + secrets
+- [ ] T03 manifest: agent + KB + skill + system variables
+- [ ] T04 manifest: priority-scorer service + bootstrap.sh
+- [ ] T05 manifest: workflow (completes the manifest)
+- [ ] T06 delete setup scripts + rewire run.sh + README core
+- [ ] T07 docs + index
 
 ## Out of scope (explicit)
 
-- Any change to platform services, SDK, or admin-console — this loop composes,
-  it does not patch; gaps get escalated, not fixed inline.
-- Other channels (WhatsApp, Instagram, web chat) — Telegram only for v1.
-- HubSpot beyond contacts/deals/tickets (no custom objects, no OAuth app) —
-  a Service Key keeps the demo reproducible in minutes.
-- Multi-tenant demo choreography — single dev tenant (`acme`-style) only.
-- Load/performance testing of the scorer — demo-scale traffic only.
+- Any change to platform services, SDK, or admin-console — gaps get escalated
+  (candidate `provisioning-manifest-gaps-4`), not fixed inline.
+- Changing the demo's behavior, scoring rules, cache TTLs, prompts, or
+  workflow shape — this loop migrates provisioning, it does not redesign.
+- Other channels, HubSpot beyond contacts/deals/tickets, multi-tenant
+  choreography, load testing — unchanged from the original SPEC.
+- Migrating `run.sh`/e2e assertions to a declarative form — run-side stays
+  code by design (user decision 3).
 
 ## Human boundaries for this change
 
 - Human approves this SPEC before the first run.
-- Human creates the HubSpot free portal + Service Key (Development > Keys >
-  Service keys, object scopes for contacts/deals/tickets) and the Telegram
-  bot, and loads both tokens in env — tokens never enter the repo or the SPEC.
-- Human triggers the FIRST full `setup.sh` run against the cluster and the
-  first `run.sh` that writes to HubSpot.
-- Any platform/SDK gap discovered mid-loop: stop, record findings in Progress,
-  and let the human decide (new loop vs. demo redesign).
-- Changing scoring-rule thresholds or the cache TTL defaults after T03/T05
-  land requires human sign-off (they are part of the demo script/narrative).
+- Human keeps the HubSpot Service Key and Telegram bot token in env — tokens
+  never enter the repo or the SPEC.
+- Human triggers the FIRST `manifests apply` against the cluster (T02) and
+  the first post-migration `run.sh` that writes to HubSpot (T06).
+- Any manifest-engine gap discovered mid-loop: stop, record findings in
+  Progress, and let the human decide (gaps-4 loop vs. bootstrap.sh scope
+  extension).

@@ -65,7 +65,7 @@ function activeChildPath(route: ActivatedRoute): string | null {
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [RouterOutlet, BreadcrumbsComponent, SubTabsComponent],
   template: `
-    <div class="detail">
+    <div class="detail" [class.full-bleed]="isBuilderActive()">
       @if (!isBuilderActive()) {
         <app-breadcrumbs [crumbs]="crumbs()" />
 
@@ -104,6 +104,12 @@ function activeChildPath(route: ActivatedRoute): string | null {
       display: flex;
       flex-direction: column;
       gap: 12px;
+    }
+    /* T02 full-bleed: with the wrapper chrome suppressed the flex gap still
+       applies between the (zero-size) router-outlet element and the builder,
+       pushing the full-height canvas 12px past the viewport bottom. */
+    .detail.full-bleed {
+      gap: 0;
     }
     .detail-h {
       display: flex;
