@@ -296,7 +296,146 @@ test -f demos/crm-support-telegram/README.es.md
 
 ---
 
-- [ ] T01 migration audit (script → manifest mapping)
+### T01 mapping (audit findings)
+
+Audited: the five `src/NN-*.ts` drivers (`01-telegram-channel.ts`,
+`02-hubspot-connector.ts`, `03-ai-agent.ts`, `04-priority-scorer.ts`,
+`05-workflow.ts`); the sibling manifests listed in "Prior art"
+(`telegram-transform-reply`, `http-connectors`, `ai-skill-support-agent`,
+`ai-knowledge-base-agent`, `ai-call-center-supervisor`,
+`hosted-services-api`); the writer sources under
+`services/provisioning-service/src/modules/apply/infrastructure/`
+(`channels-writer.ts`, `registry-services-writer.ts`) and
+`services/provisioning-service/src/modules/apply/lib/substitution-allowlist.ts`;
+and the manifest schema `packages/shared/src/provisioning/manifest.schema.ts`.
+
+#### Mapping table
+
+| Script resource | Manifest kind + field | Writer / proof (sibling manifest or writer source) |
+| --- | --- | --- |
+| `01`: Telegram channel account (`ACCOUNT_NAME`/bot token) | `channels[]`, `type: telegram`, `secretRef` | `telegram-transform-reply/manifest.yaml` lines 20-24; `channels-writer.ts` `create()`/`update()` — update only patches `name` (comparable field is `type`), never touches `accessToken`, so an already-live account with an unrelated `externalId` is safely ADOPTED and left alone on reapply (NOOP-safe). |
+| `01`: Telegram webhook registration (`setWebhook`) | none — direct Telegram Bot API call, not a platform resource | `channels-writer.ts` never calls the Telegram API; confirmed out-of-band → `bootstrap.sh` (or `run.sh` per decision 3 boundary — see disposition below). |
+| `01`: `TELEGRAM_TEST_CHAT_ID` discovery (`getUpdates` polling) | none — local run-side value, not a platform resource | same as above; not applicable to any writer. |
+| `02`: `demo-hubspot` connector (bearer auth, base URL) | `connectors[]`, `type: http`, `auth.authType: bearer`, `auth.bearerToken.secretRef` | `http-connectors/manifest.yaml` (endpoints/cache) + `ai-call-center-supervisor/manifest.yaml` lines 26-39 (bearer `auth` block) — proves connectors-writer supports HTTP+bearer with a `secretRef`-bound token, the exact HubSpot Service Key shape. |
+| `02`: 5 connector endpoints (`search-contact`, `create-contact`, `list-deals-by-contact`, `list-tickets-by-contact`, `create-ticket`) | `connectors[].endpoints[]`, `method`/`path`/`label`/`cache` | `http-connectors/manifest.yaml` lines 50-77 (per-endpoint `cache` block, `keyBody`/`ttlSeconds`/`methods` — identical shape to `readCacheStrategy` in `02-hubspot-connector.ts`). |
+| `02`: HubSpot custom contact property `telegram_user_id` | none — HubSpot Properties API call, not a connector endpoint or any manifest kind | script's own header comment: "the Properties API... is a one-time setup call, not one of the demo's 5 declared connector endpoints"; no manifest kind models a schema-mutation call → `bootstrap.sh` (decision 4, explicit). |
+| `03`: LLM connector (`sample-<provider>-llm`) | `connectors[]`, `type: llm`, reused across ai samples | `ai-skill-support-agent/manifest.yaml` lines 28-42 and `ai-knowledge-base-agent/manifest.yaml` lines 19-34 — BYTE-IDENTICAL `sample-openai-llm` declarations in 3+ sibling manifests, proven noop-safe on cross-sample reapply (`connectorComparable` excludes `auth`'s secretRef name from the diff). Disposition: DECLARE in T03 (byte-identical shape, demo-local secret binding name), not "assume present" and not bootstrap.sh. |
+| `03`: Knowledge base (`crm-support-faq-kb`) + `ingestion_config` | `knowledgeBases[]`, `ingestion_config.provider_connector_id: { connectorRef }` | `ai-knowledge-base-agent/manifest.yaml` lines 56-96 (KB + `provider_connector_id` symbolic ref) — same `chunk_size`/`chunk_overlap`/`embedding_model`/`chunking_strategy` fields the script sets. |
+| `03`: KB seed document (`product-faq.md`, one markdown doc) | `knowledgeBases[].documents[]`, `source.type: inline` | `ai-knowledge-base-agent/manifest.yaml` lines 58-89 — `type: inline` carries the FAQ content verbatim in the manifest; CLI-reachable (no `--bundle` flag needed). Confirms KB document seeding is NOT out-of-band. |
+| `03`: Skill (`order-status-phrasing-guide`) | `skills[]` | `ai-skill-support-agent/manifest.yaml` lines 53-93 — exact `files[]`/`trigger_commands`/`mode` shape the script's `buildSkillPayload()` builds. |
+| `03`: System variables (`crmSupportCompanyName`, `crmSupportSlaHours`) | `systemVariables[]` | `ai-call-center-supervisor/manifest.yaml` lines 99-108 / `hosted-services-api/manifest.yaml` lines 68-77 — `name`/`type`/`value`/`label`/`description` fields match `ensureSystemVariable()`'s `CreateSystemVariableInput` call exactly. |
+| `03`: Support agent (`crm-support-agent`), KB wiring, skill subagent, memory tool, per-user memory | `agents[]`, `profile` (free-form passthrough) + `knowledgeBaseRefs` | `ai-skill-support-agent/manifest.yaml` lines 199-257 (`profile.model_config.subagents[].catalog_skill_id: { skillRef }`, `profile.tools`) + `ai-knowledge-base-agent/manifest.yaml` lines 102-132 (`knowledgeBaseRefs`). `agentSchema.profile` is `z.record(z.string(), z.unknown())` (`manifest.schema.ts:478`) — fully permissive, so the `memory`/`loadSkill` builtin tool entries the script's `buildAgentBody()` sends are expressible verbatim. `knowledgeBaseRefs` (not raw `knowledge_base_ids`) is how the manifest carries the KB-at-CREATE workaround the script hand-rolls — the writer resolves the ref and wires it at create time, so the original-loop `UpdateAgentDto` gap does not resurface. |
+| `04`: `priority-scorer` Docker image build (`dev.local/priority-scorer:local`) | none — `serviceSchema` has `image`/`buildRef`, but `registry-services-writer.ts`'s `create()` fails loud (`unsupported_kind_shape`) on any `buildRef` ("registry-service has no buildRef -> image resolution path yet") | confirmed gap, matches `registry-services-writer.ts` lines 481-493 and `hosted-services-api/manifest.yaml`'s own header note ("Only `image` is supported today"). Image build stays `bootstrap.sh` (decision 4, explicit); the manifest's `services[].image` references the pre-built tag. |
+| `04`: Registered Knative service (`priority-scorer`, scaling fields) | `services[]`, `name`/`image`/`port`/`minScale`/`maxScale`/`concurrencyTarget` | `hosted-services-api/manifest.yaml` lines 49-63 — same fields as the script's `RegisterServiceInput`/`UpdateServiceInput`. |
+| `04`: Service envVars — `YOIZEN_TENANT`, `YOIZEN_BASE_URL` (in-cluster gateway), `SELF_INTERNAL_BASE_URL` | `services[].env[]`, `{name, value}` plain strings | `registry-services-writer.ts` `buildEnvVars()` + `serviceEnvVarSchema` (`manifest.schema.ts:563-570`) — plain-string passthrough. These three values are DETERMINISTIC at manifest-authoring time (`${SERVICE_NAME}-${tenant}` / `${tenant}-${env}-ns` / the fixed in-cluster gateway URL — same formula `04-priority-scorer.ts` computes at Stage 4), so they can be hardcoded literals in the manifest with no ref-substitution needed. |
+| `04`: Service envVars — `YOIZEN_EMAIL`, `YOIZEN_PASSWORD`, `HUBSPOT_CONNECTOR_ID`, `HUBSPOT_DEALS_ENDPOINT_ID`, `HUBSPOT_TICKETS_ENDPOINT_ID`, `HUBSPOT_CREATE_TICKET_ENDPOINT_ID` | **NO manifest kind carries these — see "Manifest-engine gap" below.** | n/a |
+| `05`: workflow trigger (`message_received`, account-scoped `accountIds`) | `workflows[].definition.trigger`, `config.accountIds: [{ channelRef }]` (ARRAY substitution) | `telegram-transform-reply/manifest.yaml` lines 57-66 — proves the ARRAY `channelRef` substitution the script's `triggerAccountIds: [telegramAccountId]` needs. |
+| `05`: `searchContact` endpointCall (connector + endpoint, filtered search) | `workflows[].definition.actions[].activity: endpointCall`, `args.adapterId: { connectorRef }` + `args.url` as a relative path (NOT `args.endpointId`) | `substitution-allowlist.ts` lines 44-49 (`adapterId` → `connectorRef`, the ONLY endpointCall arg on the allowlist — `endpointId` is NOT substitutable); `workflow.interfaces.ts` `EndpointCallArgs` docstring lines 57-72, shape (2): `adapterId` (no `endpointId`) + `url` as a path — "adapter's `baseUrl` is joined with `url`... Adapter headers/auth/timeouts/retries still apply." This is a **deliberate deviation from the script's literal `endpointId` wiring**, not an approximation: `search-contact` is UNCACHED in the original design, so bypassing the specific endpoint id (and its cache config) changes nothing observable. |
+| `05`: `scoreContact`/`createTicket` serviceCall (priority-scorer) | `workflows[].definition.actions[].activity: serviceCall`, `args.serviceId: { serviceRef }` | `ai-call-center-supervisor/manifest.yaml` lines 120-131 (`serviceId: { serviceRef: sample-crm }`) + `substitution-allowlist.ts` lines 57-63. |
+| `05`: `supportAgent` agentCall | `workflows[].definition.actions[].activity: agentCall`, `args.agentId: { agentRef }` | `ai-call-center-supervisor/manifest.yaml` lines 146-154 + `substitution-allowlist.ts` lines 50-56. |
+| `05`: `vipRoute` conditional + `replyEscalated`/`replyStandard` channelSend | `workflows[].definition.actions[].activity: conditional` (`branches`/`default`) and `channelSend` (`args.accountId: { channelRef }`) | `ai-call-center-supervisor/manifest.yaml` lines 211-240 — same `conditional`/`channelSend` shape, `channelRef` on `accountId`. |
+| `05`: `normalizeContact`/`buildAgentContext`/`buildEscalationReply` jsFunction bodies | `workflows[].definition.actions[].activity: jsFunction`, `args.code` | `telegram-transform-reply/manifest.yaml` lines 39-47 and `ai-call-center-supervisor/manifest.yaml` lines 132-210 — `code` embedded verbatim, matches the script's `(ctx) => {...}` bodies. |
+
+#### Manifest-engine gap (escalation candidate, flags T04 — does NOT block T02/T03/T05)
+
+`services[].env[]` (`serviceEnvVarSchema`, `manifest.schema.ts:563-570`) is
+`{ name: string, value: string }` — a **plain-string-only** field, `.strict()`,
+with no `{ secretRef }` or `{ <kind>Ref }` variant. Confirmed against the
+writer (`registry-services-writer.ts` `buildEnvVars()`, lines 132-149:
+`envVars[envVar.name] = envVar.value` — a literal passthrough, no broker
+call) and against the schema's own header comment (lines 539-562):
+`{ secretRef }` was deliberately excluded ("would bake the literal secret
+into the Knative spec... SECRET-VALUED env vars are NOT EXPRESSIBLE pending
+a k8s-native `secretKeyRef` follow-up design"). There is also no
+`connectorRef`/`endpointRef` entry for any `services[].env[]` key in
+`substitution-allowlist.ts` (the allowlist only covers workflow/agent-tree
+argument keys, not service env values).
+
+This blocks TWO of the priority-scorer's required env vars (`04-priority-scorer.ts`
+Stage 5 / `priority-scorer/src/config.ts`):
+- `YOIZEN_EMAIL` / `YOIZEN_PASSWORD` — the scorer's own platform login
+  credentials (used to call `connectors.invoke()` at runtime). Expressing
+  these as a manifest literal would violate this SPEC's own "No secrets in
+  the repo" constraint; the schema offers no secretRef alternative for
+  services.
+- `HUBSPOT_CONNECTOR_ID`, `HUBSPOT_DEALS_ENDPOINT_ID`,
+  `HUBSPOT_TICKETS_ENDPOINT_ID`, `HUBSPOT_CREATE_TICKET_ENDPOINT_ID` — real
+  ids generated at connector/endpoint CREATE time, unknowable at manifest-
+  authoring time, and there is no ref-substitution mechanism for service env
+  values (unlike workflow action args, which DO have `substitution-allowlist.ts`).
+
+The other three env vars the script sets (`YOIZEN_TENANT`, `YOIZEN_BASE_URL`,
+`SELF_INTERNAL_BASE_URL`) are deterministic given the service/tenant names
+and CAN be hardcoded literals — no gap there.
+
+Per user decision 6 ("A manifest-engine gap that blocks a resource kind
+this demo needs = STOP, record findings, escalate... do NOT fall back to
+keeping that setup script"): the `services` resource KIND itself is fully
+supported (proven above) — only this specific env-value substitution/secret
+capability is missing. T01 records this now so the human can decide, before
+T04 is attempted, between (a) a `provisioning-manifest-gaps-4` follow-up
+adding `secretRef`/ref-substitution support to `services[].env[]`, or (b)
+widening `bootstrap.sh`'s scope so it resolves these 6 values via the SDK
+(same name-lookup pattern `bootstrap.sh` already uses for everything else)
+and calls `client.registry.services.update(id, { envVars })` directly
+against the manifest-created service, immediately after `manifests apply`,
+in the bootstrap → apply → run order — this still keeps the MANIFEST as the
+resource's source of truth (name/image/scaling), it only defers these 6
+env-value fields to a thin, idempotent post-apply reconcile script, which
+is consistent with decision 4's "genuinely out-of-band" carve-out. This
+decision does not block T02/T03/T05 (none of them touch `services[].env`);
+it must be resolved before T04 starts.
+
+No other manifest-engine gap was found: every other resource kind the
+scripts provision (channel, connector + endpoints + cache, LLM connector,
+knowledge base + inline documents, skill, system variables, agent with
+KB/skill/memory-tool wiring, registered service scaling fields, workflow
+with trigger/endpointCall/serviceCall/agentCall/conditional/channelSend/
+jsFunction) has a cited writer or sibling-manifest proof above.
+
+#### Out-of-band disposition summary → `bootstrap.sh` scope
+
+1. HubSpot custom contact property `telegram_user_id` (Properties API
+   one-time call — no manifest kind models a schema mutation).
+2. `priority-scorer` Docker image build/tag (`dev.local/priority-scorer:local`
+   — `registry-services-writer.ts` only supports `image`, never `buildRef`).
+3. Telegram webhook registration (`setWebhook`) + `TELEGRAM_TEST_CHAT_ID`
+   discovery (`getUpdates` polling) — direct Telegram Bot API calls, not
+   platform resources; `channels-writer.ts` never touches the Telegram API.
+4. (Pending human decision, see gap above) — possibly the priority-scorer's
+   6 credential/id env vars, IF the human rules for disposition (b) instead
+   of a manifest-engine fix.
+
+Everything else (KB documents, LLM connector reuse) is NOT out-of-band —
+both map to manifest kinds with cited proof above.
+
+#### Name inventory (exact names/slugs the manifest must reuse to ADOPT, not duplicate)
+
+| Artifact | Name/slug | Source in script |
+| --- | --- | --- |
+| Telegram channel account | `CRM Support Telegram Bot` | `01-telegram-channel.ts` `ACCOUNT_NAME` default (`TG_ACCOUNT_NAME` env override) |
+| HubSpot connector | `demo-hubspot` | `02-hubspot-connector.ts` `CONNECTOR_NAME` (no env override) |
+| HubSpot connector endpoints | `POST /crm/v3/objects/contacts/search`, `POST /crm/v3/objects/contacts`, `POST /crm/v3/associations/contacts/deals/batch/read`, `POST /crm/v3/associations/contacts/tickets/batch/read`, `POST /crm/v3/objects/tickets` | `02-hubspot-connector.ts` `ENDPOINTS` (matched live by method+path, not by label) |
+| HubSpot custom contact property | `telegram_user_id` | `02-hubspot-connector.ts` `TELEGRAM_USER_ID_PROPERTY` |
+| LLM connector | `sample-openai-llm` | `03-ai-agent.ts` `LLM_CONNECTOR_NAME` = `sample-${AGENT_PROVIDER}-llm`, `AGENT_PROVIDER` default `openai` (`AI_LLM_CONNECTOR_NAME`/`AI_AGENT_PROVIDER` env overrides) |
+| Knowledge base | `crm-support-faq-kb` | `03-ai-agent.ts` `KB_NAME` default (`CRM_KB_NAME` env override) |
+| KB document | `product-faq.md` in the live API (must become the slug `product-faq` in the manifest — `documents[].name` is `nameSchema`, no dots, per the `ai-knowledge-base-agent` precedent) | `03-ai-agent.ts` `KB_DOC_NAME` default (`CRM_KB_DOC_NAME` env override) |
+| Skill | `order-status-phrasing-guide` | `03-ai-agent.ts` `SKILL_NAME` default (`CRM_SKILL_NAME` env override) |
+| Support agent | `crm-support-agent` | `03-ai-agent.ts` `AGENT_NAME` default (`CRM_AGENT_NAME` env override) |
+| System variables | `crmSupportCompanyName`, `crmSupportSlaHours` | `03-ai-agent.ts` `ensureSystemVariable()` calls (hardcoded names, not env-overridable) |
+| Registered service | `priority-scorer` | `04-priority-scorer.ts` `SERVICE_NAME` default (`SCORER_SERVICE_NAME` env override) |
+| Workflow | `crm-support-telegram`, `application: crm-support` | `05-workflow.ts` `WORKFLOW_NAME`/`APPLICATION` defaults (`CRM_WORKFLOW_NAME`/`CRM_WORKFLOW_APPLICATION` env overrides) |
+
+PRECONDITION reminder (SPEC, before T02): verify these exact names/slugs
+against the LIVE cluster (`client.channels.listAccounts`,
+`client.connectors.list`, etc., or the admin console) before the first
+apply — any env override used in the ORIGINAL live run (e.g. a non-default
+`TG_ACCOUNT_NAME`) must be reflected in the manifest, or apply will create a
+duplicate instead of adopting.
+
+---
+
+- [x] T01 migration audit (script → manifest mapping)
 - [ ] T02 manifest: channel + HubSpot connector + secrets
 - [ ] T03 manifest: agent + KB + skill + system variables
 - [ ] T04 manifest: priority-scorer service + bootstrap.sh
