@@ -1254,6 +1254,157 @@ describe("applyManifestPlan — T03 manifest-time real-ID substitution", () => {
   });
 });
 
+// manual-loops/provisioning-manifest-gaps-4.md T02 — apply-time
+// `{ connectorRef }` (whole-connector) substitution for a hosted service's
+// `env[]`.
+describe("applyManifestPlan — T02 service env { connectorRef } substitution", () => {
+  function manifestWithConnectorAndService(): IntegrationManifest {
+    return {
+      apiVersion: "yoizen.io/v1",
+      kind: "IntegrationManifest",
+      metadata: { name: "e2e-manifest-apply" },
+      spec: {
+        channels: [],
+        connectors: [{ name: "demo-hubspot", type: "http" }],
+        agents: [],
+        knowledgeBases: [],
+        services: [
+          {
+            name: "svc-1",
+            image: "ghcr.io/yoizen/svc:latest",
+            env: [{ name: "X", value: { connectorRef: "demo-hubspot" } }],
+          },
+        ],
+        systemVariables: [],
+        mcpServers: [],
+        skills: [],
+        workflows: [],
+        secrets: [],
+      },
+    };
+  }
+
+  it("a service env { connectorRef } resolves to the connector's real id created in the SAME apply (RESOURCE_KIND_ORDER connector < service)", async () => {
+    const manifest = manifestWithConnectorAndService();
+    let capturedServiceResource: unknown;
+    const { writers } = fakeWriters({
+      connector: {
+        create: mock(async () => ({
+          ok: true as const,
+          value: { externalId: "connector-real-id-99" },
+        })),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+      service: {
+        create: mock(async (_t: string, resource: unknown) => {
+          capturedServiceResource = resource;
+          return {
+            ok: true as const,
+            value: { externalId: "svc-real-id-1" },
+          };
+        }),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+    });
+    const { events } = recordingEvents();
+
+    const plan = planWith([
+      {
+        kind: "connector",
+        name: "demo-hubspot",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+      {
+        kind: "service",
+        name: "svc-1",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+    });
+
+    expect(result.ok).toBe(true);
+    const substitutedEnv = (
+      capturedServiceResource as {
+        env: { name: string; value: unknown }[];
+      }
+    ).env;
+    expect(substitutedEnv).toEqual([
+      { name: "X", value: "connector-real-id-99" },
+    ]);
+    // Stored-manifest immutability: the original manifest resource keeps its
+    // symbolic ref-object value, never mutated in place.
+    expect(
+      (manifest.spec.services[0]?.env as { name: string; value: unknown }[])[0]
+        ?.value
+    ).toEqual({ connectorRef: "demo-hubspot" });
+  });
+
+  it("an unresolved connector name fails loud (unresolved_symbolic_ref) and never calls the service writer", async () => {
+    const manifest = manifestWithConnectorAndService();
+    const serviceWriter = {
+      create: mock(async () => ({
+        ok: true as const,
+        value: { externalId: "should-never-be-called" },
+      })),
+      update: mock(async (_t: string, id: string) => ({
+        ok: true as const,
+        value: { externalId: id },
+      })),
+    };
+    const { writers } = fakeWriters({ service: serviceWriter });
+    const { events, calls } = recordingEvents();
+
+    // The connector never appears in the plan at all (simulating a
+    // dependency-order gap / missing precondition) — the service's
+    // connectorRef substitution has no resolved id available.
+    const plan = planWith([
+      {
+        kind: "service",
+        name: "svc-1",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.failure.kind).toBe("unresolved_symbolic_ref");
+      expect(result.error.failure.message).toContain("connectorRef");
+      expect(result.error.failure.message).toContain("demo-hubspot");
+    }
+    expect(serviceWriter.create).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.method)).toEqual(["applyStarted", "applyFailed"]);
+  });
+});
+
 // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — HUMAN RULING
 // (decision 4): ALLOWLIST + KB-TREE WALK. `reconcileKnowledgeBases` moved KB
 // reconciliation FROM strictly-before-the-plan (T06) TO mid-loop, right

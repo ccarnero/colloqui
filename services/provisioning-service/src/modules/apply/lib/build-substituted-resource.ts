@@ -2,23 +2,32 @@
 //
 // Runs `substituteSymbolicRefs` over the ONE tree each resource kind may
 // embed allowlisted refs in — `Workflow.definition` and `Agent.profile` —
-// and returns a NEW resource object with that tree replaced. Every other
-// resource kind (channel/connector/service) passes through unchanged: they
-// have no `definition`/`profile` tree for a workflow/agent action argument
-// to live in.
+// and returns a NEW resource object with that tree replaced. `channel`/
+// `connector` pass through unchanged: they have no `definition`/`profile`
+// tree for a workflow/agent action argument to live in.
 //
-// Never mutates the manifest resource passed in — `substituteSymbolicRefs`
-// always rebuilds objects/arrays it touches, so the caller's original
-// `Workflow`/`Agent` (ultimately backed by the stored manifest) is
-// untouched; only the returned working copy carries substituted values.
+// manual-loops/provisioning-manifest-gaps-4.md T02 adds a THIRD, narrowly-
+// scoped branch for `kind === "service"`: `service.env[]` is a small,
+// independently-typed array (not a free-form tree), so it is resolved via
+// the dedicated `resolveServiceEnvRefs` walker rather than
+// `substituteSymbolicRefs`'s generic entry point — see that function's
+// header comment for the full reasoning (reuses `resolveRef`/`resolvedIds`,
+// deliberately NOT a new `SUBSTITUTION_ALLOWLIST` entry).
+//
+// Never mutates the manifest resource passed in — both `substituteSymbolicRefs`
+// and `resolveServiceEnvRefs` always rebuild the objects/arrays they touch,
+// so the caller's original `Workflow`/`Agent`/`HostedService` (ultimately
+// backed by the stored manifest) is untouched; only the returned working
+// copy carries substituted values.
 
-import type { SymbolicRefType } from "@yoizen/shared";
+import type { HostedService, SymbolicRefType } from "@yoizen/shared";
 import type { ResourceKind } from "../../plan/domain/plan.interfaces";
 import type { AnyManifestResource } from "../../plan/lib/list-manifest-resources";
 import type { PlanLogger } from "../../plan/lib/plan-logger.interface";
 import { NOOP_PLAN_LOGGER } from "../../plan/lib/plan-logger.interface";
 import { resourceKindOfRefType } from "../../plan/lib/resource-kind-of-ref-type";
 import type { ApplyWriteError } from "../domain/apply.interfaces";
+import { resolveServiceEnvRefs } from "./resolve-service-env-refs";
 import { substituteSymbolicRefs } from "./substitute-symbolic-refs";
 
 export type BuildSubstitutedResourceResult =
@@ -100,6 +109,29 @@ export function buildSubstitutedResource(args: {
     return {
       ok: true,
       value: { ...agent, profile: result.value as Record<string, unknown> },
+    };
+  }
+
+  if (args.kind === "service") {
+    const service = args.resource as HostedService;
+    const result = resolveServiceEnvRefs({ service, resolveRef });
+    if (!result.ok) {
+      logger.warn(
+        `apply: service '${service.name}' env substitution FAILED: ${result.error.message}`
+      );
+      return result;
+    }
+    logger.log(
+      `apply: service '${service.name}' env refs resolved (${String(result.value.length)} entries)`
+    );
+    return {
+      ok: true,
+      // Only replace `env` when the manifest actually declared one — never
+      // introduce an `env: []` where the original had no `env` at all.
+      value: {
+        ...service,
+        env: service.env ? result.value : service.env,
+      } as AnyManifestResource,
     };
   }
 

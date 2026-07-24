@@ -705,3 +705,13 @@ G8a SKIPPED for this run, G8b (built image) is the cluster gate.
   validate+apply+noop (http-connectors needs its two basic-auth binding env
   vars), G8b rebuild-redeploy + e2e-manifest-apply PASSED. Review: round 1
   1×REJECTED (missing failure-branch tests) → fixed → round 2 2×APPROVED.
+- [x] T02 apply-time {connectorRef} substitution — 2026-07-24. New pure
+  resolver `resolve-service-env-refs.ts` + third kind branch in
+  `build-substituted-resource.ts` reusing the threaded resolveRef closure;
+  endpoint-ref/secretRef shapes deliberately untouched (T03/T04) and still
+  fail loud at the writer guard; registry-services-writer needed ZERO changes
+  (substitution runs upstream in apply-manifest). Shape discrimination is
+  schema-guaranteed (all four value shapes are .strict() — no bogus-key
+  ambiguity can survive validate). Gates: provisioning 425 tests green, tsc
+  clean, shared 324 / sdk 403 unaffected, G7 12/12 noop-reapply, G8b
+  rebuild-redeploy + e2e-manifest-apply PASSED. Review: 2×APPROVED round 1.
