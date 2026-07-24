@@ -281,16 +281,27 @@ export class ChatService {
       this.logger.warn(`Prompt preparation: ${w}`);
     }
 
-    // 6. Ensure MCP servers are connected for this tenant
+    // 6. Resolve agent tools to AI SDK format
     const tenantId = state.runtimeContext.tenantId as string;
-    await this.mcpConnection.connectForTenant(tenantId);
-
-    // 7. Resolve agent tools to AI SDK format
     let resolvedTools: Record<string, any> | undefined;
     const hasAgentTools = (agent.tools?.length ?? 0) > 0;
     // enabledMcpServers: null/undefined = all connected MCP servers; [] = explicitly none
     const mcpEnabled =
       agent.enabledMcpServers == null || agent.enabledMcpServers.length > 0;
+
+    // 7. Ensure MCP servers are connected for this tenant, scoped to this
+    // agent's `enabledMcpServers` (agent-mcp-tool-naming.md T02). Gated on
+    // `mcpEnabled` so an agent that will never merge MCP tools (empty
+    // `enabledMcpServers`, or no agent tools + MCP disabled) never triggers
+    // a connect at all — fixes the previous connect-before-check ordering
+    // bug where every chat turn connected the whole tenant's MCP servers
+    // regardless of whether this agent used them.
+    if (mcpEnabled) {
+      await this.mcpConnection.connectForTenant(
+        tenantId,
+        agent.enabledMcpServers ?? null
+      );
+    }
 
     if (hasAgentTools || mcpEnabled) {
       try {

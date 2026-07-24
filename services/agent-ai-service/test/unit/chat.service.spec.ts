@@ -1556,6 +1556,73 @@ describe("ChatService", () => {
       expect(passedState.resolvedTools).toBeUndefined();
     });
 
+    // T02 (agent-mcp-tool-naming.md) — connect-before-check ordering fix +
+    // agent-level MCP scoping. `connectForTenant` must only run when
+    // `mcpEnabled` is true, and must be scoped by `agent.enabledMcpServers`.
+    it("should NOT call mcpConnection.connectForTenant when agent has no tools and MCP is explicitly disabled ([])", async () => {
+      const agent = createMockAgent({
+        systemPrompt: "You are helpful.",
+        tools: [],
+        enabledMcpServers: [],
+      });
+      mockAgentManager.getAgent.mockImplementationOnce(() =>
+        Promise.resolve(agent)
+      );
+      mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
+        Promise.resolve(createMockState({ systemPrompt: "You are helpful." }))
+      );
+
+      await service.generateReply("tenant-1", baseRequest);
+
+      expect(mockMcpConnection.connectForTenant).not.toHaveBeenCalled();
+    });
+
+    it("should call mcpConnection.connectForTenant with null when enabledMcpServers is null (allow-all, unchanged default)", async () => {
+      const agent = createMockAgent({
+        systemPrompt: "You are a helpful assistant.",
+        tools: [],
+        enabledMcpServers: null,
+      });
+      mockAgentManager.getAgent.mockImplementationOnce(() =>
+        Promise.resolve(agent)
+      );
+      mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
+        Promise.resolve(
+          createMockState({ systemPrompt: "You are a helpful assistant." })
+        )
+      );
+
+      await service.generateReply("tenant-1", baseRequest);
+
+      expect(mockMcpConnection.connectForTenant).toHaveBeenCalledWith(
+        "tenant-1",
+        null
+      );
+    });
+
+    it("should call mcpConnection.connectForTenant scoped to the agent's enabledMcpServers when non-empty", async () => {
+      const agent = createMockAgent({
+        systemPrompt: "You are a helpful assistant.",
+        tools: [],
+        enabledMcpServers: ["serverA"],
+      });
+      mockAgentManager.getAgent.mockImplementationOnce(() =>
+        Promise.resolve(agent)
+      );
+      mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
+        Promise.resolve(
+          createMockState({ systemPrompt: "You are a helpful assistant." })
+        )
+      );
+
+      await service.generateReply("tenant-1", baseRequest);
+
+      expect(mockMcpConnection.connectForTenant).toHaveBeenCalledWith(
+        "tenant-1",
+        ["serverA"]
+      );
+    });
+
     it("should fall back to no tools when toolBridge.toAiSdkToolsForAgent throws", async () => {
       const agent = createMockAgent({
         systemPrompt: "You are a helper.",

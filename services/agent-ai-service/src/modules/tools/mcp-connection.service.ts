@@ -47,15 +47,56 @@ export class McpConnectionService implements OnModuleInit {
     }
   }
 
-  async connectForTenant(tenantId: string): Promise<void> {
+  /**
+   * Connects the MCP servers relevant to a chat turn for `tenantId`.
+   *
+   * `enabledMcpServers` (agent-mcp-tool-naming.md T02, decision 3 — human
+   * boundary, do not reinterpret):
+   * - `undefined`/`null` (default when omitted): connects EVERY
+   *   enabled+active tenant server — unchanged allow-all default, so
+   *   existing callers that only pass `tenantId` keep behaving exactly as
+   *   before this change.
+   * - Non-empty array: connects ONLY those named servers, scoped at the
+   *   query level (Postgres `WHERE name = ANY($1)` / Mongo `$in`) so an
+   *   unrelated tenant server never connects for an agent that didn't
+   *   declare it (the incident's "reachable server injects tools into
+   *   unrelated agents" failure mode).
+   * - Explicit empty array (`[]`): zero connect calls, no query issued at
+   *   all — closes the previous "wasted connect" bug where
+   *   `chat.service.ts` called this unconditionally before checking
+   *   whether MCP was even relevant to the agent.
+   */
+  async connectForTenant(
+    tenantId: string,
+    enabledMcpServers?: readonly string[] | null
+  ): Promise<void> {
+    if (enabledMcpServers != null && enabledMcpServers.length === 0) {
+      // Explicitly scoped to zero servers — skip the query entirely.
+      this.logger.log(
+        `Skipping MCP connect for tenant ${tenantId}: agent's enabledMcpServers is explicitly empty`
+      );
+      return;
+    }
+
     try {
-      const servers = await this.loadEnabledMcpServers(tenantId);
+      const servers = await this.loadEnabledMcpServers(
+        tenantId,
+        enabledMcpServers ?? null
+      );
       for (const server of servers) {
         await this.connectServer(server);
       }
+      const scopeDescription =
+        enabledMcpServers == null
+          ? "all enabled+active servers"
+          : `scoped to [${enabledMcpServers.join(", ")}]`;
       if (servers.length > 0) {
         this.logger.log(
-          `Connected to ${servers.length} MCP server(s) for tenant ${tenantId}`
+          `Connected to ${servers.length} MCP server(s) for tenant ${tenantId} (${scopeDescription})`
+        );
+      } else {
+        this.logger.log(
+          `No MCP servers connected for tenant ${tenantId} (${scopeDescription} — none matched enabled+active)`
         );
       }
     } catch (error) {
@@ -67,7 +108,8 @@ export class McpConnectionService implements OnModuleInit {
   }
 
   private async loadEnabledMcpServers(
-    tenantId: string
+    tenantId: string,
+    scopedServerNames: readonly string[] | null
   ): Promise<IMcpServerRow[]> {
     try {
       const sql = await (this.connectionManager as any).ensureSchema(tenantId);
@@ -78,20 +120,31 @@ export class McpConnectionService implements OnModuleInit {
       // ever loaded on the Postgres path.
       if (typeof sql === "function") {
         // Postgres
-        const rows = await sql<IMcpServerRow[]>`
-          SELECT id, tenant_id, name, transport_type, url, headers, enabled, is_active, scope
-          FROM mcp_servers
-          WHERE enabled = true AND is_active = true
-        `;
+        const rows =
+          scopedServerNames != null
+            ? await sql<IMcpServerRow[]>`
+                SELECT id, tenant_id, name, transport_type, url, headers, enabled, is_active, scope
+                FROM mcp_servers
+                WHERE enabled = true AND is_active = true AND name = ANY(${scopedServerNames as string[]})
+              `
+            : await sql<IMcpServerRow[]>`
+                SELECT id, tenant_id, name, transport_type, url, headers, enabled, is_active, scope
+                FROM mcp_servers
+                WHERE enabled = true AND is_active = true
+              `;
         return rows ?? [];
       }
 
       // Fallback: Mongo
       if (sql?.collection) {
-        const docs = await sql
-          .collection("mcp_servers")
-          .find({ enabled: true, is_active: true })
-          .toArray();
+        const filter: Record<string, unknown> = {
+          enabled: true,
+          is_active: true,
+        };
+        if (scopedServerNames != null) {
+          filter.name = { $in: scopedServerNames };
+        }
+        const docs = await sql.collection("mcp_servers").find(filter).toArray();
         return docs.map((doc: any) => ({
           id: String(doc._id),
           tenant_id: doc.tenant_id,

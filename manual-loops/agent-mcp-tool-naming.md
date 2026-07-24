@@ -468,7 +468,13 @@ cd services/agent-ai-service && bunx tsc -p tsconfig.json --noEmit
   docs audit skipped, permanent legacy bridge vs the "migrate" ruling) →
   round 2 2×REJECTED (one stale comment claiming legacy acceptance) →
   round 3 2×APPROVED.
-- [ ] T02 MCP connections scoped to the executing agent
+- [x] T02 MCP connections scoped to the executing agent — 2026-07-24.
+  Optional `enabledMcpServers` param on connectForTenant (single production
+  caller re-verified); null = allow-all byte-identical query, [] = zero DB
+  calls, array = parameterized ANY/$in on the existing dual path; connect
+  moved after + gated by mcpEnabled (ordering bug fixed); cross-agent
+  isolation test non-circular. Gates: agent-ai 945 green, tsc clean, accept
+  filter 12/12, G4b rebuild + e2e PASSED. Review: 2×APPROVED round 1.
 - [ ] T03 e2e residue teardown + live verification (deepwiki +
       sample-mcp-server re-activated, crm-support-agent proven)
 
