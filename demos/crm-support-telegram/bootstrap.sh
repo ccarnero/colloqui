@@ -26,7 +26,7 @@ set -euo pipefail
 # not silently skip it).
 #
 # Required env (not resolved here — see README.md "Environment variables";
-# sourced the same way setup.sh/run.sh do via lib/resolve-demo-env.sh):
+# sourced the same way run.sh does via lib/resolve-demo-env.sh):
 #   YOIZEN_TENANT, YOIZEN_EMAIL, YOIZEN_PASSWORD, YOIZEN_BASE_URL
 #   HUBSPOT_SERVICE_KEY, TELEGRAM_BOT_TOKEN, TG_PUBLIC_URL
 # Optional: YOIZEN_HOST_HEADER, SCORER_IMAGE_TAG, TELEGRAM_TEST_CHAT_ID,

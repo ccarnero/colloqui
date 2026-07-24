@@ -397,6 +397,76 @@ Decision cuádruple:
   total), restored by `manual-loops/provisioning-manifest-gaps.md`.
 - **Engram topic**: `platform/samples-reorg`.
 
+## Change: crm-support-telegram demo — declarative manifest migration + docs (crm-support-telegram)
+
+Manual-loop change (not SDD) retaking the `demos/crm-support-telegram` commercial showcase
+(end-to-end Telegram customer support backed by a real HubSpot CRM, an AI agent, and the
+`priority-scorer` hosted service demonstrating both sync and async `connectors.invoke()` modes)
+and migrating its provisioning from five sequential setup scripts to a single declarative
+`manifest.yaml` applied via `yoizen manifests apply --secrets-from-env` — the same end-state
+`integrations/channels/telegram-transform-reply` reached first. Full task queue, gates, and human
+decisions: `manual-loops/crm-support-telegram.md`. Engram topic:
+`demo/crm-telegram-showcase`.
+
+> **Triggered a platform gap fix mid-loop**: `services[].env[]` could not express the
+> `priority-scorer` service's 9 required env vars (2 credential `secretRef`s + 4 HubSpot
+> connector/endpoint id refs) — the loop PAUSED before its own T04 while
+> `manual-loops/provisioning-manifest-gaps-4.md` shipped the fix, then resumed. See that SPEC's
+> own INDEX-worthy summary below.
+
+Decision cuádruple:
+- **Rule**: the manifest is the SOLE provisioning path for every platform resource this demo
+  needs — the five `01-…05-*.sh`/`setup.sh` scripts and their `src/0N-*.ts` drivers are DELETED
+  (T06), not kept as a fallback; only `run.sh` (e2e proof) and a NEW `bootstrap.sh` (the narrow
+  set of genuinely out-of-band items: image build, HubSpot custom property, Telegram webhook
+  registration) survive as scripts — `manual-loops/crm-support-telegram.md` user decisions 2-4.
+- **Why**: proves the declarative-provisioning story end-to-end on the platform's most
+  full-shaped commercial showcase (channel + connector + LLM connector + KB + skill +
+  systemVariables + agent + hosted service + workflow, all cross-referencing each other by
+  symbolic ref in ONE apply) — a stronger proof than any single-resource sample, and lets the demo
+  itself sell "one YAML, one apply, noop-idempotent, no plaintext secrets" as part of its own
+  pitch (see the demo's README "Declarative provisioning" section).
+- **Evidence**: live-verified full-manifest convergence — first apply creates every resource
+  (channel, 2 connectors, skill, KB, agent, service, workflow), second apply is a full noop (0
+  creates / 0 updates); the `priority-scorer` service's `secretKeyRef`-resolved env vars were
+  independently confirmed structurally correct against the live Knative spec (no plaintext
+  `value` field for either credential) and against the live `demo-hubspot` connector's real
+  endpoint ids, matching byte-for-byte.
+- **Engram topic**: `demo/crm-telegram-showcase`.
+
+## Change: `services[].env[]` secretRef + ref substitution, k8s-native (provisioning-manifest-gaps-4)
+
+Manual-loop change (not SDD) closing the exact gap `crm-support-telegram`'s T04 hit: hosted-service
+`env[]` values could only ever be plain literal strings (`manual-loops/provisioning-manifest-gaps-2.md`
+T05's own PLAIN-STRINGS-ONLY ruling). Extends `services[].env[].value` to a discriminated union —
+literal string | `{ secretRef }` | `{ connectorRef }` | `{ connectorRef, endpointMethod,
+endpointPath }` — resolved at apply time via the SAME `resolvedIds` mechanism every other symbolic
+ref already uses for the two ref-shaped variants, and via a NEW k8s-native path
+(`valueFrom.secretKeyRef` from the `psec-service-<owner>` Secret the platform's secrets broker
+already materializes) for the secret-shaped variant. Full task queue, gates, and human decisions:
+`manual-loops/provisioning-manifest-gaps-4.md`. Engram topic: `platform/provisioning-manifest-gaps-4`.
+
+Decision cuádruple:
+- **Rule**: a service-scoped `secretRef` NEVER resolves to plaintext inside `provisioning-service`
+  — only an existence check runs there; `registry-service` receives a REFERENCE
+  (`{name: psec-service-<owner>, key: <binding>}`) and its own `knative-builder.ts` emits the
+  k8s-native `valueFrom.secretKeyRef` container-env shape. No plaintext secret value ever crosses
+  into the manifest, the apply-engine's logs, Postgres, or the live Knative spec.
+- **Why**: `provisioning-manifest-gaps-2.md` T05 already tried the "resolve to plaintext, mirror
+  connector auth" shape once (2026-07-16) and a reviewer proved it baked the literal secret into
+  the Knative spec (etcd-persisted, `kubectl`-visible) — a direct regression against
+  `declarative-provisioning.md`'s FOUNDING decision 7 ("hosted services receive secrets
+  k8s-natively"). This loop revisited that exact decision point with the k8s-native design that
+  ruling deferred as a follow-up, rather than silently re-implementing the rejected shape.
+- **Evidence**: `registry-service`'s Knative Services and `provisioning-service`'s `psec-*` k8s
+  Secrets were confirmed to deploy into the IDENTICAL per-tenant namespace via the SAME
+  `@yoizen/shared` `tenantKubernetesNamespaceName` helper before design started — same-namespace
+  `secretKeyRef` needs no cross-namespace copying or extra RBAC. Live-proven end-to-end
+  (`scripts/e2e/manifest-apply.sh` Stage 9): a service env block with 2 `secretRef`s + 4
+  connector/endpoint refs applies, resolves (2 `valueFrom.secretKeyRef` pairs, 4 real resolved
+  ids, structurally verified, no plaintext ever read), and noops on the second apply.
+- **Engram topic**: `platform/provisioning-manifest-gaps-4`.
+
 ## Change: console redesign foundation (console-redesign-foundation)
 
 Manual-loop change (not SDD) landing the visual foundation for the admin

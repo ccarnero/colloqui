@@ -227,4 +227,14 @@ Each script documents its own required flags/env vars in its header
 comment — read that before running it. See `scripts/reset/README.md` for the
 full walkthrough and the `.env`/`.env.example` convention.
 
+## Samples & demos
+
+Runnable examples live in three tiers, each with one reason to exist:
+[`sdk/examples/`](sdk/examples/README.md) (SDK API-surface examples),
+[`integrations/`](integrations/README.md) (end-to-end platform feature references, provisioned
+declaratively through the SDK), and [`demos/`](demos/README.md) (commercial showcases — e.g.
+[`demos/crm-support-telegram`](demos/crm-support-telegram/README.md), an end-to-end Telegram
+support demo backed by a real HubSpot CRM, an AI agent, and a hosted code-over-low-code service,
+provisioned entirely through one declarative `manifest.yaml`).
+
 Full documentation: [DOCS/README.md](DOCS/README.md)

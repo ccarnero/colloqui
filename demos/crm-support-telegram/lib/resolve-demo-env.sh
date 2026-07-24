@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# resolve-demo-env.sh — shared env-sourcing convention for setup.sh and run.sh
+# resolve-demo-env.sh — shared env-sourcing convention for bootstrap.sh and run.sh
 # =============================================================================
 #
-# SOURCE this from setup.sh / run.sh (`. lib/resolve-demo-env.sh`), never from
-# a numbered 0N-*.sh script (those stay standalone thin wrappers per the
-# http-bridge pattern — see each script's own header comment). This file is
-# an orchestrator-only concern, not a provisioning artifact, so it is exempt
-# from the "one script per artifact" rule.
+# SOURCE this from bootstrap.sh / run.sh (`. lib/resolve-demo-env.sh`) — the
+# two provisioning/run-side entrypoints left after T06 (the former numbered
+# `0N-*.sh`/`setup.sh` scripts that also sourced this file are DELETED). This
+# file is an orchestrator-only concern, not a provisioning artifact, so it is
+# exempt from the "one script per artifact" rule.
 #
 # Per SPEC T07 ("Env: reuse the same env sourcing convention"), this loads —
 # in order, later files override earlier ones — the three `.env` files the

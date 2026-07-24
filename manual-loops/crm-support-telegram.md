@@ -487,7 +487,13 @@ duplicate instead of adopting.
   rewritten. G5 post-deletion: apply 0/9 noop, plan clean; bootstrap still
   idempotent. Review: 2×APPROVED (note for T07: stale setup.sh mentions in
   bootstrap.sh + lib/resolve-demo-env.sh comments).
-- [ ] T07 docs + index
+- [x] T07 docs + index — 2026-07-24. README finished (two-screen pitch,
+  mermaid graph verified 1:1 vs the manifest workflow, declarative +
+  secretKeyRef story, 900s async caveat, demo-day runbook), README.es.md in
+  neutral Spanish, cowork/INDEX.md entries (this loop + gaps-4), repo-root
+  demos link, stale setup.sh comment cleanups. Review: 2×APPROVED.
+  LOOP COMPLETE 7/7 — the demo is provisioned by one manifest
+  (bootstrap.sh → yoizen manifests apply --secrets-from-env → run.sh).
 
 ## Out of scope (explicit)
 
