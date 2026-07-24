@@ -638,11 +638,11 @@ grep -n "PAUSED before T04" manual-loops/crm-support-telegram.md   # must be GON
 
 ---
 
-- [ ] T01 schema + plan-time wiring
-- [ ] T02 apply-time connectorRef (whole-connector) substitution
-- [ ] T03 apply-time endpoint-ref substitution
-- [ ] T04 secretRef resolution (Option A/B per human ruling)
-- [ ] T05 live verification: exact crm-support-telegram T04 use case
+- [x] T01 schema + plan-time wiring
+- [x] T02 apply-time connectorRef (whole-connector) substitution
+- [x] T03 apply-time endpoint-ref substitution
+- [x] T04 secretRef resolution (Option B per human ruling 2026-07-24)
+- [x] T05 live verification: exact crm-support-telegram T04 use case
 
 ## Out of scope (explicit)
 
@@ -746,3 +746,17 @@ G8a SKIPPED for this run, G8b (built image) is the cluster gate.
   2×APPROVED round 1. Follow-up (non-blocking, from review):
   secret-value-resolver.interface.ts header comment still lists only
   channels/connectors writers as consumers — stale, fix opportunistically.
+- [x] T05 live verification — 2026-07-24. Stage 9 added to
+  scripts/e2e/manifest-apply.sh: LibraryManifest fixture (connector with 3
+  real endpoints + hosted service with the exact 6-entry crm env shape) in
+  ONE apply; structural ksvc proof (2 valueFrom.secretKeyRef pairs correct,
+  no plaintext value fields, 4 real resolved ids matching the same-apply
+  connector), pod-runtime resolution proven by counts only, second apply
+  0/2 noop; trap-guarded teardown, run repeatedly green. Review round 1:
+  1×REJECTED — the two secret values were fabricated inline, violating this
+  SPEC's Human boundary; fixed to REQUIRED human-supplied
+  E2E_T05_SECRET_EMAIL_VALUE/E2E_T05_SECRET_PASSWORD_VALUE (fail-loud, jq
+  env-access so values never hit argv). Human supplied sample values
+  (scripts/e2e/.env, gitignored) and authorized. Round 2: 2×APPROVED. G9
+  re-run verbatim by the orchestrator: PASSED. crm SPEC's PAUSED note
+  replaced with a non-authorizing gaps-4-shipped note. LOOP COMPLETE 5/5.

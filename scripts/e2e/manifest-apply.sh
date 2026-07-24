@@ -12,6 +12,17 @@ if [[ -f "${E2E_SCRIPT_DIR}/.env" ]]; then
   set +a
 fi
 
+# T05 (manual-loops/provisioning-manifest-gaps-4.md) — REQUIRED, NO DEFAULT.
+# Unlike every other E2E_* var above (which has a script-level ${VAR:-default}
+# fallback), these two have NO fallback and NO hardcoded value anywhere in
+# this repo: provisioning-manifest-gaps-4.md's Human boundaries are explicit
+# ("T05's live-verification env values are loaded by the human ... never
+# fabricated in the repo"). Set both — e.g. in `scripts/e2e/.env` (gitignored,
+# auto-loaded above) — to throwaway test values before running Stage 9; the
+# script fails loud, naming both vars, if either is missing/empty.
+#   E2E_T05_SECRET_EMAIL_VALUE=<throwaway test value, never a real credential>
+#   E2E_T05_SECRET_PASSWORD_VALUE=<throwaway test value, never a real credential>
+
 # End-to-end check of the T04 declarative-provisioning apply engine
 # (manual-loops/declarative-provisioning.md): plan -> apply -> re-plan
 # (all-noop) -> re-apply (no-op) -> teardown, driven directly against the
@@ -118,6 +129,14 @@ AGENT_ADMIN_HOST="${E2E_AGENT_ADMIN_HOST:-agent-admin-service.platform-services-
 # this script already talks to).
 CONNECTOR_ADMIN_URL="${E2E_CONNECTOR_ADMIN_URL:-http://connector-admin-api.platform-services-dev.dev.local}"
 CONNECTOR_ADMIN_HOST="${E2E_CONNECTOR_ADMIN_HOST:-connector-admin-api.platform-services-dev.dev.local}"
+# T05 (provisioning-manifest-gaps-4.md): registry-service's own dev.local
+# ingress hostname (ksvc name is literally "registry-service", same
+# `<ksvc>.<namespace>.dev.local` convention every other ksvc here uses) — used
+# to teardown the T05 hosted-service fixture and (structural verification
+# only) to cross-check the registered service's knativeName/namespace via
+# `GET /services/:id`.
+REGISTRY_URL="${E2E_REGISTRY_URL:-http://registry-service.platform-services-dev.dev.local}"
+REGISTRY_HOST="${E2E_REGISTRY_HOST:-registry-service.platform-services-dev.dev.local}"
 
 POLL_TIMEOUT_S="${E2E_POLL_TIMEOUT_S:-60}"
 
@@ -141,6 +160,11 @@ err()  { echo -e "${RED}[ERR]${NC}   $*" >&2; }
 
 command -v curl >/dev/null 2>&1 || { err "curl not found in PATH"; exit 1; }
 command -v jq >/dev/null 2>&1 || { err "jq not found in PATH"; exit 1; }
+# T05 (provisioning-manifest-gaps-4.md): structural Knative-spec inspection
+# and the pod runtime-env count check both go straight through kubectl —
+# required from here on, not just an opportunistic teardown convenience like
+# the unchecked `kubectl` calls already in cleanup() below.
+command -v kubectl >/dev/null 2>&1 || { err "kubectl not found in PATH — required for T05 live verification"; exit 1; }
 
 # macOS mDNS resolves *.dev.local in ~5s even with /etc/hosts entries;
 # --resolve skips DNS. Override/disable via E2E_RESOLVE_IP (set empty to let
@@ -169,6 +193,7 @@ CHANNEL_PORT="$(url_port "$CHANNEL_URL")"
 WORKFLOW_PORT="$(url_port "$WORKFLOW_URL")"
 AGENT_ADMIN_PORT="$(url_port "$AGENT_ADMIN_URL")"
 CONNECTOR_ADMIN_PORT="$(url_port "$CONNECTOR_ADMIN_URL")"
+REGISTRY_PORT="$(url_port "$REGISTRY_URL")"
 
 # Per-host --resolve args, appended only when E2E_RESOLVE_IP is set.
 PROVISIONING_RESOLVE=()
@@ -176,12 +201,14 @@ CHANNEL_RESOLVE=()
 WORKFLOW_RESOLVE=()
 AGENT_ADMIN_RESOLVE=()
 CONNECTOR_ADMIN_RESOLVE=()
+REGISTRY_RESOLVE=()
 if [[ -n "$E2E_RESOLVE_IP" ]]; then
   PROVISIONING_RESOLVE=(--resolve "${PROVISIONING_HOST}:${PROVISIONING_PORT}:${E2E_RESOLVE_IP}")
   CHANNEL_RESOLVE=(--resolve "${CHANNEL_HOST}:${CHANNEL_PORT}:${E2E_RESOLVE_IP}")
   WORKFLOW_RESOLVE=(--resolve "${WORKFLOW_HOST}:${WORKFLOW_PORT}:${E2E_RESOLVE_IP}")
   AGENT_ADMIN_RESOLVE=(--resolve "${AGENT_ADMIN_HOST}:${AGENT_ADMIN_PORT}:${E2E_RESOLVE_IP}")
   CONNECTOR_ADMIN_RESOLVE=(--resolve "${CONNECTOR_ADMIN_HOST}:${CONNECTOR_ADMIN_PORT}:${E2E_RESOLVE_IP}")
+  REGISTRY_RESOLVE=(--resolve "${REGISTRY_HOST}:${REGISTRY_PORT}:${E2E_RESOLVE_IP}")
 fi
 
 # Thin curl wrappers: each pins the correct Host header + --resolve for its
@@ -215,6 +242,12 @@ connector_admin_curl() {
   curl -fsS "${CONNECTOR_ADMIN_RESOLVE[@]}" -X "$method" \
     -H "Host: ${CONNECTOR_ADMIN_HOST}" -H "x-yoizen-tenant: ${TENANT}" \
     "$@" "${CONNECTOR_ADMIN_URL}${path}"
+}
+registry_curl() {
+  local method="$1" path="$2"; shift 2
+  curl -fsS "${REGISTRY_RESOLVE[@]}" -X "$method" \
+    -H "Host: ${REGISTRY_HOST}" -H "x-yoizen-tenant: ${TENANT}" \
+    "$@" "${REGISTRY_URL}${path}"
 }
 
 NONCE="e2e-$(date +%s)-$RANDOM"
@@ -280,6 +313,23 @@ NEG_CHANNEL_EXTERNAL_ID=""
 NEG_CONNECTOR_NAME=""
 NEG_CONNECTOR_EXTERNAL_ID=""
 NEG_WORKFLOW_NAME=""
+
+# T05 (provisioning-manifest-gaps-4.md) — the exact crm-support-telegram T04
+# use case: a `kind: LibraryManifest` with one connector (3 endpoints) and one
+# hosted service whose `env[]` carries the 6-entry shape (2 secretRef + 1
+# connectorRef + 3 connectorRef/endpointMethod/endpointPath refs). Kept
+# entirely separate from every manifest above (own NONCE-suffixed names, own
+# teardown block) so a T05 failure never touches T04/T06/T09 state.
+T05_MANIFEST_NAME="e2e-manifest-t05-${NONCE}"
+T05_CONNECTOR_NAME="e2e-t05-hubspot-${NONCE}"
+T05_SERVICE_NAME="e2e-t05-crm-svc-${NONCE}"
+T05_SECRET_EMAIL_NAME="e2e-t05-yoizen-email-${NONCE}"
+T05_SECRET_PASSWORD_NAME="e2e-t05-yoizen-password-${NONCE}"
+T05_CONNECTOR_EXTERNAL_ID=""
+T05_SERVICE_EXTERNAL_ID=""
+T05_TENANT_NAMESPACE="${E2E_TENANT_NAMESPACE:-${TENANT}-dev-ns}"
+T05_KSVC_NAME="${T05_SERVICE_NAME}-${TENANT}"
+T05_SECRET_K8S_NAME="psec-service-${T05_SERVICE_NAME}"
 
 wait_for_health() {
   local svc="$1"
@@ -469,6 +519,45 @@ cleanup() {
     fi
   fi
 
+  # T05 (provisioning-manifest-gaps-4.md) — hosted-service fixture + its
+  # connector, same resolve-by-name-fallback idempotent pattern as above.
+  # Service teardown goes straight to registry-service (`DELETE /services/:id`
+  # — this script's first direct registry-service teardown, see
+  # `registry_curl` above); registry-service itself deletes the underlying
+  # Knative `Service` object (`ServicesService.remove`), so no separate
+  # `kubectl delete ksvc` is needed here.
+  if [[ -n "$T05_SERVICE_NAME" ]]; then
+    if [[ -z "$T05_SERVICE_EXTERNAL_ID" ]]; then
+      T05_SERVICE_EXTERNAL_ID="$(registry_curl GET /services 2>/dev/null \
+        | jq -r --arg n "$T05_SERVICE_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+    fi
+    if [[ -n "$T05_SERVICE_EXTERNAL_ID" ]]; then
+      registry_curl DELETE "/services/${T05_SERVICE_EXTERNAL_ID}" >/dev/null 2>&1 || true
+      log "deleted T05 hosted service externalId=${T05_SERVICE_EXTERNAL_ID} (registry-service also removed its Knative ksvc '${T05_KSVC_NAME}')"
+    fi
+  fi
+
+  if [[ -n "$T05_CONNECTOR_NAME" ]]; then
+    if [[ -z "$T05_CONNECTOR_EXTERNAL_ID" ]]; then
+      T05_CONNECTOR_EXTERNAL_ID="$(connector_admin_curl GET /connectors 2>/dev/null \
+        | jq -r --arg n "$T05_CONNECTOR_NAME" '[.[]? | select(.name == $n)][0].id // empty' 2>/dev/null || true)"
+    fi
+    if [[ -n "$T05_CONNECTOR_EXTERNAL_ID" ]]; then
+      connector_admin_curl DELETE "/connectors/${T05_CONNECTOR_EXTERNAL_ID}" >/dev/null 2>&1 || true
+      log "deleted T05 connector externalId=${T05_CONNECTOR_EXTERNAL_ID}"
+    fi
+  fi
+
+  # T05's two service-scoped secrets share ONE k8s Secret
+  # (`psec-service-<serviceName>`, per `secret-resource-name.ts` — both
+  # bindings' OWNER is the same service name) — same write-only-API,
+  # kubectl-direct-delete pattern as the showcase driver's four secrets below.
+  if [[ -n "$T05_SERVICE_NAME" ]]; then
+    kubectl delete secret "$T05_SECRET_K8S_NAME" \
+      -n "$T05_TENANT_NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
+    log "deleted k8s Secret ${T05_SECRET_K8S_NAME} (namespace ${T05_TENANT_NAMESPACE})"
+  fi
+
   # T09 + T1: the four k8s Secrets the showcase driver wrote have no delete
   # API (write-only Secret API, SPEC.md decision 4) — removed directly via
   # kubectl. Idempotent (--ignore-not-found), safe to rerun. Secret names
@@ -568,6 +657,12 @@ cleanup() {
   sweep_by_name "agent"               agent_admin_curl     "/admin/agents"            "/admin/agents/"            ".agents[]?"
   sweep_by_name "knowledge base"      agent_admin_curl     "/admin/knowledge-bases"   "/admin/knowledge-bases/"   ".knowledge_bases[]?"
   sweep_by_name "workflow definition" workflow_curl        "/workflows"               "/workflows/"               ".[]?"
+  # T05 (provisioning-manifest-gaps-4.md) — registry-service's own list shape
+  # is a bare array (`ServicesService.list` -> `IRegisteredService[]`, no
+  # wrapper object, verified against `services.controller.ts`/
+  # `services.service.ts`), so this is the SAME `.[]?` items-selector as the
+  # channel/connector/mcpServer/workflow rows above.
+  sweep_by_name "hosted service"      registry_curl        "/services"                "/services/"                ".[]?"
 
   # k8s Secrets: named `psec-<kind>-<owner>` where <owner> is the e2e-prefixed
   # resource NAME it's bound to (see secret-resource-name.ts) — every owner
@@ -609,6 +704,7 @@ wait_for_health channel
 wait_for_health workflow
 wait_for_health agent_admin
 wait_for_health connector_admin
+wait_for_health registry
 
 # --- 1. PUT the minimal manifest ----------------------------------------
 
@@ -1028,5 +1124,263 @@ if [[ "${SECRET_DENIED_COUNT:-0}" -lt 1 ]]; then
   exit 1
 fi
 log "T09: audit events confirmed present in tracking.tracked_events (OK) — full showcase round trip verified"
+
+# --- 9. T05 (provisioning-manifest-gaps-4.md): the exact crm-support-        -
+#        telegram T04 use case, live -----------------------------------------
+#
+# A `kind: LibraryManifest` (no channel/workflow needed — services.forEach
+# in validate-structural-rules.ts and RESOURCE_KIND_ORDER apply the same way
+# regardless of manifest kind) declaring, in the SAME apply:
+#   - ONE connector with 3 real endpoints (HubSpot-shaped, never actually
+#     invoked — only their (method,path) identity matters for this test).
+#   - ONE hosted service whose `env[]` is the EXACT 6-entry shape T04 exists
+#     for: YOIZEN_EMAIL/YOIZEN_PASSWORD as `{ secretRef }` (2),
+#     HUBSPOT_CONNECTOR_ID as `{ connectorRef }` (1), and
+#     HUBSPOT_DEALS_ENDPOINT_ID/HUBSPOT_TICKETS_ENDPOINT_ID/
+#     HUBSPOT_CREATE_TICKET_ENDPOINT_ID as `{ connectorRef, endpointMethod,
+#     endpointPath }` (3), matched against the connector declared above.
+#
+# The two secret bindings are written via `PUT /secrets/:name` directly on
+# provisioning-service (human-provided throwaway test values — see the
+# REQUIRED, NO DEFAULT doc block at the top of this file — never real
+# credentials, never printed anywhere below, never passed as a `curl`/`jq`
+# argv argument either: `jq` reads them straight out of its own process
+# environment via `env.VARNAME`, so they never appear in `ps`/argv) BEFORE
+# the manifest apply — same write-only-API convention `client.secrets.set()`
+# uses in the T09 driver, just over raw curl since this stage has no SDK
+# dependency.
+
+log "Stage 9 (T05, provisioning-manifest-gaps-4.md): live verification of the exact crm-support-telegram T04 env[] shape"
+
+if [[ -z "${E2E_T05_SECRET_EMAIL_VALUE:-}" || -z "${E2E_T05_SECRET_PASSWORD_VALUE:-}" ]]; then
+  err "T05 requires E2E_T05_SECRET_EMAIL_VALUE and E2E_T05_SECRET_PASSWORD_VALUE set in the environment (human-provided throwaway test values — manual-loops/provisioning-manifest-gaps-4.md's Human boundaries: 'T05's live-verification env values are loaded by the human ... never fabricated in the repo'). Set both (e.g. in scripts/e2e/.env, auto-loaded above) and re-run — this script never invents a value for either."
+  exit 1
+fi
+
+log "PUT /secrets/${T05_SECRET_EMAIL_NAME} scope=service/${T05_SERVICE_NAME} (value never logged, never passed via argv)"
+prov_curl PUT "/secrets/${T05_SECRET_EMAIL_NAME}" \
+  -H "content-type: application/json" \
+  -d "$(jq -n --arg owner "$T05_SERVICE_NAME" \
+    '{value: env.E2E_T05_SECRET_EMAIL_VALUE, scope: {kind: "service", owner: $owner}}')" >/dev/null
+
+log "PUT /secrets/${T05_SECRET_PASSWORD_NAME} scope=service/${T05_SERVICE_NAME} (value never logged, never passed via argv)"
+prov_curl PUT "/secrets/${T05_SECRET_PASSWORD_NAME}" \
+  -H "content-type: application/json" \
+  -d "$(jq -n --arg owner "$T05_SERVICE_NAME" \
+    '{value: env.E2E_T05_SECRET_PASSWORD_VALUE, scope: {kind: "service", owner: $owner}}')" >/dev/null
+
+T05_CONNECTOR_BASE_URL="http://connector-admin-api.platform-services-dev.svc.cluster.local"
+T05_DEALS_PATH="/crm/v3/objects/deals"
+T05_TICKETS_PATH="/crm/v3/objects/tickets"
+
+T05_MANIFEST_JSON="$(jq -n \
+  --arg name "$T05_MANIFEST_NAME" \
+  --arg connector "$T05_CONNECTOR_NAME" \
+  --arg service "$T05_SERVICE_NAME" \
+  --arg secretEmail "$T05_SECRET_EMAIL_NAME" \
+  --arg secretPassword "$T05_SECRET_PASSWORD_NAME" \
+  --arg baseUrl "$T05_CONNECTOR_BASE_URL" \
+  --arg dealsPath "$T05_DEALS_PATH" \
+  --arg ticketsPath "$T05_TICKETS_PATH" \
+  '{
+    apiVersion: "yoizen.io/v1",
+    kind: "LibraryManifest",
+    metadata: { name: $name },
+    spec: {
+      connectors: [
+        {
+          name: $connector,
+          type: "http",
+          config: { baseUrl: $baseUrl, context: "external" },
+          endpoints: [
+            { label: "hubspot deals", method: "GET", path: $dealsPath },
+            { label: "hubspot tickets", method: "GET", path: $ticketsPath },
+            { label: "hubspot create ticket", method: "POST", path: $ticketsPath }
+          ]
+        }
+      ],
+      services: [
+        {
+          name: $service,
+          image: "ealen/echo-server:latest",
+          port: 8080,
+          minScale: 1,
+          maxScale: 1,
+          concurrencyTarget: 10,
+          env: [
+            { name: "YOIZEN_EMAIL", value: { secretRef: $secretEmail } },
+            { name: "YOIZEN_PASSWORD", value: { secretRef: $secretPassword } },
+            { name: "HUBSPOT_CONNECTOR_ID", value: { connectorRef: $connector } },
+            { name: "HUBSPOT_DEALS_ENDPOINT_ID", value: { connectorRef: $connector, endpointMethod: "GET", endpointPath: $dealsPath } },
+            { name: "HUBSPOT_TICKETS_ENDPOINT_ID", value: { connectorRef: $connector, endpointMethod: "GET", endpointPath: $ticketsPath } },
+            { name: "HUBSPOT_CREATE_TICKET_ENDPOINT_ID", value: { connectorRef: $connector, endpointMethod: "POST", endpointPath: $ticketsPath } }
+          ]
+        }
+      ],
+      secrets: [
+        { name: $secretEmail, scope: { kind: "service", owner: $service } },
+        { name: $secretPassword, scope: { kind: "service", owner: $service } }
+      ]
+    }
+  }')"
+
+log "PUT /manifests/${T05_MANIFEST_NAME}"
+prov_curl PUT "/manifests/${T05_MANIFEST_NAME}" \
+  -H "content-type: application/json" \
+  -d "$T05_MANIFEST_JSON" | jq -e '.revision == 1' >/dev/null \
+  || { err "T05 manifest PUT did not return revision 1"; exit 1; }
+
+log "POST /manifests/${T05_MANIFEST_NAME}/plan (expect both resources verdict=create)"
+T05_FIRST_PLAN="$(prov_curl POST "/manifests/${T05_MANIFEST_NAME}/plan")"
+T05_FIRST_VERDICTS="$(echo "$T05_FIRST_PLAN" | jq -r '.resources[].verdict' | sort -u)"
+if [[ "$T05_FIRST_VERDICTS" != "create" ]]; then
+  err "T05: expected all-create plan, got verdicts: ${T05_FIRST_VERDICTS}"
+  echo "$T05_FIRST_PLAN" | jq .
+  exit 1
+fi
+log "T05 first plan: all resources verdict=create (OK)"
+
+log "POST /manifests/${T05_MANIFEST_NAME}/apply (expect appliedCount=2)"
+T05_FIRST_APPLY="$(prov_curl POST "/manifests/${T05_MANIFEST_NAME}/apply")"
+T05_APPLIED_COUNT="$(echo "$T05_FIRST_APPLY" | jq -r '.appliedCount')"
+if [[ "$T05_APPLIED_COUNT" != "2" ]]; then
+  err "T05: expected appliedCount=2, got: ${T05_APPLIED_COUNT}"
+  echo "$T05_FIRST_APPLY" | jq .
+  exit 1
+fi
+T05_CONNECTOR_EXTERNAL_ID="$(echo "$T05_FIRST_APPLY" | jq -r --arg n "$T05_CONNECTOR_NAME" '.resources[] | select(.name == $n) | .externalId')"
+T05_SERVICE_EXTERNAL_ID="$(echo "$T05_FIRST_APPLY" | jq -r --arg n "$T05_SERVICE_NAME" '.resources[] | select(.name == $n) | .externalId')"
+log "T05 first apply: appliedCount=2 (OK) — connector externalId=${T05_CONNECTOR_EXTERNAL_ID} service externalId=${T05_SERVICE_EXTERNAL_ID}"
+
+# --- 9a. verification (a): every ref resolves to the CORRECT real id -------
+# Compare each env entry's resolved id against the connector THIS SAME apply
+# just created — fetched live via connector-admin, never assumed.
+
+log "Stage 9a: fetching connector '${T05_CONNECTOR_NAME}' (externalId=${T05_CONNECTOR_EXTERNAL_ID}) live to compare endpoint ids"
+T05_CONNECTOR_JSON="$(connector_admin_curl GET "/connectors/${T05_CONNECTOR_EXTERNAL_ID}")"
+T05_DEALS_ENDPOINT_ID="$(echo "$T05_CONNECTOR_JSON" | jq -r --arg p "$T05_DEALS_PATH" '.endpoints[] | select(.method == "GET" and .path == $p) | .id')"
+T05_TICKETS_ENDPOINT_ID="$(echo "$T05_CONNECTOR_JSON" | jq -r --arg p "$T05_TICKETS_PATH" '.endpoints[] | select(.method == "GET" and .path == $p) | .id')"
+T05_CREATE_TICKET_ENDPOINT_ID="$(echo "$T05_CONNECTOR_JSON" | jq -r --arg p "$T05_TICKETS_PATH" '.endpoints[] | select(.method == "POST" and .path == $p) | .id')"
+if [[ -z "$T05_DEALS_ENDPOINT_ID" || -z "$T05_TICKETS_ENDPOINT_ID" || -z "$T05_CREATE_TICKET_ENDPOINT_ID" ]]; then
+  err "T05: expected all 3 live endpoint ids resolvable from connector '${T05_CONNECTOR_NAME}', got deals='${T05_DEALS_ENDPOINT_ID}' tickets='${T05_TICKETS_ENDPOINT_ID}' createTicket='${T05_CREATE_TICKET_ENDPOINT_ID}'"
+  echo "$T05_CONNECTOR_JSON" | jq .
+  exit 1
+fi
+log "T05: live connector endpoint ids — deals=${T05_DEALS_ENDPOINT_ID} tickets=${T05_TICKETS_ENDPOINT_ID} createTicket=${T05_CREATE_TICKET_ENDPOINT_ID}"
+
+# --- 9b. verification (b): Knative spec structural inspection --------------
+# NEVER reads a secret value — only env[].name / env[].value /
+# env[].valueFrom.secretKeyRef.{name,key} (all non-secret metadata).
+
+log "Stage 9b: kubectl get ksvc ${T05_KSVC_NAME} -n ${T05_TENANT_NAMESPACE} -o json (structural inspection only, no value ever read)"
+T05_KSVC_ENV="$(kubectl get ksvc "$T05_KSVC_NAME" -n "$T05_TENANT_NAMESPACE" -o json \
+  | jq -c '.spec.template.spec.containers[0].env')"
+
+T05_ENV_COUNT="$(echo "$T05_KSVC_ENV" | jq 'length')"
+if [[ "$T05_ENV_COUNT" != "6" ]]; then
+  err "T05: expected exactly 6 env[] entries in the Knative spec, got ${T05_ENV_COUNT}: $(echo "$T05_KSVC_ENV" | jq -c '[.[].name]')"
+  exit 1
+fi
+
+check_secret_key_ref() {
+  local envName="$1" expectedSecretName="$2" expectedKey="$3"
+  local hasPlainValue actualSecretName actualKey
+  hasPlainValue="$(echo "$T05_KSVC_ENV" | jq -r --arg n "$envName" '.[] | select(.name == $n) | has("value")')"
+  actualSecretName="$(echo "$T05_KSVC_ENV" | jq -r --arg n "$envName" '.[] | select(.name == $n) | .valueFrom.secretKeyRef.name // empty')"
+  actualKey="$(echo "$T05_KSVC_ENV" | jq -r --arg n "$envName" '.[] | select(.name == $n) | .valueFrom.secretKeyRef.key // empty')"
+  if [[ "$hasPlainValue" == "true" ]]; then
+    err "T05: env['${envName}'] carries a plaintext 'value' field in the Knative spec — Option B must NEVER bake a secret value into env[].value"
+    exit 1
+  fi
+  if [[ "$actualSecretName" != "$expectedSecretName" || "$actualKey" != "$expectedKey" ]]; then
+    err "T05: env['${envName}'].valueFrom.secretKeyRef expected {name: '${expectedSecretName}', key: '${expectedKey}'}, got {name: '${actualSecretName}', key: '${actualKey}'}"
+    exit 1
+  fi
+  log "T05: env['${envName}'] -> valueFrom.secretKeyRef={name: '${actualSecretName}', key: '${actualKey}'} (OK, structural only — no value read)"
+}
+
+check_literal_value() {
+  local envName="$1" expectedValue="$2" describeExpected="$3"
+  local actualValue
+  actualValue="$(echo "$T05_KSVC_ENV" | jq -r --arg n "$envName" '.[] | select(.name == $n) | .value // empty')"
+  if [[ "$actualValue" != "$expectedValue" ]]; then
+    err "T05: env['${envName}'].value expected '${expectedValue}' (${describeExpected}), got '${actualValue}'"
+    exit 1
+  fi
+  log "T05: env['${envName}'].value='${actualValue}' matches ${describeExpected} (OK)"
+}
+
+check_secret_key_ref "YOIZEN_EMAIL"    "$T05_SECRET_K8S_NAME" "$T05_SECRET_EMAIL_NAME"
+check_secret_key_ref "YOIZEN_PASSWORD" "$T05_SECRET_K8S_NAME" "$T05_SECRET_PASSWORD_NAME"
+check_literal_value "HUBSPOT_CONNECTOR_ID"            "$T05_CONNECTOR_EXTERNAL_ID"     "the connector's own real id"
+check_literal_value "HUBSPOT_DEALS_ENDPOINT_ID"        "$T05_DEALS_ENDPOINT_ID"         "the live (GET,${T05_DEALS_PATH}) endpoint id"
+check_literal_value "HUBSPOT_TICKETS_ENDPOINT_ID"      "$T05_TICKETS_ENDPOINT_ID"       "the live (GET,${T05_TICKETS_PATH}) endpoint id"
+check_literal_value "HUBSPOT_CREATE_TICKET_ENDPOINT_ID" "$T05_CREATE_TICKET_ENDPOINT_ID" "the live (POST,${T05_TICKETS_PATH}) endpoint id"
+
+log "Stage 9b: all 6 env[] entries structurally correct — 2 secretKeyRef refs, 4 real resolved ids (OK)"
+
+# --- 9c. verification (c): pod runtime env actually resolves ---------------
+# k8s itself injects the value at pod start (Option B's whole point) — proven
+# INDIRECTLY per this task's own instruction: `kubectl exec ... -- env | grep
+# -c` a COUNT only, the resolved values themselves are never read or printed
+# anywhere in this script.
+
+log "Stage 9c: waiting for a Running pod backing ksvc '${T05_KSVC_NAME}' (minScale=1 keeps one alive)"
+T05_POD_NAME=""
+T05_POD_DEADLINE=$((SECONDS + POLL_TIMEOUT_S))
+while [[ -z "$T05_POD_NAME" ]]; do
+  T05_POD_NAME="$(kubectl get pods -n "$T05_TENANT_NAMESPACE" \
+    -l "serving.knative.dev/service=${T05_KSVC_NAME}" --field-selector=status.phase=Running \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)"
+  if [[ -z "$T05_POD_NAME" ]]; then
+    if [[ $SECONDS -ge $T05_POD_DEADLINE ]]; then
+      err "T05: no Running pod found for ksvc '${T05_KSVC_NAME}' in namespace '${T05_TENANT_NAMESPACE}' within ${POLL_TIMEOUT_S}s"
+      exit 1
+    fi
+    sleep 2
+  fi
+done
+log "T05: pod '${T05_POD_NAME}' is Running — checking runtime env (COUNT only, values NEVER read)"
+
+T05_RUNTIME_ENV_NAME_COUNT="$(kubectl exec -n "$T05_TENANT_NAMESPACE" "$T05_POD_NAME" -c user-container -- env \
+  | grep -c -E '^(YOIZEN_EMAIL|YOIZEN_PASSWORD|HUBSPOT_CONNECTOR_ID|HUBSPOT_DEALS_ENDPOINT_ID|HUBSPOT_TICKETS_ENDPOINT_ID|HUBSPOT_CREATE_TICKET_ENDPOINT_ID)=' \
+  || true)"
+if [[ "$T05_RUNTIME_ENV_NAME_COUNT" != "6" ]]; then
+  err "T05: expected all 6 env var NAMES present in the pod's actual runtime env, got count=${T05_RUNTIME_ENV_NAME_COUNT}"
+  exit 1
+fi
+
+T05_RUNTIME_SECRET_NONEMPTY_COUNT="$(kubectl exec -n "$T05_TENANT_NAMESPACE" "$T05_POD_NAME" -c user-container -- env \
+  | grep -c -E '^(YOIZEN_EMAIL|YOIZEN_PASSWORD)=.+$' \
+  || true)"
+if [[ "$T05_RUNTIME_SECRET_NONEMPTY_COUNT" != "2" ]]; then
+  err "T05: expected BOTH secretKeyRef-backed vars to resolve to a NON-EMPTY value in the pod's runtime env (proves k8s actually injected the bound secret, whole chain — not just the manifest layer), got non-empty count=${T05_RUNTIME_SECRET_NONEMPTY_COUNT}"
+  exit 1
+fi
+log "T05: pod runtime env — 6/6 declared var NAMES present, 2/2 secretKeyRef-backed vars resolved NON-EMPTY (OK, k8s itself did the injection — no value ever read by this script)"
+
+# --- 9d. second apply: full noop --------------------------------------------
+
+log "POST /manifests/${T05_MANIFEST_NAME}/plan again (expect all-noop)"
+T05_SECOND_PLAN="$(prov_curl POST "/manifests/${T05_MANIFEST_NAME}/plan")"
+T05_SECOND_VERDICTS="$(echo "$T05_SECOND_PLAN" | jq -r '.resources[].verdict' | sort -u)"
+if [[ "$T05_SECOND_VERDICTS" != "noop" ]]; then
+  err "T05: expected all-noop re-plan, got verdicts: ${T05_SECOND_VERDICTS}"
+  echo "$T05_SECOND_PLAN" | jq .
+  exit 1
+fi
+
+log "POST /manifests/${T05_MANIFEST_NAME}/apply again (expect appliedCount=0 noopCount=2)"
+T05_SECOND_APPLY="$(prov_curl POST "/manifests/${T05_MANIFEST_NAME}/apply")"
+T05_SECOND_APPLIED_COUNT="$(echo "$T05_SECOND_APPLY" | jq -r '.appliedCount')"
+T05_SECOND_NOOP_COUNT="$(echo "$T05_SECOND_APPLY" | jq -r '.noopCount')"
+if [[ "$T05_SECOND_APPLIED_COUNT" != "0" || "$T05_SECOND_NOOP_COUNT" != "2" ]]; then
+  err "T05: expected second apply to be a full no-op (appliedCount=0 noopCount=2), got appliedCount=${T05_SECOND_APPLIED_COUNT} noopCount=${T05_SECOND_NOOP_COUNT}"
+  echo "$T05_SECOND_APPLY" | jq .
+  exit 1
+fi
+log "Stage 9d: T05 second apply is a full no-op (appliedCount=0, noopCount=2) — decision 6 holds end-to-end, not just in a unit test (OK)"
+
+log "Stage 9 (T05) PASSED — the exact crm-support-telegram T04 env[] shape applies, resolves (2 secretKeyRef + 4 real ids, verified structurally and at pod runtime, no value ever read), and noops"
 
 log "All stages passed"

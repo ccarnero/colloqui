@@ -438,7 +438,16 @@ duplicate instead of adopting.
 - [x] T01 migration audit (script → manifest mapping)
 - [x] T02 manifest: channel + HubSpot connector + secrets (merged with T03 — user decision 2026-07-24: the structural validator requires ≥1 process, so a channel+connector-only manifest cannot validate in isolation)
 - [x] T03 manifest: agent + KB + skill + system variables (merged with T02; live cutover 2026-07-24: dev tenant found reset, first apply CREATED all resources fresh, second plan = clean noop; KB created but not enumerated in the plan verdict table)
-> PAUSED before T04 (user decision 2026-07-24): waiting on manual-loops/provisioning-manifest-gaps-4.md — services[].env[] cannot carry secretRef or ref substitution; T04 resumes fully declarative once gaps-4 ships.
+> gaps-4 shipped (2026-07-24): manual-loops/provisioning-manifest-gaps-4.md
+> T01-T05 are all done — `services[].env[]` now supports `{ secretRef }`
+> (k8s-native `valueFrom.secretKeyRef`, Option B) and `{ connectorRef }` /
+> `{ connectorRef, endpointMethod, endpointPath }` ref substitution, T05
+> live-verified the exact 6-entry shape this loop's T04 needs (2 secretRefs +
+> 4 connector/endpoint refs), both structurally and at pod runtime, with a
+> clean second-apply noop. The platform-side gap this loop paused for is
+> closed — T04 MAY resume fully declarative. This note does not itself
+> authorize resuming T04: that is a separate human go per this SPEC's own
+> Human boundaries.
 - [ ] T04 manifest: priority-scorer service + bootstrap.sh
 - [ ] T05 manifest: workflow (completes the manifest)
 - [ ] T06 delete setup scripts + rewire run.sh + README core
