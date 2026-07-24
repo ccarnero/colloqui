@@ -124,6 +124,15 @@ WORKFLOW_URL="${E2E_WORKFLOW_URL:-http://workflow-service-api.platform-services-
 WORKFLOW_HOST="${E2E_WORKFLOW_HOST:-workflow-service-api.platform-services-dev.dev.local}"
 AGENT_ADMIN_URL="${E2E_AGENT_ADMIN_URL:-http://agent-admin-service.platform-services-dev.dev.local}"
 AGENT_ADMIN_HOST="${E2E_AGENT_ADMIN_HOST:-agent-admin-service.platform-services-dev.dev.local}"
+# T02 (provisioning-manifest-gaps-5.md): agent-ai-service's own dev.local
+# ingress hostname (same `<ksvc>.<namespace>.dev.local` convention every
+# other ksvc here uses) — used to assert the showcase agent actually synced
+# into agent-ai-service's OWN store (`AdminController.getAgent`,
+# `GET /admin/agents/:id`), the ONE store `chat.service.ts`'s `agentCall`
+# reads at runtime; agent-admin-service's row flipping alone does not prove
+# this (that's the exact gap the motivating incident hit).
+AGENT_AI_URL="${E2E_AGENT_AI_URL:-http://agent-ai-service.platform-services-dev.dev.local}"
+AGENT_AI_HOST="${E2E_AGENT_AI_HOST:-agent-ai-service.platform-services-dev.dev.local}"
 # T09: teardown of the showcase manifest's connector goes straight to
 # connector-admin (same dev.local ingress convention as every other ksvc
 # this script already talks to).
@@ -192,6 +201,7 @@ PROVISIONING_PORT="$(url_port "$PROVISIONING_URL")"
 CHANNEL_PORT="$(url_port "$CHANNEL_URL")"
 WORKFLOW_PORT="$(url_port "$WORKFLOW_URL")"
 AGENT_ADMIN_PORT="$(url_port "$AGENT_ADMIN_URL")"
+AGENT_AI_PORT="$(url_port "$AGENT_AI_URL")"
 CONNECTOR_ADMIN_PORT="$(url_port "$CONNECTOR_ADMIN_URL")"
 REGISTRY_PORT="$(url_port "$REGISTRY_URL")"
 
@@ -200,6 +210,7 @@ PROVISIONING_RESOLVE=()
 CHANNEL_RESOLVE=()
 WORKFLOW_RESOLVE=()
 AGENT_ADMIN_RESOLVE=()
+AGENT_AI_RESOLVE=()
 CONNECTOR_ADMIN_RESOLVE=()
 REGISTRY_RESOLVE=()
 if [[ -n "$E2E_RESOLVE_IP" ]]; then
@@ -207,6 +218,7 @@ if [[ -n "$E2E_RESOLVE_IP" ]]; then
   CHANNEL_RESOLVE=(--resolve "${CHANNEL_HOST}:${CHANNEL_PORT}:${E2E_RESOLVE_IP}")
   WORKFLOW_RESOLVE=(--resolve "${WORKFLOW_HOST}:${WORKFLOW_PORT}:${E2E_RESOLVE_IP}")
   AGENT_ADMIN_RESOLVE=(--resolve "${AGENT_ADMIN_HOST}:${AGENT_ADMIN_PORT}:${E2E_RESOLVE_IP}")
+  AGENT_AI_RESOLVE=(--resolve "${AGENT_AI_HOST}:${AGENT_AI_PORT}:${E2E_RESOLVE_IP}")
   CONNECTOR_ADMIN_RESOLVE=(--resolve "${CONNECTOR_ADMIN_HOST}:${CONNECTOR_ADMIN_PORT}:${E2E_RESOLVE_IP}")
   REGISTRY_RESOLVE=(--resolve "${REGISTRY_HOST}:${REGISTRY_PORT}:${E2E_RESOLVE_IP}")
 fi
@@ -236,6 +248,12 @@ agent_admin_curl() {
   curl -fsS "${AGENT_ADMIN_RESOLVE[@]}" -X "$method" \
     -H "Host: ${AGENT_ADMIN_HOST}" -H "x-yoizen-tenant: ${TENANT}" \
     "$@" "${AGENT_ADMIN_URL}${path}"
+}
+agent_ai_curl() {
+  local method="$1" path="$2"; shift 2
+  curl -fsS "${AGENT_AI_RESOLVE[@]}" -X "$method" \
+    -H "Host: ${AGENT_AI_HOST}" -H "x-yoizen-tenant: ${TENANT}" \
+    "$@" "${AGENT_AI_URL}${path}"
 }
 connector_admin_curl() {
   local method="$1" path="$2"; shift 2
@@ -703,6 +721,7 @@ wait_for_health prov
 wait_for_health channel
 wait_for_health workflow
 wait_for_health agent_admin
+wait_for_health agent_ai
 wait_for_health connector_admin
 wait_for_health registry
 
@@ -998,6 +1017,45 @@ log "showcase secrets (names/bindings only, value never logged): '${SHOWCASE_SEC
 log "T09 negative broker test: httpStatus=$(echo "$SHOWCASE_JSON" | jq -r '.negativeBroker.httpStatus') ok=$(echo "$SHOWCASE_JSON" | jq -r '.negativeBroker.ok') errorKind=$(echo "$SHOWCASE_JSON" | jq -r '.negativeBroker.errorKind') (expected ok=false errorKind=binding_mismatch)"
 log "ROUND 2 (LibraryManifest) '${LIB_MANIFEST_NAME}': connector '${LIB_CONNECTOR_NAME}' externalId=${LIB_CONNECTOR_EXTERNAL_ID}"
 log "ROUND 3 (negative-test manifest) '${NEG_MANIFEST_NAME}': results=$(echo "$SHOWCASE_JSON" | jq -c '.negativeManifest.results')"
+
+# --- 8a2 (T02, provisioning-manifest-gaps-5.md): agent publish/runtime-sync ---
+# T01 (agents-writer.ts) now calls POST .../admin/agents/:id/publish as the
+# LAST step of both create() and update(). This is the live verification
+# closing the exact demos/crm-support-telegram incident gap: proves not just
+# that agent-admin-service's row flipped to 'published', but that the
+# publish actually SYNCED into agent-ai-service's OWN store
+# (`AgentConfigRepository`, populated only by the `agent.published.v1` NATS
+# handler) — the ONE store `chat.service.ts`'s `agentCall` reads at runtime.
+# Both assertions are value-free: only presence/status are checked, agent
+# content (system_prompt, tool definitions, etc.) is never read or logged.
+log "Stage 8a2 (T02): asserting showcase agent '${SHOWCASE_AGENT_NAME}' (externalId=${SHOWCASE_AGENT_EXTERNAL_ID}) is published and runtime-visible"
+
+AGENT_ADMIN_AGENT_RESPONSE="$(agent_admin_curl GET "/admin/agents/${SHOWCASE_AGENT_EXTERNAL_ID}")"
+AGENT_ADMIN_AGENT_STATUS="$(echo "$AGENT_ADMIN_AGENT_RESPONSE" | jq -r '.status')"
+if [[ "$AGENT_ADMIN_AGENT_STATUS" != "published" ]]; then
+  err "expected agent-admin-service status=published for showcase agent externalId=${SHOWCASE_AGENT_EXTERNAL_ID}, got: ${AGENT_ADMIN_AGENT_STATUS}"
+  exit 1
+fi
+log "Stage 8a2: agent-admin-service status=published (OK)"
+
+AGENT_AI_AGENT_RESPONSE="$(agent_ai_curl GET "/admin/agents/${SHOWCASE_AGENT_EXTERNAL_ID}")"
+if ! echo "$AGENT_AI_AGENT_RESPONSE" | jq -e '.agent != null and .agent.status == "published"' >/dev/null; then
+  err "expected agent-ai-service .agent != null and .agent.status == 'published' for showcase agent externalId=${SHOWCASE_AGENT_EXTERNAL_ID}, got: $(echo "$AGENT_AI_AGENT_RESPONSE" | jq -c '{agentPresent: (.agent != null), status: .agent.status}' 2>/dev/null || echo 'unparseable response')"
+  exit 1
+fi
+log "Stage 8a2: agent-ai-service .agent != null and .agent.status=published — runtime SYNC confirmed, the exact store agentCall reads (OK)"
+
+# T02: the agent resource itself must verdict=noop on the driver's SECOND
+# apply (not just the aggregate appliedCount/noopCount already asserted in
+# stage 8 above) — proves T01's unconditional publish call on create()/
+# update() did not turn a genuinely-unchanged agent into a forever-'update'
+# resource (comparable-fields.ts's agentComparable is untouched by T01/T02).
+SHOWCASE_AGENT_SECOND_VERDICT="$(echo "$SHOWCASE_JSON" | jq -r --arg n "$SHOWCASE_AGENT_NAME" '.secondApply.resources[] | select(.name == $n) | .verdict')"
+if [[ "$SHOWCASE_AGENT_SECOND_VERDICT" != "noop" ]]; then
+  err "expected showcase agent '${SHOWCASE_AGENT_NAME}' verdict=noop on second apply, got: ${SHOWCASE_AGENT_SECOND_VERDICT:-<missing>}"
+  exit 1
+fi
+log "Stage 8a2: showcase agent verdict=noop on second apply — T01's publish did not create a forever-update resource (OK)"
 
 log "T09/T1 runtime numbers (feed the demo narrative):"
 echo "$SHOWCASE_JSON" | jq -r '

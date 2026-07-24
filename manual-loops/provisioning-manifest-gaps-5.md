@@ -449,8 +449,8 @@ cd services/provisioning-service && bunx tsc -p tsconfig.json --noEmit
 
 ---
 
-- [ ] T01 `agents-writer.ts` publishes on create, re-publishes on update
-- [ ] T02 live verification: applied agent is published/runtime-visible
+- [x] T01 `agents-writer.ts` publishes on create, re-publishes on update
+- [x] T02 live verification: applied agent is published/runtime-visible
 
 ## Out of scope (explicit)
 
@@ -519,3 +519,12 @@ e2e green) — G8a SKIPPED, G8b is the cluster gate, same as all four parents.
   comparable-fields.ts:325-350. Gates: provisioning 450 / shared 324 /
   sdk 403 green, tsc clean, accept filter 8/8, G7 12/12 noop-reapply,
   G8b rebuild + e2e PASSED. Review: 2×APPROVED round 1.
+- [x] T02 live verification — 2026-07-24. agent_ai_curl quadruple +
+  wait_for_health agent_ai (additive, adjudicated); Stage 8a2: agent-admin
+  status=published AND agent-ai-service .agent.status=published (runtime
+  sync proven — the exact store agentCall reads) + agent-specific
+  second-apply noop verdict from the driver JSON. Live green 4 of 5 runs;
+  ONE non-reproducible failure of the PRE-EXISTING T09 showcase-driver
+  stage (not T02's assertions) — recorded as a known flake, follow-up
+  candidate: make the T09 driver's failed assertion print its own name in
+  the summary line. Review: 2×APPROVED round 1. LOOP COMPLETE 2/2.
