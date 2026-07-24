@@ -60,9 +60,18 @@ sourced from the sibling SDK sample `.env` files (see the numbered scripts' own 
 | `04-priority-scorer.sh` | Deploys/registers the hosted priority-scorer connector service (code-over-low-code step) |
 | `05-workflow.sh` | Assembles the low-code workflow wiring trigger → CRM enrichment → parallel sync scorer invoke → agent turn → async ticket invoke (idempotencyKey + webhook) |
 | `run.sh` | Sends a simulated customer message end to end and reports the resulting Telegram reply + HubSpot ticket |
+| `bootstrap.sh` | Thin wrapper over `src/bootstrap.ts` — the ONLY provisioning step left outside `manifest.yaml`: builds/tags the `priority-scorer` Docker image, ensures the HubSpot custom contact property `telegram_user_id`, and registers the Telegram webhook + resolves `TELEGRAM_TEST_CHAT_ID` |
 
-None of the above scripts exist yet in this task — this README documents the intended shape for
-the follow-up tasks that add them.
+> PROVISIONING ORDER (as of T04, `manual-loops/crm-support-telegram.md`):
+> `./bootstrap.sh` → `yoizen manifests apply -f manifest.yaml --secrets-from-env` → `./run.sh`.
+> `manifest.yaml` is now the primary provisioning path for the channel, HubSpot connector, LLM
+> connector, knowledge base, skill, system variables, AI agent, and the `priority-scorer` hosted
+> service (env vars, including its HubSpot connector/endpoint ids and platform login secrets, are
+> resolved declaratively — see the manifest's own comments). `bootstrap.sh` must run AFTER the
+> first `manifests apply` (it reads the manifest-created Telegram channel account by name to
+> register the webhook). The numbered `0N-*.sh`/`setup.sh` scripts above are the PRE-manifest
+> provisioning path, still present pending their removal in T06 — do not run both paths against
+> the same tenant. Full script-inventory/env-table rewrite lands in T06/T07.
 
 ## Status
 

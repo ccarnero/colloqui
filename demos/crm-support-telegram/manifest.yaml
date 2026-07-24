@@ -370,17 +370,109 @@ spec:
       knowledgeBaseRefs:
         - crm-support-faq-kb
 
+  # ---------------------------------------------------------------------------
+  # `priority-scorer` hosted service (T04, manual-loops/crm-support-telegram.md
+  # — updated by `manual-loops/provisioning-manifest-gaps-4.md`'s outcome:
+  # `services[].env[].value` now carries literal | `{secretRef}` |
+  # `{connectorRef}` | `{connectorRef, endpointMethod, endpointPath}`, so the
+  # T01 audit's option (a) — deferring 6 of the 9 env vars to a post-apply
+  # `bootstrap.sh` reconcile — FELL AWAY. All 9 env vars the deleted
+  # `04-priority-scorer.ts` set are expressed here, declaratively, in one
+  # apply). `image`/scaling fields mirror the deleted script's
+  # `IMAGE_REF`/`SERVICE_PORT`/`MIN_SCALE`/`MAX_SCALE`/`CONCURRENCY_TARGET`
+  # constants verbatim; `port` is sent (Knative's *container* port, required
+  # by `serviceSchema`) — PORT the env var is never set (Knative-reserved,
+  # per every sibling `services:` entry's convention, e.g.
+  # `hosted-services-api/manifest.yaml`).
+  #
+  # ENV FIDELITY vs the deleted script's Stage 5 `envVars` object (9 entries):
+  #   - YOIZEN_TENANT, YOIZEN_BASE_URL, SELF_INTERNAL_BASE_URL: the 3
+  #     DETERMINISTIC literals (T01 disposition) — precomputed here exactly as
+  #     the script's Stage 4 derived them (`registry-service`'s own
+  #     `knativeServiceName`/`tenantKubernetesNamespaceName` helpers,
+  #     `services.service.ts:57-62`, verified live 2026-07-14 per the
+  #     script's own header comment): `knativeName =
+  #     "${SERVICE_NAME}-${tenant}"` = `priority-scorer-acme`, `namespace =
+  #     "${tenant}-${env}-ns"` = `acme-dev-ns`, tenant `acme` / env `dev` per
+  #     this cluster's dev-seed default (`lib/resolve-demo-env.sh`).
+  #     YOIZEN_BASE_URL is the INTERNAL gateway URL (the script's
+  #     `internalGatewayBaseUrl`, NOT the public `YOIZEN_BASE_URL` the CLI
+  #     itself logs in with) — same literal both would resolve to on this
+  #     cluster, kept as an explicit value here (no ref mechanism needed for
+  #     a value that isn't a manifest-created resource's id).
+  #   - YOIZEN_EMAIL / YOIZEN_PASSWORD: `{ secretRef }` — the scorer's own
+  #     platform login credentials (used by its `connectors.invoke()` calls
+  #     at runtime), resolved k8s-natively via `valueFrom.secretKeyRef` from
+  #     the `psec-service-priority-scorer` k8s Secret (gaps-4 T04, Option B —
+  #     never baked into the Knative spec as plaintext). New bindings below,
+  #     scope `kind: service, owner: priority-scorer`.
+  #   - HUBSPOT_CONNECTOR_ID: `{ connectorRef: demo-hubspot }` — resolves to
+  #     the SAME apply's `demo-hubspot` connector id (gaps-4 T02).
+  #   - HUBSPOT_DEALS_ENDPOINT_ID / HUBSPOT_TICKETS_ENDPOINT_ID /
+  #     HUBSPOT_CREATE_TICKET_ENDPOINT_ID: `{ connectorRef: demo-hubspot,
+  #     endpointMethod, endpointPath }` (gaps-4 T03) — method/path pairs
+  #     copied VERBATIM from the `demo-hubspot` connector's own `endpoints:`
+  #     above (`List deals associated with contact(s)`, `List tickets
+  #     associated with contact(s)`, `Create ticket`), matching the deleted
+  #     script's `HUBSPOT_DEALS_ENDPOINT`/`HUBSPOT_TICKETS_ENDPOINT`/
+  #     `HUBSPOT_CREATE_TICKET_ENDPOINT` constants exactly.
+  # ---------------------------------------------------------------------------
+  services:
+    - name: priority-scorer
+      image: dev.local/priority-scorer:local
+      port: 8080
+      minScale: 0
+      maxScale: 2
+      concurrencyTarget: 10
+      env:
+        - name: YOIZEN_TENANT
+          value: acme
+        - name: YOIZEN_BASE_URL
+          value: http://api-gateway.platform-services-dev.svc.cluster.local
+        - name: SELF_INTERNAL_BASE_URL
+          value: http://priority-scorer-acme.acme-dev-ns.svc.cluster.local
+        - name: YOIZEN_EMAIL
+          value:
+            secretRef: priority-scorer-yoizen-email
+        - name: YOIZEN_PASSWORD
+          value:
+            secretRef: priority-scorer-yoizen-password
+        - name: HUBSPOT_CONNECTOR_ID
+          value:
+            connectorRef: demo-hubspot
+        - name: HUBSPOT_DEALS_ENDPOINT_ID
+          value:
+            connectorRef: demo-hubspot
+            endpointMethod: POST
+            endpointPath: /crm/v3/associations/contacts/deals/batch/read
+        - name: HUBSPOT_TICKETS_ENDPOINT_ID
+          value:
+            connectorRef: demo-hubspot
+            endpointMethod: POST
+            endpointPath: /crm/v3/associations/contacts/tickets/batch/read
+        - name: HUBSPOT_CREATE_TICKET_ENDPOINT_ID
+          value:
+            connectorRef: demo-hubspot
+            endpointMethod: POST
+            endpointPath: /crm/v3/objects/tickets
+
   # Bound to each resource's owner so the broker binding-match check passes
-  # (scope kind/owner must match the referencing resource — channel/connector
-  # respectively). The binding NAME is the env var `--secrets-from-env` reads
-  # the VALUE from at apply time (no naming transform — same convention as
-  # `telegram-transform-reply/manifest.yaml` and `http-connectors/manifest.yaml`):
-  # `telegram-bot-token` <- $telegram-bot-token, `hubspot-service-key` <-
-  # $hubspot-service-key, `crm-support-telegram-openai-api-key` <-
+  # (scope kind/owner must match the referencing resource — channel/connector/
+  # service respectively). The binding NAME is the env var `--secrets-from-env`
+  # reads the VALUE from at apply time (no naming transform — same convention
+  # as `telegram-transform-reply/manifest.yaml` and
+  # `http-connectors/manifest.yaml`): `telegram-bot-token` <-
+  # $telegram-bot-token, `hubspot-service-key` <- $hubspot-service-key,
+  # `crm-support-telegram-openai-api-key` <-
   # $crm-support-telegram-openai-api-key (maps to OPENAI_API_KEY — see
-  # README.md once written, T06/T07). Per the yoizen CLI's env-var mapping
-  # (secret binding names are slug-cased; invoke with `env 'name=value' bunx
-  # yoizen ...` when the shell can't hold a hyphenated bare env var name).
+  # README.md once written, T06/T07), `priority-scorer-yoizen-email`/
+  # `priority-scorer-yoizen-password` <- $priority-scorer-yoizen-email/
+  # $priority-scorer-yoizen-password (the scorer's own platform login,
+  # scope `kind: service, owner: priority-scorer` — resolved k8s-natively per
+  # gaps-4 T04, never a plaintext literal in this file). Per the yoizen CLI's
+  # env-var mapping (secret binding names are slug-cased; invoke with `env
+  # 'name=value' bunx yoizen ...` when the shell can't hold a hyphenated bare
+  # env var name).
   secrets:
     - name: telegram-bot-token
       scope:
@@ -394,3 +486,11 @@ spec:
       scope:
         kind: connector
         owner: sample-openai-llm
+    - name: priority-scorer-yoizen-email
+      scope:
+        kind: service
+        owner: priority-scorer
+    - name: priority-scorer-yoizen-password
+      scope:
+        kind: service
+        owner: priority-scorer

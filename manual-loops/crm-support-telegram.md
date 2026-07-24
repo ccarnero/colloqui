@@ -448,7 +448,28 @@ duplicate instead of adopting.
 > closed — T04 MAY resume fully declarative. This note does not itself
 > authorize resuming T04: that is a separate human go per this SPEC's own
 > Human boundaries.
-- [ ] T04 manifest: priority-scorer service + bootstrap.sh
+- [x] T04 manifest: priority-scorer service + bootstrap.sh — 2026-07-24, fully
+  declarative on gaps-4: all 9 env vars in the manifest (3 literals, 2
+  service-scoped secretRefs → valueFrom.secretKeyRef, 4 connector/endpoint
+  refs); bootstrap.sh reduced to image build + HubSpot telegram_user_id
+  property + webhook/chat-id (resolve-only, never creates artifacts).
+
+### Findings (T04 — recorded, escalation candidates)
+
+- STALE-STATE MASKING: the first T04 apply NOOPed on `service
+  priority-scorer` although the live ksvc was the script-era registration
+  with all 9 env vars as PLAINTEXT `value` (incl. YOIZEN credentials in the
+  Knative spec). Cause: the tenant reset wiped agent/channel/connector
+  stores but NOT registry-service's registered_services, and gaps-4
+  decision 6 made the service comparable envNames-ONLY — identical names →
+  noop regardless of value SHAPE. Fix applied: deleted the stale registered
+  service via the registry API, re-applied → recreated with secretKeyRef
+  env (structurally verified, ids byte-for-byte, pod Running), then full
+  0/8 noop. Follow-up candidate (gaps-5): shape-aware env comparability
+  (literal vs secretKeyRef reference identity) so mechanism drift converges.
+- bootstrap.sh attempt-1 bug (fixed in-loop): cd-before-sourcing
+  lib/resolve-demo-env.sh double-descended the demo path on repo-root
+  invocation; fix = absolute SCRIPT_DIR + source-before-cd.
 - [ ] T05 manifest: workflow (completes the manifest)
 - [ ] T06 delete setup scripts + rewire run.sh + README core
 - [ ] T07 docs + index
