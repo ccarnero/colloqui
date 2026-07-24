@@ -1,0 +1,396 @@
+apiVersion: yoizen.io/v1
+kind: IntegrationManifest
+metadata:
+  name: crm-support-telegram
+spec:
+  # ---------------------------------------------------------------------------
+  # T02+T03 (manual-loops/crm-support-telegram.md — human decision 2026-07-24:
+  # T02 and T03 MERGED into one task so the `>=1 process` structural rule
+  # (`checkAtLeastOneProcess`, validate-structural-rules.ts — a `kind:
+  # IntegrationManifest` manifest with no agent/workflow is structurally
+  # INVALID) is satisfied by this file from the first commit onward instead
+  # of only after a later task). Covers: channel + HubSpot connector +
+  # secrets (T02 scope) PLUS the shared LLM connector, knowledge base, skill,
+  # system variables and the published support agent (T03 scope) — migrating
+  # the five sequential `01-…05-*.ts` setup-script drivers to this single
+  # declarative manifest, applied with `yoizen manifests apply -f
+  # manifest.yaml --secrets-from-env` (same end-state pattern
+  # `integrations/channels/telegram-transform-reply` already shipped). T04
+  # adds the `priority-scorer` service, T05 the workflow — at that point the
+  # manifest becomes the SOLE provisioning path and the setup scripts are
+  # deleted (T06).
+  #
+  # VERIFIED LIVE STATE (2026-07-24): the dev tenant was found RESET — none of
+  # the T01-audited script-provisioned artifacts existed. The first
+  # `manifests apply` therefore CREATED all 7 top-level resources fresh (plus
+  # the knowledge base, verified live via the inventory script though the
+  # verdict table doesn't enumerate `knowledgeBases`); the second `plan` is a
+  # clean noop. Every resource below is named with the slugs the T01 audit
+  # derived from the (now-gone) script defaults anyway, so any FUTURE cluster
+  # that still holds the old script-era artifacts (e.g. `CRM Support Telegram
+  # Bot`, `crmSupportCompanyName`, `crmSupportSlaHours`) adopts by name after
+  # a one-time rename to these slugs — see
+  # `/private/tmp/.../scratchpad/rename-live-artifacts.ts` (idempotent,
+  # already a no-op on this tenant since nothing needed renaming).
+  # ---------------------------------------------------------------------------
+  channels:
+    # Telegram channel account, slug `crm-support-telegram-bot` — created
+    # fresh by the first apply (VERIFIED LIVE STATE above); a future cluster
+    # still holding the old `CRM Support Telegram Bot` display name adopts
+    # after the one-time rename documented there. Bot token is the only
+    # secret; bound below and resolved at apply time from the same-named env
+    # var via `--secrets-from-env` (never stored in the repo). Same shape as
+    # `telegram-transform-reply/manifest.yaml`: channels-writer's `update()`
+    # only patches `name`, never touches `accessToken`, so reapply is
+    # NOOP-safe on the token.
+    - name: crm-support-telegram-bot
+      type: telegram
+      direction: inbound
+      secretRef: telegram-bot-token
+  connectors:
+    # `demo-hubspot` connector — HubSpot CRM REST API (contacts/deals/tickets),
+    # bearer auth from the HubSpot Service Key (or legacy private-app token,
+    # an interchangeable Bearer-token fallback — SPEC user decision 5).
+    # `config.baseUrl`/`config.context` are the only `config` keys the
+    # connectors-writer reads (see `http-connectors/manifest.yaml` header
+    # comment); `timeoutMs`/`maxRetries`/`retryBackoffMs`/`healthCheckPath`
+    # from the deleted script are NOT expressible via `connectorSchema`
+    # (no matching field) and are silently ignored by the writer if placed
+    # under `config`, so they are intentionally omitted here rather than
+    # cargo-culted in.
+    - name: demo-hubspot
+      type: http
+      config:
+        baseUrl: https://api.hubapi.com
+        context: external
+      auth:
+        authType: bearer
+        bearerToken:
+          secretRef: hubspot-service-key
+      tags:
+        - demo
+        - crm-support-telegram
+        - hubspot
+      endpoints:
+        # Uncached (original-loop decision, `02-hubspot-connector.ts`
+        # `ENDPOINTS`): search results must always reflect the latest
+        # contact state.
+        - label: Search contacts (filtered)
+          method: POST
+          path: /crm/v3/objects/contacts/search
+        # Uncached: write endpoint.
+        - label: Create contact
+          method: POST
+          path: /crm/v3/objects/contacts
+        # POST batch/read association routes — HubSpot's documented way to
+        # list associations for a contact without a path-templated id (see
+        # the deleted script's header comment on the connector-runtime's
+        # verbatim-path endpoint resolution). 60s TTL, keyed on the request
+        # body (the contact id), not query params — same `readCacheStrategy`
+        # the script applied to both association endpoints.
+        - label: List deals associated with contact(s) (batch read)
+          method: POST
+          path: /crm/v3/associations/contacts/deals/batch/read
+          cache:
+            enabled: true
+            ttlSeconds: 60
+            methods: [POST]
+            keyHeaders: []
+            keyQueryParams: []
+            keyBody: true
+        - label: List tickets associated with contact(s) (batch read)
+          method: POST
+          path: /crm/v3/associations/contacts/tickets/batch/read
+          cache:
+            enabled: true
+            ttlSeconds: 60
+            methods: [POST]
+            keyHeaders: []
+            keyQueryParams: []
+            keyBody: true
+        # Uncached: write endpoint.
+        - label: Create ticket
+          method: POST
+          path: /crm/v3/objects/tickets
+
+    # ---------------------------------------------------------------------
+    # LLM connector — the SHARED `sample-<provider>-llm` naming convention
+    # every `ai` sample reuses (T01 disposition: DECLARE, not "assume
+    # present" — byte-identical to `ai-skill-support-agent/manifest.yaml`
+    # and `ai-knowledge-base-agent/manifest.yaml`'s `sample-openai-llm`
+    # entries so re-applying ANY sibling sample never produces an
+    # update-loop on this connector: `connectorComparable` only diffs
+    # `endpoints`/`tags`, never `auth`'s secretRef name, so this manifest's
+    # own — differently NAMED — secret binding is safe). Reused for BOTH the
+    # agent's `model_config.llm.connectorId` AND the knowledge base's
+    # `ingestion_config.provider_connector_id` below, exactly like the
+    # deleted `03-ai-agent.ts` reused the same `connectorId` for both.
+    # ---------------------------------------------------------------------
+    - name: sample-openai-llm
+      type: llm
+      config:
+        baseUrl: https://api.openai.com/v1
+        context: external
+      auth:
+        authType: bearer
+        bearerToken:
+          secretRef: crm-support-telegram-openai-api-key
+      # Required by agent-admin's credential resolver for any LLM adapter an
+      # agent's `model_config.llm.connectorId` points at — the deleted
+      # script always sent `tags: ["llm"]` on this connector.
+      tags:
+        - llm
+
+  # ---------------------------------------------------------------------------
+  # Catalog skill — `order-status-phrasing-guide` (T01 name inventory), placed
+  # BEFORE `agents` (`RESOURCE_KIND_ORDER`, manifest.schema.ts) so the agent's
+  # `catalog_skill_id: { skillRef: ... }` below resolves within the same
+  # apply. Every field mirrors the deleted `03-ai-agent.ts`'s
+  # `buildSkillPayload()` verbatim, including the single `files[]` entry
+  # (`type: reference`) — `skillSchema.files[].content` is inline-string-only
+  # (`ai-skill-support-agent/manifest.yaml` precedent, same schema).
+  # ---------------------------------------------------------------------------
+  skills:
+    - name: order-status-phrasing-guide
+      description: Phrasing guide for communicating order status clearly and empathetically.
+      system_prompt: "You are the order-status phrasing expert. When a customer asks about an order, follow this order: (1) state the concrete current status; (2) then any estimated date; (3) never invent tracking numbers or dates that were not supplied in the conversation's context; (4) if the order is delayed, apologize before explaining next steps; (5) if no order context is present, ask for the order number rather than guessing."
+      icon: local_shipping
+      color: "#42a5f5"
+      trigger_commands:
+        - order status
+        - where is my order
+        - track order
+      when_to_use: Use when the customer asks about the status, location, or delivery estimate of an order.
+      priority: 10
+      allowed_tools: []
+      mode: llm_driven
+      files:
+        - name: order-status-phrasing.md
+          path: reference/order-status-phrasing.md
+          type: reference
+          content: |
+            # Order-status phrasing guide
+
+            - Never say "I don't know" about an order — say "let me check the latest
+              status for you" and use the enriched CRM context if it is present in the
+              conversation.
+            - Lead with the concrete state (e.g. "shipped", "processing", "delivered"),
+              THEN the estimated date, in that order.
+            - If no order/context information is available in this conversation, ask the
+              customer for their order number instead of guessing.
+            - Never invent a tracking number or delivery date — only report what was
+              supplied in context; otherwise say the information is being retrieved and
+              offer a specific next step (e.g. "I'll confirm and follow up within the
+              SLA window").
+            - For delayed orders, acknowledge the delay explicitly before explaining next
+              steps — do not bury the apology.
+
+  # ---------------------------------------------------------------------------
+  # Knowledge base — `crm-support-faq-kb` (T01 name inventory), same
+  # `ingestion_config`/inline-document pattern as `ai-knowledge-base-agent`
+  # and `ai-skill-support-agent`: `provider_connector_id` is a `{ connectorRef
+  # }` symbolic ref resolved by `substitute-kb-ingestion-config.ts` before the
+  # KB reconciler CREATES this (non-external) knowledge base;
+  # `chunk_size`/`chunk_overlap`/`embedding_model`/`chunking_strategy` mirror
+  # the deleted `03-ai-agent.ts`'s `ingestionConfig` verbatim.
+  #
+  # DOCUMENT NAME: `knowledgeBaseSchema.documents[].name` is a `nameSchema`
+  # slug (lowercase alphanumeric + hyphens, no dots), so the deleted script's
+  # `product-faq.md` filename (`KB_DOC_NAME`) becomes the slug `product-faq`
+  # here — documented limitation, not a silent drop (same precedent as
+  # `ai-knowledge-base-agent/manifest.yaml`'s `support-faq.md` -> `support-faq`
+  # — `uploadTextDocument` hardcodes `mime_type`/`content_type` for inline
+  # sources regardless of filename extension, so ingestion is unaffected).
+  # `KB_DESCRIPTION`/`project`/`category`/`icon` from the deleted script have
+  # NO field in `knowledgeBaseSchema` (only `name`/`documents`/
+  # `ingestion_config`/`external`) — dropped here, not silently lost:
+  # agent-admin-service applies its own server-side defaults on create, same
+  # documented limitation as both sibling `ai-*` samples.
+  # ---------------------------------------------------------------------------
+  knowledgeBases:
+    - name: crm-support-faq-kb
+      documents:
+        - name: product-faq
+          source:
+            type: inline
+            content: |
+              # Product FAQ
+
+              ## What is your return policy?
+              Unopened items can be returned within 30 days of delivery for a full refund.
+              Opened items are eligible for a refund within 14 days, minus a 10% restocking
+              fee, unless the item arrived defective.
+
+              ## How long does shipping take?
+              Standard shipping takes 3-5 business days. Expedited shipping takes 1-2
+              business days. International orders take 7-14 business days depending on
+              customs processing.
+
+              ## How do I track my order?
+              Every order confirmation email includes a tracking link. You can also check
+              order status by messaging support with your order number.
+
+              ## Do you offer a warranty?
+              All devices carry a 1-year manufacturer warranty covering defects in
+              materials and workmanship. Accidental damage and normal wear are not
+              covered.
+
+              ## Can I change or cancel my order after placing it?
+              Orders can be changed or cancelled within 1 hour of placement, before they
+              enter fulfillment. After that window, the order ships as placed and must go
+              through the standard return process instead.
+
+              ## What payment methods do you accept?
+              We accept all major credit cards, PayPal, and Apple Pay. Payment is
+              authorized at checkout and captured when the order ships.
+
+              ## What if my item arrives damaged?
+              Contact support with your order number and a photo of the damage within 48
+              hours of delivery. We will ship a free replacement or issue a full refund,
+              your choice — no return of the damaged item is required.
+      ingestion_config:
+        chunk_size: 800
+        chunk_overlap: 120
+        embedding_model: text-embedding-3-small
+        chunking_strategy: recursive
+        provider_connector_id:
+          connectorRef: sample-openai-llm
+
+  # ---------------------------------------------------------------------------
+  # System variables — created fresh by the first apply, slugs
+  # `crm-support-company-name`/`crm-support-sla-hours` (VERIFIED LIVE STATE,
+  # header comment above). `nameSchema` requires a slug and rejects the
+  # deleted script's camelCase `crmSupportCompanyName`/`crmSupportSlaHours`
+  # outright, so a future cluster still holding those old-era names needs the
+  # same one-time rename documented above before it can adopt. The agent's
+  # `system_prompt` below references these SAME slugs via
+  # `{{variables.system.<name>}}` (agent-ai-service's runtime template
+  # renderer resolves by the live variable's exact name), so the two must
+  # stay in lockstep with whatever name these variables carry live.
+  # `systemVariableSchema` (`name`/`type`/`value`/`label`/`description`)
+  # matches `CreateSystemVariableInput` exactly — same values the script's
+  # `CRM_COMPANY_NAME`/`CRM_SLA_HOURS` defaults set.
+  # ---------------------------------------------------------------------------
+  systemVariables:
+    - name: crm-support-company-name
+      type: string
+      value: Acme Support Co
+      label: Support company name
+      description: Brand name the support agent uses to introduce itself (demos/crm-support-telegram)
+    - name: crm-support-sla-hours
+      type: string
+      value: "24"
+      label: Support SLA (hours)
+      description: SLA in hours the support agent cites for follow-ups/escalations (demos/crm-support-telegram)
+
+  # ---------------------------------------------------------------------------
+  # Support agent — `crm-support-agent` (T01 name inventory), PUBLISHED
+  # end-state. `agentSchema.profile` is a free-form passthrough record
+  # (`z.record(z.string(), z.unknown())`, manifest.schema.ts:478) — fully
+  # permissive, so the deleted `03-ai-agent.ts`'s `buildAgentBody()` shape
+  # (`model_config.llm`/`.rules`/`.soul`/`.subagents`, `tools`, `channels`) is
+  # expressible verbatim. `knowledgeBaseRefs` (not raw `knowledge_base_ids`)
+  # is how the manifest carries the KB-at-CREATE workaround the script
+  # hand-rolls (original-loop finding: gateway `UpdateAgentDto` drops
+  # `knowledge_base_ids` on PATCH) — `agents-writer.ts`'s
+  # `reconcileKnowledgeBases` resolves this ref and wires it at CREATE time,
+  # so that gap does not resurface here.
+  #
+  # SUBAGENT SNAPSHOT (same contract as `ai-skill-support-agent/manifest.yaml`):
+  # `profile.model_config.subagents[]` carries the `skillRef` symbolic ref
+  # (`catalog_skill_id`) PLUS the full skill-field snapshot the deleted
+  # script's `buildAgentBody()` embedded verbatim (name/description/
+  # system_prompt/enabled/trigger_commands/when_to_use/priority/mode) —
+  # required because agent-ai-service reads these fields from the subagent
+  # ENTRY ITSELF at chat time, never re-fetching the catalog skill by id.
+  # MIGRATION NOTE: because this is a snapshot, not a live reference, a
+  # future edit to the `skills[]` entry above must also update this
+  # snapshot's matching fields to stay consistent — both are declared from
+  # the same source values here so a normal edit + re-apply keeps them in
+  # sync automatically.
+  #
+  # TOOLS: `loadSkill` (reaches the order-status-phrasing-guide subagent
+  # skill at runtime) + `memory` (per-user memory, keyed by `state.userId` —
+  # the deleted script's ONLY memory mechanism: a builtin tool entry, no
+  # separate per-agent memory flag). The workflow's `agentCall` (T05) supplies
+  # a stable per-customer `userId` (`{{request.from}}`).
+  # ---------------------------------------------------------------------------
+  agents:
+    - name: crm-support-agent
+      profile:
+        description: Support agent leading the crm-support-telegram demo's customer conversations, backed by a product FAQ knowledge base, an order-status phrasing skill and per-user memory
+        system_prompt: |
+          You are the lead support agent for {{variables.system.crm-support-company-name}}, driving a live Telegram support conversation end to end — you are NOT a passive intent router waiting to be told what to do.
+
+          Every inbound customer message you receive is prefixed with a CONTEXT block assembled by the support workflow, shaped like:
+            Context: { "contact": { ...HubSpot contact fields... }, "priority": { "score": <number>, "tier": "standard"|"vip", "reasons": [<string>, ...] } }
+          Followed by the customer's own message text. Use that context to personalize your reply (name, known history, priority reasons) — never quote the raw JSON back to the customer, and never invent contact or priority details that were not supplied.
+
+          Tone:
+          - Default: professional, warm, concise.
+          - When priority.tier == "vip": shift to a more formal, escalation-aware tone — acknowledge the urgency implied by the priority reasons, avoid casual language, and proactively offer a fast path to a human agent if the issue is not fully resolved in this reply.
+
+          Cite the current SLA of {{variables.system.crm-support-sla-hours}} hours only when relevant (delays, escalations, or when explicitly asked "how long will this take").
+
+          Lead the conversation: ask clarifying questions when the request is ambiguous, use the attached knowledge base for product/policy facts, and use the order-status-phrasing-guide skill whenever the customer asks about an order's status. You have access to per-user memory — use it to recall facts this same customer told you in earlier turns (their preferences, open issues already discussed), and store new durable facts worth remembering across conversations.
+        model_config:
+          llm:
+            provider: openai
+            model: gpt-4o-mini
+            connectorId:
+              connectorRef: sample-openai-llm
+            temperature: 0.3
+            maxTokens: 500
+          rules: Prefer knowledge-base facts over general knowledge; if the answer is not covered, say so plainly. Never promise dates/tracking numbers not present in the supplied context. Escalate VIP-tier customers proactively when an issue cannot be resolved immediately.
+          soul: Warm, professional, proactive — leads the conversation instead of waiting to be asked.
+          subagents:
+            - name: order-status-phrasing-guide
+              description: Phrasing guide for communicating order status clearly and empathetically.
+              system_prompt: "You are the order-status phrasing expert. When a customer asks about an order, follow this order: (1) state the concrete current status; (2) then any estimated date; (3) never invent tracking numbers or dates that were not supplied in the conversation's context; (4) if the order is delayed, apologize before explaining next steps; (5) if no order context is present, ask for the order number rather than guessing."
+              enabled: true
+              catalog_skill_id:
+                skillRef: order-status-phrasing-guide
+              trigger_commands:
+                - order status
+                - where is my order
+                - track order
+              when_to_use: Use when the customer asks about the status, location, or delivery estimate of an order.
+              priority: 10
+              mode: llm_driven
+        tools:
+          - name: loadSkill
+            description: Built-in tool enabled so the order-status-phrasing-guide subagent skill is reachable at runtime.
+            source_type: builtin
+            builtin: true
+          - name: memory
+            description: "Built-in tool enabled for per-user memory: read/store/search facts about the current customer (state.userId) across conversations."
+            source_type: builtin
+            builtin: true
+        channels: []
+      knowledgeBaseRefs:
+        - crm-support-faq-kb
+
+  # Bound to each resource's owner so the broker binding-match check passes
+  # (scope kind/owner must match the referencing resource — channel/connector
+  # respectively). The binding NAME is the env var `--secrets-from-env` reads
+  # the VALUE from at apply time (no naming transform — same convention as
+  # `telegram-transform-reply/manifest.yaml` and `http-connectors/manifest.yaml`):
+  # `telegram-bot-token` <- $telegram-bot-token, `hubspot-service-key` <-
+  # $hubspot-service-key, `crm-support-telegram-openai-api-key` <-
+  # $crm-support-telegram-openai-api-key (maps to OPENAI_API_KEY — see
+  # README.md once written, T06/T07). Per the yoizen CLI's env-var mapping
+  # (secret binding names are slug-cased; invoke with `env 'name=value' bunx
+  # yoizen ...` when the shell can't hold a hyphenated bare env var name).
+  secrets:
+    - name: telegram-bot-token
+      scope:
+        kind: channel
+        owner: crm-support-telegram-bot
+    - name: hubspot-service-key
+      scope:
+        kind: connector
+        owner: demo-hubspot
+    - name: crm-support-telegram-openai-api-key
+      scope:
+        kind: connector
+        owner: sample-openai-llm

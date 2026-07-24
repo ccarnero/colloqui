@@ -436,8 +436,8 @@ duplicate instead of adopting.
 ---
 
 - [x] T01 migration audit (script → manifest mapping)
-- [ ] T02 manifest: channel + HubSpot connector + secrets
-- [ ] T03 manifest: agent + KB + skill + system variables
+- [x] T02 manifest: channel + HubSpot connector + secrets (merged with T03 — user decision 2026-07-24: the structural validator requires ≥1 process, so a channel+connector-only manifest cannot validate in isolation)
+- [x] T03 manifest: agent + KB + skill + system variables (merged with T02; live cutover 2026-07-24: dev tenant found reset, first apply CREATED all resources fresh, second plan = clean noop; KB created but not enumerated in the plan verdict table)
 - [ ] T04 manifest: priority-scorer service + bootstrap.sh
 - [ ] T05 manifest: workflow (completes the manifest)
 - [ ] T06 delete setup scripts + rewire run.sh + README core
