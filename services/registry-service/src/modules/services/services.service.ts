@@ -36,6 +36,7 @@ import { ServiceEventsPublisher } from "./service-events.publisher";
 import {
   type Environment,
   type RegisterServiceDto,
+  type ServiceEnvVars,
   type UpdateServiceDto,
   VALID_ENVIRONMENTS,
 } from "./services.dto";
@@ -213,9 +214,9 @@ export class ServicesService {
       dto.concurrencyTarget ?? row.concurrency_target ?? 100
     );
     const envVarsRaw = dto.envVars ?? row.env_vars;
-    const envVars: Record<string, string> =
+    const envVars: ServiceEnvVars =
       envVarsRaw && typeof envVarsRaw === "object" && !Array.isArray(envVarsRaw)
-        ? (envVarsRaw as Record<string, string>)
+        ? (envVarsRaw as ServiceEnvVars)
         : {};
 
     if (row.knative_name && row.namespace) {

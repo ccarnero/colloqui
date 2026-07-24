@@ -1,4 +1,4 @@
-import type { RegisterServiceDto } from "./services.dto";
+import type { RegisterServiceDto, ServiceEnvVars } from "./services.dto";
 
 export const SERVICES_REPOSITORY = Symbol("SERVICES_REPOSITORY");
 
@@ -14,7 +14,7 @@ export interface IInsertRegisteredServiceOptions {
   minScale: number;
   maxScale: number;
   concurrencyTarget: number;
-  envVars: Record<string, string>;
+  envVars: ServiceEnvVars;
   ksvcName: string;
   ns: string;
 }
@@ -28,28 +28,28 @@ export interface IUpdateRegisteredServiceOptions {
   minScale: number;
   maxScale: number;
   concurrencyTarget: number;
-  envVars: Record<string, string>;
+  envVars: ServiceEnvVars;
 }
 
 export interface IServicesRepository {
   findIdByTenantAndName(
     tenantId: string,
-    name: string,
+    name: string
   ): Promise<IRegisteredServiceRow[]>;
   insertRegisteredService(
-    options: IInsertRegisteredServiceOptions,
+    options: IInsertRegisteredServiceOptions
   ): Promise<IRegisteredServiceRow[]>;
   listByTenant(tenantId: string): Promise<IRegisteredServiceRow[]>;
   findByIdAndTenant(
     id: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IRegisteredServiceRow[]>;
   updateRegisteredService(
-    options: IUpdateRegisteredServiceOptions,
+    options: IUpdateRegisteredServiceOptions
   ): Promise<IRegisteredServiceRow[]>;
   deleteById(id: string): Promise<void>;
   selectKnativeMetaForRevision(
     id: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<IRegisteredServiceRow[]>;
 }

@@ -18,18 +18,33 @@
 // (bare string | `{ secretRef }` | `{ connectorRef }` | `{ connectorRef,
 // endpointMethod, endpointPath }` — see `manifest.schema.ts`'s
 // `serviceEnvVarSchema` header comment for the full history and the Option
-// B ruling this reopens). T01 is SCHEMA + VALIDATE-TIME ONLY — apply-time
-// resolution of every ref shape ships across gaps-4 T02 (`connectorRef`),
-// T03 (endpoint-ref), and T04 (`secretRef`, k8s-native
-// `valueFrom.secretKeyRef`, never plaintext). Until those tasks land, THIS
-// writer still only knows how to pass a plain string through: `buildEnvVars`
-// fails LOUD (`unresolved_symbolic_ref`, naming the env var and ref kind,
-// never the value) if it ever receives an unresolved ref-shaped `value` —
-// it must never silently stringify an object or crash with an unchecked
-// type error.
+// B ruling this reopens). T01 is SCHEMA + VALIDATE-TIME ONLY. Apply-time
+// resolution of the `connectorRef`/endpoint-ref shapes ships upstream in
+// `resolve-service-env-refs.ts` (T02/T03) — by the time `buildEnvVars` runs,
+// those two shapes have ALREADY been substituted to plain strings (or the
+// apply already failed loud before reaching this writer). `{ secretRef }`
+// is DELIBERATELY left untouched by that upstream resolver — it is THIS
+// writer's job (T04, Option B, human ruling 2026-07-24): the secret is
+// NEVER resolved to plaintext here. `buildEnvVars` calls the T05 secrets
+// broker for an EXISTENCE check ONLY (fail loud, `secret_not_resolvable`,
+// if the binding is missing or no resolver is wired — mirrors
+// `connectors-writer.ts`'s `resolveField`/`resolveConnectorAuth` shape) and
+// then sends registry-service the REFERENCE `{ name:
+// secretResourceName("service", service.name), key: secretRef }` —
+// `secret-resource-name.ts:29-31` is the ONE source of truth for that name,
+// reused verbatim, never re-derived inline. registry-service emits the
+// k8s-native `env[].valueFrom.secretKeyRef` from that reference
+// (`knative-builder.ts`) so k8s itself resolves the value at pod start —
+// the mechanism `declarative-provisioning.md` decision 7 always intended.
+// A ref-shaped value THIS writer does not recognize (e.g. an unresolved
+// `connectorRef` reaching here — should not happen given
+// `resolve-service-env-refs.ts`, but never assumed) still fails loud with
+// `unresolved_symbolic_ref` exactly as before, never silently stringified
+// or crashed on with an unchecked type error.
 //
-// LOGGING DISCIPLINE: even though these are plain config values (not
-// secrets), the writer logs env var NAMES only, never values wholesale —
+// LOGGING DISCIPLINE: the writer logs env var NAMES only, never values —
+// literal values (plain config, not secrets) are never logged wholesale,
+// and a secretRef binding name is a NAME, never the resolved secret value —
 // keeping parity with every other credential-adjacent writer in this loop.
 //
 // COMPARABLE LIMITATION (documented, not a bug): `comparable-fields.ts`'s
@@ -81,13 +96,27 @@ import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 import type { HostedService, ManifestServiceRoute } from "@yoizen/shared";
 import { TENANT_HEADER } from "@yoizen/shared";
 import { DEFAULT_ROUTE_METHODS } from "../../../lib/default-route-methods";
+import { secretResourceName } from "../../secrets/lib/secret-resource-name";
 import type { ApplyWriteError } from "../domain/apply.interfaces";
 import type {
   CreateOrUpdateResult,
   IPlatformResourceWriter,
 } from "../domain/platform-resource-writer.interface";
+import type { ISecretValueResolver } from "../domain/secret-value-resolver.interface";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
+
+/**
+ * The env value shape sent to registry-service's `POST/PATCH /services`
+ * body — widened at manual-loops/provisioning-manifest-gaps-4.md T04
+ * (Option B) alongside `registry-service`'s own `services.dto.ts`
+ * `ServiceEnvVarValue`. A literal string is unchanged; a `secretRef` env
+ * var resolves to the k8s-native reference, never a plaintext value.
+ */
+type RegistryEnvVarValue =
+  | string
+  | { readonly secretKeyRef: { readonly name: string; readonly key: string } };
+type RegistryEnvVars = Record<string, RegistryEnvVarValue>;
 
 interface LiveRoute {
   readonly id: string;
@@ -128,38 +157,60 @@ function routeChanged(live: LiveRoute, desired: ManifestServiceRoute): boolean {
 }
 
 export function createRegistryServicesWriter(
-  baseUrl: string
+  baseUrl: string,
+  secretResolver?: ISecretValueResolver
 ): IPlatformResourceWriter {
   const logger = new PinoLoggerService("apply.service-writer");
 
   /**
-   * Plain-string `env[].value` passthrough (T05, gap 5 — PLAIN STRINGS
-   * ONLY). No secrets broker involvement: every declared plain-string value
-   * is mapped verbatim into registry-service's `envVars` payload. Logs env
-   * var NAMES only, never values wholesale (parity discipline).
+   * `env[].value` -> registry-service's `envVars` payload. A plain string
+   * (T05, gap 5) is mapped verbatim (unchanged — no broker involvement).
    *
-   * manual-loops/provisioning-manifest-gaps-4.md T01 — the schema now also
-   * accepts ref-shaped values (`{ secretRef }`/`{ connectorRef }`/
-   * `{ connectorRef, endpointMethod, endpointPath }`), but apply-time
-   * resolution for them ships in T02-T04, NOT here. A ref-shaped value
-   * reaching this writer today is therefore always UNRESOLVED — fails loud
-   * with `unresolved_symbolic_ref` (naming the env var and which ref kind
-   * it carries, never a value) instead of silently stringifying an object
-   * or crashing with an unchecked type error.
+   * manual-loops/provisioning-manifest-gaps-4.md T04 (Option B, human
+   * ruling 2026-07-24): a `{ secretRef }` value is resolved through the T05
+   * secrets broker for an EXISTENCE CHECK ONLY — `secretResolver.resolve()`
+   * is called and only its `.ok` outcome is inspected, `.value` (the
+   * resolved plaintext) is NEVER read or forwarded. On success this writer
+   * sends registry-service the REFERENCE `{ name: secretResourceName(
+   * "service", service.name), key: secretRef }` (`secret-resource-name.ts`
+   * lines 29-31 is the ONE naming source of truth, reused verbatim) instead
+   * of a value — registry-service turns that into the k8s-native
+   * `env[].valueFrom.secretKeyRef` (`knative-builder.ts`), so k8s itself
+   * resolves the value at pod start. Missing binding or no resolver wired
+   * -> typed `secret_not_resolvable` (mirrors `connectors-writer.ts`'s
+   * `resolveField` fail-loud shape).
+   *
+   * `{ connectorRef }`/endpoint-ref shapes are resolved UPSTREAM
+   * (`resolve-service-env-refs.ts`, T02/T03) before this writer ever runs —
+   * an unresolved ref-shaped value reaching here (should not happen) still
+   * fails loud with `unresolved_symbolic_ref`, never silently stringified.
+   *
+   * LOGGING: env var NAMES only, never values — literal values are never
+   * logged wholesale, and a secretRef binding NAME is safe to log (it is a
+   * name, never the resolved secret value).
    */
-  function buildEnvVars(
+  async function buildEnvVars(
     service: HostedService,
-    verb: "create" | "update"
-  ):
-    | { ok: true; value: Record<string, string> }
-    | { ok: false; error: ApplyWriteError } {
+    verb: "create" | "update",
+    tenantId: string,
+    correlationId: string | undefined
+  ): Promise<
+    { ok: true; value: RegistryEnvVars } | { ok: false; error: ApplyWriteError }
+  > {
     const declared = service.env ?? [];
-    const envVars: Record<string, string> = {};
+    const envVars: RegistryEnvVars = {};
     for (const envVar of declared) {
-      if (typeof envVar.value !== "string") {
-        const refKind =
-          "secretRef" in envVar.value ? "secretRef" : "connectorRef";
-        const message = `service '${service.name}' env var '${envVar.name}' declares a { ${refKind} } value — apply-time resolution for this ref shape is not implemented yet (manual-loops/provisioning-manifest-gaps-4.md T02-T04)`;
+      if (typeof envVar.value === "string") {
+        envVars[envVar.name] = envVar.value;
+        continue;
+      }
+
+      if (!("secretRef" in envVar.value)) {
+        // connectorRef / endpoint-ref shapes are resolved upstream
+        // (resolve-service-env-refs.ts, T02/T03) before this writer ever
+        // sees the service — reaching here unresolved is a dependency-order
+        // gap that must fail loud, never be silently stringified.
+        const message = `service '${service.name}' env var '${envVar.name}' declares a { connectorRef } value that was never resolved before reaching this writer (expected upstream resolution — manual-loops/provisioning-manifest-gaps-4.md T02/T03)`;
         logger.warn(`${verb}: ${message}`);
         return {
           ok: false,
@@ -171,11 +222,60 @@ export function createRegistryServicesWriter(
           },
         };
       }
-      envVars[envVar.name] = envVar.value;
+
+      const secretRef = envVar.value.secretRef;
+      if (!secretResolver) {
+        const message = `service '${service.name}' env var '${envVar.name}' declares a { secretRef } value ('${secretRef}') but no secrets broker resolver is wired`;
+        logger.warn(`${verb}: ${message}`);
+        return {
+          ok: false,
+          error: {
+            kind: "secret_not_resolvable",
+            resourceKind: "service",
+            resourceName: service.name,
+            message,
+          },
+        };
+      }
+
+      // Existence check ONLY — `.value` (the resolved plaintext) is
+      // deliberately never read; only the `.ok` outcome matters here.
+      const resolution = await secretResolver.resolve({
+        tenantId,
+        kind: "service",
+        owner: service.name,
+        secretName: secretRef,
+        correlationId,
+      });
+      if (!resolution.ok) {
+        const message = `service '${service.name}' env var '${envVar.name}' secretRef '${secretRef}' broker existence check FAILED: ${resolution.error}`;
+        logger.warn(`${verb}: ${message}`);
+        return {
+          ok: false,
+          error: {
+            kind: "secret_not_resolvable",
+            resourceKind: "service",
+            resourceName: service.name,
+            message,
+          },
+        };
+      }
+
+      logger.log(
+        `${verb}: service '${service.name}' env var '${envVar.name}' secretRef '${secretRef}' EXISTS — sending registry-service a k8s-native secretKeyRef reference (value NEVER resolved/forwarded)`
+      );
+      // secret-resource-name.ts:29-31 — the ONE source of truth for this
+      // name, reused verbatim, never re-derived inline.
+      envVars[envVar.name] = {
+        secretKeyRef: {
+          name: secretResourceName("service", service.name),
+          key: secretRef,
+        },
+      };
     }
     if (declared.length > 0) {
       logger.log(
-        `${verb}: service '${service.name}' env vars (plain config) [${declared
+        `${verb}: service '${service.name}' env vars [${declared
           .map((e) => e.name)
           .join(", ")}] (values NEVER logged)`
       );
@@ -510,7 +610,11 @@ export function createRegistryServicesWriter(
   }
 
   return {
-    async create(tenantId, resourceUnknown): Promise<CreateOrUpdateResult> {
+    async create(
+      tenantId,
+      resourceUnknown,
+      context
+    ): Promise<CreateOrUpdateResult> {
       const service = resourceUnknown as HostedService;
 
       if (!service.image) {
@@ -527,7 +631,12 @@ export function createRegistryServicesWriter(
         };
       }
 
-      const envVarsResult = buildEnvVars(service, "create");
+      const envVarsResult = await buildEnvVars(
+        service,
+        "create",
+        tenantId,
+        context?.correlationId
+      );
       if (!envVarsResult.ok) {
         return envVarsResult;
       }
@@ -602,11 +711,18 @@ export function createRegistryServicesWriter(
     async update(
       tenantId,
       externalId,
-      resourceUnknown
+      resourceUnknown,
+      _diff,
+      context
     ): Promise<CreateOrUpdateResult> {
       const service = resourceUnknown as HostedService;
 
-      const envVarsResult = buildEnvVars(service, "update");
+      const envVarsResult = await buildEnvVars(
+        service,
+        "update",
+        tenantId,
+        context?.correlationId
+      );
       if (!envVarsResult.ok) {
         return envVarsResult;
       }

@@ -18,10 +18,7 @@ import { createWorkflowsWriter } from "./workflows-writer";
  * T05: `secretResolver` is optional — when wired (see `apply.module.ts`),
  * the CHANNEL writer resolves a `secretRef` through the T05 secrets broker
  * instead of failing loud with `secret_not_resolvable` (its `accessToken`
- * field maps cleanly). Registry (hosted-service) + workflow writers remain
- * OUT of scope (SPEC.md: "hosted-service k8s-native env delivery is a later
- * concern"; decision 7/gap-1's `declarative-provisioning.md` scope excludes
- * agent/LLM credential wiring).
+ * field maps cleanly). Workflow writer remains OUT of scope.
  *
  * T01 (manual-loops/provisioning-manifest-gaps.md, gap 1): the CONNECTOR
  * writer now ALSO takes `secretResolver` — its `auth` block resolves
@@ -33,10 +30,14 @@ import { createWorkflowsWriter } from "./workflows-writer";
  * writer ALSO takes `secretResolver` — its `auth`/`headers` fields resolve
  * secretRefs through the same broker resolver (see `mcp-servers-writer.ts`).
  *
- * T05 (manual-loops/provisioning-manifest-gaps-2.md, gap 5): the SERVICE
- * (registry) writer's `env[].value` is PLAIN-STRING-ONLY (human ruling
- * 2026-07-16) — no secretRef, no broker resolver dependency. Secret-valued
- * env vars are a deferred k8s-native (`secretKeyRef`) follow-up.
+ * manual-loops/provisioning-manifest-gaps-2.md T05 (gap 5, human ruling
+ * 2026-07-16): the SERVICE (registry) writer's `env[].value` started
+ * PLAIN-STRING-ONLY — no secretRef, no broker resolver dependency.
+ * manual-loops/provisioning-manifest-gaps-4.md T04 (Option B, human ruling
+ * 2026-07-24) lands the deferred k8s-native `secretKeyRef` follow-up: the
+ * SERVICE writer now ALSO takes `secretResolver`, but ONLY for an EXISTENCE
+ * CHECK (never resolves to plaintext — see `registry-services-writer.ts`'s
+ * `buildEnvVars` header for the full mechanism).
  */
 export function buildPlatformResourceWriters(
   secretResolver?: ISecretValueResolver
@@ -55,7 +56,7 @@ export function buildPlatformResourceWriters(
     // credential-capable (decision 4).
     skill: createSkillsWriter(urls.agents),
     agent: createAgentsWriter(urls.agents),
-    service: createRegistryServicesWriter(urls.registry),
+    service: createRegistryServicesWriter(urls.registry, secretResolver),
     // T04 (manual-loops/provisioning-manifest-gaps.md, gap 4) — same
     // downstream base URL as agents: system variables live in
     // agent-admin-service.

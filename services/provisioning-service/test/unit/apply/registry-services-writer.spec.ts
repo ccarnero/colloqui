@@ -69,14 +69,103 @@ describe("createRegistryServicesWriter", () => {
 
   // manual-loops/provisioning-manifest-gaps-4.md T01 — the schema now
   // accepts ref-shaped `env[].value` (`{ secretRef }`/`{ connectorRef }`/
-  // `{ connectorRef, endpointMethod, endpointPath }`), but apply-time
-  // resolution for those shapes ships in T02-T04, NOT here. Until then this
-  // writer must fail loud (`unresolved_symbolic_ref`) rather than silently
-  // stringify an object or crash with an unchecked type error, and it must
-  // never call the network once it detects an unresolved ref.
-  it("create: a { secretRef }-shaped env value fails loud with unresolved_symbolic_ref (never calls the network)", async () => {
+  // `{ connectorRef, endpointMethod, endpointPath }`). Apply-time resolution
+  // for `connectorRef`/endpoint-ref shapes ships upstream (T02/T03,
+  // `resolve-service-env-refs.ts`) and never reaches this writer unresolved
+  // in practice — reaching here unresolved still fails loud
+  // (`unresolved_symbolic_ref`) rather than silently stringifying an object.
+  it("create: a { connectorRef }-shaped env value that somehow reaches this writer unresolved still fails loud (never calls the network)", async () => {
     globalThis.fetch = mock(async () => {
       throw new Error("must never call the network for an unresolved ref");
+    }) as unknown as typeof fetch;
+
+    const writer = createRegistryServicesWriter(BASE_URL);
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:1.0",
+      env: [
+        {
+          name: "HUBSPOT_CONNECTOR_ID_2",
+          value: { connectorRef: "demo-hubspot-2" },
+        },
+      ],
+    };
+
+    const result = await writer.create("tenant-a", service);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatchObject({
+        kind: "unresolved_symbolic_ref",
+        resourceKind: "service",
+        resourceName: "priority-scorer",
+      });
+      expect(result.error.message).toContain("HUBSPOT_CONNECTOR_ID_2");
+      expect(result.error.message).toContain("connectorRef");
+    }
+  });
+
+  // manual-loops/provisioning-manifest-gaps-4.md T04 (Option B — k8s-native
+  // valueFrom.secretKeyRef, human ruling 2026-07-24). REVERSAL of the T01
+  // fail-loud-on-secretRef behavior above: this writer now performs an
+  // EXISTENCE CHECK ONLY through the secrets broker (never reads/forwards
+  // the resolved plaintext) and sends registry-service a REFERENCE.
+  it("create: a { secretRef }-shaped env value resolves via broker EXISTENCE CHECK and sends a secretKeyRef reference (never a plaintext value)", async () => {
+    let capturedBody: unknown;
+    globalThis.fetch = mock(async (_url, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return json({ id: "svc-1" }, 201);
+    }) as unknown as typeof fetch;
+
+    const resolveCalls: unknown[] = [];
+    const secretResolver = {
+      resolve: mock(async (args: unknown) => {
+        resolveCalls.push(args);
+        // The existence-check outcome never carries the real value — this
+        // stub proves the writer never reads/forwards it even if it did.
+        return { ok: true as const, value: "SHOULD_NEVER_BE_FORWARDED" };
+      }),
+    };
+
+    const writer = createRegistryServicesWriter(BASE_URL, secretResolver);
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:1.0",
+      env: [
+        { name: "YOIZEN_PASSWORD", value: { secretRef: "scorer-password" } },
+      ],
+    };
+
+    const result = await writer.create("tenant-a", service);
+    expect(result.ok).toBe(true);
+    expect(capturedBody).toMatchObject({
+      envVars: {
+        YOIZEN_PASSWORD: {
+          secretKeyRef: {
+            name: "psec-service-priority-scorer",
+            key: "scorer-password",
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(capturedBody)).not.toContain(
+      "SHOULD_NEVER_BE_FORWARDED"
+    );
+    expect(resolveCalls).toEqual([
+      {
+        tenantId: "tenant-a",
+        kind: "service",
+        owner: "priority-scorer",
+        secretName: "scorer-password",
+        correlationId: undefined,
+      },
+    ]);
+  });
+
+  it("create: a { secretRef }-shaped env value fails loud with secret_not_resolvable when no resolver is wired", async () => {
+    globalThis.fetch = mock(async () => {
+      throw new Error(
+        "must never call the network for an unresolvable secretRef"
+      );
     }) as unknown as typeof fetch;
 
     const writer = createRegistryServicesWriter(BASE_URL);
@@ -92,14 +181,49 @@ describe("createRegistryServicesWriter", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toMatchObject({
-        kind: "unresolved_symbolic_ref",
+        kind: "secret_not_resolvable",
         resourceKind: "service",
         resourceName: "priority-scorer",
       });
       expect(result.error.message).toContain("YOIZEN_PASSWORD");
-      expect(result.error.message).toContain("secretRef");
-      // The secret VALUE never appears — only the binding NAME may.
-      expect(result.error.message).not.toContain("scorer-password");
+      // The binding NAME (never a resolved value — none was ever fetched
+      // since no resolver is wired) is expected in the message.
+      expect(result.error.message).toContain("scorer-password");
+    }
+  });
+
+  it("create: a { secretRef }-shaped env value fails loud with secret_not_resolvable when the broker cannot resolve the binding (never a plaintext value in the message)", async () => {
+    globalThis.fetch = mock(async () => {
+      throw new Error(
+        "must never call the network for a failed existence check"
+      );
+    }) as unknown as typeof fetch;
+
+    const secretResolver = {
+      resolve: mock(async () => ({
+        ok: false as const,
+        error: "binding not found",
+      })),
+    };
+
+    const writer = createRegistryServicesWriter(BASE_URL, secretResolver);
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:1.0",
+      env: [
+        { name: "YOIZEN_PASSWORD", value: { secretRef: "scorer-password" } },
+      ],
+    };
+
+    const result = await writer.create("tenant-a", service);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatchObject({
+        kind: "secret_not_resolvable",
+        resourceKind: "service",
+        resourceName: "priority-scorer",
+      });
+      expect(result.error.message).toContain("YOIZEN_PASSWORD");
     }
   });
 
@@ -133,9 +257,54 @@ describe("createRegistryServicesWriter", () => {
     }
   });
 
-  it("update: a { secretRef }-shaped env value fails loud with unresolved_symbolic_ref (never calls the network)", async () => {
+  // manual-loops/provisioning-manifest-gaps-4.md T04 (Option B). REVERSAL
+  // of the T01 fail-loud-on-secretRef behavior: the update path resolves
+  // via the SAME broker existence check + reference the create path uses.
+  it("update: a { secretRef }-shaped env value resolves via broker EXISTENCE CHECK and sends a secretKeyRef reference (never a plaintext value)", async () => {
+    let capturedBody: unknown;
+    globalThis.fetch = mock(async (_url, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return json({ id: "svc-1" });
+    }) as unknown as typeof fetch;
+
+    const secretResolver = {
+      resolve: mock(async () => ({
+        ok: true as const,
+        value: "SHOULD_NEVER_BE_FORWARDED",
+      })),
+    };
+
+    const writer = createRegistryServicesWriter(BASE_URL, secretResolver);
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:2.0",
+      env: [{ name: "YOIZEN_EMAIL", value: { secretRef: "scorer-email" } }],
+    };
+
+    const result = await writer.update("tenant-a", "svc-1", service, [
+      { field: "envNames" },
+    ]);
+    expect(result.ok).toBe(true);
+    expect(capturedBody).toMatchObject({
+      envVars: {
+        YOIZEN_EMAIL: {
+          secretKeyRef: {
+            name: "psec-service-priority-scorer",
+            key: "scorer-email",
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(capturedBody)).not.toContain(
+      "SHOULD_NEVER_BE_FORWARDED"
+    );
+  });
+
+  it("update: a { secretRef }-shaped env value fails loud with secret_not_resolvable when no resolver is wired (never calls the network)", async () => {
     globalThis.fetch = mock(async () => {
-      throw new Error("must never call the network for an unresolved ref");
+      throw new Error(
+        "must never call the network for an unresolvable secretRef"
+      );
     }) as unknown as typeof fetch;
 
     const writer = createRegistryServicesWriter(BASE_URL);
@@ -151,13 +320,11 @@ describe("createRegistryServicesWriter", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toMatchObject({
-        kind: "unresolved_symbolic_ref",
+        kind: "secret_not_resolvable",
         resourceKind: "service",
         resourceName: "priority-scorer",
       });
       expect(result.error.message).toContain("YOIZEN_EMAIL");
-      expect(result.error.message).toContain("secretRef");
-      expect(result.error.message).not.toContain("scorer-email");
     }
   });
 
@@ -252,6 +419,61 @@ describe("createRegistryServicesWriter", () => {
     expect(result.ok).toBe(true);
     expect(capturedBody).toMatchObject({
       envVars: { YOIZEN_SAMPLE: "crm-support" },
+    });
+  });
+
+  // manual-loops/provisioning-manifest-gaps-4.md T04 regression (SPEC lines
+  // 587-590): a synthetic service with ONE literal env var and ONE
+  // { secretRef } env var applies successfully — both create and update.
+  it("create+update: a service with one literal env var and one { secretRef } env var applies successfully (mixed envVars body)", async () => {
+    let createdBody: unknown;
+    let updatedBody: unknown;
+    globalThis.fetch = mock(async (url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string);
+      if (url === `${BASE_URL}/services`) {
+        createdBody = body;
+        return json({ id: "svc-1" }, 201);
+      }
+      if (url === `${BASE_URL}/services/svc-1`) {
+        updatedBody = body;
+        return json({ id: "svc-1" });
+      }
+      throw new Error(`unexpected URL: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const secretResolver = {
+      resolve: mock(async () => ({ ok: true as const, value: "unused" })),
+    };
+    const writer = createRegistryServicesWriter(BASE_URL, secretResolver);
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:1.0",
+      env: [
+        { name: "MODE", value: "production" },
+        { name: "YOIZEN_PASSWORD", value: { secretRef: "scorer-password" } },
+      ],
+    };
+
+    const createResult = await writer.create("tenant-a", service);
+    expect(createResult.ok).toBe(true);
+    expect(createdBody).toMatchObject({
+      envVars: {
+        MODE: "production",
+        YOIZEN_PASSWORD: {
+          secretKeyRef: {
+            name: "psec-service-priority-scorer",
+            key: "scorer-password",
+          },
+        },
+      },
+    });
+
+    const updateResult = await writer.update("tenant-a", "svc-1", service, [
+      { field: "envNames" },
+    ]);
+    expect(updateResult.ok).toBe(true);
+    expect(updatedBody).toMatchObject({
+      envVars: (createdBody as { envVars: unknown }).envVars,
     });
   });
 

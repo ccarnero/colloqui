@@ -2,6 +2,20 @@ import {
   REGISTRY_KNATIVE_GROUP,
   REGISTRY_KNATIVE_VERSION,
 } from "@yoizen/shared";
+import type { ServiceEnvVars } from "./services.dto";
+
+/**
+ * One Knative container `env[]` entry — either a literal value (unchanged)
+ * or the k8s-native `valueFrom.secretKeyRef` variant (manual-loops/
+ * provisioning-manifest-gaps-4.md T04, Option B, human ruling 2026-07-24).
+ * A single `env[]` array legally mixes both entry shapes.
+ */
+export type KnativeEnvEntry =
+  | { name: string; value: string }
+  | {
+      name: string;
+      valueFrom: { secretKeyRef: { name: string; key: string } };
+    };
 
 /** Minimal Knative Service resource for get/replace patch flows. */
 export interface IKnativeServiceResourcePatch {
@@ -16,7 +30,7 @@ export interface IKnativeServiceResourcePatch {
           name: string;
           image: string;
           ports: Array<{ containerPort: number; protocol: string }>;
-          env?: Array<{ name: string; value: string }>;
+          env?: KnativeEnvEntry[];
         }>;
       };
     };
@@ -24,12 +38,23 @@ export interface IKnativeServiceResourcePatch {
 }
 
 /**
- * Maps env key/value pairs to Knative container `env` entries (O(n) in key count).
+ * Maps env key/value pairs to Knative container `env` entries (O(n) in key
+ * count). manual-loops/provisioning-manifest-gaps-4.md T04 (Option B, human
+ * ruling 2026-07-24): a plain-string value maps to `{ name, value }`
+ * (unchanged); a `{ secretKeyRef }` value maps to the k8s-native
+ * `{ name, valueFrom: { secretKeyRef } }` variant — registry-service never
+ * sees/handles the resolved secret value itself, k8s resolves it at pod
+ * start from the referenced Secret.
  */
 export function envRecordToKnativeEnvList(
-  envVars: Record<string, string>,
-): Array<{ name: string; value: string }> {
-  return Object.entries(envVars).map(([name, value]) => ({ name, value }));
+  envVars: ServiceEnvVars
+): KnativeEnvEntry[] {
+  return Object.entries(envVars).map(([name, value]) => {
+    if (typeof value === "string") {
+      return { name, value };
+    }
+    return { name, valueFrom: { secretKeyRef: value.secretKeyRef } };
+  });
 }
 
 /** Options for `buildKnativeServiceBody` (single object → easier to extend). */
@@ -41,11 +66,11 @@ export interface IBuildKnativeServiceBodyParams {
   minScale: number;
   maxScale: number;
   concurrencyTarget: number;
-  envVars: Record<string, string>;
+  envVars: ServiceEnvVars;
 }
 
 export function buildKnativeServiceBody(
-  params: IBuildKnativeServiceBodyParams,
+  params: IBuildKnativeServiceBodyParams
 ): Record<string, unknown> {
   const {
     namespace,

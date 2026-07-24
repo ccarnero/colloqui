@@ -731,3 +731,18 @@ G8a SKIPPED for this run, G8b (built image) is the cluster gate.
   SDK — codebase-consistent). Gates: provisioning 439 green, tsc clean,
   accept filter 8/8, G7 12/12, G8b rebuild + e2e PASSED. Review: 2×APPROVED
   round 1.
+- [x] T04 secretKeyRef (Option B, ruled 2026-07-24) — 2026-07-24.
+  registry-service: env DTO union {name,value}|{name,secretKeyRef:{name,key}}
+  with strict custom validator, knative-builder emits valueFrom.secretKeyRef,
+  mixed arrays legal, repositories store the reference opaquely.
+  provisioning-service: registry-services-writer does broker EXISTENCE check
+  only (.value never read — reviewer-verified), sends the reference built
+  from secretResourceName("service", <name>); secret_not_resolvable reused;
+  names-only logging preserved. Adjudicated reversal: T01's two
+  secretRef-fail-loud writer tests replaced by existence-check tests
+  (connector/endpoint guard tests intact). Gates: provisioning 444 /
+  registry 124 / shared 324 / sdk 403 green, both tsc clean, accept filters
+  9+12 pass, G7 12/12, G8b BOTH services rebuilt + e2e PASSED. Review:
+  2×APPROVED round 1. Follow-up (non-blocking, from review):
+  secret-value-resolver.interface.ts header comment still lists only
+  channels/connectors writers as consumers — stale, fix opportunistically.
