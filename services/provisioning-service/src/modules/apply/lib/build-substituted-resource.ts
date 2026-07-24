@@ -27,6 +27,7 @@ import type { PlanLogger } from "../../plan/lib/plan-logger.interface";
 import { NOOP_PLAN_LOGGER } from "../../plan/lib/plan-logger.interface";
 import { resourceKindOfRefType } from "../../plan/lib/resource-kind-of-ref-type";
 import type { ApplyWriteError } from "../domain/apply.interfaces";
+import type { FetchConnectorEndpoints } from "./resolve-service-env-refs";
 import { resolveServiceEnvRefs } from "./resolve-service-env-refs";
 import { substituteSymbolicRefs } from "./substitute-symbolic-refs";
 
@@ -34,13 +35,18 @@ export type BuildSubstitutedResourceResult =
   | { readonly ok: true; readonly value: AnyManifestResource }
   | { readonly ok: false; readonly error: ApplyWriteError };
 
-export function buildSubstitutedResource(args: {
+export async function buildSubstitutedResource(args: {
   readonly kind: ResourceKind;
   readonly resource: AnyManifestResource;
+  readonly tenantId: string;
   /** `"<ResourceKind>:<name>" -> realId`, populated from already-applied resources. */
   readonly resolvedIds: ReadonlyMap<string, string>;
+  /** manual-loops/provisioning-manifest-gaps-4.md T03 — threaded to
+   * `resolveServiceEnvRefs` for the `service` kind branch only; every other
+   * kind ignores it. */
+  readonly fetchConnectorEndpoints?: FetchConnectorEndpoints;
   readonly logger?: PlanLogger;
-}): BuildSubstitutedResourceResult {
+}): Promise<BuildSubstitutedResourceResult> {
   const logger = args.logger ?? NOOP_PLAN_LOGGER;
   const resolveRef = (
     refType: SymbolicRefType,
@@ -114,7 +120,12 @@ export function buildSubstitutedResource(args: {
 
   if (args.kind === "service") {
     const service = args.resource as HostedService;
-    const result = resolveServiceEnvRefs({ service, resolveRef });
+    const result = await resolveServiceEnvRefs({
+      service,
+      tenantId: args.tenantId,
+      resolveRef,
+      fetchConnectorEndpoints: args.fetchConnectorEndpoints,
+    });
     if (!result.ok) {
       logger.warn(
         `apply: service '${service.name}' env substitution FAILED: ${result.error.message}`

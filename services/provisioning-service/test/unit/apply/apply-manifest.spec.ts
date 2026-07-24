@@ -1711,3 +1711,346 @@ describe("applyManifestPlan — T03 gap 2 (gaps-2 SPEC): reconcileKnowledgeBases
     );
   });
 });
+
+// manual-loops/provisioning-manifest-gaps-4.md T03 — apply-time endpoint-ref
+// (`{ connectorRef, endpointMethod, endpointPath }`) substitution for a
+// hosted service's `env[]`, threaded end-to-end through `applyManifestPlan`.
+describe("applyManifestPlan — T03 service env endpoint-ref substitution", () => {
+  function manifestWithConnectorAndEndpointRefService(): IntegrationManifest {
+    return {
+      apiVersion: "yoizen.io/v1",
+      kind: "IntegrationManifest",
+      metadata: { name: "e2e-manifest-apply" },
+      spec: {
+        channels: [],
+        connectors: [{ name: "demo-hubspot", type: "http" }],
+        agents: [],
+        knowledgeBases: [],
+        services: [
+          {
+            name: "svc-1",
+            image: "ghcr.io/yoizen/svc:latest",
+            env: [
+              {
+                name: "HUBSPOT_DEALS_ENDPOINT_ID",
+                value: {
+                  connectorRef: "demo-hubspot",
+                  endpointMethod: "POST",
+                  endpointPath: "/crm/v3/objects/tickets",
+                },
+              },
+            ],
+          },
+        ],
+        systemVariables: [],
+        mcpServers: [],
+        skills: [],
+        workflows: [],
+        secrets: [],
+      },
+    };
+  }
+
+  it("resolves an endpoint-ref env value to the matching endpoint's real id, via ONE live GET issued by the injected fetcher", async () => {
+    const manifest = manifestWithConnectorAndEndpointRefService();
+    let capturedServiceResource: unknown;
+    const { writers } = fakeWriters({
+      connector: {
+        create: mock(async () => ({
+          ok: true as const,
+          value: { externalId: "connector-real-id-99" },
+        })),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+      service: {
+        create: mock(async (_t: string, resource: unknown) => {
+          capturedServiceResource = resource;
+          return {
+            ok: true as const,
+            value: { externalId: "svc-real-id-1" },
+          };
+        }),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+    });
+    const { events } = recordingEvents();
+
+    let fetchCalls = 0;
+    const fetchConnectorEndpoints = mock(async () => {
+      fetchCalls++;
+      return {
+        ok: true as const,
+        endpoints: [
+          { id: "ep-tickets", method: "POST", path: "/crm/v3/objects/tickets" },
+        ],
+      };
+    });
+
+    const plan = planWith([
+      {
+        kind: "connector",
+        name: "demo-hubspot",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+      {
+        kind: "service",
+        name: "svc-1",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+      fetchConnectorEndpoints,
+    });
+
+    expect(result.ok).toBe(true);
+    expect(fetchCalls).toBe(1);
+    const substitutedEnv = (
+      capturedServiceResource as {
+        env: { name: string; value: unknown }[];
+      }
+    ).env;
+    expect(substitutedEnv).toEqual([
+      { name: "HUBSPOT_DEALS_ENDPOINT_ID", value: "ep-tickets" },
+    ]);
+    // Stored-manifest immutability: the original manifest resource keeps its
+    // symbolic ref-object value, never mutated in place.
+    expect(
+      (manifest.spec.services[0]?.env as { name: string; value: unknown }[])[0]
+        ?.value
+    ).toEqual({
+      connectorRef: "demo-hubspot",
+      endpointMethod: "POST",
+      endpointPath: "/crm/v3/objects/tickets",
+    });
+  });
+
+  it("a wrong method/path on a resolvable connector fails loud with endpoint_ref_not_found and never calls the service writer", async () => {
+    const manifest = manifestWithConnectorAndEndpointRefService();
+    const serviceWriter = {
+      create: mock(async () => ({
+        ok: true as const,
+        value: { externalId: "should-never-be-called" },
+      })),
+      update: mock(async (_t: string, id: string) => ({
+        ok: true as const,
+        value: { externalId: id },
+      })),
+    };
+    const { writers } = fakeWriters({
+      connector: {
+        create: mock(async () => ({
+          ok: true as const,
+          value: { externalId: "connector-real-id-99" },
+        })),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+      service: serviceWriter,
+    });
+    const { events, calls } = recordingEvents();
+
+    const fetchConnectorEndpoints = mock(async () => ({
+      ok: true as const,
+      endpoints: [
+        { id: "ep-contacts", method: "GET", path: "/crm/v3/objects/contacts" },
+      ],
+    }));
+
+    const plan = planWith([
+      {
+        kind: "connector",
+        name: "demo-hubspot",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+      {
+        kind: "service",
+        name: "svc-1",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+      fetchConnectorEndpoints,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.failure.kind).toBe("endpoint_ref_not_found");
+      expect(result.error.failure.message).toContain("demo-hubspot");
+      expect(result.error.failure.message).toContain("POST");
+      expect(result.error.failure.message).toContain("/crm/v3/objects/tickets");
+    }
+    expect(serviceWriter.create).not.toHaveBeenCalled();
+    // The connector itself resolves and is created before the service is
+    // reached (RESOURCE_KIND_ORDER connector < service) — only the ENDPOINT
+    // match fails, so a `resourceApplied` for the connector still fires.
+    expect(calls.map((c) => c.method)).toEqual([
+      "applyStarted",
+      "resourceApplied",
+      "applyFailed",
+    ]);
+  });
+
+  it("an unresolvable connector name still fails loud with T02's unresolved_symbolic_ref (connector resolution happens first, the live GET is never issued)", async () => {
+    const manifest = manifestWithConnectorAndEndpointRefService();
+    const serviceWriter = {
+      create: mock(async () => ({
+        ok: true as const,
+        value: { externalId: "should-never-be-called" },
+      })),
+      update: mock(async (_t: string, id: string) => ({
+        ok: true as const,
+        value: { externalId: id },
+      })),
+    };
+    const { writers } = fakeWriters({ service: serviceWriter });
+    const { events, calls } = recordingEvents();
+
+    const fetchConnectorEndpoints = mock(async () => {
+      throw new Error(
+        "fetchConnectorEndpoints must never be called when the connector itself is unresolved"
+      );
+    });
+
+    // The connector never appears in the plan at all (dependency-order gap /
+    // missing precondition) — same fixture shape as the T02 unresolved test.
+    const plan = planWith([
+      {
+        kind: "service",
+        name: "svc-1",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+      fetchConnectorEndpoints,
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.failure.kind).toBe("unresolved_symbolic_ref");
+      expect(result.error.failure.message).toContain("connectorRef");
+      expect(result.error.failure.message).toContain("demo-hubspot");
+    }
+    expect(serviceWriter.create).not.toHaveBeenCalled();
+    expect(fetchConnectorEndpoints).not.toHaveBeenCalled();
+    expect(calls.map((c) => c.method)).toEqual(["applyStarted", "applyFailed"]);
+  });
+
+  it("a { secretRef } env value on the SAME service still passes through untouched (T04 scope) even after T03 wiring", async () => {
+    const manifest = manifestWithConnectorAndEndpointRefService();
+    (manifest.spec.services[0]?.env as { name: string; value: unknown }[]).push(
+      { name: "SCORER_PASSWORD", value: { secretRef: "scorer-password" } }
+    );
+
+    let capturedServiceResource: unknown;
+    const { writers } = fakeWriters({
+      connector: {
+        create: mock(async () => ({
+          ok: true as const,
+          value: { externalId: "connector-real-id-99" },
+        })),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+      service: {
+        create: mock(async (_t: string, resource: unknown) => {
+          capturedServiceResource = resource;
+          return {
+            ok: true as const,
+            value: { externalId: "svc-real-id-1" },
+          };
+        }),
+        update: mock(async (_t: string, id: string) => ({
+          ok: true as const,
+          value: { externalId: id },
+        })),
+      },
+    });
+    const { events } = recordingEvents();
+
+    const fetchConnectorEndpoints = mock(async () => ({
+      ok: true as const,
+      endpoints: [
+        { id: "ep-tickets", method: "POST", path: "/crm/v3/objects/tickets" },
+      ],
+    }));
+
+    const plan = planWith([
+      {
+        kind: "connector",
+        name: "demo-hubspot",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+      {
+        kind: "service",
+        name: "svc-1",
+        external: false,
+        verdict: "create",
+        diff: [],
+      },
+    ]);
+
+    const result = await applyManifestPlan({
+      manifest,
+      tenantId: "tenant-a",
+      plan,
+      revision: 1,
+      writers,
+      events,
+      fetchConnectorEndpoints,
+    });
+
+    expect(result.ok).toBe(true);
+    const substitutedEnv = (
+      capturedServiceResource as {
+        env: { name: string; value: unknown }[];
+      }
+    ).env;
+    expect(substitutedEnv).toEqual([
+      { name: "HUBSPOT_DEALS_ENDPOINT_ID", value: "ep-tickets" },
+      { name: "SCORER_PASSWORD", value: { secretRef: "scorer-password" } },
+    ]);
+  });
+});

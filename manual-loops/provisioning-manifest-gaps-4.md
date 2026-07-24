@@ -715,3 +715,19 @@ G8a SKIPPED for this run, G8b (built image) is the cluster gate.
   ambiguity can survive validate). Gates: provisioning 425 tests green, tsc
   clean, shared 324 / sdk 403 unaffected, G7 12/12 noop-reapply, G8b
   rebuild-redeploy + e2e-manifest-apply PASSED. Review: 2×APPROVED round 1.
+- [x] T03 apply-time endpoint-ref substitution — 2026-07-24. Resolver extended
+  for {connectorRef, endpointMethod, endpointPath}: connector id first (T02
+  logic), then ONE tracedFetch GET /connectors/:id matching endpoints by
+  (method,path) byte-identical to connectors-writer's
+  reconcileConnectorEndpoints; new `endpoint_ref_not_found` kind (documented
+  rationale); all fetch failure modes typed + loud incl. no-fetcher-wired;
+  fetcher injected as closure, DI at apply.module.ts via
+  CONNECTOR_ENDPOINT_FETCHER token (@Optional pattern like KB_RECONCILER).
+  Note: SPEC's connectors-writer.ts:280-311 citation was stale (auth code) —
+  the real match logic is reconcileConnectorEndpoints (~lines 70-84);
+  reviewers verified equivalence. Deviations (adjudicated): T02 placeholder
+  test replaced by real T03 behavior tests; tracedFetch used instead of the
+  SPEC-prose client.connectors.get (provisioning-service never imports the
+  SDK — codebase-consistent). Gates: provisioning 439 green, tsc clean,
+  accept filter 8/8, G7 12/12, G8b rebuild + e2e PASSED. Review: 2×APPROVED
+  round 1.

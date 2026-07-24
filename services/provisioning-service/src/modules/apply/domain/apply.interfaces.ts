@@ -88,7 +88,20 @@ export type ApplyWriteErrorKind =
   // `reconcileKnowledgeBases` hook) — never a bespoke shape.
   | "kb_write_failed"
   | "document_resolve_failed"
-  | "document_write_failed";
+  | "document_write_failed"
+  // manual-loops/provisioning-manifest-gaps-4.md T03 — a `service.env[]`
+  // endpoint-ref value (`{ connectorRef, endpointMethod, endpointPath }`)
+  // resolved its CONNECTOR (T02's `unresolved_symbolic_ref` already covers
+  // "connector not resolvable"), but none of that connector's LIVE
+  // `endpoints[]` (fetched via `GET /connectors/:id`) matches the declared
+  // `(endpointMethod, endpointPath)` pair. NEW kind because no existing kind
+  // expresses "parent resolved, child missing": `unresolved_symbolic_ref`/
+  // `mismatched_symbolic_ref` are about the ref's NAME (the connector),
+  // never about a live sub-resource nested one level deeper that only
+  // exists after a network re-fetch; `route_collision`/`kb_write_failed`
+  // are unrelated domains. The message names the connector, method, and
+  // path — never a value.
+  | "endpoint_ref_not_found";
 
 export interface ApplyWriteError {
   readonly kind: ApplyWriteErrorKind;

@@ -35,6 +35,7 @@ import type {
 import type { IApplyEventPublisher } from "../domain/apply-event-publisher.interface";
 import type { PlatformResourceWriters } from "../domain/platform-resource-writer.interface";
 import { buildSubstitutedResource } from "./build-substituted-resource";
+import type { FetchConnectorEndpoints } from "./resolve-service-env-refs";
 
 export type ApplyManifestResult =
   | { readonly ok: true; readonly value: ManifestApplySuccess }
@@ -83,6 +84,15 @@ export interface ApplyManifestArgs {
    * `kbName -> kbExternalId` map, used verbatim if `reconcileKnowledgeBases`
    * is not supplied. */
   readonly knowledgeBaseExternalIdsByName?: ReadonlyMap<string, string>;
+  /**
+   * manual-loops/provisioning-manifest-gaps-4.md T03 — threaded through to
+   * `buildSubstitutedResource`'s `service` kind branch, which needs it ONLY
+   * when a `service.env[]` entry declares the `{ connectorRef,
+   * endpointMethod, endpointPath }` shape. Manifests with no such entry
+   * never call it. Optional so the many existing call sites/tests that never
+   * exercise the T03 endpoint-ref shape keep compiling unchanged.
+   */
+  readonly fetchConnectorEndpoints?: FetchConnectorEndpoints;
 }
 
 const CONNECTOR_RANK = RESOURCE_KIND_ORDER.indexOf("connector");
@@ -231,10 +241,12 @@ export async function applyManifestPlan(
     // resource. Works on a WORKING COPY only (see
     // `substitute-symbolic-refs.ts`) — never mutates `resource`, which is
     // backed by the manifest object `PUT /manifests/:name` stored.
-    const substituted = buildSubstitutedResource({
+    const substituted = await buildSubstitutedResource({
       kind: entry.kind,
       resource,
+      tenantId,
       resolvedIds,
+      fetchConnectorEndpoints: args.fetchConnectorEndpoints,
       logger,
     });
     if (!substituted.ok) {

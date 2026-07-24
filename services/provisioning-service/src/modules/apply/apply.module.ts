@@ -1,4 +1,5 @@
 import { Module } from "@nestjs/common";
+import { provisioningServiceConfig } from "../../config";
 import { NatsModule } from "../../providers/nats.module";
 import { ManifestsModule } from "../manifests/manifests.module";
 import { PlanModule } from "../plan/plan.module";
@@ -10,6 +11,10 @@ import { PLATFORM_RESOURCE_WRITERS } from "./domain/platform-resource-writer.int
 import type { ISecretValueResolver } from "./domain/secret-value-resolver.interface";
 import { ApplyEventsPublisher } from "./infrastructure/apply-events.publisher";
 import { BrokerSecretResolver } from "./infrastructure/broker-secret-resolver";
+import {
+  CONNECTOR_ENDPOINT_FETCHER,
+  createConnectorEndpointFetcher,
+} from "./infrastructure/connector-endpoint-fetcher";
 import { buildPlatformResourceWriters } from "./infrastructure/platform-resource-writers.provider";
 
 @Module({
@@ -24,6 +29,17 @@ import { buildPlatformResourceWriters } from "./infrastructure/platform-resource
       useFactory: (resolver: ISecretValueResolver) =>
         buildPlatformResourceWriters(resolver),
       inject: [BrokerSecretResolver],
+    },
+    // manual-loops/provisioning-manifest-gaps-4.md T03 — the live
+    // `GET /connectors/:id` closure `resolveServiceEnvRefs` needs for the
+    // `{ connectorRef, endpointMethod, endpointPath }` shape, wired to the
+    // SAME connector-admin base URL the connector writer/client already use.
+    {
+      provide: CONNECTOR_ENDPOINT_FETCHER,
+      useFactory: () =>
+        createConnectorEndpointFetcher(
+          provisioningServiceConfig.downstreamServiceUrls.connectors
+        ),
     },
   ],
   controllers: [ApplyController],

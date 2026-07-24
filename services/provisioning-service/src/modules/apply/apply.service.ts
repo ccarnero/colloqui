@@ -25,8 +25,10 @@ import type { IApplyEventPublisher } from "./domain/apply-event-publisher.interf
 import { APPLY_EVENT_PUBLISHER } from "./domain/apply-event-publisher.interface";
 import type { PlatformResourceWriters } from "./domain/platform-resource-writer.interface";
 import { PLATFORM_RESOURCE_WRITERS } from "./domain/platform-resource-writer.interface";
+import { CONNECTOR_ENDPOINT_FETCHER } from "./infrastructure/connector-endpoint-fetcher";
 import type { ReconcileKnowledgeBasesResult } from "./lib/apply-manifest";
 import { applyManifestPlan } from "./lib/apply-manifest";
+import type { FetchConnectorEndpoints } from "./lib/resolve-service-env-refs";
 
 export interface ManifestNotFoundApplyError {
   readonly kind: "manifest_not_found";
@@ -57,7 +59,15 @@ export class ApplyService {
     // manifest with no `knowledgeBases` never even touches this.
     @Optional()
     @Inject(KB_RECONCILER)
-    private readonly kbReconciler: IKnowledgeBaseReconciler = NOOP_KB_RECONCILER
+    private readonly kbReconciler: IKnowledgeBaseReconciler = NOOP_KB_RECONCILER,
+    // manual-loops/provisioning-manifest-gaps-4.md T03 — optional for the
+    // SAME reason as `kbReconciler` above: pre-T03 call sites/tests that
+    // never exercise a `service.env[]` endpoint-ref entry keep working
+    // unchanged. When wired (`apply.module.ts`), threaded straight through
+    // to `applyManifestPlan`.
+    @Optional()
+    @Inject(CONNECTOR_ENDPOINT_FETCHER)
+    private readonly fetchConnectorEndpoints?: FetchConnectorEndpoints
   ) {}
 
   /**
@@ -101,6 +111,7 @@ export class ApplyService {
       revision: revision.revision,
       writers: this.writers,
       events: this.events,
+      fetchConnectorEndpoints: this.fetchConnectorEndpoints,
       reconcileKnowledgeBases: (connectorResolvedIds) =>
         // Close over the SAME `revision.manifest` snapshot the plan and apply
         // run were built from — never re-query `getLatest` mid-run (avoids a
