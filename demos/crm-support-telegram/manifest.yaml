@@ -456,6 +456,251 @@ spec:
             endpointMethod: POST
             endpointPath: /crm/v3/objects/tickets
 
+  # ---------------------------------------------------------------------------
+  # Workflow — `crm-support-telegram` (T01 name inventory: `application:
+  # crm-support`), the low-code orchestration graph, translated faithfully
+  # from the still-present `src/05-workflow.ts`. This completes the manifest:
+  # every resource the demo needs is now declared in ONE file.
+  #
+  # SUBSTITUTION SUMMARY — re-verified against the CURRENT
+  # `substitution-allowlist.ts`/`array-substitution-allowlist.ts` before
+  # writing this (gaps-4 only added `services[].env[]` ref-resolution
+  # behavior, per the coordinator's note — it did NOT add any new workflow
+  # action-argument allowlist entries; the five entries below are BYTE
+  # IDENTICAL to the T01 audit's findings):
+  #   - `trigger.config.accountIds` — ARRAY_SUBSTITUTION_ALLOWLIST's ONE entry
+  #     (`accountIds` -> `channelRef`, array-substitution-allowlist.ts:53-63).
+  #     Account-scoped ON PURPOSE (never a shared/unscoped trigger — an empty
+  #     `accountIds` means "listen on any account" per the deleted script's
+  #     own comment) — mirrors `telegram-transform-reply/manifest.yaml`'s
+  #     trigger block exactly, pinned to THIS manifest's own
+  #     `crm-support-telegram-bot` channel.
+  #   - `searchContact.args.adapterId` — SUBSTITUTION_ALLOWLIST's `adapterId`
+  #     -> `connectorRef` entry (substitution-allowlist.ts:43-49). RE-VERIFIED:
+  #     `endpointId` is still NOT an allowlisted key (absent from
+  #     `substitution-allowlist.ts` entirely) — same T01 finding, unchanged by
+  #     gaps-4. So the search-contact endpoint is addressed the ONLY way
+  #     `EndpointCallArgs` allows a manifest to express it: `adapterId` (the
+  #     connector, substituted) + `url` as a RELATIVE PATH the connector-
+  #     runtime joins with the adapter's own `baseUrl`
+  #     (`workflow.interfaces.ts` `EndpointCallArgs` docstring) — a deliberate
+  #     deviation from the script's literal `endpointId` wiring, not an
+  #     approximation (same reasoning `http-fanout-telegram/manifest.yaml`'s
+  #     endpointCall actions already establish as this schema's precedent).
+  #   - `scoreContact.args.serviceId` / `createTicket.args.serviceId` —
+  #     SUBSTITUTION_ALLOWLIST's `serviceId` -> `serviceRef` entry
+  #     (substitution-allowlist.ts:57-63). `serviceSlug` is sent alongside as
+  #     a PLAIN literal (not substituted — `ServiceCallArgs.serviceSlug` is an
+  #     optional perf pre-population field, `workflow.interfaces.ts:125-137`),
+  #     matching the deleted script's `serviceSlug: SCORER_SERVICE_NAME`.
+  #   - `supportAgent.args.agentId` — SUBSTITUTION_ALLOWLIST's `agentId` ->
+  #     `agentRef` entry (substitution-allowlist.ts:50-56).
+  #   - `replyEscalated.args.accountId` / `replyStandard.args.accountId` —
+  #     SUBSTITUTION_ALLOWLIST's `accountId` -> `channelRef` entry
+  #     (substitution-allowlist.ts:36-42), same entry the trigger's ARRAY
+  #     form mirrors (scalar sibling).
+  #
+  # EVERYTHING ELSE is a RUNTIME template, resolved by workflow-service at
+  # EXECUTION time (never manifest-time substituted) — preserved VERBATIM
+  # from the deleted script, including the two idempotency-key arguments the
+  # SPEC flags as a known trap: `{{workflow.tenant}}` (the ONLY tenant path on
+  # `WorkflowExecutionContext.workflow`, which is `{ name, tenant,
+  # application }` — `packages/shared/src/workflow.interfaces.ts:30` — there
+  # is NO `workflow.tenantId`) and `{{executionId}}` (a context-ROOT field set
+  # per run from `workflow_executions.id`, NOT `workflow.startTime`, which
+  # does not exist either). Using the wrong pair silently resolves to `""`
+  # and collapses `createTicket`'s idempotencyKey — this manifest uses the
+  # CORRECT pair, copied verbatim from `05-workflow.ts`'s own comment warning
+  # about this exact trap. `{{request.from}}`/`{{request.text}}` (trigger
+  # payload) and `{{results.<action>.<field>}}` (prior action's output) are
+  # likewise verbatim runtime templates, never substituted.
+  #
+  # jsFunction bodies (`normalizeContact`/`buildAgentContext`/
+  # `buildEscalationReply`) are embedded VERBATIM from the deleted script's
+  # `NORMALIZE_CONTACT_CODE`/`BUILD_AGENT_CONTEXT_CODE`/
+  # `BUILD_ESCALATION_REPLY_CODE` constants — byte-identical logic, including
+  # the emoji/unicode escapes in the escalation notice (the TS source encodes
+  # these as backtick-literal `\\uXXXX`/`\\n` escapes, which the OUTER TS
+  # parser already resolves to single-backslash `\uXXXX`/`\n` sequences in the
+  # resulting runtime string — reproduced here as literal single-backslash
+  # text inside a YAML `|` block, exactly the string value `args.code` needs
+  # so the WORKFLOW ENGINE's own JS parser applies that escape a second time
+  # at execution).
+  # ---------------------------------------------------------------------------
+  workflows:
+    - name: crm-support-telegram
+      definition:
+        application: crm-support
+        actions:
+          - name: searchContact
+            activity: endpointCall
+            args:
+              method: POST
+              url: /crm/v3/objects/contacts/search
+              adapterId:
+                connectorRef: demo-hubspot
+              data:
+                filterGroups:
+                  - filters:
+                      - propertyName: telegram_user_id
+                        operator: EQ
+                        value: "{{request.from}}"
+                limit: 1
+          - name: normalizeContact
+            activity: jsFunction
+            args:
+              code: |
+                (ctx) => {
+                  var req = ctx.request || {};
+                  var search = ctx.results.searchContact || {};
+                  var hits = (search.data && search.data.results) || [];
+                  var first = hits[0];
+                  if (first && first.id) {
+                    var props = first.properties || {};
+                    return {
+                      contactKnown: true,
+                      contactId: first.id,
+                      contactName: ((props.firstname || "") + " " + (props.lastname || "")).trim(),
+                      contactEmail: props.email || ""
+                    };
+                  }
+                  return {
+                    contactKnown: false,
+                    contactId: req.from || "unknown",
+                    contactName: "",
+                    contactEmail: ""
+                  };
+                }
+          - name: scoreContact
+            activity: serviceCall
+            args:
+              serviceId:
+                serviceRef: priority-scorer
+              serviceSlug: priority-scorer
+              method: POST
+              path: /score
+              data:
+                contactId: "{{results.normalizeContact.contactId}}"
+          - name: buildAgentContext
+            activity: jsFunction
+            args:
+              code: |
+                (ctx) => {
+                  var req = ctx.request || {};
+                  var contact = ctx.results.normalizeContact || {};
+                  var scoreResult = (ctx.results.scoreContact && ctx.results.scoreContact.data) || {};
+                  var tier = scoreResult.tier || "standard";
+                  var score = typeof scoreResult.score === "number" ? scoreResult.score : 0;
+                  var reasons = scoreResult.reasons || [];
+                  var lines = [];
+                  lines.push("[CRM CONTEXT]");
+                  lines.push("contact_known: " + (contact.contactKnown ? "yes" : "no"));
+                  if (contact.contactKnown) {
+                    lines.push("contact_name: " + contact.contactName);
+                    lines.push("contact_email: " + contact.contactEmail);
+                  }
+                  lines.push("priority_tier: " + tier);
+                  lines.push("priority_score: " + score);
+                  lines.push("priority_reasons: " + reasons.join(", "));
+                  lines.push("[/CRM CONTEXT]");
+                  var message = lines.join("\n") + "\n\n" + (req.text || "");
+                  return { message: message, tier: tier, score: score, reasons: reasons };
+                }
+          - name: supportAgent
+            activity: agentCall
+            args:
+              agentId:
+                agentRef: crm-support-agent
+              message: "{{results.buildAgentContext.message}}"
+              # Real per-user scoping (05-workflow.ts's own "IMPORTANT
+              # deviation from the ai-call-center-supervisor reference" note)
+              # — NOT hardcoded, so memory/skills stay scoped per real
+              # Telegram user.
+              conversationId: "{{request.from}}"
+              userId: "{{request.from}}"
+              channel: telegram
+          - name: vipRoute
+            activity: conditional
+            branches:
+              - label: VIP escalation
+                condition:
+                  variable: results.buildAgentContext.tier
+                  comparator: eq
+                  value: "vip"
+                actions:
+                  - name: buildEscalationReply
+                    activity: jsFunction
+                    args:
+                      code: |
+                        (ctx) => {
+                          var agent = ctx.results.supportAgent || {};
+                          var reply = (agent.data && agent.data.reply) || "";
+                          var text = "\u26A0\uFE0F VIP escalation \u2014 a specialist will follow up shortly.\n\n" + reply;
+                          return { text: text };
+                        }
+                  - name: createTicket
+                    activity: serviceCall
+                    args:
+                      serviceId:
+                        serviceRef: priority-scorer
+                      serviceSlug: priority-scorer
+                      method: POST
+                      path: /tickets
+                      data:
+                        # `{{workflow.tenant}}` — the ONLY tenant path in the
+                        # execution context; there is NO `workflow.tenantId`
+                        # (see the header comment's "known trap" note above).
+                        tenant: "{{workflow.tenant}}"
+                        conversationId: "{{request.from}}"
+                        # `{{executionId}}` — a context-ROOT field, unique per
+                        # workflow execution (one execution == one
+                        # conversational turn), giving create-ticket's
+                        # idempotencyKey a distinct per-turn value with no
+                        # separate counter. NOT `{{workflow.startTime}}`
+                        # (does not exist — the SPEC's known trap).
+                        turn: "{{executionId}}"
+                        ticket:
+                          properties:
+                            subject: VIP escalation via Telegram support bot
+                            content: "{{request.text}}"
+                            hs_ticket_priority: HIGH
+                  - name: replyEscalated
+                    activity: channelSend
+                    args:
+                      accountId:
+                        channelRef: crm-support-telegram-bot
+                      channel: telegram
+                      provider: telegram
+                      to: "{{request.from}}"
+                      type: text
+                      text: "{{results.buildEscalationReply.text}}"
+            default:
+              - name: replyStandard
+                activity: channelSend
+                args:
+                  accountId:
+                    channelRef: crm-support-telegram-bot
+                  channel: telegram
+                  provider: telegram
+                  to: "{{request.from}}"
+                  type: text
+                  text: "{{results.supportAgent.data.reply}}"
+        trigger:
+          type: message_received
+          # Preserved verbatim from 05-workflow.ts's own `mode: "exclusive"`
+          # (NOT "shared" — deliberately distinct from some sibling manifests'
+          # triggers, e.g. ai-call-center-supervisor's, per the deleted
+          # script's own configuration).
+          mode: exclusive
+          config:
+            channels:
+              - telegram
+            providers:
+              - telegram
+            # Account-scoped ON PURPOSE — see the SUBSTITUTION SUMMARY above.
+            accountIds:
+              - channelRef: crm-support-telegram-bot
+
   # Bound to each resource's owner so the broker binding-match check passes
   # (scope kind/owner must match the referencing resource — channel/connector/
   # service respectively). The binding NAME is the env var `--secrets-from-env`

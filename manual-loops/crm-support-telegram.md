@@ -470,7 +470,14 @@ duplicate instead of adopting.
 - bootstrap.sh attempt-1 bug (fixed in-loop): cd-before-sourcing
   lib/resolve-demo-env.sh double-descended the demo path on repo-root
   invocation; fix = absolute SCRIPT_DIR + source-before-cd.
-- [ ] T05 manifest: workflow (completes the manifest)
+- [x] T05 manifest: workflow (completes the manifest) — 2026-07-24. Full
+  graph translated verbatim from 05-workflow.ts (exclusive account-scoped
+  trigger via channelRef array substitution; adapterId/serviceId/agentId/
+  accountId manifest-time refs per the current allowlists; endpointId still
+  not allowlisted → adapterId+path shape, http-fanout-telegram precedent;
+  {{executionId}}/{{workflow.tenant}} idempotency args preserved). G5: apply
+  created the workflow (1/8), second apply full 0/9 noop — ENTIRE demo now
+  converges declaratively. Review: 2×APPROVED round 1.
 - [ ] T06 delete setup scripts + rewire run.sh + README core
 - [ ] T07 docs + index
 
