@@ -88,8 +88,10 @@ fake/unreachable by design.
   mirrored field-for-field from `mcpServerAuthSchema`.
 - **`agents[].enabledMcpTools`** — per-tool allowlist scoped to one MCP server, keyed by server
   NAME (never substituted to an id — decision 6, same precedent as `enabledMcpServerRefs`).
-- **`agents[].toolDescriptionOverrides`** — `"<serverName>:<toolName>"` keys for MCP tools,
-  reconciled via a dedicated PATCH after the agent itself is created/resolved.
+- **`agents[].toolDescriptionOverrides`** — `"<serverName>__<toolName>"` keys for MCP tools
+  (double underscore; changed from a colon by agent-mcp-tool-naming.md T01, which violated
+  OpenAI's tool-name pattern), reconciled via a dedicated PATCH after the agent itself is
+  created/resolved.
 - **`workflows[].definition` `mcpCall` action** — `serverId: { mcpServerRef: <name> }`, the ONLY
   place `mcpServerRef` participates in manifest-time name->id substitution (T06's
   `SUBSTITUTION_ALLOWLIST`).

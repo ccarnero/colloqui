@@ -457,7 +457,17 @@ cd services/agent-ai-service && bunx tsc -p tsconfig.json --noEmit
 
 ---
 
-- [ ] T01 MCP tool names sent to the LLM always match `^[a-zA-Z0-9_-]+$`
+- [x] T01 MCP tool names sent to the LLM always match `^[a-zA-Z0-9_-]+$` —
+  2026-07-24, Option B shipped: global `__` separator, single identity, NO
+  legacy bridge (zero-row measured surface, recorded above); sanitization +
+  deterministic collision hashing; expanded surface (shared validator,
+  admin-console composer, sample manifest/docs) sanctioned and recorded.
+  Gates: agent-ai 937 / shared 325 / provisioning 450 green, admin-console
+  tsc clean, G3 e2e PASSED, G4b rebuild + e2e PASSED (twice — re-run after
+  round-2 changes). Review: round 1 2×REJECTED (Progress record missing,
+  docs audit skipped, permanent legacy bridge vs the "migrate" ruling) →
+  round 2 2×REJECTED (one stale comment claiming legacy acceptance) →
+  round 3 2×APPROVED.
 - [ ] T02 MCP connections scoped to the executing agent
 - [ ] T03 e2e residue teardown + live verification (deepwiki +
       sample-mcp-server re-activated, crm-support-agent proven)
@@ -523,3 +533,46 @@ Human approved this SPEC 2026-07-24 and RESOLVED the open questions:
   where the run dies; no bash prefix sweep).
 - The `connectForTenant` single-call-site claim still requires
   re-verification at T02 start (unchanged).
+
+### T01 — measured live migration surface (recorded 2026-07-24, before writing the migration)
+
+- **How measured**: read-only `GET /admin/agents` against `agent-admin-service`
+  for tenant `acme` (the only tenant in scope for this loop's live
+  verification), via `kubectl -n kourier-system port-forward svc/kourier` +
+  `curl -H "Host: agent-admin-service.platform-services-dev.dev.local" -H
+  "x-yoizen-tenant: acme"`. No write performed.
+- **Result**: tenant `acme` has **1 agent total** (`crm-support-agent`,
+  externalId `b3ea57af…`); its `tool_description_overrides` field is
+  **`null`**. **0 colon-keyed `tool_description_overrides` entries found**
+  — anywhere, for the only tenant this dev-only, single-config platform
+  currently has live data for.
+- **Resulting design decision**: with a measured surface of zero rows,
+  there is nothing to bridge. T01 implements Option B as a **single global
+  identity with NO legacy-form compatibility layer** — `:` is replaced with
+  `__` everywhere the addressing key is composed, read, or validated, full
+  stop. No lazy dual-read, no opportunistic migrate-on-save, no sunset
+  debt. (An earlier T01 pass had added a temporary lazy dual-read bridge
+  for legacy colon-form keys; dual review round 1 rejected it as
+  contradicting this ruling's "persisted keys MIGRATE to the new
+  separator" given the zero-row measurement above — it was removed.)
+- **Expanded-surface sanction**: the orchestrator, holding this Option-B
+  ruling, explicitly sanctions the following four files as strictly
+  entailed by the single-global-identity premise (Option B replaces `:`
+  "EVERYWHERE the colon-joined form appears" — not just the three
+  Prior-art-listed files), not a scope-widening STOP case under this
+  SPEC's "Out of scope" bullet:
+  - `packages/shared/src/provisioning/validate-structural-rules.ts` —
+    parses the `toolDescriptionOverrides` key prefix for manifest
+    validation; must recognize `__`, not `:`.
+  - `packages/shared/src/provisioning/manifest.schema.ts` — doc comment
+    documenting the key shape.
+  - `services/admin-console/src/app/features/automation/ai/mcp-servers-selector.component.ts` —
+    the only other real key-COMPOSING site in the repo (client-side
+    override-key builder); must write `__`, not `:`.
+  - `scripts/e2e/manifest-showcase-driver.ts` — the e2e fixture's override
+    key (feeds gate G3).
+  Also updated for the same reason (doc/sample-manifest audit, Option B's
+  own checklist item): `DOCS/architecture/mcp-connections.md` (lines
+  ~160, ~319, ~331) and `integrations/mcp/mcp-connections/README.md` /
+  `README.es.md` / `manifest.yaml` (sample manifest's
+  `toolDescriptionOverrides` key and prose).

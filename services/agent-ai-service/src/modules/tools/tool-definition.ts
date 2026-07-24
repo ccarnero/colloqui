@@ -12,9 +12,19 @@ export interface AdapterReference {
 /**
  * Reference to a tool exposed by a connected MCP server (mcp-connections.md §4).
  * Parallel to {@link AdapterReference}. Used to give MCP tools a stable,
- * addressable identity (`"<serverName>:<toolName>"`) for per-tool filtering
- * and description overrides — execution still flows through the AI SDK's own
- * `Tool.execute`, not through the tool executor.
+ * addressable identity for per-tool filtering and description overrides —
+ * execution still flows through the AI SDK's own `Tool.execute`, not
+ * through the tool executor.
+ *
+ * agent-mcp-tool-naming.md T01 (Option B, human-ruled 2026-07-24): this
+ * identity's on-the-wire/LLM-facing form is `"<serverName>__<toolName>"`
+ * (double underscore), sanitized via `sanitizeMcpToolKey` so it always
+ * matches OpenAI's `^[a-zA-Z0-9_-]+$` tool-name pattern — it is no longer
+ * `"<serverName>:<toolName>"` (colon), which violated that pattern and
+ * broke every chat execution once an MCP tool merged in. This is a single
+ * global identity with no legacy-form fallback (T01's measured live
+ * migration surface was 0 colon-keyed `tool_description_overrides` entries
+ * on the dev tenant — see the SPEC's Progress log).
  */
 export interface McpReference {
   readonly serverName: string;
@@ -41,7 +51,8 @@ export interface ToolDef {
   /**
    * If this tool is exposed by a connected MCP server, the MCP reference
    * (mcp-connections.md §4). Parallel to {@link adapterRef}. When set, the
-   * tool's `name` is namespaced as `"<serverName>:<toolName>"`.
+   * tool's `name` is namespaced as `"<serverName>__<toolName>"` (sanitized —
+   * agent-mcp-tool-naming.md T01).
    */
   readonly mcpRef?: McpReference;
   /**

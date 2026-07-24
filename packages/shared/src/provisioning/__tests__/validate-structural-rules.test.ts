@@ -434,12 +434,19 @@ describe("structural rule — ref resolution", () => {
     );
   });
 
-  test("flags an unresolved serverName prefix in a toolDescriptionOverrides key", () => {
+  // agent-mcp-tool-naming.md T01 (Option B, human-ruled 2026-07-24) — the
+  // separator is `__` (double underscore); single global identity, no
+  // legacy `:` form (T01's measured live migration surface was 0
+  // colon-keyed entries on the dev tenant, so there was nothing to bridge —
+  // see the SPEC's Progress log). A colon-keyed entry is no longer
+  // recognized as MCP-namespaced at all (falls through to the plain-key,
+  // not-validated-against-mcpServers case below).
+  test("flags an unresolved serverName prefix in a '__'-separated toolDescriptionOverrides key", () => {
     const manifest = buildValidManifest();
     manifest.spec.agents[0] = {
       ...manifest.spec.agents[0],
       toolDescriptionOverrides: {
-        "no-such-mcp-server:some_tool": "override text",
+        "no-such-mcp-server__some_tool": "override text",
       },
     };
     const errors = validateManifestStructuralRules(manifest);
@@ -450,7 +457,19 @@ describe("structural rule — ref resolution", () => {
     ).toBe(true);
   });
 
-  test("accepts a plain-name toolDescriptionOverrides key (adapter/builtin tool, no colon, NOT validated against mcpServers)", () => {
+  test("accepts toolDescriptionOverrides keyed with the '__' separator against a declared mcpServer name", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.agents[0] = {
+      ...manifest.spec.agents[0],
+      toolDescriptionOverrides: { "support-mcp__some_tool": "override text" },
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some((e) => /toolDescriptionOverrides/.test(e.path ?? ""))
+    ).toBe(false);
+  });
+
+  test("accepts a plain-name toolDescriptionOverrides key (adapter/builtin tool, no separator, NOT validated against mcpServers)", () => {
     const manifest = buildValidManifest();
     manifest.spec.agents[0] = {
       ...manifest.spec.agents[0],

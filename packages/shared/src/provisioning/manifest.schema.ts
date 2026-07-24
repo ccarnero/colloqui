@@ -519,16 +519,19 @@ const agentSchema = z
     // description overrides, mirroring
     // `client.agents.updateToolDescriptionOverrides`'s payload shape exactly:
     // `Record<string, string>`. Two legal key shapes, per the live DTO
-    // (`agent-admin-service`'s `UpdateToolDescriptionOverridesDto`) and the
-    // sample (`mcp-connections/src/setup.ts`'s `overrideKey`):
-    //   - `"<serverName>:<toolName>"` for an MCP tool — the `<serverName>`
-    //     prefix (up to the FIRST colon) is validated against
-    //     `spec.mcpServers[].name` (+ external), same as `enabledMcpTools`'
-    //     outer keys, never substituted to an id (decision 6).
-    //   - a plain key with no colon, for an adapter/builtin tool — NOT
+    // (`agent-admin-service`'s `UpdateToolDescriptionOverridesDto`):
+    //   - `"<serverName>__<toolName>"` for an MCP tool (agent-mcp-tool-naming.md
+    //     T01, Option B — was `"<serverName>:<toolName>"` before T01; the
+    //     legacy colon form is no longer accepted — see the SPEC's Progress
+    //     log, zero-row measured migration surface) — the `<serverName>`
+    //     prefix (up to the FIRST separator) is validated
+    //     against `spec.mcpServers[].name` (+ external), same as
+    //     `enabledMcpTools`' outer keys, never substituted to an id
+    //     (decision 6).
+    //   - a plain key with no separator, for an adapter/builtin tool — NOT
     //     validated against `mcpServers` (it names a tool the agent runtime
     //     itself exposes, not an MCP server), left as free-form per the live
-    //     DTO's own lack of a colon requirement.
+    //     DTO's own lack of a separator requirement.
     toolDescriptionOverrides: z.record(z.string(), z.string()).optional(),
     external: z.boolean().optional(),
   })

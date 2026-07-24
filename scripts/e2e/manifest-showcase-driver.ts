@@ -309,10 +309,12 @@ function buildManifest(): Record<string, unknown> {
           // T04 (gaps-2) gap 4 — per-tool allowlist, `null` = all tools
           // enabled for this server, keyed by the SAME plain NAME.
           enabledMcpTools: { [MCP_SERVER_NAME]: null },
-          // T04 (gaps-2) gap 4 — one override, `<serverName>:<toolName>` key
+          // T04 (gaps-2) gap 4 — one override, `<serverName>__<toolName>` key
           // shape (validated prefix only, free-form tool-name suffix).
+          // agent-mcp-tool-naming.md T01, Option B — was a colon-joined key
+          // before T01; `__` is the current separator.
           toolDescriptionOverrides: {
-            [`${MCP_SERVER_NAME}:showcase-tool`]:
+            [`${MCP_SERVER_NAME}__showcase-tool`]:
               "e2e showcase tool description override",
           },
         },

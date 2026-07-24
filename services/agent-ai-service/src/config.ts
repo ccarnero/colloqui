@@ -54,7 +54,9 @@ export const agentAiServiceConfig: AgentAiServiceConfig = {
    * `mergeMcpTools` (mcp-connections.md §4). When `false` (default), MCP tools
    * merge with raw (non-namespaced) tool-name keys and no per-tool allowlist —
    * exactly the pre-Phase-4 behavior. When `true`, tools are namespaced as
-   * `"<serverName>:<toolName>"`, filtered by the agent's `enabled_mcp_tools`,
+   * `"<serverName>__<toolName>"` (sanitized — agent-mcp-tool-naming.md T01,
+   * Option B; was `"<serverName>:<toolName>"` before T01, which violated
+   * OpenAI's tool-name pattern), filtered by the agent's `enabled_mcp_tools`,
    * and eligible for namespaced description overrides. Toggle via
    * `AGENT_MCP_TOOL_FILTERING_ENABLED=true` (no code revert needed to disable).
    */

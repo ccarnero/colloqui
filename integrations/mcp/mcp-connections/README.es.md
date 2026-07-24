@@ -88,8 +88,10 @@ falsa/inalcanzable a propósito.
 - **`agents[].enabledMcpTools`** — allowlist por tool acotada a un MCP server, indexada por
   NOMBRE del servidor (nunca sustituido a un id — decisión 6, mismo precedente que
   `enabledMcpServerRefs`).
-- **`agents[].toolDescriptionOverrides`** — claves `"<serverName>:<toolName>"` para tools MCP,
-  reconciliadas vía un PATCH dedicado después de crear/resolver el agente.
+- **`agents[].toolDescriptionOverrides`** — claves `"<serverName>__<toolName>"` (doble guion bajo;
+  antes era dos puntos, cambiado por agent-mcp-tool-naming.md T01 porque violaba el patrón de
+  nombre de tool de OpenAI) para tools MCP, reconciliadas vía un PATCH dedicado después de
+  crear/resolver el agente.
 - **Acción `mcpCall` en `workflows[].definition`** — `serverId: { mcpServerRef: <nombre> }`, el
   ÚNICO lugar donde `mcpServerRef` participa en la sustitución nombre->id en tiempo de apply
   (`SUBSTITUTION_ALLOWLIST` de T06).

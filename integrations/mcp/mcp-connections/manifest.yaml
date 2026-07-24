@@ -59,10 +59,12 @@ spec:
   #   - enabledMcpTools: { "sample-mcp-server": ["search", "lookup"] } —
   #     `client.agents.updateEnabledMcpTools`'s payload shape, NAME-keyed
   #     (decision 6, never substituted to an id).
-  #   - toolDescriptionOverrides: { "sample-mcp-server:search": "<override
+  #   - toolDescriptionOverrides: { "sample-mcp-server__search": "<override
   #     text>" } — `client.agents.updateToolDescriptionOverrides`'s payload
   #     shape, verbatim override text from setup.ts's
-  #     DESCRIPTION_OVERRIDE_TEXT default.
+  #     DESCRIPTION_OVERRIDE_TEXT default. Double-underscore separator per
+  #     agent-mcp-tool-naming.md T01 (was a colon before T01, which violated
+  #     OpenAI's tool-name pattern).
   # `profile` carries the passthrough fields `agents-writer.ts` recognizes
   # (description/system_prompt/model_config/tools/channels) — all verbatim
   # from the deleted setup.ts's `buildAgentPayload()`.
@@ -83,7 +85,7 @@ spec:
           - search
           - lookup
       toolDescriptionOverrides:
-        sample-mcp-server:search: >-
+        sample-mcp-server__search: >-
           Searches the sample MCP server's index. Prefer this over any
           built-in search tool for this agent.
 

@@ -6,8 +6,11 @@ import { jsonSchema, tool } from "ai";
 import { agentAiServiceConfig } from "../../config";
 // biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference (emitDecoratorMetadata).
 import { AdapterExecutorService } from "./adapter-executor.service";
+import { disambiguateMcpToolKey } from "./disambiguate-mcp-tool-key";
 // biome-ignore lint/style/useImportType: constructor-injected — Nest DI needs the runtime class reference (emitDecoratorMetadata).
 import { McpClientService, withTimeout } from "./mcp-client.service";
+import { resolveMcpToolDescriptionOverride } from "./resolve-mcp-tool-description-override";
+import { sanitizeMcpToolKey } from "./sanitize-mcp-tool-key";
 import type {
   AdapterReference,
   ToolDef,
@@ -47,7 +50,7 @@ export class ToolBridgeService {
    * @param state Runtime state (tenantId, agentId, etc.)
    * @param enabledTools Optional allowlist of tool names.  null/undefined = all enabled.
    * @param enabledMcpServers Optional allowlist of MCP server names.  null/undefined = all connected MCP servers.
-   * @param toolDescriptionOverrides Optional per-tool description overrides keyed by tool name (adapter/builtin) or `"<serverName>:<toolName>"` (MCP).
+   * @param toolDescriptionOverrides Optional per-tool description overrides keyed by tool name (adapter/builtin) or `"<serverName>__<toolName>"` (MCP, sanitized — agent-mcp-tool-naming.md T01).
    * @param enabledMcpTools Optional per-tool MCP allowlist keyed by server name (mcp-connections.md §4).  A `null`/missing server key = all tools from that server.  Only applied when the `mcpToolFilteringEnabled` flag is on.  Kept as the trailing param so pre-Phase-4 positional callers are unaffected.
    */
   async toAiSdkToolsForAgent(
@@ -170,16 +173,28 @@ export class ToolBridgeService {
    * this is the only interception point available for MCP call usage.
    *
    * When `mcpToolFilteringEnabled` (mcp-connections.md §4) is on, each merged
-   * MCP tool is keyed by a namespaced `"<serverName>:<toolName>"` name, filtered
-   * by the agent's `enabledMcpTools` per-server allowlist, and eligible for a
-   * namespaced description override. When the flag is off, behavior is
-   * unchanged from before Phase 4: raw `toolName` keys, no per-tool filter, no
-   * override. Usage logging (§3) wraps every merged tool in both modes.
+   * MCP tool is keyed by `sanitizeMcpToolKey(serverName, toolName)` — the
+   * single, OpenAI-tool-name-safe `"<serverName>__<toolName>"` addressing
+   * identity (agent-mcp-tool-naming.md T01, Option B, human-ruled
+   * 2026-07-24: `:` replaced with `__` EVERYWHERE, and any character still
+   * outside `^[a-zA-Z0-9_-]+$` is stripped, since neither serverName nor
+   * toolName is guaranteed API-safe on its own) — filtered by the agent's
+   * `enabledMcpTools` per-server allowlist, and eligible for a description
+   * override keyed the same way (`resolveMcpToolDescriptionOverride`). No
+   * legacy colon-form fallback: T01's measured live migration surface was 0
+   * colon-keyed `tool_description_overrides` entries, so there is nothing to
+   * bridge (SPEC Progress log). A sanitized key colliding with an existing
+   * `tools` entry (agent-defined tool, or another server/tool pair that
+   * sanitizes to the same string) is disambiguated via
+   * `disambiguateMcpToolKey` rather than silently dropped or overwritten.
+   * When the flag is off, behavior is unchanged from before Phase 4: raw
+   * `toolName` keys, no per-tool filter, no override. Usage logging (§3)
+   * wraps every merged tool in both modes.
    *
    * @param state Runtime context — carries `tenantId` for the usage event.
    * @param allowedMcpServers Optional set of server names to include. null = all connected servers.
    * @param enabledMcpTools Optional per-server tool allowlist keyed by server name. Only honored when the filtering flag is on.
-   * @param toolDescriptionOverrides Optional per-tool description overrides. MCP keys are namespaced (`"<serverName>:<toolName>"`). Only honored when both the filtering flag and `toolDescriptionOverridesEnabled` are on.
+   * @param toolDescriptionOverrides Optional per-tool description overrides. MCP keys are addressed by the sanitized `"<serverName>__<toolName>"` form. Only honored when both the filtering flag and `toolDescriptionOverridesEnabled` are on.
    */
   private async mergeMcpTools(
     tools: Record<string, AiSdkTool>,
@@ -225,10 +240,37 @@ export class ToolBridgeService {
             continue;
           }
 
-          const key = filteringEnabled ? `${serverName}:${toolName}` : toolName;
+          // T01 (agent-mcp-tool-naming.md, Option B — single global
+          // identity, no legacy form): `sanitizedKey` is the
+          // OpenAI-tool-name-safe derivation, used only when filtering is
+          // on (the `filteringEnabled === false` branch stays untouched —
+          // raw `toolName` keys, same as before Phase 4). `key`
+          // disambiguates the sanitized form against whatever is already in
+          // `tools` (agent-defined tool of the same name, or another
+          // server/tool pair that sanitizes identically) instead of
+          // silently dropping or overwriting either entry — the
+          // disambiguation hash seeds off the RAW (pre-sanitization)
+          // `"<serverName>__<toolName>"` pairing so two distinct pairs never
+          // share a suffix even after folding.
+          const sanitizedKey = sanitizeMcpToolKey(serverName, toolName);
+          const rawKey = `${serverName}__${toolName}`;
+          let key = toolName;
 
-          // Agent-defined tools take precedence over MCP tools (no overwriting).
-          if (tools[key]) {
+          if (filteringEnabled) {
+            key = disambiguateMcpToolKey(
+              sanitizedKey,
+              new Set(Object.keys(tools)),
+              rawKey
+            );
+            if (key !== sanitizedKey) {
+              this.logger.warn(
+                `MCP tool key collision on '${sanitizedKey}' (addressing pair '${rawKey}') — disambiguated to '${key}'`
+              );
+            }
+          } else if (tools[key]) {
+            // Agent-defined tools take precedence over MCP tools (no
+            // overwriting) — unchanged pre-Phase-4 behavior for the
+            // filtering-off branch (Constraints: out of scope for T01).
             continue;
           }
 
@@ -240,9 +282,12 @@ export class ToolBridgeService {
           );
 
           if (overridesEnabled) {
-            const override = toolDescriptionOverrides?.[key];
-            if (typeof override === "string" && override.length > 0) {
-              merged = { ...merged, description: override } as AiSdkTool;
+            const description = resolveMcpToolDescriptionOverride(
+              toolDescriptionOverrides,
+              sanitizedKey
+            );
+            if (typeof description === "string") {
+              merged = { ...merged, description } as AiSdkTool;
             }
           }
 
@@ -288,7 +333,7 @@ export class ToolBridgeService {
           const result = await withTimeout(
             originalExecute(args, options),
             agentAiServiceConfig.mcpLiveCallTimeoutMs,
-            `MCP tool '${serverName}:${toolName}'`
+            `MCP tool '${serverName}__${toolName}'`
           );
           reportMcpUsageEvent(agentAiServiceConfig.agentAdminServiceUrl, {
             eventId,

@@ -44,7 +44,10 @@ export interface IMcpServerToggle {
  *   names. This is also persisted by the "Save" button.
  * - Each tool has an inline description-override editor reusing
  *   `EditDescriptionDialogComponent` (same component the built-in tools panel
- *   uses), keyed by `"<serverName>:<toolName>"` in `tool_description_overrides`.
+ *   uses), keyed by `"<serverName>__<toolName>"` in `tool_description_overrides`
+ *   (agent-mcp-tool-naming.md T01, Option B — was `"<serverName>:<toolName>"`
+ *   before T01; single global identity now, no legacy colon-form fallback —
+ *   T01's measured live migration surface was 0 colon-keyed entries).
  *   Overrides are saved immediately on dialog close.
  */
 @Component({
@@ -526,25 +529,43 @@ export class AiMcpServersSelectorComponent {
 
   // ---- Description overrides ----
 
+  /**
+   * T01 (agent-mcp-tool-naming.md, Option B — human-ruled 2026-07-24): the
+   * sanitized `"<serverName>__<toolName>"` override key — the single, global
+   * identity, no legacy form (T01's measured live migration surface was 0
+   * colon-keyed entries on the dev tenant, so there was nothing to bridge —
+   * see the SPEC's Progress log). Matches `sanitizeMcpToolKey` on the
+   * agent-ai-service side for the common case (server/tool names already
+   * restricted to `[a-zA-Z0-9_-]`); a name with other characters is
+   * stripped there the same way at read time.
+   */
+  private overrideKey(serverName: string, toolName: string): string {
+    return `${serverName}__${toolName}`;
+  }
+
   hasOverride(serverName: string, toolName: string): boolean {
-    const key = `${serverName}:${toolName}`;
-    return typeof this.overrides()[key] === "string";
+    const overrides = this.overrides();
+    return (
+      typeof overrides[this.overrideKey(serverName, toolName)] === "string"
+    );
   }
 
   effectiveDescription(serverName: string, tool: IMcpServerTool): string {
-    const key = `${serverName}:${tool.name}`;
-    return this.overrides()[key] ?? tool.description ?? "No description";
+    const overrides = this.overrides();
+    const current = overrides[this.overrideKey(serverName, tool.name)];
+    return current ?? tool.description ?? "No description";
   }
 
   openEditDescriptionDialog(serverName: string, tool: IMcpServerTool): void {
-    const key = `${serverName}:${tool.name}`;
+    const key = this.overrideKey(serverName, tool.name);
     const defaultDesc = tool.description ?? "";
-    const currentOverride = this.overrides()[key] ?? "";
+    const overrides = this.overrides();
+    const currentOverride = overrides[key] ?? "";
 
     const dialogRef = this.dialog.open(EditDescriptionDialogComponent, {
       width: "520px",
       data: {
-        toolName: `${serverName}:${tool.name}`,
+        toolName: key,
         defaultDescription: defaultDesc,
         currentOverride,
       },

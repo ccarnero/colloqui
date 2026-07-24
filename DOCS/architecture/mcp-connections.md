@@ -157,7 +157,9 @@ Known gaps against the original design (closed 2026-07-08 unless noted):
   semantics ported from the adapter side.
 - **Agent editor** — per-tool enable/description-override shipped
   (`enabled_mcp_tools`, `tool_description_overrides` namespaced
-  `<serverName>:<toolName>` keys), gated by flag
+  `<serverName>__<toolName>` keys — double underscore; changed from
+  `<serverName>:<toolName>` by agent-mcp-tool-naming.md T01, colon violated
+  OpenAI's tool-name pattern), gated by flag
   `AGENT_MCP_TOOL_FILTERING_ENABLED`.
 - **Workflow builder** — `mcpCall` node type shipped
   (`services/connector-runtime/src/activities/mcp-call.activity.ts`,
@@ -316,17 +318,19 @@ landing KPI. Don't ship the detail page ahead of this.
 
 1. **Wrap MCP tools in `ToolDef`.** In `tool-bridge.service.ts`'s
    `mergeMcpTools()`, map each MCP tool into a `ToolDef`-compatible shape:
-   `name` becomes `"<serverName>:<toolName>"` (namespaced — stable,
-   addressable key for filtering/overrides), a new `ToolDef.mcpRef:
-   {serverName, toolName}` variant parallel to `adapterRef`. Keep executing
-   via the AI SDK's own `Tool.execute` — the wrapping is for addressability
-   and filtering, not for rerouting execution through
-   `tool-executor.service.ts`.
+   `name` becomes `"<serverName>__<toolName>"` (namespaced — stable,
+   addressable key for filtering/overrides; double underscore, sanitized to
+   `^[a-zA-Z0-9_-]+$` via `sanitizeMcpToolKey` — was a colon before
+   agent-mcp-tool-naming.md T01, which violated OpenAI's tool-name pattern),
+   a new `ToolDef.mcpRef: {serverName, toolName}` variant parallel to
+   `adapterRef`. Keep executing via the AI SDK's own `Tool.execute` — the
+   wrapping is for addressability and filtering, not for rerouting
+   execution through `tool-executor.service.ts`.
 2. **`enabled_mcp_tools` on `IAgent`**:
    `Record<string /* serverName */, string[] | null>` — `null` for a server
    means "all tools enabled" (today's default, backward compatible).
 3. **Extend `tool_description_overrides`** to accept
-   `"<serverName>:<toolName>"` keys (already `Record<string,string>`, no
+   `"<serverName>__<toolName>"` keys (already `Record<string,string>`, no
    schema change, just a documented key-format extension).
 4. **Apply both filters in `mergeMcpTools()`** after building the namespaced
    list, before merging into the final tool map — same place

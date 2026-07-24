@@ -444,17 +444,27 @@ function checkRefResolution(
       }
     });
 
-    // `toolDescriptionOverrides` keys are either "<serverName>:<toolName>"
+    // `toolDescriptionOverrides` keys are either "<serverName>__<toolName>"
     // (MCP tool, serverName validated against spec.mcpServers[].name like
-    // enabledMcpTools above) or a plain key with no colon (adapter/builtin
-    // tool name — NOT validated against mcpServers, a different namespace
-    // entirely; see agentSchema's field comment).
+    // enabledMcpTools above) or a plain key with no separator (adapter/
+    // builtin tool name — NOT validated against mcpServers, a different
+    // namespace entirely; see agentSchema's field comment).
+    //
+    // agent-mcp-tool-naming.md T01 (Option B, human-ruled 2026-07-24): the
+    // separator changed from `:` to `__` (OpenAI tool-name pattern
+    // compliance) — single global identity, no legacy `:` form accepted
+    // (T01's measured live migration surface was 0 colon-keyed entries on
+    // the dev tenant, so there is nothing to bridge; see the SPEC's
+    // Progress log). Known tradeoff of a single global separator (vs. T01's
+    // Option A, not chosen): an adapter/builtin tool name that happens to
+    // contain "__" is misread as MCP-namespaced here; accepted as part of
+    // Option B's scope per the SPEC.
     Object.keys(agent.toolDescriptionOverrides ?? {}).forEach((overrideKey) => {
-      const colonIndex = overrideKey.indexOf(":");
-      if (colonIndex === -1) {
+      const separatorIndex = overrideKey.indexOf("__");
+      if (separatorIndex === -1) {
         return;
       }
-      const serverName = overrideKey.slice(0, colonIndex);
+      const serverName = overrideKey.slice(0, separatorIndex);
       if (!mcpServerNames.has(serverName)) {
         errors.push({
           path: `spec.agents[${index}].toolDescriptionOverrides["${overrideKey}"]`,
