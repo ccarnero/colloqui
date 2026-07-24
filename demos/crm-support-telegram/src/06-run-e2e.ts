@@ -545,11 +545,32 @@ async function main(): Promise<void> {
           }
         }
         if (!found) {
+          fail(`agent '${AGENT_NAME}' not found — run: ${PREREQ_INSTRUCTION}`);
+        }
+        // REAL published check: `Agent.status` is the SDK's authoritative
+        // publish-lifecycle field (`sdk/src/resources/agents/types.ts`,
+        // `"draft" | "published" | "archived"`, set by `client.agents.publish()`
+        // — see the deleted `03-ai-agent.ts` Stage 8, which called
+        // `client.agents.publish(agentId)` and trusted its `result.id` as
+        // proof). `agent-ai-service` only serves PUBLISHED agents
+        // (`published_config`), so a draft agent here would silently break
+        // every downstream stage that expects the agent to actually respond.
+        // As of this migration, the manifest engine does NOT publish agents
+        // it creates (no publish step in `manifest.yaml` application) — see
+        // `manual-loops/provisioning-manifest-gaps-5.md` — so fail fast with
+        // a clear, actionable message instead of a check that always passes.
+        if (found.status !== "published") {
           fail(
-            `agent '${AGENT_NAME}' not found — run: ${PREREQ_INSTRUCTION}`
+            `agent '${AGENT_NAME}' (id=${found.id}) exists but is NOT published ` +
+              `(status=${found.status}, published_at=${found.published_at ?? "null"}) — ` +
+              "the manifest engine does not publish agents yet " +
+              "(see manual-loops/provisioning-manifest-gaps-5.md); publish it via " +
+              "admin-console or `client.agents.publish(id)`, or wait for gaps-5"
           );
         }
-        log(`agent=${found.id}`);
+        log(
+          `agent=${found.id}  status=${found.status}  published_at=${found.published_at ?? "n/a"}`
+        );
         return found.id;
       }
     );
@@ -638,7 +659,10 @@ async function main(): Promise<void> {
                 telegram_user_id: String(testChatId),
                 firstname: `${E2E_TAG} CRM Demo`,
                 lastname: "Contact",
-                email: `e2e-${testChatId}@example.invalid`,
+                // example.com, not example.invalid: HubSpot's contact
+                // validation rejects the .invalid TLD (INVALID_EMAIL);
+                // example.com is equally RFC-reserved and undeliverable.
+                email: `e2e-${testChatId}@example.com`,
               },
             },
           }
@@ -658,6 +682,50 @@ async function main(): Promise<void> {
         log(`created E2E contact id=${newId}`);
         cleanup.contactId = newId;
         return newId;
+      }
+    );
+
+    // ----- Stage 4: cache probe (SPEC "cache miss then hit") ---------------
+    // See the header comment's deviation note #2: demonstrated directly on
+    // the same cacheable endpoint the scorer uses, since the scorer's own
+    // internal invoke has no execution-visible cacheResult.
+    //
+    // ORDERING MATTERS: this probe MUST run before "reset associated deals"
+    // below. That stage also invokes list-deals-by-contact for this SAME
+    // contactId (to enumerate deals to remove) and would silently warm the
+    // connector's 60s keyBody read cache — making the probe's "first invoke
+    // is a miss" assertion order-dependent and flaky (it would observe a
+    // pre-warmed hit on invoke #1). Running the probe first, right after the
+    // contact is resolved, guarantees invoke #1 below is a genuine
+    // first-touch miss against the live connector cache.
+    await runStage(
+      "cache probe: list-deals-by-contact miss-then-hit",
+      async () => {
+        const first = (await client.connectors.invoke(
+          hubspot.connectorId,
+          hubspot.dealsEndpointId,
+          { method: "POST", data: { inputs: [{ id: contactId }] } }
+        )) as HubspotSyncInvokeResult;
+        const second = (await client.connectors.invoke(
+          hubspot.connectorId,
+          hubspot.dealsEndpointId,
+          { method: "POST", data: { inputs: [{ id: contactId }] } }
+        )) as HubspotSyncInvokeResult;
+        log(
+          `first cacheResult=${first.cacheResult ?? "n/a"}  second cacheResult=${second.cacheResult ?? "n/a"}`
+        );
+        record(
+          checks,
+          "list-deals-by-contact: first invoke is not a cache hit",
+          first.cacheResult !== "hit",
+          `cacheResult=${first.cacheResult ?? "n/a"}`
+        );
+        record(
+          checks,
+          "list-deals-by-contact: second invoke IS a cache hit",
+          second.cacheResult === "hit",
+          `cacheResult=${second.cacheResult ?? "n/a"}`
+        );
       }
     );
 
@@ -708,41 +776,6 @@ async function main(): Promise<void> {
         }
         log(
           `reset: removed ${removed}/${dealIds.length} pre-existing E2E-tagged deal(s)`
-        );
-      }
-    );
-
-    // ----- Stage 4: cache probe (SPEC "cache miss then hit") ---------------
-    // See the header comment's deviation note #2: demonstrated directly on
-    // the same cacheable endpoint the scorer uses, since the scorer's own
-    // internal invoke has no execution-visible cacheResult.
-    await runStage(
-      "cache probe: list-deals-by-contact miss-then-hit",
-      async () => {
-        const first = (await client.connectors.invoke(
-          hubspot.connectorId,
-          hubspot.dealsEndpointId,
-          { method: "POST", data: { inputs: [{ id: contactId }] } }
-        )) as HubspotSyncInvokeResult;
-        const second = (await client.connectors.invoke(
-          hubspot.connectorId,
-          hubspot.dealsEndpointId,
-          { method: "POST", data: { inputs: [{ id: contactId }] } }
-        )) as HubspotSyncInvokeResult;
-        log(
-          `first cacheResult=${first.cacheResult ?? "n/a"}  second cacheResult=${second.cacheResult ?? "n/a"}`
-        );
-        record(
-          checks,
-          "list-deals-by-contact: first invoke is not a cache hit",
-          first.cacheResult !== "hit",
-          `cacheResult=${first.cacheResult ?? "n/a"}`
-        );
-        record(
-          checks,
-          "list-deals-by-contact: second invoke IS a cache hit",
-          second.cacheResult === "hit",
-          `cacheResult=${second.cacheResult ?? "n/a"}`
         );
       }
     );
