@@ -8,16 +8,25 @@
 // of guessing an image.
 //
 // Env vars (manual-loops/provisioning-manifest-gaps-2.md T05, gap 5 — HUMAN
-// RULING 2026-07-16, PLAIN STRINGS ONLY): `ServiceEnvVar.value` is a plain
-// `string` (e.g. a metadata marker like `YOIZEN_SAMPLE`). Each declared
-// entry passes through verbatim into registry-service's `envVars` payload —
-// no secrets broker involvement whatsoever. A `{ secretRef }` value form is
-// DELIBERATELY absent from the schema: resolving a secretRef to plaintext
-// here and shipping it in `envVars` would bake the literal secret into the
-// Knative spec (etcd-persisted, kubectl-visible), contradicting
-// `declarative-provisioning.md` decision 7 (hosted services receive secrets
-// K8S-NATIVELY via `valueFrom.secretKeyRef`). Secret-valued env vars are a
-// deferred k8s-native follow-up, NOT expressible in this task.
+// RULING 2026-07-16, PLAIN STRINGS ONLY, round 1): `ServiceEnvVar.value` was
+// a plain `string` (e.g. a metadata marker like `YOIZEN_SAMPLE`). Each
+// declared entry passed through verbatim into registry-service's `envVars`
+// payload — no secrets broker involvement whatsoever.
+//
+// manual-loops/provisioning-manifest-gaps-4.md T01 (round 2, 2026-07-24)
+// widens `ServiceEnvVar.value` at the SCHEMA level to a 4-shape union
+// (bare string | `{ secretRef }` | `{ connectorRef }` | `{ connectorRef,
+// endpointMethod, endpointPath }` — see `manifest.schema.ts`'s
+// `serviceEnvVarSchema` header comment for the full history and the Option
+// B ruling this reopens). T01 is SCHEMA + VALIDATE-TIME ONLY — apply-time
+// resolution of every ref shape ships across gaps-4 T02 (`connectorRef`),
+// T03 (endpoint-ref), and T04 (`secretRef`, k8s-native
+// `valueFrom.secretKeyRef`, never plaintext). Until those tasks land, THIS
+// writer still only knows how to pass a plain string through: `buildEnvVars`
+// fails LOUD (`unresolved_symbolic_ref`, naming the env var and ref kind,
+// never the value) if it ever receives an unresolved ref-shaped `value` —
+// it must never silently stringify an object or crash with an unchecked
+// type error.
 //
 // LOGGING DISCIPLINE: even though these are plain config values (not
 // secrets), the writer logs env var NAMES only, never values wholesale —
@@ -125,17 +134,43 @@ export function createRegistryServicesWriter(
 
   /**
    * Plain-string `env[].value` passthrough (T05, gap 5 — PLAIN STRINGS
-   * ONLY). No secrets broker involvement: every declared value is plain
-   * config mapped verbatim into registry-service's `envVars` payload. Logs
-   * env var NAMES only, never values wholesale (parity discipline).
+   * ONLY). No secrets broker involvement: every declared plain-string value
+   * is mapped verbatim into registry-service's `envVars` payload. Logs env
+   * var NAMES only, never values wholesale (parity discipline).
+   *
+   * manual-loops/provisioning-manifest-gaps-4.md T01 — the schema now also
+   * accepts ref-shaped values (`{ secretRef }`/`{ connectorRef }`/
+   * `{ connectorRef, endpointMethod, endpointPath }`), but apply-time
+   * resolution for them ships in T02-T04, NOT here. A ref-shaped value
+   * reaching this writer today is therefore always UNRESOLVED — fails loud
+   * with `unresolved_symbolic_ref` (naming the env var and which ref kind
+   * it carries, never a value) instead of silently stringifying an object
+   * or crashing with an unchecked type error.
    */
   function buildEnvVars(
     service: HostedService,
     verb: "create" | "update"
-  ): Record<string, string> {
+  ):
+    | { ok: true; value: Record<string, string> }
+    | { ok: false; error: ApplyWriteError } {
     const declared = service.env ?? [];
     const envVars: Record<string, string> = {};
     for (const envVar of declared) {
+      if (typeof envVar.value !== "string") {
+        const refKind =
+          "secretRef" in envVar.value ? "secretRef" : "connectorRef";
+        const message = `service '${service.name}' env var '${envVar.name}' declares a { ${refKind} } value — apply-time resolution for this ref shape is not implemented yet (manual-loops/provisioning-manifest-gaps-4.md T02-T04)`;
+        logger.warn(`${verb}: ${message}`);
+        return {
+          ok: false,
+          error: {
+            kind: "unresolved_symbolic_ref",
+            resourceKind: "service",
+            resourceName: service.name,
+            message,
+          },
+        };
+      }
       envVars[envVar.name] = envVar.value;
     }
     if (declared.length > 0) {
@@ -145,7 +180,7 @@ export function createRegistryServicesWriter(
           .join(", ")}] (values NEVER logged)`
       );
     }
-    return envVars;
+    return { ok: true, value: envVars };
   }
 
   /** Only the scaling keys the manifest ACTUALLY declares — never fabricates a value for an omitted field. */
@@ -492,7 +527,11 @@ export function createRegistryServicesWriter(
         };
       }
 
-      const envVars = buildEnvVars(service, "create");
+      const envVarsResult = buildEnvVars(service, "create");
+      if (!envVarsResult.ok) {
+        return envVarsResult;
+      }
+      const envVars = envVarsResult.value;
 
       const url = `${baseUrl}/services`;
       const scalingFields = scalingFieldsOf(service);
@@ -567,7 +606,11 @@ export function createRegistryServicesWriter(
     ): Promise<CreateOrUpdateResult> {
       const service = resourceUnknown as HostedService;
 
-      const envVars = buildEnvVars(service, "update");
+      const envVarsResult = buildEnvVars(service, "update");
+      if (!envVarsResult.ok) {
+        return envVarsResult;
+      }
+      const envVars = envVarsResult.value;
 
       const url = `${baseUrl}/services/${externalId}`;
       const scalingFields = scalingFieldsOf(service);

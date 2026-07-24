@@ -13,6 +13,7 @@ import type {
   Agent,
   Connector,
   ConnectorAuth,
+  HostedService,
   IntegrationManifest,
   KnowledgeBase,
   ManifestChannel,
@@ -20,6 +21,7 @@ import type {
   McpServerAuth,
   SecretBinding,
   SecretScopeKind,
+  ServiceEnvVar,
   Workflow,
 } from "./manifest.schema";
 import type { ManifestValidationError } from "./validation-error.interfaces";
@@ -125,6 +127,67 @@ function mcpServerHeaderSecretRefs(
       });
     }
   }
+  return refs;
+}
+
+/**
+ * Every `{ path, secretRef }` pair among a hosted service's `env[]` entries
+ * whose `value` uses the `{ secretRef }` shape (manual-loops/provisioning-
+ * manifest-gaps-4.md T01, decision 1/Option B) — mirrors
+ * `connectorAuthSecretRefs`/`mcpServerAuthSecretRefs` above exactly. Plain
+ * string values and `{ connectorRef }`/`{ connectorRef, endpointMethod,
+ * endpointPath }`-shaped values carry no secretRef and are skipped (see
+ * `serviceEnvConnectorRefs` below for those).
+ */
+function serviceEnvSecretRefs(
+  env: readonly ServiceEnvVar[] | undefined,
+  basePath: string
+): { path: string; secretRef: string }[] {
+  if (!env) {
+    return [];
+  }
+  const refs: { path: string; secretRef: string }[] = [];
+  env.forEach((envVar, index) => {
+    const { value } = envVar;
+    if (typeof value === "object" && value !== null && "secretRef" in value) {
+      refs.push({
+        path: `${basePath}.env[${index}].value.secretRef`,
+        secretRef: value.secretRef,
+      });
+    }
+  });
+  return refs;
+}
+
+/**
+ * Every `{ path, connectorRef }` pair among a hosted service's `env[]`
+ * entries whose `value` uses the `{ connectorRef }` or `{ connectorRef,
+ * endpointMethod, endpointPath }` shape (gaps-4 T01, decision 2 — NOT gated
+ * by decision 1's secretRef ruling). The `endpointMethod`/`endpointPath`
+ * pair is deliberately NOT structurally validated here — see the caller's
+ * comment for why (no live connector data at validate time).
+ */
+function serviceEnvConnectorRefs(
+  env: readonly ServiceEnvVar[] | undefined,
+  basePath: string
+): { path: string; connectorRef: string }[] {
+  if (!env) {
+    return [];
+  }
+  const refs: { path: string; connectorRef: string }[] = [];
+  env.forEach((envVar, index) => {
+    const { value } = envVar;
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      "connectorRef" in value
+    ) {
+      refs.push({
+        path: `${basePath}.env[${index}].value.connectorRef`,
+        connectorRef: value.connectorRef,
+      });
+    }
+  });
   return refs;
 }
 
@@ -299,6 +362,48 @@ function checkRefResolution(
         secretsByName,
         errors
       );
+    }
+  });
+
+  // manual-loops/provisioning-manifest-gaps-4.md T01, decision 1/Option B +
+  // decision 2 — a hosted service's `env[]` entries may carry a
+  // `{ secretRef }`, `{ connectorRef }`, or `{ connectorRef, endpointMethod,
+  // endpointPath }`-shaped `value` (`manifest.schema.ts`'s
+  // `serviceEnvVarSchema`, widened by this task). `secretRef` entries are
+  // validated the SAME way every other secretRef consumer is, scope
+  // `kind: "service", owner: <service name>` (mirrors
+  // `connectorAuthSecretRefs`/`mcpServerAuthSecretRefs` above).
+  // `connectorRef` entries are validated for NAME existence against
+  // `spec.connectors[].name` (mirrors the workflow `connectorRef` case
+  // below). DOCUMENTED LIMITATION (decision 2, T01 scope): the
+  // `endpointMethod`/`endpointPath` pair on the endpoint-ref shape is NOT
+  // checked against the connector's actual endpoint list here — there is no
+  // live connector data at validate time (mirrors how a workflow's
+  // `connectorRef` is validated for NAME existence only, never a live
+  // endpoint/field check); the `(method, path)` match happens at APPLY time
+  // (gaps-4 T03's live re-fetch resolver).
+  manifest.spec.services.forEach((service: HostedService, index) => {
+    const basePath = `spec.services[${index}]`;
+    const envSecretRefs = serviceEnvSecretRefs(service.env, basePath);
+    for (const { path, secretRef } of envSecretRefs) {
+      checkSecretRef(
+        secretRef,
+        path,
+        "service",
+        service.name,
+        secretsByName,
+        errors
+      );
+    }
+
+    const envConnectorRefs = serviceEnvConnectorRefs(service.env, basePath);
+    for (const { path, connectorRef } of envConnectorRefs) {
+      if (!connectorNames.has(connectorRef)) {
+        errors.push({
+          path,
+          message: `unresolved connectorRef "${connectorRef}": no connector with this name in the manifest`,
+        });
+      }
     }
   });
 

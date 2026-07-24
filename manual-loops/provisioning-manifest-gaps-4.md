@@ -683,3 +683,25 @@ grep -n "PAUSED before T04" manual-loops/crm-support-telegram.md   # must be GON
   still governs when T04 actually starts there.
 
 ## Progress
+
+PRECONDITION verdict (2026-07-24): `validate-dev-mode.sh --with-e2e` fails at
+stage 5 with a DIFFERENT symptom than the parents' recorded race (apply
+processed only channel+agent, both workflows absent from plan AND apply — no
+jq error), but the same class: `scripts/e2e/http-workflow.sh` standalone with
+dev-mode off is fully green (all 14 stages), so the failure is internal to
+the validator's post-canary reload window. Per this SPEC's own fallback:
+G8a SKIPPED for this run, G8b (built image) is the cluster gate.
+
+- [x] T01 schema + plan-time wiring — 2026-07-24. Four-shape
+  `serviceEnvVarSchema.value` union + validate-time service-env ref checks;
+  both "zero changes needed" assumptions (gatherSecretReferences,
+  serviceComparable) held with regression proof. Deviations (both
+  review-adjudicated): the gaps-2-era "rejects {secretRef}" schema test
+  reversed (IS the ruled behavior change), and `buildEnvVars` now returns a
+  Result failing loud (`unresolved_symbolic_ref`, never leaking values) on
+  ref-shaped values until T02-T04 land resolution — failure branch fully
+  test-covered after review round 1 objection. Gates: shared 324 /
+  provisioning 417 / sdk 403 tests green, tsc clean, G7 12/12
+  validate+apply+noop (http-connectors needs its two basic-auth binding env
+  vars), G8b rebuild-redeploy + e2e-manifest-apply PASSED. Review: round 1
+  1×REJECTED (missing failure-branch tests) → fixed → round 2 2×APPROVED.

@@ -494,10 +494,14 @@ describe("structural rule — ref resolution", () => {
     ).toBe(true);
   });
 
-  // manual-loops/provisioning-manifest-gaps-2.md T05, gap 5 (HUMAN RULING
-  // 2026-07-16 — PLAIN STRINGS ONLY): `env[].value` is a plain `string`, so
-  // an env var can never carry a secretRef and never participates in
-  // ref/scope-binding resolution — a plain string value is inert here.
+  // manual-loops/provisioning-manifest-gaps-2.md T05, gap 5 (round 1, HUMAN
+  // RULING 2026-07-16 — PLAIN STRINGS ONLY) restricted `env[].value` to a
+  // plain `string` only. manual-loops/provisioning-manifest-gaps-4.md T01
+  // (round 2, 2026-07-24) widens `value` to a 4-shape union (see
+  // `manifest.schema.ts`'s `serviceEnvVarSchema` header comment) — a plain
+  // string value is STILL one of the legal shapes and remains inert here
+  // (carries no secretRef/connectorRef, never participates in ref/scope
+  // resolution); the ref-shaped values below (added by T01) DO participate.
   test("does not flag a plain string env value (not a secretRef at all)", () => {
     const manifest = buildValidManifest();
     manifest.spec.services[0] = {
@@ -506,5 +510,116 @@ describe("structural rule — ref resolution", () => {
     };
     const errors = validateManifestStructuralRules(manifest);
     expect(errors.some((e) => /env\[0\]/.test(e.path ?? ""))).toBe(false);
+  });
+
+  // manual-loops/provisioning-manifest-gaps-4.md T01, decision 1/Option B —
+  // a service env's `{ secretRef }`-shaped value is validated the SAME way
+  // every other secretRef consumer is (scope `kind: "service", owner:
+  // <service name>`), reusing `checkSecretRef` verbatim.
+  test("flags an unresolved secretRef inside a service's env[] value", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.services[0] = {
+      ...manifest.spec.services[0],
+      env: [
+        { name: "API_KEY", value: { secretRef: "no-such-service-secret" } },
+      ],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some(
+        (e) =>
+          e.path === "spec.services[0].env[0].value.secretRef" &&
+          /unresolved secretRef "no-such-service-secret"/.test(e.message)
+      )
+    ).toBe(true);
+  });
+
+  test("passes with a service env secretRef resolving to a declared, correctly-scoped secret", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.services[0] = {
+      ...manifest.spec.services[0],
+      env: [{ name: "API_KEY", value: { secretRef: "scorer-api-key" } }],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => /env\[0\]/.test(e.path ?? ""))).toBe(false);
+  });
+
+  test("flags a service env secretRef whose scope binding does not match the referencing service", () => {
+    const manifest = buildValidManifest();
+    // `hubspot-api-key` is bound to the connector "hubspot", not any service.
+    manifest.spec.services[0] = {
+      ...manifest.spec.services[0],
+      env: [{ name: "API_KEY", value: { secretRef: "hubspot-api-key" } }],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some(
+        (e) =>
+          e.path === "spec.services[0].env[0].value.secretRef" &&
+          /does not match the referencing resource/.test(e.message)
+      )
+    ).toBe(true);
+  });
+
+  // manual-loops/provisioning-manifest-gaps-4.md T01, decision 2 — a service
+  // env's `{ connectorRef }`/`{ connectorRef, endpointMethod, endpointPath }`
+  // value is validated for connector NAME existence, mirroring the workflow
+  // `connectorRef` case above.
+  test("flags an unresolved connectorRef inside a service's env[] value", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.services[0] = {
+      ...manifest.spec.services[0],
+      env: [
+        {
+          name: "HUBSPOT_CONNECTOR_ID",
+          value: { connectorRef: "no-such-connector" },
+        },
+      ],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(
+      errors.some(
+        (e) =>
+          e.path === "spec.services[0].env[0].value.connectorRef" &&
+          /unresolved connectorRef "no-such-connector"/.test(e.message)
+      )
+    ).toBe(true);
+  });
+
+  test("passes with a service env connectorRef resolving to a declared connector", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.services[0] = {
+      ...manifest.spec.services[0],
+      env: [
+        { name: "HUBSPOT_CONNECTOR_ID", value: { connectorRef: "hubspot" } },
+      ],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => /connectorRef/.test(e.message))).toBe(false);
+  });
+
+  // DOCUMENTED LIMITATION (decision 2, T01 scope): the endpoint-ref shape's
+  // `endpointMethod`/`endpointPath` pair is NOT checked against the
+  // connector's actual endpoint list at validate time — only the
+  // `connectorRef` NAME is. A wrong (method, path) combination against a
+  // resolvable connector is therefore NOT flagged here; T03 (apply time,
+  // live re-fetch) is where that mismatch fails loud.
+  test("passes with an endpoint-ref connectorRef resolving to a declared connector, regardless of endpointMethod/endpointPath (validate-time NAME-only check)", () => {
+    const manifest = buildValidManifest();
+    manifest.spec.services[0] = {
+      ...manifest.spec.services[0],
+      env: [
+        {
+          name: "HUBSPOT_DEALS_ENDPOINT_ID",
+          value: {
+            connectorRef: "hubspot",
+            endpointMethod: "GET",
+            endpointPath: "/this/endpoint/does/not/exist/on/the/connector",
+          },
+        },
+      ],
+    };
+    const errors = validateManifestStructuralRules(manifest);
+    expect(errors.some((e) => /connectorRef/.test(e.message))).toBe(false);
   });
 });

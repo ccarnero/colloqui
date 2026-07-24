@@ -67,6 +67,136 @@ describe("createRegistryServicesWriter", () => {
     });
   });
 
+  // manual-loops/provisioning-manifest-gaps-4.md T01 — the schema now
+  // accepts ref-shaped `env[].value` (`{ secretRef }`/`{ connectorRef }`/
+  // `{ connectorRef, endpointMethod, endpointPath }`), but apply-time
+  // resolution for those shapes ships in T02-T04, NOT here. Until then this
+  // writer must fail loud (`unresolved_symbolic_ref`) rather than silently
+  // stringify an object or crash with an unchecked type error, and it must
+  // never call the network once it detects an unresolved ref.
+  it("create: a { secretRef }-shaped env value fails loud with unresolved_symbolic_ref (never calls the network)", async () => {
+    globalThis.fetch = mock(async () => {
+      throw new Error("must never call the network for an unresolved ref");
+    }) as unknown as typeof fetch;
+
+    const writer = createRegistryServicesWriter(BASE_URL);
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:1.0",
+      env: [
+        { name: "YOIZEN_PASSWORD", value: { secretRef: "scorer-password" } },
+      ],
+    };
+
+    const result = await writer.create("tenant-a", service);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatchObject({
+        kind: "unresolved_symbolic_ref",
+        resourceKind: "service",
+        resourceName: "priority-scorer",
+      });
+      expect(result.error.message).toContain("YOIZEN_PASSWORD");
+      expect(result.error.message).toContain("secretRef");
+      // The secret VALUE never appears — only the binding NAME may.
+      expect(result.error.message).not.toContain("scorer-password");
+    }
+  });
+
+  it("create: a { connectorRef }-shaped env value fails loud with unresolved_symbolic_ref (never calls the network)", async () => {
+    globalThis.fetch = mock(async () => {
+      throw new Error("must never call the network for an unresolved ref");
+    }) as unknown as typeof fetch;
+
+    const writer = createRegistryServicesWriter(BASE_URL);
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:1.0",
+      env: [
+        {
+          name: "HUBSPOT_CONNECTOR_ID",
+          value: { connectorRef: "demo-hubspot" },
+        },
+      ],
+    };
+
+    const result = await writer.create("tenant-a", service);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatchObject({
+        kind: "unresolved_symbolic_ref",
+        resourceKind: "service",
+        resourceName: "priority-scorer",
+      });
+      expect(result.error.message).toContain("HUBSPOT_CONNECTOR_ID");
+      expect(result.error.message).toContain("connectorRef");
+    }
+  });
+
+  it("update: a { secretRef }-shaped env value fails loud with unresolved_symbolic_ref (never calls the network)", async () => {
+    globalThis.fetch = mock(async () => {
+      throw new Error("must never call the network for an unresolved ref");
+    }) as unknown as typeof fetch;
+
+    const writer = createRegistryServicesWriter(BASE_URL);
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:2.0",
+      env: [{ name: "YOIZEN_EMAIL", value: { secretRef: "scorer-email" } }],
+    };
+
+    const result = await writer.update("tenant-a", "svc-1", service, [
+      { field: "envNames" },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatchObject({
+        kind: "unresolved_symbolic_ref",
+        resourceKind: "service",
+        resourceName: "priority-scorer",
+      });
+      expect(result.error.message).toContain("YOIZEN_EMAIL");
+      expect(result.error.message).toContain("secretRef");
+      expect(result.error.message).not.toContain("scorer-email");
+    }
+  });
+
+  it("update: a { connectorRef, endpointMethod, endpointPath }-shaped env value fails loud with unresolved_symbolic_ref (never calls the network)", async () => {
+    globalThis.fetch = mock(async () => {
+      throw new Error("must never call the network for an unresolved ref");
+    }) as unknown as typeof fetch;
+
+    const writer = createRegistryServicesWriter(BASE_URL);
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:2.0",
+      env: [
+        {
+          name: "HUBSPOT_DEALS_ENDPOINT_ID",
+          value: {
+            connectorRef: "demo-hubspot",
+            endpointMethod: "GET",
+            endpointPath: "/crm/v3/objects/deals",
+          },
+        },
+      ],
+    };
+
+    const result = await writer.update("tenant-a", "svc-1", service, [
+      { field: "envNames" },
+    ]);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatchObject({
+        kind: "unresolved_symbolic_ref",
+        resourceKind: "service",
+        resourceName: "priority-scorer",
+      });
+      expect(result.error.message).toContain("HUBSPOT_DEALS_ENDPOINT_ID");
+      expect(result.error.message).toContain("connectorRef");
+    }
+  });
+
   it("create: image-referenced service with no env -> POST /services", async () => {
     globalThis.fetch = mock(async () =>
       json({ id: "svc-1" }, 201)

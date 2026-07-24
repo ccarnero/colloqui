@@ -106,4 +106,30 @@ describe("gatherSecretReferences", () => {
     const refs = gatherSecretReferences(manifest);
     expect(refs).toEqual([]);
   });
+
+  // manual-loops/provisioning-manifest-gaps-4.md T01 — REGRESSION proving
+  // decision 7's citation holds against the WIDENED schema shape
+  // (`{ name, value: { secretRef } }`, `value` nested one level deeper than
+  // the pre-widening fixture above): `collectSymbolicRefs` recurses at ANY
+  // nesting depth for a `secretRef`-named key with a string value, and
+  // `parse-owning-resource.ts`'s `SECTION_TO_KIND` already maps
+  // `services: "service"` (added for the workflow `serviceRef` case, but
+  // generically keyed) — so `gatherSecretReferences` picks up a
+  // `spec.services[N].env[M].value.secretRef` occurrence correctly with
+  // ZERO changes to either file. Verified, not assumed.
+  it("finds a service env secretRef nested under the T01 `{ value: { secretRef } }` shape", () => {
+    const manifest = buildManifest();
+    manifest.spec.services[0]!.env = [
+      { name: "API_KEY", value: { secretRef: "scorer-api-key" } },
+    ];
+
+    const refs = gatherSecretReferences(manifest);
+    const byName = new Map(refs.map((r) => [r.secretName, r]));
+
+    expect(byName.get("scorer-api-key")).toEqual({
+      secretName: "scorer-api-key",
+      owningKind: "service",
+      owningName: "priority-scorer",
+    });
+  });
 });

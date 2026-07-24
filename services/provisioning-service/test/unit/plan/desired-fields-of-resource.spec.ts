@@ -88,6 +88,41 @@ describe("desiredFieldsOfResource", () => {
     });
   });
 
+  // manual-loops/provisioning-manifest-gaps-4.md T01, decision 6 — REGRESSION
+  // proving `serviceComparable`'s `envNames`-only projection (comparable-
+  // fields.ts:425, `.map(envVar => envVar.name)`) still noops correctly
+  // against the WIDENED `value` union: a ref-shaped value (any of the three
+  // new shapes) does not change the entry's `.name`, so it projects
+  // IDENTICALLY to a plain-string entry with the same name — ZERO changes to
+  // `comparable-fields.ts`/`desired-fields-of-resource.ts` needed. Verified,
+  // not assumed.
+  it("service: a ref-shaped env value (secretRef/connectorRef/endpoint-ref) still projects only its NAME, identically to a plain-string value with the same name", () => {
+    const service: HostedService = {
+      name: "priority-scorer",
+      image: "registry.example.com/priority-scorer:1.0",
+      env: [
+        { name: "YOIZEN_EMAIL", value: { secretRef: "scorer-email" } },
+        { name: "HUBSPOT_CONNECTOR_ID", value: { connectorRef: "hubspot" } },
+        {
+          name: "HUBSPOT_DEALS_ENDPOINT_ID",
+          value: {
+            connectorRef: "hubspot",
+            endpointMethod: "GET",
+            endpointPath: "/crm/v3/objects/deals",
+          },
+        },
+      ],
+    };
+    expect(desiredFieldsOfResource("service", service)).toEqual({
+      envNames: [
+        "HUBSPOT_CONNECTOR_ID",
+        "HUBSPOT_DEALS_ENDPOINT_ID",
+        "YOIZEN_EMAIL",
+      ],
+      routes: [],
+    });
+  });
+
   it("service: buildRef-declared service projects the same env-only shape (no image/buildRef key)", () => {
     const service: HostedService = {
       name: "built-service",

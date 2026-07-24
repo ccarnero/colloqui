@@ -31,6 +31,7 @@ export type {
   SecretScope,
   SecretScopeKind,
   ServiceEnvVar,
+  ServiceEnvVarValue,
   SkillFile,
   SkillFileType,
   SkillMode,

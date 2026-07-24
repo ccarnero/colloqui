@@ -518,7 +518,82 @@ describe("hosted service — env vars (provisioning-manifest-gaps-2.md T05, gap 
     expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
   });
 
-  test("rejects a { secretRef }-shaped env value — secret-valued env vars are NOT expressible (human ruling 2026-07-16, pending k8s-native secretKeyRef)", () => {
+  // manual-loops/provisioning-manifest-gaps-4.md T01 (2026-07-24) REOPENS
+  // this exact assertion: round 1 (gaps-2 T05, 2026-07-16) rejected a
+  // `{ secretRef }`-shaped env value outright, pending a k8s-native
+  // `secretKeyRef` follow-up design. That follow-up's ROUND 2 HUMAN RULING
+  // (Option B, k8s-native `valueFrom.secretKeyRef`) now ACCEPTS this shape
+  // at the schema level — `provisioning-service` only verifies the binding
+  // exists (T01), never resolves it to plaintext (T04) — see
+  // `manifest.schema.ts`'s `serviceEnvVarSchema` header comment for the full
+  // history. This is not a silent weakening: it is the explicit behavior
+  // change this task implements.
+  test("accepts a { secretRef }-shaped env value (gaps-4 T01, decision 1/Option B — schema level only, no plaintext resolution)", () => {
+    const manifest = buildValidManifest();
+    const valid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [{ name: "API_KEY", value: { secretRef: "scorer-key" } }],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(valid).success).toBe(true);
+  });
+
+  test("accepts a { connectorRef }-shaped env value (gaps-4 T01, decision 2)", () => {
+    const manifest = buildValidManifest();
+    const valid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [
+              {
+                name: "HUBSPOT_CONNECTOR_ID",
+                value: { connectorRef: "demo-hubspot" },
+              },
+            ],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(valid).success).toBe(true);
+  });
+
+  test("accepts a { connectorRef, endpointMethod, endpointPath }-shaped env value (gaps-4 T01, decision 2/7)", () => {
+    const manifest = buildValidManifest();
+    const valid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [
+              {
+                name: "HUBSPOT_DEALS_ENDPOINT_ID",
+                value: {
+                  connectorRef: "demo-hubspot",
+                  endpointMethod: "GET",
+                  endpointPath: "/crm/v3/objects/deals",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(valid).success).toBe(true);
+  });
+
+  test("rejects a malformed endpoint-ref value missing endpointPath", () => {
     const manifest = buildValidManifest();
     const invalid = {
       ...manifest,
@@ -527,7 +602,37 @@ describe("hosted service — env vars (provisioning-manifest-gaps-2.md T05, gap 
         services: [
           {
             ...manifest.spec.services[0],
-            env: [{ name: "API_KEY", value: { secretRef: "scorer-key" } }],
+            env: [
+              {
+                name: "HUBSPOT_DEALS_ENDPOINT_ID",
+                value: {
+                  connectorRef: "demo-hubspot",
+                  endpointMethod: "GET",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    };
+    expect(integrationManifestSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  test("rejects an env value object with an unknown key (strict shapes)", () => {
+    const manifest = buildValidManifest();
+    const invalid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [
+          {
+            ...manifest.spec.services[0],
+            env: [
+              {
+                name: "BAD",
+                value: { secretRef: "scorer-key", extra: "nope" },
+              },
+            ],
           },
         ],
       },

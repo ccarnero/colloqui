@@ -540,30 +540,96 @@ export type Agent = z.infer<typeof agentSchema>;
 // Hosted services — REFERENCES only (image or buildRef), never inline code.
 // ---------------------------------------------------------------------------
 
-// manual-loops/provisioning-manifest-gaps-2.md T05, gap 5.
-// BEFORE this task, `ServiceEnvVar` was `{ name, secretRef? }` — an env var
+// manual-loops/provisioning-manifest-gaps-2.md T05, gap 5 (2026-07-16) —
+// ROUND 1.
+// BEFORE that task, `ServiceEnvVar` was `{ name, secretRef? }` — an env var
 // could ONLY ever be a secret binding (never a plain value), and
 // `registry-services-writer.ts`'s `checkEnvSupport()` rejected ANY non-empty
 // `env` outright. Nothing shipped ever used that shape (the three shipped
 // manifests declare no `env`; `hosted-services-api`'s `YOIZEN_SAMPLE` marker
-// was inexpressible under it, the exact gap this task closes).
+// was inexpressible under it, the exact gap that task closed).
 //
-// AFTER (HUMAN RULING 2026-07-16 — PLAIN STRINGS ONLY): each entry's `value`
-// is a plain non-secret string (e.g. a metadata marker like `YOIZEN_SAMPLE`).
-// A `{ secretRef }` value form is DELIBERATELY NOT offered here: resolving a
-// secretRef to plaintext inside provisioning-service and shipping it in the
-// registry `envVars` payload would bake the literal secret into the Knative
-// spec (etcd-persisted, kubectl-visible), contradicting
-// `declarative-provisioning.md` decision 7, which mandates hosted services
-// receive secrets K8S-NATIVELY (`valueFrom.secretKeyRef` from the `psec-*`
-// k8s Secrets the broker already materializes). SECRET-VALUED env vars are
-// therefore NOT EXPRESSIBLE pending that k8s-native `secretKeyRef` follow-up
-// design; a `{ secretRef }`-shaped value is rejected structurally by this
-// schema's `z.string()` type.
+// T05's FIRST ATTEMPT widened `value` to `string | { secretRef }`, resolving
+// the `secretRef` branch to PLAINTEXT inside `provisioning-service` and
+// shipping it in `registry-services-writer.ts`'s `envVars` request body — a
+// reviewer proved this bakes the literal secret into the Knative spec
+// (etcd-persisted, `kubectl get ksvc -o yaml` visible), contradicting
+// `declarative-provisioning.md` decision 7 verbatim: "Hosted services
+// receive their bound secrets k8s-natively (env from the Secret in their
+// Knative spec) — user code sees plain env vars"
+// (`manual-loops/declarative-provisioning.md:51-52`, a FOUNDING decision).
+// HUMAN RULING (2026-07-16, `provisioning-manifest-gaps-2.md:650-658`):
+// PLAIN STRINGS ONLY — `value: z.string()`, the `secretRef` branch REMOVED —
+// with an explicit recorded FOLLOW-UP
+// (`provisioning-manifest-gaps-2.md:662-664`): "k8s-native secretKeyRef env
+// design — needs its own decision round (provisioning ensures the k8s
+// Secret; registry/knative-builder emits valueFrom.secretKeyRef; touches
+// registry-service)."
+//
+// `manual-loops/provisioning-manifest-gaps-4.md` (2026-07-24) — ROUND 2, the
+// decision round the FOLLOW-UP above promised. That SPEC's decision 1
+// weighed Option A (plaintext resolution, mirrors connector/channel auth —
+// i.e. redoing round 1's rejected attempt) against Option B (k8s-native
+// `valueFrom.secretKeyRef`, matching decision 7 and the recorded
+// FOLLOW-UP). HUMAN RULING (2026-07-24): Option B. `value` widens to a
+// 4-shape union:
+//   1. a bare string (unchanged from round 1 — a non-secret literal, e.g.
+//      `YOIZEN_TENANT`).
+//   2. `{ secretRef: <binding-name> }` — `provisioning-service` verifies the
+//      binding EXISTS only (scope `kind: "service", owner: <service name>`);
+//      the resolved VALUE never crosses `provisioning-service` as plaintext
+//      — `registry-service` receives a REFERENCE and emits k8s's native
+//      `valueFrom.secretKeyRef` from the SAME `psec-service-<owner>` Secret
+//      every other secretRef consumer already uses
+//      (`secret-resource-name.ts:29-31`), so k8s itself injects the value at
+//      pod start — the mechanism decision 7 always intended. (Apply-time
+//      resolution ships in gaps-4 T04; this schema widening + validate-time
+//      existence check is T01.)
+//   3. `{ connectorRef: <name> }` — the connector's OWN id, resolved via the
+//      EXISTING apply-time `resolvedIds` map (gaps-4 T02).
+//   4. `{ connectorRef: <name>, endpointMethod: <method>, endpointPath:
+//      <path> }` — ONE of that connector's endpoint ids, matched by
+//      `(method, path)` exactly like `connectors-writer.ts` already
+//      reconciles endpoints (gaps-4 T03) — endpoints have no
+//      manifest-declared `name`, so this is the only addressing scheme
+//      available.
+// T01 (gaps-4) widens the schema and adds validate-time name-existence
+// checks for shapes 2-4 only (no live endpoint/(method,path) check at
+// validate time — see `checkRefResolution`'s service block for why).
+// Apply-time resolution for every ref shape ships across gaps-4 T02-T04.
+const serviceEnvSecretRefValueSchema = z
+  .object({
+    secretRef: secretRefSchema,
+  })
+  .strict();
+
+const serviceEnvConnectorRefValueSchema = z
+  .object({
+    connectorRef: connectorRefSchema,
+  })
+  .strict();
+
+const serviceEnvConnectorEndpointRefValueSchema = z
+  .object({
+    connectorRef: connectorRefSchema,
+    endpointMethod: connectorEndpointHttpMethodSchema,
+    endpointPath: z.string().min(1, "endpointPath must not be empty"),
+  })
+  .strict();
+
+const serviceEnvValueSchema = z.union([
+  z.string().min(1, "env var value must not be empty"),
+  serviceEnvSecretRefValueSchema,
+  serviceEnvConnectorRefValueSchema,
+  serviceEnvConnectorEndpointRefValueSchema,
+]);
+
+export type ServiceEnvVarValue = z.infer<typeof serviceEnvValueSchema>;
+
 const serviceEnvVarSchema = z
   .object({
     name: z.string().min(1, "env var name must not be empty"),
-    value: z.string().min(1, "env var value must not be empty"),
+    value: serviceEnvValueSchema,
   })
   .strict();
 
