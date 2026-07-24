@@ -503,4 +503,19 @@ cd services/provisioning-service && bunx tsc -p tsconfig.json --noEmit
 
 ## Progress
 
-(none yet — human approves this SPEC before the first run)
+Human approved this SPEC by invoking `/manual-loop` on it (2026-07-24).
+PRECONDITION: the validate-dev-mode stage-5 race was re-verified earlier the
+same day (gaps-4 run — new symptom, same validator-internal class, standalone
+e2e green) — G8a SKIPPED, G8b is the cluster gate, same as all four parents.
+
+- [x] T01 agents-writer publishes on create / re-publishes on update —
+  2026-07-24. publishAgent helper mirrors reconcileEnabledMcpServers
+  (downstream_error on throw/non-2xx, value-free logs); called last in both
+  create() and update() after the reconcile steps; header comment updated;
+  9 existing tests extended for the trailing publish POST without weakening
+  their original assertions + new publish describe block incl. the
+  request-sequence regression (publish index strictly after every reconcile
+  PATCH). No-noop-test claim verified against apply-manifest.ts:212 and
+  comparable-fields.ts:325-350. Gates: provisioning 450 / shared 324 /
+  sdk 403 green, tsc clean, accept filter 8/8, G7 12/12 noop-reapply,
+  G8b rebuild + e2e PASSED. Review: 2×APPROVED round 1.

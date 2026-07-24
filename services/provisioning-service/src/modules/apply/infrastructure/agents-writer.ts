@@ -65,6 +65,25 @@
 // asymmetry between the two write paths. `system_prompt`/`model_config`/KB
 // links remain write-once-at-create (unchanged T03/T06 limitation, since
 // they are not comparable and thus never reach `update()` by themselves).
+//
+// manual-loops/provisioning-manifest-gaps-5.md T01, gap: a manifest-declared
+// agent was created (and reconciled) but never PUBLISHED —
+// agent-admin-service's `create()` hard-codes `status = 'draft'`, and
+// agent-ai-service only ever syncs an agent via the
+// `io.yoizen.platform.admin.agent.published.v1` NATS event, which only
+// `publish()` emits — so a `draft` agent is structurally invisible to
+// `agent-ai-service`'s `agentCall` runtime path no matter how correctly this
+// writer creates/reconciles it. T01 adds `publishAgent()`, called as the
+// LAST step of both `create()` and `update()`, AFTER
+// `reconcileEnabledMcpServers`/`reconcileAgentToolFields` succeed — ordering
+// matters because `publish()` snapshots the agent's CURRENT row state, so
+// publishing any earlier would persist stale MCP enablement/tool overrides.
+// `create()` always publishes (a manifest-declared agent is meant to be
+// live); `update()` re-publishes whenever it runs, without widening
+// `agentComparable` or adding any new update-triggering condition — decision
+// 3 of that SPEC. A publish failure is a fail-loud `downstream_error`, same
+// as every other network/HTTP failure in this file; there is no
+// rollback/delete-on-publish-failure semantics.
 const AGENT_MCP_TOOLS_PATH = "mcp-tools";
 const AGENT_TOOL_DESCRIPTIONS_PATH = "tool-descriptions";
 
@@ -347,6 +366,73 @@ async function reconcileAgentToolFields(
   return { ok: true };
 }
 
+/**
+ * `POST /admin/agents/:id/publish` (T01, manual-loops/provisioning-manifest-
+ * gaps-5.md) — closes the gap where a manifest-declared agent was created
+ * but never published, so `agent-ai-service` never synced it (see this
+ * file's header comment and the SPEC's motivating incident). No request
+ * body, no `x-yoizen-user-id` header — `agents-writer.ts` has no user
+ * identity to thread through today, same as every other call in this file
+ * (`agents.controller.ts:109-117`, the header is optional). Mirrors
+ * `reconcileEnabledMcpServers`'s shape exactly: network failure and non-2xx
+ * both fail loud with `downstream_error`, success logs verbosely without
+ * leaking agent content (`system_prompt`, tool definitions, etc.).
+ */
+async function publishAgent(
+  baseUrl: string,
+  logger: PinoLoggerService,
+  tenantId: string,
+  agentName: string,
+  externalId: string
+): Promise<{ ok: true } | { ok: false; error: ApplyWriteError }> {
+  const url = `${baseUrl}/admin/agents/${externalId}/publish`;
+  logger.log(
+    `publish: POST ${url} agent='${agentName}' externalId='${externalId}' tenant='${tenantId}'`
+  );
+
+  let response: Response;
+  try {
+    response = await tracedFetch(url, {
+      method: "POST",
+      headers: {
+        [TENANT_HEADER]: tenantId,
+      },
+      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
+    });
+  } catch (cause) {
+    const message = `network failure calling ${url} for agent '${agentName}': ${cause instanceof Error ? cause.message : String(cause)}`;
+    logger.warn(`publish: ${message}`);
+    return {
+      ok: false,
+      error: {
+        kind: "downstream_error",
+        resourceKind: "agent",
+        resourceName: agentName,
+        message,
+      },
+    };
+  }
+
+  if (!response.ok) {
+    const message = `HTTP ${String(response.status)} from ${url} for agent '${agentName}'`;
+    logger.warn(`publish: ${message}`);
+    return {
+      ok: false,
+      error: {
+        kind: "downstream_error",
+        resourceKind: "agent",
+        resourceName: agentName,
+        message,
+      },
+    };
+  }
+
+  logger.log(
+    `publish: agent '${agentName}' (externalId='${externalId}', tenant='${tenantId}') published`
+  );
+  return { ok: true };
+}
+
 export function createAgentsWriter(baseUrl: string): IPlatformResourceWriter {
   const logger = new PinoLoggerService("apply.agent-writer");
 
@@ -476,6 +562,21 @@ export function createAgentsWriter(baseUrl: string): IPlatformResourceWriter {
         return toolFieldsReconciled;
       }
 
+      // T01 — publish is the LAST step, after every reconcile PATCH above
+      // succeeds: publish()'s persisted snapshot reads the agent's CURRENT
+      // row state, so calling it earlier would capture stale MCP
+      // enablement/tool overrides (see this file's header comment).
+      const published = await publishAgent(
+        baseUrl,
+        logger,
+        tenantId,
+        agent.name,
+        created.id
+      );
+      if (!published.ok) {
+        return published;
+      }
+
       return { ok: true, value: { externalId: created.id } };
     },
 
@@ -518,6 +619,19 @@ export function createAgentsWriter(baseUrl: string): IPlatformResourceWriter {
       );
       if (!toolFieldsReconciled.ok) {
         return toolFieldsReconciled;
+      }
+
+      // T01 — re-publish whenever update() runs, same LAST-step ordering
+      // rule as create() (see this file's header comment).
+      const published = await publishAgent(
+        baseUrl,
+        logger,
+        tenantId,
+        agent.name,
+        externalId
+      );
+      if (!published.ok) {
+        return published;
       }
 
       return { ok: true, value: { externalId } };
