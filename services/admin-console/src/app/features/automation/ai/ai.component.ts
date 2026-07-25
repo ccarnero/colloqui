@@ -162,6 +162,7 @@ const AUTOSAVE_INTERVAL_MS = 800;
         [errorMessage]="errorMessage()"
         [successMessage]="successMessage()"
         [isDirty]="isDirty()"
+        [hideChrome]="hideOwnChrome()"
         (save)="saveAgent()"
         (reset)="resetToTemplate()"
         (cancelEdit)="cancelEdit()"
@@ -564,6 +565,16 @@ export class AiComponent implements OnInit {
   readonly navigationMode = input<"inline" | "route">("inline");
   readonly defaultMode = input<"list" | "editor">("list");
   readonly forcedAgentId = input<string | null>(null);
+  /**
+   * Task B (agent chrome parity): true when nested under
+   * AiAgentDetailComponent's /configure route, whose floating chrome now
+   * owns Save/Reset/Cancel/dirty-state via AgentEditorBridgeService (the
+   * same signals this component already pushes into the bridge below —
+   * see the `bridge.saving.set(...)` effect). Forwarded to AiTopBarComponent
+   * to suppress its page-header block only; the standalone /ai/agents/new
+   * route (no wrapper, no bridge) keeps its own top bar unchanged.
+   */
+  readonly hideOwnChrome = input<boolean>(false);
 
   readonly templates = signal<ITemplate[]>([]);
   readonly loading = signal(false);

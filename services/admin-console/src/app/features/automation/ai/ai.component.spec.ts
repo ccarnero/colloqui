@@ -187,11 +187,18 @@ describe("AiComponent", () => {
     expect(draft.systemPrompt).toEqual(promptWithMentions);
   });
 
-  // T06 (SPEC decision 5c): the editor mode is a single scrolling column —
-  // every configuration section renders at once (no @switch-gated single
-  // section), in the mock's order (07/08). This replaces the old fixed
-  // 3-pane workstation assertions.
-  describe("single-column editor layout (T06)", () => {
+  // T06 (SPEC decision 5c): the editor mode renders every configuration
+  // section at once (no @switch-gated single section), in the mock's order
+  // (07/08). This replaces the old fixed 3-pane workstation assertions.
+  //
+  // The nav-vs-content ARRANGEMENT part of decision 5c (stacked single
+  // column) was later explicitly superseded at the user's request — see
+  // ai.component.scss's `.single-column-layout` comment — so nav+content are
+  // now asserted as a side-by-side grid, not a stacked block. jsdom does no
+  // real layout, so this checks the compiled stylesheet text Angular injects
+  // into document.head, the same regression-tripwire style used by
+  // workflow-builder-chrome.spec.ts for its own CSS assertions.
+  describe("config nav + editor column layout (T06, superseded arrangement)", () => {
     beforeEach(() => {
       const component = fixture.componentInstance;
       component.editingAgentId.set(null);
@@ -199,7 +206,14 @@ describe("AiComponent", () => {
       fixture.detectChanges();
     });
 
-    it("renders the config nav and editor column as a single stacked block, not a grid", () => {
+    function singleColumnLayoutStyleText(): string {
+      return Array.from(document.head.querySelectorAll("style"))
+        .map((s) => s.textContent ?? "")
+        .filter((t) => t.includes(".single-column-layout"))
+        .join("\n");
+    }
+
+    it("renders the config nav and editor column", () => {
       const el = fixture.nativeElement as HTMLElement;
       expect(el.querySelector(".single-column-layout")).toBeTruthy();
       expect(el.querySelector(".config-nav")).toBeTruthy();
@@ -208,6 +222,27 @@ describe("AiComponent", () => {
       expect(el.querySelector(".ide-layout")).toBeNull();
       expect(el.querySelector(".ide-nav")).toBeNull();
       expect(el.querySelector(".ide-center")).toBeNull();
+    });
+
+    it("lays out the config nav and editor column side-by-side as a grid, not stacked", () => {
+      const css = singleColumnLayoutStyleText();
+      // The base rule (before any @media override) - bounded to the text
+      // before the first @media block so it can't accidentally match the
+      // narrow-viewport override further down.
+      const baseRule = css.split("@media")[0];
+      expect(baseRule).toContain(".single-column-layout");
+      expect(baseRule).toContain("display: grid");
+      expect(baseRule).toContain("grid-template-columns: auto minmax(0, 1fr)");
+    });
+
+    it("falls back to a stacked single column below the 1080px breakpoint", () => {
+      const css = singleColumnLayoutStyleText();
+      const mediaBlock = css
+        .split("@media (max-width: 1080px)")[1]
+        ?.split("@media")[0];
+      expect(mediaBlock).toBeTruthy();
+      expect(mediaBlock).toContain(".single-column-layout");
+      expect(mediaBlock).toContain("grid-template-columns: 1fr");
     });
 
     it("renders every configuration section in mock order, all at once (nothing @switch-dropped)", () => {

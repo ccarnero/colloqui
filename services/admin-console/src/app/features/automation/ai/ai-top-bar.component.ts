@@ -14,55 +14,67 @@ import { PageHeaderComponent } from "../../../shared/components/page-header/page
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [MatButtonModule, MatIconModule, PageHeaderComponent],
   template: `
-    <app-page-header title="AI Agents">
-      @if (isDirty()) {
-        <span
-          class="dirty-pill"
-          slot="status"
-          title="You have unsaved local changes"
-        >
-          <span class="dirty-dot" aria-hidden="true"></span>
-          Unsaved changes
-        </span>
-      }
-      <ng-container slot="actions">
-        <button
-          class="btn btn-secondary btn-sm"
-          type="button"
-          [disabled]="saving()"
-          (click)="cancelEdit.emit()"
-        >
-          <mat-icon>{{ editingAgentId() ? 'close' : 'arrow_back' }}</mat-icon>
-          {{ editingAgentId() ? 'Cancel' : 'Back to List' }}
-        </button>
-        <button
-          class="btn btn-secondary btn-sm"
-          type="button"
-          [disabled]="saving()"
-          (click)="reset.emit()"
-        >
-          <mat-icon>refresh</mat-icon>
-          {{ editingAgentId() ? "Reset" : "Reset Template" }}
-        </button>
-        <button
-          class="btn btn-primary btn-sm"
-          type="button"
-          [disabled]="saving() || loading() || !canSave()"
-          (click)="save.emit()"
-        >
-          <mat-icon>{{
-            saving() ? "hourglass_top" : editingAgentId() ? "update" : "save"
-          }}</mat-icon>
-          {{
-            saving()
-              ? "Saving..."
-              : editingAgentId()
-                ? "Update Agent"
-                : "Create Agent"
-          }}
-        </button>
-      </ng-container>
-    </app-page-header>
+    <!--
+      hideChrome (Task B, agent chrome parity): true when this component is
+      nested under AiAgentDetailComponent's /configure route, which now owns
+      its own workflow-builder-style floating chrome (Save/Reset/Cancel/
+      dirty-state) — see ai-agent-detail.component.ts. Rendering this
+      page-header block too would duplicate the exact same actions in two
+      places, so it is suppressed here. The error/success alerts below are
+      NOT part of hideChrome — they must still surface save failures
+      regardless of which chrome triggered the save.
+    -->
+    @if (!hideChrome()) {
+      <app-page-header title="AI Agents">
+        @if (isDirty()) {
+          <span
+            class="dirty-pill"
+            slot="status"
+            title="You have unsaved local changes"
+          >
+            <span class="dirty-dot" aria-hidden="true"></span>
+            Unsaved changes
+          </span>
+        }
+        <ng-container slot="actions">
+          <button
+            class="btn btn-secondary btn-sm"
+            type="button"
+            [disabled]="saving()"
+            (click)="cancelEdit.emit()"
+          >
+            <mat-icon>{{ editingAgentId() ? 'close' : 'arrow_back' }}</mat-icon>
+            {{ editingAgentId() ? 'Cancel' : 'Back to List' }}
+          </button>
+          <button
+            class="btn btn-secondary btn-sm"
+            type="button"
+            [disabled]="saving()"
+            (click)="reset.emit()"
+          >
+            <mat-icon>refresh</mat-icon>
+            {{ editingAgentId() ? "Reset" : "Reset Template" }}
+          </button>
+          <button
+            class="btn btn-primary btn-sm"
+            type="button"
+            [disabled]="saving() || loading() || !canSave()"
+            (click)="save.emit()"
+          >
+            <mat-icon>{{
+              saving() ? "hourglass_top" : editingAgentId() ? "update" : "save"
+            }}</mat-icon>
+            {{
+              saving()
+                ? "Saving..."
+                : editingAgentId()
+                  ? "Update Agent"
+                  : "Create Agent"
+            }}
+          </button>
+        </ng-container>
+      </app-page-header>
+    }
 
     @if (errorMessage()) {
       <div class="alert alert-error">
@@ -110,6 +122,8 @@ export class AiTopBarComponent {
   readonly errorMessage = input.required<string>();
   readonly successMessage = input.required<string>();
   readonly isDirty = input<boolean>(false);
+  /** See the template comment above — suppresses only the page-header block. */
+  readonly hideChrome = input<boolean>(false);
 
   readonly cancelEdit = output<void>();
   readonly reset = output<void>();

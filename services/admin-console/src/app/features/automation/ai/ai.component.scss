@@ -106,18 +106,30 @@ code {
 }
 
 // ---------------------------------------------------------------------------
-// Single scrolling column (mock 07/08/09, SPEC decision 5c) — the
-// Configuration nav scrolls WITH the page (sticky within the viewport, not a
-// fixed 3-pane rail) and every section stacks below it in mock order. The
-// old fixed 3-pane workstation (ide-layout/ide-nav/ide-center/editor-card)
-// is retired; the test panel stays owned by the parent detail component
-// (`ai-agent-editor-page.component.ts`), now stacked below this column
-// instead of docked beside it.
+// Configuration nav + editor column (mock 07/08/09, SPEC decision 5c
+// originally made this a single stacked scrolling column — nav on top,
+// every section stacked below it). SUPERSEDED at the user's explicit
+// request (Task B follow-up, agent chrome parity effort): the user
+// rejected the stacked result ("General ends up below the bar") after
+// seeing it live, so this is now a side-by-side layout again — `.config-nav`
+// as a left column (still sticky within the scrolling page), `.editor-column`
+// filling the remaining width to its right. Do NOT read this as an
+// accidental revert of decision 5c; it is a deliberate, later override of
+// it. Falls back to the original stacked arrangement only below the
+// `.config-nav`'s own sticky-disable breakpoint (max-width: 1080px), where
+// there isn't enough width for a comfortable side column anyway.
 // ---------------------------------------------------------------------------
 
 .single-column-layout {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  // `auto` (not a fixed px) so the nav column's width tracks whatever
+  // `<app-ai-editor-nav>`'s own `.palette`/`.palette.collapsed` width is
+  // (230px expanded, 52px collapsed per agent-editor-nav.component.ts) —
+  // toggling collapse reflows the grid and hands the freed width straight
+  // to `.editor-column` without this component needing to know the exact
+  // pixel values.
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
   gap: var(--rd-space-6, 16px);
 }
 
@@ -125,7 +137,6 @@ code {
   position: sticky;
   top: var(--rd-space-3, 12px);
   z-index: 2;
-  align-self: flex-start;
 }
 
 .editor-column {
@@ -291,6 +302,13 @@ code {
 @media (max-width: 1080px) {
   .config-nav {
     position: static;
+  }
+
+  // Below this width the side-by-side nav+content grid doesn't leave
+  // `.editor-column` a comfortable minimum — fall back to the original
+  // decision-5c stacked arrangement (nav on top, content below).
+  .single-column-layout {
+    grid-template-columns: 1fr;
   }
 }
 

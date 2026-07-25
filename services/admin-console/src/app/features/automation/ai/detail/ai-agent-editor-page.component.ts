@@ -26,6 +26,7 @@ import { AgentTestPanelComponent } from "./agent-test-panel.component";
           navigationMode="route"
           defaultMode="editor"
           [forcedAgentId]="agentId()"
+          [hideOwnChrome]="isEmbedded()"
         />
       </div>
       <section class="test-pane" aria-label="Test run">
@@ -64,12 +65,26 @@ import { AgentTestPanelComponent } from "./agent-test-panel.component";
 export class AiAgentEditorPageComponent {
   private readonly route = inject(ActivatedRoute);
 
+  private readonly ownId = computed(() =>
+    this.route.snapshot.paramMap.get("id")
+  );
+
   protected readonly agentId = computed(() => {
-    const ownId = this.route.snapshot.paramMap.get("id");
-    if (ownId) {
-      return ownId;
+    if (this.ownId()) {
+      return this.ownId();
     }
 
     return this.route.parent?.snapshot.paramMap.get("id") ?? null;
   });
+
+  /**
+   * True at `/ai/agents/:id/configure` (nested under AiAgentDetailComponent,
+   * `:id` lives on the parent route), false at the standalone
+   * `/ai/agents/new` route (own route, no parent wrapper). Forwarded to
+   * `<app-ai>` so it suppresses its own top bar only when the detail
+   * wrapper's floating chrome (Task B) already owns Save/Reset/Cancel.
+   */
+  protected readonly isEmbedded = computed(
+    () => !this.ownId() && !!this.route.parent?.snapshot.paramMap.get("id")
+  );
 }

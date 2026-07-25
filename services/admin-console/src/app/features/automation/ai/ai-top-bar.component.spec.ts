@@ -25,4 +25,20 @@ describe("AiTopBarComponent", () => {
     expect(el.textContent).toContain("AI Agents");
     expect(el.textContent).toContain("Create Agent");
   });
+
+  /**
+   * Task B (agent chrome parity): when nested under AiAgentDetailComponent's
+   * /configure floating chrome, this component's own page-header (with the
+   * same Save/Reset/Cancel actions) would duplicate the parent's chrome —
+   * hideChrome suppresses only that block, alerts still render.
+   */
+  it("hides its own page-header actions when hideChrome is true", () => {
+    fixture.componentRef.setInput("hideChrome", true);
+    fixture.componentRef.setInput("errorMessage", "Something failed");
+    fixture.detectChanges();
+
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.textContent).not.toContain("Create Agent");
+    expect(el.textContent).toContain("Something failed");
+  });
 });
