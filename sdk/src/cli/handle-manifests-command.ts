@@ -4,6 +4,10 @@ import { runApplyCommand } from "./commands/apply-command.js";
 import { runPlanCommand } from "./commands/plan-command.js";
 import { runValidateCommand } from "./commands/validate-command.js";
 import { formatErrorDetail } from "./format-error-detail.js";
+import {
+  formatKbApplySection,
+  formatKbPlanSection,
+} from "./format-kb-section.js";
 import { formatVerdictTable } from "./format-verdict-table.js";
 import type { readManifestFile } from "./read-manifest-file.js";
 
@@ -108,6 +112,9 @@ export async function handleManifestsCommand({
         }))
       )
     );
+    for (const line of formatKbPlanSection(result.value.knowledgeBases)) {
+      stdout(line);
+    }
     if (result.value.preconditions.length > 0) {
       stdout("");
       stdout("PRECONDITIONS:");
@@ -145,5 +152,8 @@ export async function handleManifestsCommand({
       }))
     )
   );
+  for (const line of formatKbApplySection(result.value.knowledgeBases)) {
+    stdout(line);
+  }
   return 0;
 }
