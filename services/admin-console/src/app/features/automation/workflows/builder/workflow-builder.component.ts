@@ -40,7 +40,7 @@ import type {
   IVariableGroup,
 } from "./components/template-autocomplete/template-autocomplete.component";
 import { VariablesReferenceComponent } from "./components/variables-reference/variables-reference.component";
-import { WorkflowNodeComponent } from "./components/workflow-node/workflow-node.component";
+import { WorkflowNodeCardComponent } from "./components/workflow-node/workflow-node-card.component";
 import { WorkflowNodeConfigComponent } from "./components/workflow-node-config/workflow-node-config.component";
 import { WorkflowPaletteComponent } from "./components/workflow-palette/workflow-palette.component";
 import { WorkflowTestPanelComponent } from "./components/workflow-test-panel/workflow-test-panel.component";
@@ -110,7 +110,7 @@ function pruneConflictingConnections(
     MatDialogModule,
     MatIconModule,
     MatSnackBarModule,
-    WorkflowNodeComponent,
+    WorkflowNodeCardComponent,
     WorkflowPaletteComponent,
     WorkflowNodeConfigComponent,
     WorkflowTestPanelComponent,
@@ -168,7 +168,7 @@ function pruneConflictingConnections(
               }
 
               @for (node of nodes(); track node.key) {
-                <app-workflow-node
+                <app-workflow-node-card
                   fNode
                   fDragHandle
                   [fNodePosition]="node.position"

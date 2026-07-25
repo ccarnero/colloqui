@@ -8,9 +8,10 @@ import { createNodeFromDefault } from "./workflow-node-defaults";
 
 // Layout is vertical (top -> bottom): the trunk advances downward per step,
 // and parallel branches fan out horizontally around the trunk's x. Node
-// dimensions (see workflow-node.component.ts): min-width 180px, height
-// ranges roughly 60px (icon/name/badge row only) to ~112px (with the config
-// summary and stats rows). Y_STEP is tuned to that height range the same way
+// dimensions (see workflow-node-card.component.ts, SPEC T03 of
+// console-redesign-builder-v2.md): width 236px, height ranges roughly 60px
+// (icon/name/badge row only) to ~112px (with the config summary and stats
+// rows). Y_STEP is tuned to that height range the same way
 // the previous X_GAP was tuned to node width; X_BRANCH_GAP is tuned to node
 // width the same way the previous Y_BRANCH_GAP was tuned to node height —
 // the two constants are swapped, not re-derived, since the physical

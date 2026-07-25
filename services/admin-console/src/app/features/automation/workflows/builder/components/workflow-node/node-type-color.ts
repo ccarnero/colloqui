@@ -35,7 +35,7 @@ export const NODE_TYPE_COLOR_TOKEN: Readonly<
 /**
  * Whether `type` has a dedicated entry in `NODE_TYPE_COLOR_TOKEN`, i.e.
  * whether resolving its color will hit the neutral fallback. Exposed
- * separately so callers (e.g. `WorkflowNodeComponent`) can log fallback
+ * separately so callers (e.g. `WorkflowNodeCardComponent`) can log fallback
  * hits without re-deriving the lookup.
  */
 export function isKnownNodeTypeColor(type: string): boolean {

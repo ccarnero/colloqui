@@ -10,7 +10,7 @@ import { WorkflowBuilderComponent } from "../workflow-builder.component";
 /**
  * jsdom has no ResizeObserver; @foblex/flow's FNodeDirective/canvas
  * internals observe element size on mount. Scoped test-only stub, mirrors
- * workflow-node.component.spec.ts.
+ * workflow-node-card.component.spec.ts.
  */
 class ResizeObserverStub {
   observe(): void {}
