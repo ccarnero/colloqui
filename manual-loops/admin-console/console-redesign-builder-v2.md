@@ -627,7 +627,7 @@ grep -n "console-redesign-builder-v2" cowork/INDEX.md && ls manual-loops/admin-c
 - [x] T01 screenshot-loop bootstrap + before baseline
 - [x] T02 design tokens + type ramp
 - [x] T03 fresh node card component
-- [ ] T04 canvas field, edges, edge labels
+- [x] T04 canvas field, edges, edge labels
 - [ ] T05 left palette rail
 - [ ] T06 per-node stats investigation (no code)
 - [ ] T07 wire real per-node stats

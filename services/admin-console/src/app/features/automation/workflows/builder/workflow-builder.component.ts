@@ -48,6 +48,8 @@ import {
   type IWorkflowValidationDialogData,
   WorkflowValidationDialogComponent,
 } from "./components/workflow-validation-dialog/workflow-validation-dialog.component";
+import { resolveEdgeLabel } from "./resolve-edge-label";
+import { resolveEdgeVisualState } from "./resolve-edge-visual-state";
 
 const CONNECTOR_OUTPUT_SUFFIX = "-out";
 const CONNECTOR_INPUT_SUFFIX = "-in";
@@ -131,14 +133,30 @@ function pruneConflictingConnections(
             (fReassignConnection)="onReassignConnection($event)"
             (click)="onCanvasSurfaceClick()"
           >
+            <!-- Dot-grid canvas field, SPEC T04, ported from
+                 builder-v2-reference/canvas-layout.css: a 1px dot every
+                 24px using the dim --rd-line token. The f-circle-pattern
+                 radius input doubles as both the pattern cell size
+                 (spacing) and the base dot radius, scaled by zoom - see
+                 @foblex/flow's FCirclePatternComponent. -->
             <f-background>
-              <f-circle-pattern color="var(--rd-line)" [radius]="1" />
+              <f-circle-pattern color="var(--rd-line)" [radius]="24" />
             </f-background>
 
             <f-canvas fZoom (fCanvasChange)="onCanvasChange($event)">
               <f-connection-for-create />
 
               @for (conn of connections(); track conn.key) {
+                <!-- Edge visual state, SPEC T04, classified purely off the
+                     connection's own real label metadata via
+                     resolveEdgeVisualState() - never node type or
+                     position. Matches builder-v2-reference/canvas-layout.css:
+                     the conditional's literal default path renders dim,
+                     solid and static (wf-edge--default); every other edge
+                     - plain linear, matched condition, matched branch -
+                     renders accent, dashed and animated. f-connection
+                     mechanics (fType, fBehavior, fReassignableStart,
+                     connection ids) are untouched - style only. -->
                 <f-connection
                   [fConnectionId]="conn.key"
                   [fOutputId]="conn.source + '-out'"
@@ -146,22 +164,29 @@ function pruneConflictingConnections(
                   [fReassignableStart]="true"
                   fType="bezier"
                   fBehavior="floating"
+                  [class.wf-edge--default]="resolveEdgeVisualState(conn) === 'default'"
                 >
                   <!-- Edge label rendered only from real IWorkflowConnection.label
-                       metadata (SPEC T04). Design mockup follow-up: the
-                       deserializer now derives this label for conditional/
-                       branch fan-out edges from the branch's own metadata
-                       (the path/branch name, the condition text, or the
-                       literal "default" for the default path — see
-                       flow-deserializer.ts) - never fabricated, and still
-                       absent for plain linear edges and for empty-path
-                       direct branch->converge edges, where no such metadata
-                       exists. Uses @foblex/flow's own supported
-                       connection-content mechanism (fConnectionContent),
-                       positioned at the path midpoint. -->
-                  @if (conn.label) {
-                    <div fConnectionContent [position]="0.5" class="wf-edge-label">
-                      {{ conn.label }}
+                       metadata, SPEC T04, via the resolveEdgeLabel() pure
+                       function. Design mockup follow-up: the deserializer
+                       derives this label for conditional/branch fan-out
+                       edges from the branch's own metadata (the path/branch
+                       name, the condition text, or the literal default for
+                       the default path - see flow-deserializer.ts) - never
+                       fabricated, and still absent for plain linear edges
+                       and for empty-path direct branch->converge edges,
+                       where no such metadata exists. Uses @foblex/flow's
+                       own supported connection-content mechanism
+                       (fConnectionContent), positioned at the path
+                       midpoint. -->
+                  @if (resolveEdgeLabel(conn); as label) {
+                    <div
+                      fConnectionContent
+                      [position]="0.5"
+                      class="wf-edge-label"
+                      [class.wf-edge-label--default]="resolveEdgeVisualState(conn) === 'default'"
+                    >
+                      {{ label }}
                     </div>
                   }
                 </f-connection>
@@ -644,46 +669,111 @@ function pruneConflictingConnections(
       flex-direction: column;
     }
 
-    /* Foblex connection rendering (library sets fill:none but no stroke).
-       Dashed accent-colored links per the design mockup (11-builder.png);
-       stroke-dasharray isn't overridden by the .f-selected rule below, so
-       selected connections stay dashed too, just thicker/re-colored. */
+    /* Connection styling, SPEC T04, ported from
+       builder-v2-reference/canvas-layout.css and tokens.css. Two visual
+       states, classified purely by resolveEdgeVisualState() off the
+       connection's own real label metadata - never node type. Foblex sets
+       fill:none on the path but no stroke; f-connection mechanics (fType,
+       fBehavior, fReassignableStart, reassignable ends, connection ids)
+       are untouched - style only.
+
+       Active/matched state (default look): stroke, width and dash exactly
+       match the reference's accent dashed marching-ants edge. */
     :host ::ng-deep .f-connection-path {
       stroke: var(--rd-accent);
-      stroke-width: 2px;
-      stroke-dasharray: 6 3;
-      transition: stroke 0.15s ease;
+      stroke-width: 1.5px;
+      stroke-linecap: butt;
+      stroke-dasharray: 5 5;
+      animation: wf-dashmove 1s linear infinite;
+      transition: stroke 0.15s ease, stroke-width 0.15s ease;
+    }
+    /* Default/untaken conditional path (the literal "default" branch) -
+       ported verbatim: dim line3 stroke, solid, no animation. */
+    :host ::ng-deep .f-connection.wf-edge--default .f-connection-path {
+      stroke: var(--rd-line-3);
+      stroke-dasharray: none;
+      animation: none;
+    }
+    :host ::ng-deep .f-connection:hover .f-connection-path {
+      stroke: var(--rd-link);
+    }
+    :host ::ng-deep .f-connection.wf-edge--default:hover .f-connection-path {
+      stroke: var(--rd-text-2);
     }
     :host ::ng-deep .f-connection.f-selected .f-connection-path {
       stroke: var(--rd-link);
-      stroke-width: 3px;
+      stroke-width: 2.5px;
     }
     :host ::ng-deep .f-connection-selection {
       stroke: transparent;
       stroke-width: 10px;
     }
+    /* Endpoint caps (SPEC T04, T01 finding 6 - "denser/larger markers than
+       the mock"). Foblex always renders a start+end drag handle per
+       connection (fReassignableStart keeps that mechanic exactly as-is,
+       same r=8 hit target); restyled here as invisible at rest - the mock
+       has no extra circles along its edges beyond the node ports - and
+       only fades in as a small ringed dot on hover/selection, keeping the
+       reassign affordance discoverable without cluttering the resting
+       canvas. */
     :host ::ng-deep .f-connection-drag-handle {
-      fill: var(--rd-accent);
+      r: 3px;
+      fill: var(--rd-bg);
+      stroke: var(--rd-accent);
+      stroke-width: 1.5px;
+      opacity: 0;
+      transition: opacity 0.15s ease, r 0.15s ease;
+    }
+    :host ::ng-deep .f-connection.wf-edge--default .f-connection-drag-handle {
+      stroke: var(--rd-line-3);
+    }
+    :host ::ng-deep .f-connection:hover .f-connection-drag-handle,
+    :host ::ng-deep .f-connection.f-selected .f-connection-drag-handle {
+      r: 5px;
+      opacity: 1;
     }
     :host ::ng-deep .f-connection-for-create .f-connection-path {
       stroke: var(--rd-accent);
-      stroke-width: 2px;
-      stroke-dasharray: 6 3;
+      stroke-width: 1.5px;
+      stroke-dasharray: 5 5;
+      animation: wf-dashmove 1s linear infinite;
     }
     :host ::ng-deep .f-connection-for-create .f-connection-drag-handle {
+      r: 5px;
       fill: var(--rd-accent);
+      stroke: none;
+      opacity: 1;
     }
-    /* Edge label (SPEC T04) - rendered via fConnectionContent, only when
-       IWorkflowConnection.label is set (T01 finding 2). */
+
+    /* Marching-ants animation for active/matched edges, SPEC T04, ported
+       verbatim from builder-v2-reference/tokens.css keyframes dashmove
+       (renamed to wf-dashmove to stay component-scoped). */
+    @keyframes wf-dashmove {
+      to {
+        stroke-dashoffset: -20;
+      }
+    }
+
+    /* Edge label chip, SPEC T04 - rendered via fConnectionContent, only
+       when resolveEdgeLabel() resolves real IWorkflowConnection.label
+       metadata to a non-empty string (T01 finding 2). Two styles per the
+       reference: the matched-condition/branch label uses the stronger
+       line-3 border and t2 text; the default-path label uses the dimmer
+       line-2 border and t3 text (wf-edge-label--default). */
     .wf-edge-label {
       background: var(--rd-panel);
       border: 1px solid var(--rd-line-3);
       border-radius: var(--rd-radius-5);
-      padding: 2px 8px;
+      padding: 1px 7px;
+      font-family: var(--rd-font-mono);
       font-size: var(--rd-text-size-xs);
       color: var(--rd-text-2);
       white-space: nowrap;
       pointer-events: none;
+    }
+    .wf-edge-label--default {
+      color: var(--rd-text-3);
+      border-color: var(--rd-line-2);
     }
     button.active {
       background: var(--rd-accent);
@@ -761,6 +851,15 @@ export class WorkflowBuilderComponent implements OnInit {
   });
 
   readonly connections = computed(() => Object.values(this.flow().connections));
+
+  /**
+   * Edge label / edge visual-state resolvers, SPEC T04. Bound to
+   * class fields (not called as `this.resolveEdgeLabel(...)` wrappers) so
+   * the pure functions stay unit-testable in isolation while the template
+   * calls them directly off the component instance.
+   */
+  protected readonly resolveEdgeLabel = resolveEdgeLabel;
+  protected readonly resolveEdgeVisualState = resolveEdgeVisualState;
 
   readonly selectedNode = computed<IWorkflowNode | null>(() => {
     const key = this.selectedNodeKey();
