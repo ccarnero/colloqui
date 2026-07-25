@@ -546,6 +546,329 @@ NO-DATA in 2026-07-22. This task re-opens that finding and settles it.
 grep -n "T06 findings" manual-loops/admin-console/console-redesign-builder-v2.md
 ```
 
+**T06 findings (recorded 2026-07-25):**
+
+Candidate sources investigated end to end:
+
+1. **`workflow_executions` table / `ExecutionsPostgresRepository`**
+   (`services/workflow-service/src/modules/workflows/executions.postgres.repository.ts:1-196`,
+   row shape `services/workflow-service/src/modules/workflows/executions.repository.interface.ts:3-13`).
+   The row is `{ id, definition_id, temporal_workflow_id, temporal_run_id,
+   correlation_id, request, status, created_at, updated_at }` — one row per
+   EXECUTION (a whole run of a definition), with no per-activity/per-step
+   column and no JSON blob of step timings. Every aggregate method on the
+   repo (`countExecutionsGroupedByDefinition`
+   executions.postgres.repository.ts:127-136,
+   `topDefinitionsByExecutionCount` executions.postgres.repository.ts:180-195)
+   groups by `definition_id` only. **Can answer:** definition-level run
+   counts/status. **Cannot answer:** anything per-node — there is no node
+   dimension in this table at all, confirming L5 T01 finding 6 at the schema
+   level, not just the API level.
+
+2. **`GET /workflows/summary` → `WorkflowsService.getWorkflowsSummary`**
+   (`services/workflow-service/src/modules/workflows/workflows.controller.ts:82-84`,
+   impl `services/workflow-service/src/modules/workflows/workflows.service.ts:212-221,664-668`,
+   already wired in admin-console at
+   `services/admin-console/src/app/features/automation/workflows/services/workflow-api.service.ts:219-230`).
+   Returns `IWorkflowsSummary`: 7d/24h execution windows, active/failing
+   counts, and `topByExecutionCountLast7d: ITopDefinitionRow[]`
+   (`executions.repository.interface.ts:40-45`) — `{ definition_id, name,
+   application, count }`, i.e. one row **per definition**, not per node.
+   **Can answer:** the whole-workflow analogue of the mock's `1,842 runs`
+   (if the workflow itself were the unit). **Cannot answer:** any per-node
+   breakdown — reusing this per node would mean stamping the SAME
+   definition-level count on every node card, which is fabrication, not a
+   join.
+
+3. **`GET /workflows/:id/executions/:executionId` →
+   `WorkflowsService` execution-detail path**
+   (`workflow-api.service.ts:232-238` doc comment,
+   Temporal `handle.describe()` call at
+   `services/workflow-service/src/modules/workflows/workflows.service.ts:747`).
+   This DOES surface per-action results — but for exactly ONE execution at a
+   time, via a live Temporal `describe + result` round-trip (the
+   `workflow-api.service.ts:233-236` comment explicitly tells callers to
+   cache per `executionId` because of this cost). Aggregating this over
+   "1,842 runs" to get a per-node run-count/p95/ok% would require 1,842
+   sequential Temporal round-trips — the exact N+1 fan-out this task is
+   scoped to avoid. **Can answer:** per-node status/timing for a single
+   run. **Cannot answer (cheaply):** any aggregate across runs.
+
+4. **Trace/run-view frontend assembly, AND (revised — the first pass of this
+   finding stopped one layer too shallow) the backend store it reads from:
+   `tracking.tracked_events` / `tracking.tracked_event_spans` in
+   tracking-ingester-service's own Postgres.**
+
+   4a. Frontend consumer (as originally investigated):
+   `services/admin-console/src/app/features/processes/run-view/domain/run-view.model.ts:1-336`,
+   assembly in `merge-run.ts`/`layout-run.ts`, per-node event matching in
+   `resolve-step-events.ts` and its inverse
+   `resolve-selected-step-result.ts:38-48`. `IMergedRun`/`IRunLayout` are
+   built from ONE run's events, matched to a definition action by
+   `(actionIndex, branchPath)`. This layer alone is single-run only and was
+   the reason the first pass of this finding wrongly concluded "N+1, no
+   aggregate possible" — it never looked past the frontend consumer to the
+   store those events come from.
+
+   4b. The backend store (the part the first pass missed): every action of
+   every run already emits durable, queryable events. `publishActionStartedEvent`
+   / `publishActionCompletedEvent` are called from
+   `services/workflow-service/src/temporal/workflows.ts:617-635` (started at
+   `:617-632` with `actionName: action.name`, `actionIndex`, and
+   `branchLabel`→`branch`; completed at `:635+` with the same identity plus
+   `status`), i.e. **every** `endpointCall`/`mcpCall`/`jsFunction`/
+   `serviceBusCall`/`serviceCall`/`channelSend`/`agentCall` action, on every
+   run, already carries `{actionIndex, actionName, branch}` on the bus
+   (shipped per `manual-loops/workflow-step-events.md` T01/T03). These land
+   in tracking-ingester-service's `tracking.tracked_events` table
+   (`services/tracking-ingester-service/src/sql/tracked-events.sql:24-105`),
+   classified under TAXONOMY.md §4 rule 19 ("workflow-service execution
+   lifecycle", deliberately kind-agnostic so it covers `action_started`/
+   `action_completed` too —
+   `services/tracking-ingester-service/src/lib/classify.ts:332-350`) and
+   indexed by `correlation_id`
+   (`tracked-events.sql:95-96`, `idx_tracked_events_correlation_id`).
+   `workflow_executions.correlation_id` is itself indexed
+   (`packages/shared/src/workflow-schema.ts:56-58`,
+   `idx_workflow_executions_correlation_id`), so resolving "every
+   correlation_id for definition X" is one indexed query against a table
+   workflow-service already owns — `IWorkflowExecutionRow.correlation_id`
+   already exists on every row
+   (`executions.repository.interface.ts:3-13`); no schema change, just a new
+   repo method (or reuse of `findExecutionsByDefinition`,
+   `executions.postgres.repository.ts:81-97`, projecting only
+   `correlation_id`).
+
+   The per-action fields are NOT yet materialized as their own columns —
+   `services/tracking-ingester-service/src/lib/extract-detail-columns.ts:23-90`
+   only promotes `workflow_id`/`run_id` (rule 19) and `connector_id`/
+   `cache_status` (rule 11) at ingest time; `actionName`/`actionIndex`/
+   `branch`/`status` stay inside the raw `envelope` jsonb column. They ARE,
+   however, already extracted at query time for the single-run case —
+   `services/tracking-ingester-service/src/lib/build-run-events-query.ts:134-156`
+   projects `envelope->'data'->'payload'->>'actionName' AS payload_action_name`
+   (plus `payload_branch`, `payload_action_index`, `payload_step_status`,
+   etc.) scoped to one `correlation_id`. The same JSONB-path projection,
+   generalized to `WHERE correlation_id = ANY($1)` over the definition's
+   full correlation-id list instead of one id, is exactly the query a
+   per-node aggregate needs — no new instrumentation, no schema migration,
+   one grouped SQL statement.
+
+   **Existing pairing view is NOT directly reusable as-is (confirmed
+   caveat):** `tracking.tracked_event_spans`
+   (`services/tracking-ingester-service/src/sql/span-pairs.sql:25-167`) pairs
+   `*_started`/`*_completed` rows by `entity_id` (best-effort, derived from
+   `run_id`/`workflow_id`/`execution_id`/`call_id`, `span-pairs.sql:48-54`)
+   plus `kind_prefix` (`span-pairs.sql:57,83-90`) — for `action_started`/
+   `action_completed` rows, `entity_id` resolves to the run's
+   `executionId`, which is the SAME for every action in that run, and
+   `kind_prefix` collapses to the SAME `"action"` for every action too. The
+   view's join (`span-pairs.sql:82-90`) has no `actionIndex`/`branch`
+   disambiguator, so for a run with N actions it does not produce N correct
+   spans — it is entity-per-run pairing, not entity-per-action pairing.
+   Reviewer A's caveat is correct: a per-node aggregate must NOT consume
+   this view directly; it needs its OWN self-join on
+   `(correlation_id, payload_action_index, payload_branch)` against the base
+   `tracking.tracked_events` table (sketch below), following the same "read
+   the base table with a purpose-built projection" pattern
+   `build-run-events-query.ts` already uses instead of the view.
+
+   **Grafana precedent (gap noted honestly, per Reviewer B):**
+   `services/tracking-ingester-service/src/lib/to-span-source-row.ts:7-15`
+   documents that `tracking.tracked_event_spans` already feeds Grafana's
+   Postgres-datasource panels for connector latency percentiles
+   (`span-pairs.sql:38-39` `connector_id`/`cache_status` click-through
+   columns, `tracked-events.sql:104`-area connector index). That is real
+   precedent that "percentile aggregate over this store" is an accepted,
+   working shape at this volume — but it is a **Grafana panel querying
+   Postgres directly**, not an application HTTP endpoint any service calls.
+   No admin-console-reachable endpoint aggregates over `tracked_events`
+   today; that gap is exactly what a T07 implementation would need to close.
+
+5. **api-gateway proxying / `WorkflowApiService`**
+   (`services/api-gateway/src/modules/workflows/workflow-proxy.service.ts`,
+   `.../workflows.controller.ts`;
+   `services/admin-console/.../services/workflow-api.service.ts:200-238`).
+   The gateway proxies exactly the workflow-service surface above 1:1 (list
+   definitions, `listExecutions` per definition
+   `workflow-api.service.ts:205-217`, `getSummary`
+   `workflow-api.service.ts:228-230`, `getExecutionDetail`
+   `workflow-api.service.ts:238`+). It adds no new dimension; it is a
+   pass-through, so it inherits every gap above.
+
+**Join-crux verdict:** the builder's foblex node `key` is regenerated on
+every deserialize —
+`services/admin-console/src/app/features/automation/workflows/domain/workflow-node-defaults.ts:121`
+(`` key: `node-${Date.now()}-${nextId++}` ``) — confirmed non-stable, so it
+can never be a join key against anything persisted server-side. The one
+stable identity IS available: `flow-deserializer.ts:166`
+(`node.name = (a["name"] as string) ?? node.name`) copies the persisted
+action's `name` field verbatim from the saved workflow JSON, and that same
+`name` is what `workflows.ts:620` emits as `actionName` on
+`publishActionStartedEvent` and what `run-view.model.ts:279-283`
+(`IActionStep.name` / `ILayoutNode.stepName`) uses on the trace side — ONE
+stable string, `action.name`, flows unmodified from the definition JSON
+through the builder, through the Temporal activity, through the bus event,
+into `tracking.tracked_events`. Combined with `branch`
+(`workflows.ts:595,631-632` → `payload_branch`,
+`build-run-events-query.ts:149`), the join key
+`(action name, branchPath)` is real and traceable end to end:
+
+```
+workflow_executions.correlation_id   (indexed, workflow-service DB)
+        │  resolves definitionId -> correlation_id[]
+        ▼
+tracking.tracked_events.correlation_id   (indexed, tracking-ingester DB)
+  WHERE correlation_id = ANY(...)
+        │  self-join on (correlation_id, payload_action_index, payload_branch)
+        ▼
+(payload_action_name, payload_branch)  ==  (node.name, branchPath)  in the builder
+```
+
+This is a 3-hop join across two services' own Postgres schemas (never a
+cross-database SQL join — each hop is a separate indexed query, so it is
+still O(1) round trips, not O(n) fan-out), not the dead end the first pass
+of this finding reported.
+
+**Query sketch (tracking-ingester-service, illustrative — not implemented,
+no code change in this task):**
+
+```sql
+-- Step 2 above: correlation_ids resolved by workflow-service and passed in.
+WITH action_events AS (
+  SELECT
+    correlation_id,
+    envelope->'data'->'payload'->>'actionName'          AS action_name,
+    envelope->'data'->'payload'->>'branch'               AS branch,
+    (envelope->'data'->'payload'->>'actionIndex')::int    AS action_index,
+    envelope->'data'->'payload'->>'status'                AS step_status,
+    kind,
+    occurred_at
+  FROM tracking.tracked_events
+  WHERE correlation_id = ANY($1::text[])   -- indexed narrowing first
+    AND kind IN ('action_started', 'action_completed')
+),
+spans AS (
+  SELECT
+    s.action_name, s.branch,
+    EXTRACT(EPOCH FROM (c.occurred_at - s.occurred_at)) * 1000 AS duration_ms,
+    c.step_status
+  FROM action_events s
+  JOIN action_events c
+    ON c.correlation_id = s.correlation_id
+   AND c.action_index   = s.action_index
+   AND COALESCE(c.branch, '') = COALESCE(s.branch, '')
+   AND c.kind = 'action_completed'
+  WHERE s.kind = 'action_started'
+)
+SELECT
+  action_name,
+  branch,
+  COUNT(*)                                                   AS runs,
+  percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms)  AS p95_ms,
+  (COUNT(*) FILTER (WHERE step_status = 'ok'))::float / COUNT(*) AS ok_ratio
+FROM spans
+GROUP BY action_name, branch;
+```
+
+Note the self-join keys on `(correlation_id, action_index, branch)`, NOT on
+`tracking.tracked_event_spans`'s `entity_id`/`kind_prefix` pairing —
+confirming Reviewer A's caveat that the existing view is unsuitable as-is
+for multi-action runs.
+
+**Cost assessment (honest, per Reviewer B point 3):** `correlation_id` is
+indexed on both sides of the join
+(`idx_workflow_executions_correlation_id`,
+`idx_tracked_events_correlation_id`), so the row set is narrowed cheaply
+before any JSONB work happens. The JSONB path extractions
+(`->>'actionName'`, `->>'branch'`, `->>'actionIndex'`, `->>'status'`) are
+NOT backed by an expression index — `extract-detail-columns.ts:23-90`
+never promotes them to materialized columns the way it does for
+`workflow_id`/`run_id`/`connector_id`/`cache_status` — so their cost scales
+with the number of matched rows, not the whole table. For a **windowed**
+query (e.g. last 7d, mirroring `getWorkflowsSummary`'s existing 7d/24h
+convention) over a normal-volume definition this is cheap: bounded row
+count, no full scan. For an **unbounded, all-time, high-volume** definition
+this would become the dominant cost, since every matched row still needs
+per-row JSONB parsing. If usage grows past that point, the hardening path
+is the same one `extract-detail-columns.ts` already established for
+`connector_id`/`cache_status`: add `action_name`/`action_index`/`branch`/
+`step_status` as materialized, indexable columns for rule-19 rows — a
+larger version of the same precedent, not a new architecture. This is a
+scoping/design detail for the option-(b) implementation, not a blocker for
+recommending it, and not grounds for defaulting to NO-DATA.
+
+**Cost/shape summary (revised):**
+
+| Source | Per-node dimension? | Round trips for a definition's per-node stats | Feasible? |
+|---|---|---|---|
+| `workflow_executions` (Postgres) | No — table has none | N/A | No — wrong grain |
+| `GET /workflows/summary` | No — per definition | Already fetched | No — wrong grain, would fabricate if reused |
+| Execution-detail (Temporal describe) | Yes, per single run | 1 Temporal RPC **per execution** | No — N+1 across N runs |
+| Trace/run-view frontend assembly (4a) | Yes, per single run (client-side) | 1 event-fetch + merge/layout per run | No — same N+1 if driven from the frontend |
+| **`tracking.tracked_events` grouped query (4b)** | **Yes, per action/branch, across ALL runs of a definition** | **2 indexed queries total** (correlation_ids, then the grouped aggregate) | **Yes — this is the source** |
+| api-gateway proxy | Pass-through only | — | Inherits whichever backend it fronts |
+
+**RECOMMENDATION: (b) — a small read-only aggregate endpoint, NOT (c).**
+The first pass of this finding was wrong to default to NO-DATA: it
+evaluated only the workflow-service execution table and the *frontend*
+single-run trace/run-view assembly, and never inspected
+`tracking.tracked_events` — the durable, already-ingested, already-indexed
+store the trace pipeline itself is built on. Per-action identity
+(`actionName`, `actionIndex`, `branch`) is emitted on every run today
+(`workflows.ts:617-635`, shipped since `manual-loops/workflow-step-events.md`),
+persisted on every ingest (`classify.ts:332-350` rule 19,
+`tracked-events.sql`), and joins cleanly to the builder's stable
+`node.name` (`flow-deserializer.ts:166`). Answering `runs`/`p95`/`ok` needs
+**one new grouped SQL query** (sketch above) over data that already exists
+— zero new instrumentation, zero new persistence path, zero N+1 fan-out.
+This is squarely option (b) as SPEC.md defines it, not option (c).
+
+**Where it belongs:** tracking-ingester-service owns `tracking.tracked_events`
+and already exposes a small hand-rolled HTTP router for exactly this shape
+of query (`services/tracking-ingester-service/src/main.ts` routes
+`/chains/:correlationId`, `/runs/:workflowId/:runId`, dispatched to pure
+handlers `handle-chain-request.ts` / `handle-run-request.ts`). A new route
+(e.g. `POST /node-stats` accepting a bounded `correlationIds[]` array, or
+`GET /node-stats?correlationIds=...`) follows that exact established
+pattern: a new `build-node-stats-query.ts` (mirroring
+`build-run-events-query.ts`) plus a new `handle-node-stats-request.ts`
+(mirroring `handle-run-request.ts`). The caller resolves
+`definitionId -> correlation_id[]` from workflow-service first (a new,
+small repo method reusing the already-indexed
+`workflow_executions.correlation_id` column — no schema change,
+`executions.postgres.repository.ts` already has the pattern via
+`findExecutionsByDefinition`), then calls the new tracking-ingester-service
+route with that list. Both hops are proxied through api-gateway to
+admin-console the same way `WorkflowApiService`'s existing methods are
+(`workflow-api.service.ts:200-238`). Total: 2 new small endpoints (one per
+service, each a thin wrapper over an existing indexed query pattern), 0
+new tables, 0 new event emissions.
+
+**(c) applies only where the source genuinely cannot answer, not as the
+default:** a brand-new workflow definition with zero completed executions
+has zero rows in `tracking.tracked_events` for its correlation set — the
+aggregate query legitimately returns no rows for that node. That is a
+per-node/per-definition empty result, not a source-level NO-DATA, and it
+is already the shape T07's SPEC text anticipates ("a node with no matching
+stats row" in T07's unit-test list, and "error/loading state degrades to
+hidden" for the row). No metric is globally NO-DATA under this
+recommendation.
+
+**Human sign-off requirement (per SPEC Human boundaries):** this is
+option (b) — "a new read-only aggregate on an existing endpoint" in
+spirit, though concretely a new small endpoint per service as described
+above. Per this SPEC's Human boundaries section ("T06 option (b) ... requires
+human sign-off before T07 builds it"), **T07 is BLOCKED on human sign-off**
+for: (1) adding the `POST /node-stats`-shaped route to
+tracking-ingester-service, (2) adding the correlation-id-listing repo
+method to workflow-service, and (3) the api-gateway/admin-console wiring
+that consumes them. Until that sign-off lands, T07 should NOT implement
+the fetch — it should keep T03's `PLACEHOLDER_NODE_CARD_STATS` scaffold
+(`services/admin-console/src/app/features/automation/workflows/builder/components/workflow-node/workflow-node-card-stats.placeholder.ts:1-23`)
+exactly as shipped, with the footer row rendering its neutral/structural
+state, never fabricated numbers.
+
 ### T07 — Wire real per-node stats into the node cards
 
 - Implement the T06 recommendation (option (b) only after human sign-off).
@@ -629,7 +952,7 @@ grep -n "console-redesign-builder-v2" cowork/INDEX.md && ls manual-loops/admin-c
 - [x] T03 fresh node card component
 - [x] T04 canvas field, edges, edge labels
 - [x] T05 left palette rail
-- [ ] T06 per-node stats investigation (no code)
+- [x] T06 per-node stats investigation (no code)
 - [ ] T07 wire real per-node stats
 - [ ] T08 floating chrome + inspector
 - [ ] T09 final audit + docs + index
