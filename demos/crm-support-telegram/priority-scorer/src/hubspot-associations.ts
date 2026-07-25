@@ -63,8 +63,14 @@ function messageOf(e: unknown): string {
  * Invokes an associations batch/read endpoint (`list-deals-by-contact` or
  * `list-tickets-by-contact`) for one HubSpot contact id. Catches BOTH
  * gateway-level failures (thrown `SdkError`, e.g. circuit breaker open) and
- * downstream HubSpot HTTP errors (`result.status !== 200`) — both surface as
- * `{ ok: false }` so the caller degrades the score instead of crashing.
+ * downstream HubSpot HTTP errors — both surface as `{ ok: false }` so the
+ * caller degrades the score instead of crashing.
+ *
+ * HTTP 207 (Multi-Status) is a SUCCESS here, not an error: HubSpot's v3
+ * associations batch/read answers 207 whenever any input has no associations
+ * of the requested type, with the association-less inputs listed under
+ * `errors` and any real matches still present in `results`. A contact with
+ * zero open tickets is a normal scoring input, so 207 parses like 200.
  */
 export async function fetchAssociatedIds(
   client: InvokeCapableClient,
@@ -77,7 +83,7 @@ export async function fetchAssociatedIds(
       method: "POST",
       data: { inputs: [{ id: contactId }] },
     });
-    if (result.status !== 200) {
+    if (result.status !== 200 && result.status !== 207) {
       return {
         ok: false,
         ids: [],

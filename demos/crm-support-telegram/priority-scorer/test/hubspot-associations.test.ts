@@ -77,6 +77,47 @@ describe("fetchAssociatedIds", () => {
     expect(result).toEqual({ ok: true, ids: [] });
   });
 
+  test("HTTP 207 (no associations for the input) is ok with empty ids, not crm-unavailable", async () => {
+    const client = clientReturning(207, {
+      results: [],
+      numErrors: 1,
+      errors: [
+        {
+          status: "error",
+          category: "OBJECT_NOT_FOUND",
+          message:
+            "No contact_to_ticket association found for contact contact-1",
+        },
+      ],
+    });
+
+    const result = await fetchAssociatedIds(
+      client,
+      "connector-1",
+      "endpoint-1",
+      "contact-1"
+    );
+
+    expect(result).toEqual({ ok: true, ids: [] });
+  });
+
+  test("HTTP 207 with partial results still extracts the matched ids", async () => {
+    const client = clientReturning(207, {
+      results: [{ from: { id: "contact-1" }, to: [{ id: "deal-1" }] }],
+      numErrors: 1,
+      errors: [{ status: "error", category: "OBJECT_NOT_FOUND" }],
+    });
+
+    const result = await fetchAssociatedIds(
+      client,
+      "connector-1",
+      "endpoint-1",
+      "contact-1"
+    );
+
+    expect(result).toEqual({ ok: true, ids: ["deal-1"] });
+  });
+
   test("non-200 downstream status degrades instead of throwing", async () => {
     const client = clientReturning(500, { message: "internal error" });
 

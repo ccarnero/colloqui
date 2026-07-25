@@ -4,7 +4,7 @@
  * `computeScore()` with the result.
  *
  * DATA-AVAILABILITY GAP (recorded, not patched — see
- * manual-loops/crm-support-telegram.md "Findings (T05)"): the `demo-hubspot`
+ * manual-loops/demos/crm-support-telegram.md "Findings (T05)"): the `demo-hubspot`
  * connector's `list-deals-by-contact` / `list-tickets-by-contact` endpoints
  * (provisioned in T03) are HubSpot's v3 `associations/.../batch/read` routes,
  * which return ONLY associated object ids — no `amount` on deals, no status

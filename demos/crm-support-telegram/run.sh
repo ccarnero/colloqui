@@ -29,7 +29,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 # WORKFLOW itself creates (via priority-scorer's async create-ticket invoke)
 # is identified by its returned invocationId instead of a subject tag — see
 # 06-run-e2e.ts's header comment for why (SPEC deviation, documented there
-# and in manual-loops/crm-support-telegram.md "Findings (T07)"). Provisioned
+# and in manual-loops/demos/crm-support-telegram.md "Findings (T07)"). Provisioned
 # PLATFORM artifacts (channel, connector, agent, workflow, service) are
 # NEVER torn down — they ARE the demo.
 # =============================================================================

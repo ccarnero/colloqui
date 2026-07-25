@@ -4,7 +4,7 @@ metadata:
   name: crm-support-telegram
 spec:
   # ---------------------------------------------------------------------------
-  # T02+T03 (manual-loops/crm-support-telegram.md — human decision 2026-07-24:
+  # T02+T03 (manual-loops/demos/crm-support-telegram.md — human decision 2026-07-24:
   # T02 and T03 MERGED into one task so the `>=1 process` structural rule
   # (`checkAtLeastOneProcess`, validate-structural-rules.ts — a `kind:
   # IntegrationManifest` manifest with no agent/workflow is structurally
@@ -371,7 +371,7 @@ spec:
         - crm-support-faq-kb
 
   # ---------------------------------------------------------------------------
-  # `priority-scorer` hosted service (T04, manual-loops/crm-support-telegram.md
+  # `priority-scorer` hosted service (T04, manual-loops/demos/crm-support-telegram.md
   # — updated by `manual-loops/provisioning-manifest-gaps-4.md`'s outcome:
   # `services[].env[].value` now carries literal | `{secretRef}` |
   # `{connectorRef}` | `{connectorRef, endpointMethod, endpointPath}`, so the
@@ -664,6 +664,11 @@ spec:
                             subject: VIP escalation via Telegram support bot
                             content: "{{request.text}}"
                             hs_ticket_priority: HIGH
+                            # Required by HubSpot's tickets API — creation
+                            # fails with VALIDATION_ERROR without a stage.
+                            # "0"/"1" = default Support Pipeline, stage "New".
+                            hs_pipeline: "0"
+                            hs_pipeline_stage: "1"
                   - name: replyEscalated
                     activity: channelSend
                     args:

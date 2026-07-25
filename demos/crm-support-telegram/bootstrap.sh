@@ -3,7 +3,7 @@ set -euo pipefail
 
 # =============================================================================
 # bootstrap — the ONLY provisioning script left after the manifest migration
-# (manual-loops/crm-support-telegram.md T04). Carries EXCLUSIVELY the items
+# (manual-loops/demos/crm-support-telegram.md T04). Carries EXCLUSIVELY the items
 # the T01 audit dispositioned as genuinely out-of-band for the manifest
 # engine: the priority-scorer Docker image build, the HubSpot custom contact
 # property `telegram_user_id`, and Telegram webhook registration +

@@ -1,6 +1,6 @@
 /**
  * bootstrap — the ONLY provisioning script left after the manifest migration
- * (manual-loops/crm-support-telegram.md T04, decision 4). Carries EXCLUSIVELY
+ * (manual-loops/demos/crm-support-telegram.md T04, decision 4). Carries EXCLUSIVELY
  * the items the T01 audit dispositioned as genuinely out-of-band for the
  * manifest engine — everything else moved to `manifest.yaml`
  * (`yoizen manifests apply -f manifest.yaml --secrets-from-env`).
@@ -14,7 +14,7 @@
  * chat-id discovery genuinely have no manifest-engine path.
  *
  * Three stages, matching the T01 name inventory's out-of-band disposition
- * list exactly (manual-loops/crm-support-telegram.md, "Out-of-band
+ * list exactly (manual-loops/demos/crm-support-telegram.md, "Out-of-band
  * disposition summary"):
  *   1. Build + tag the `priority-scorer` Docker image
  *      (`dev.local/priority-scorer:local`) — `registry-services-writer.ts`

@@ -20,7 +20,7 @@
  *
  * ----------------------------------------------------------------------
  * DESIGN NOTES / DEVIATIONS FROM THE SPEC'S LITERAL WORDING (see
- * manual-loops/crm-support-telegram.md "Findings (T07)" for the full
+ * manual-loops/demos/crm-support-telegram.md "Findings (T07)" for the full
  * writeup; short versions here, next to the code they explain):
  *
  * 1. Simulated inbound via `client.webhooks.ingest()`, not a raw `fetch`
@@ -1123,18 +1123,33 @@ async function main(): Promise<void> {
             final.outcome === "ok",
             `outcome=${final.outcome}${final.error ? ` error=${JSON.stringify(final.error)}` : ""}`
           );
+          // `outcome === "ok"` only covers the async invoke cycle — HubSpot
+          // itself can still have rejected the creation (e.g. HTTP 400
+          // VALIDATION_ERROR for a missing hs_pipeline_stage), so the
+          // downstream status and the created object id are asserted
+          // explicitly.
+          const invocationResult = asRecord(final.result);
+          const downstreamStatus =
+            typeof invocationResult?.status === "number"
+              ? invocationResult.status
+              : undefined;
           const ticketData = asRecord(final.result?.data);
           const ticketId =
             typeof ticketData?.id === "string" ? ticketData.id : undefined;
+          record(
+            checks,
+            "vip: HubSpot ticket created downstream (2xx + object id)",
+            downstreamStatus !== undefined &&
+              downstreamStatus >= 200 &&
+              downstreamStatus < 300 &&
+              ticketId !== undefined,
+            `downstreamStatus=${String(downstreamStatus)} ticketId=${ticketId ?? "none"}`
+          );
           if (ticketId) {
             log(
               `created HubSpot ticket id=${ticketId} (registered for cleanup)`
             );
             cleanup.ticketId = ticketId;
-          } else {
-            warn(
-              `ticket invocation completed but no HubSpot object id found in result: ${JSON.stringify(final.result)}`
-            );
           }
         }
       );
@@ -1142,6 +1157,12 @@ async function main(): Promise<void> {
       record(
         checks,
         "vip: ticket invocation completed with outcome=ok",
+        false,
+        "no invocationId to poll (createTicket did not fire)"
+      );
+      record(
+        checks,
+        "vip: HubSpot ticket created downstream (2xx + object id)",
         false,
         "no invocationId to poll (createTicket did not fire)"
       );
