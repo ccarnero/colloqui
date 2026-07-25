@@ -51,6 +51,7 @@ import {
 import { emitOtelSpans } from "./lib/emit-otel-spans.js";
 import { handleChainRequest } from "./lib/handle-chain-request.js";
 import { handleEventsRequest } from "./lib/handle-events-request.js";
+import { handleNodeStatsRequest } from "./lib/handle-node-stats-request.js";
 import { handlePayloadRequest } from "./lib/handle-payload-request.js";
 import { handleRunRequest } from "./lib/handle-run-request.js";
 import {
@@ -78,6 +79,10 @@ import {
   normalizeEventsRow,
   type RawEventRow,
 } from "./lib/normalize-events-row.js";
+import {
+  normalizeNodeStatsRow,
+  type RawNodeStatsRow,
+} from "./lib/normalize-node-stats-row.js";
 import {
   normalizeRunEventRow,
   type RawRunEventRow,
@@ -435,6 +440,37 @@ async function bootstrap(): Promise<void> {
                 ...query.params,
               ]);
               return rows.map(normalizeEventsRow);
+            },
+            log: line,
+          }
+        ).then((result) =>
+          Response.json(result.body, { status: result.status })
+        );
+      }
+
+      // T07 of manual-loops/admin-console/console-redesign-builder-v2.md:
+      // per-node execution stats aggregate (the option-(b) endpoint the
+      // SPEC's "T06 findings" section recommends). Static path — no
+      // dynamic-segment route matcher needed, same as `/events`. The
+      // caller (admin-console's `WorkflowApiService`, via api-gateway)
+      // resolves `definitionId -> correlationIds[]` from workflow-service
+      // FIRST and passes the bounded list here; this endpoint does not
+      // resolve definitions itself.
+      if (request.method === "GET" && url.pathname === "/node-stats") {
+        const tenant = request.headers.get("x-yoizen-tenant");
+        const searchParams = url.searchParams;
+        line(
+          `GET /node-stats — tenant=${tenant ?? "MISSING"} correlationIds=${searchParams.get("correlationIds") ? "present" : "MISSING"}`
+        );
+        return handleNodeStatsRequest(
+          tenant,
+          { correlationIds: searchParams.get("correlationIds") },
+          {
+            queryNodeStats: async (query) => {
+              const rows = await sql.unsafe<RawNodeStatsRow[]>(query.text, [
+                ...query.params,
+              ]);
+              return rows.map(normalizeNodeStatsRow);
             },
             log: line,
           }

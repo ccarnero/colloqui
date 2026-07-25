@@ -242,4 +242,27 @@ export class ExecutionsMongoRepository implements IExecutionsRepository {
       count: r.count,
     }));
   }
+
+  async findCorrelationIdsByDefinition(
+    definitionId: string,
+    tenantId: string,
+    since: Date,
+    limit: number
+  ): Promise<string[]> {
+    const col = await this.executions(tenantId);
+    const rows = await col
+      .aggregate<{ _id: string }>([
+        {
+          $match: {
+            definition_id: definitionId,
+            correlation_id: { $ne: null },
+            created_at: { $gte: since },
+          },
+        },
+        { $group: { _id: "$correlation_id" } },
+        { $limit: limit },
+      ])
+      .toArray();
+    return rows.map((r) => r._id);
+  }
 }

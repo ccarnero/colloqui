@@ -115,4 +115,66 @@ describe("WorkflowApiService", () => {
     ]);
     httpMock.verify();
   });
+
+  // T07 of console-redesign-builder-v2.md.
+  describe("getNodeStatsForDefinition", () => {
+    it("resolves correlation ids then aggregates node stats over them (both hops)", async () => {
+      const promise = firstValueFrom(service.getNodeStatsForDefinition("wf-1"));
+
+      const correlationReq = httpMock.expectOne(
+        `${environment.apiUrl}/workflows/wf-1/correlation-ids`
+      );
+      expect(correlationReq.request.method).toBe("GET");
+      correlationReq.flush({ correlationIds: ["corr-1", "corr-2"] });
+
+      const nodeStatsReq = httpMock.expectOne(
+        (req) => req.url === `${environment.apiUrl}/tracking/node-stats`
+      );
+      expect(nodeStatsReq.request.method).toBe("GET");
+      expect(nodeStatsReq.request.params.get("correlationIds")).toBe(
+        "corr-1,corr-2"
+      );
+      nodeStatsReq.flush({
+        tenant: "acme",
+        correlationIdCount: 2,
+        rowCount: 1,
+        rows: [
+          {
+            action_name: "Fetch user",
+            branch: null,
+            runs: 12,
+            p95_ms: 620,
+            ok_ratio: 0.98,
+          },
+        ],
+      });
+
+      const rows = await promise;
+      expect(rows).toEqual([
+        {
+          action_name: "Fetch user",
+          branch: null,
+          runs: 12,
+          p95_ms: 620,
+          ok_ratio: 0.98,
+        },
+      ]);
+      httpMock.verify();
+    });
+
+    it("short-circuits to [] without a second HTTP call when correlationIds is empty (zero-runs workflow)", async () => {
+      const promise = firstValueFrom(
+        service.getNodeStatsForDefinition("wf-empty")
+      );
+
+      const correlationReq = httpMock.expectOne(
+        `${environment.apiUrl}/workflows/wf-empty/correlation-ids`
+      );
+      correlationReq.flush({ correlationIds: [] });
+
+      const rows = await promise;
+      expect(rows).toEqual([]);
+      httpMock.verify();
+    });
+  });
 });

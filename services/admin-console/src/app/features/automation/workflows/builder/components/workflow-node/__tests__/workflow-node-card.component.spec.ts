@@ -247,8 +247,9 @@ describe("WorkflowNodeCardComponent", () => {
 
     it("renders a real stats value when one is provided (T07 wiring path)", () => {
       fixture.componentInstance.stats = {
+        state: "ready",
         primaryLabel: "1,842 runs",
-        secondaryLabel: "24h: 312",
+        secondaryLabel: "p95: 620ms",
         status: "ok",
       };
       fixture.detectChanges();
@@ -256,8 +257,29 @@ describe("WorkflowNodeCardComponent", () => {
       const el = fixture.nativeElement as HTMLElement;
       const stats = el.querySelector('[data-testid="wf-node-card-stats"]');
       expect(stats?.textContent).toContain("1,842 runs");
-      expect(stats?.textContent).toContain("24h: 312");
+      expect(stats?.textContent).toContain("p95: 620ms");
       expect(el.querySelector(".wf-node-card__status.is-ok")).toBeTruthy();
+    });
+
+    it("renders the skeleton/neutral row for the loading state (never zeros presented as facts)", () => {
+      fixture.componentInstance.stats = { state: "loading", primaryLabel: "" };
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(
+        el.querySelector('[data-testid="wf-node-card-stats-skeleton"]')
+      ).toBeTruthy();
+      expect(
+        el.querySelector('[data-testid="wf-node-card-status"]')
+      ).toBeNull();
+    });
+
+    it("hides the footer row entirely for the hidden state (error / zero-runs / no-match)", () => {
+      fixture.componentInstance.stats = { state: "hidden", primaryLabel: "" };
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('[data-testid="wf-node-card-stats"]')).toBeNull();
     });
   });
 

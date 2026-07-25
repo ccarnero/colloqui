@@ -159,4 +159,19 @@ export class WorkflowsController {
   ) {
     return this.workflowsService.getExecutionStatus(id, executionId, tenantId);
   }
+
+  /**
+   * T07 of manual-loops/admin-console/console-redesign-builder-v2.md — first
+   * hop of the per-node stats join ("T06 findings" in that SPEC):
+   * distinct 7d-windowed correlation ids for this definition's executions.
+   * The `correlation-ids` segment cannot collide with `:executionId` above
+   * since it is a distinct static suffix, not a bare `:id` match.
+   */
+  @Get(":id/correlation-ids")
+  async getCorrelationIds(
+    @TenantId() tenantId: string,
+    @Param("id") id: string
+  ) {
+    return this.workflowsService.listCorrelationIdsForDefinition(id, tenantId);
+  }
 }

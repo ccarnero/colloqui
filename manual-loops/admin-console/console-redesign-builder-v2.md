@@ -953,7 +953,7 @@ grep -n "console-redesign-builder-v2" cowork/INDEX.md && ls manual-loops/admin-c
 - [x] T04 canvas field, edges, edge labels
 - [x] T05 left palette rail
 - [x] T06 per-node stats investigation (no code)
-- [ ] T07 wire real per-node stats
+- [x] T07 wire real per-node stats
 - [ ] T08 floating chrome + inspector
 - [ ] T09 final audit + docs + index
 

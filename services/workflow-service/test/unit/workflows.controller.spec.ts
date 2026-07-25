@@ -24,6 +24,7 @@ describe("WorkflowsController", () => {
   let getExecutionStatus: ReturnType<typeof mock>;
   let getExecutionCountsByTenant: ReturnType<typeof mock>;
   let updateWorkflowStatus: ReturnType<typeof mock>;
+  let listCorrelationIdsForDefinition: ReturnType<typeof mock>;
 
   beforeEach(async () => {
     getWorkflow = mock(() => Promise.resolve(null));
@@ -44,6 +45,9 @@ describe("WorkflowsController", () => {
         terminated: 2,
       })
     );
+    listCorrelationIdsForDefinition = mock(() =>
+      Promise.resolve({ correlationIds: ["corr-1"] })
+    );
     const workflowsService = {
       createWorkflow,
       listWorkflows,
@@ -54,6 +58,7 @@ describe("WorkflowsController", () => {
       getExecutionStatus,
       getExecutionCountsByTenant,
       updateWorkflowStatus,
+      listCorrelationIdsForDefinition,
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -159,6 +164,13 @@ describe("WorkflowsController", () => {
   it("getExecutionCounts delegates to service", async () => {
     await controller.getExecutionCounts("t1");
     expect(getExecutionCountsByTenant).toHaveBeenCalledWith("t1");
+  });
+
+  // T07 of manual-loops/admin-console/console-redesign-builder-v2.md.
+  it("getCorrelationIds delegates to WorkflowsService.listCorrelationIdsForDefinition", async () => {
+    const result = await controller.getCorrelationIds("t1", "wf-1");
+    expect(listCorrelationIdsForDefinition).toHaveBeenCalledWith("wf-1", "t1");
+    expect(result).toEqual({ correlationIds: ["corr-1"] });
   });
 
   it("updateWorkflowStatus delegates to WorkflowsService.updateWorkflowStatus", async () => {

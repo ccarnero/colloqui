@@ -46,7 +46,12 @@ describe("WorkflowBuilderComponent — floating segmented control + Run now/Paus
         provideHttpClientTesting(),
         {
           provide: WorkflowApiService,
-          useValue: { get: vi.fn().mockReturnValue(of(WORKFLOW_DTO)) },
+          useValue: {
+            get: vi.fn().mockReturnValue(of(WORKFLOW_DTO)),
+            // T07 of console-redesign-builder-v2.md: ngOnInit also fires
+            // the per-node stats fetch when a route id is present.
+            getNodeStatsForDefinition: vi.fn().mockReturnValue(of([])),
+          },
         },
         { provide: WorkflowRunActionsService, useValue: { runNow, pause } },
         {

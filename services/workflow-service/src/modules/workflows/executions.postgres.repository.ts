@@ -193,4 +193,23 @@ export class ExecutionsPostgresRepository implements IExecutionsRepository {
       LIMIT ${limit}
     `;
   }
+
+  async findCorrelationIdsByDefinition(
+    definitionId: string,
+    tenantId: string,
+    since: Date,
+    limit: number
+  ): Promise<string[]> {
+    const sql = await this.sqlFor(tenantId);
+    const rows = await sql<{ correlation_id: string }[]>`
+      SELECT DISTINCT correlation_id
+      FROM workflow_executions
+      WHERE definition_id = ${definitionId}
+        AND correlation_id IS NOT NULL
+        AND created_at >= ${since}
+      ORDER BY correlation_id
+      LIMIT ${limit}
+    `;
+    return rows.map((row) => row.correlation_id);
+  }
 }

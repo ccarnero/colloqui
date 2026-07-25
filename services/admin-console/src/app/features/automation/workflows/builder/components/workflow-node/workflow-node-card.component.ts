@@ -83,21 +83,34 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
         </div>
       }
 
-      <div class="wf-node-card__stats" data-testid="wf-node-card-stats">
-        <span>{{ stats().primaryLabel }}</span>
-        @if (stats().secondaryLabel; as secondary) {
-          <span>{{ secondary }}</span>
-        }
-        @if (statusLabel(); as status) {
-          <span
-            class="wf-node-card__status"
-            [class.is-ok]="stats().status === 'ok'"
-            [class.is-warning]="stats().status === 'warning'"
-            [class.is-error]="stats().status === 'error'"
-            data-testid="wf-node-card-status"
-          >● {{ status }}</span>
-        }
-      </div>
+      @if (stats().state !== 'hidden') {
+        <div
+          class="wf-node-card__stats"
+          data-testid="wf-node-card-stats"
+          [class.is-loading]="stats().state === 'loading'"
+        >
+          @if (stats().state === 'loading') {
+            <span
+              class="wf-node-card__stats-skeleton"
+              data-testid="wf-node-card-stats-skeleton"
+            >···</span>
+          } @else {
+            <span>{{ stats().primaryLabel }}</span>
+            @if (stats().secondaryLabel; as secondary) {
+              <span>{{ secondary }}</span>
+            }
+            @if (statusLabel(); as status) {
+              <span
+                class="wf-node-card__status"
+                [class.is-ok]="stats().status === 'ok'"
+                [class.is-warning]="stats().status === 'warning'"
+                [class.is-error]="stats().status === 'error'"
+                data-testid="wf-node-card-status"
+              >● {{ status }}</span>
+            }
+          }
+        </div>
+      }
 
       <span
         class="wf-node-card__port wf-node-card__port--bottom"
@@ -239,6 +252,14 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
     }
     .wf-node-card__status.is-error {
       color: var(--rd-red);
+    }
+    /* Loading skeleton (T07): neutral, never a fabricated number. */
+    .wf-node-card__stats.is-loading {
+      color: var(--rd-text-3);
+      opacity: 0.6;
+    }
+    .wf-node-card__stats-skeleton {
+      letter-spacing: var(--rd-tracking-2);
     }
 
     /* Connector ports - mock's small ringed dots (node-card.css's

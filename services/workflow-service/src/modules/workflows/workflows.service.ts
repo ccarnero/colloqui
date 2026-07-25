@@ -222,6 +222,22 @@ export interface IWorkflowsSummary {
 
 const FAIL_STATUSES = ["FAILED", "TIMED_OUT", "CANCELLED", "TERMINATED"];
 
+/**
+ * Result of {@link WorkflowsService.listCorrelationIdsForDefinition} (T07 of
+ * manual-loops/admin-console/console-redesign-builder-v2.md).
+ */
+export interface ICorrelationIdsResult {
+  readonly correlationIds: readonly string[];
+}
+
+/**
+ * Bounds the correlation-id list T07's per-node stats aggregate consumes —
+ * same cap `@yoizen/shared`'s `MAX_LIST_LIMIT` enforces on
+ * tracking-ingester-service's `GET /node-stats?correlationIds=` (the second
+ * hop of this join), so neither hop can be forced into an unbounded scan.
+ */
+const MAX_NODE_STATS_CORRELATION_IDS = 500;
+
 @Injectable()
 export class WorkflowsService {
   private readonly logger = new PinoLoggerService(WorkflowsService.name);
@@ -716,6 +732,35 @@ export class WorkflowsService {
       executionsCompletedLast24h,
       topByExecutionCountLast7d,
     };
+  }
+
+  /**
+   * T07 of manual-loops/admin-console/console-redesign-builder-v2.md —
+   * first hop of the per-node stats join recorded in that SPEC's "T06
+   * findings": resolves the distinct, non-null `correlation_id`s for a
+   * definition's executions in the last 7 days (same window convention as
+   * {@link getWorkflowsSummary}'s `since7d`), bounded to
+   * `MAX_NODE_STATS_CORRELATION_IDS`. The caller (admin-console's
+   * `WorkflowApiService`) hands the returned list to
+   * tracking-ingester-service's `GET /node-stats` aggregate — this method
+   * does no aggregation itself, it only resolves the id list via the
+   * already-indexed `workflow_executions.correlation_id` column.
+   */
+  async listCorrelationIdsForDefinition(
+    definitionId: string,
+    tenantId: string
+  ): Promise<ICorrelationIdsResult> {
+    const since7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000);
+    const correlationIds = await this.executions.findCorrelationIdsByDefinition(
+      definitionId,
+      tenantId,
+      since7d,
+      MAX_NODE_STATS_CORRELATION_IDS
+    );
+    this.logger.log(
+      `Resolved ${correlationIds.length} correlation id(s) for definition ${definitionId} (tenant ${tenantId}, 7d window) — T07 per-node stats source`
+    );
+    return { correlationIds };
   }
 
   /**

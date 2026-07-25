@@ -83,4 +83,21 @@ export interface IExecutionsRepository {
     since: Date,
     limit: number
   ): Promise<ITopDefinitionRow[]>;
+  /**
+   * Distinct, non-null `correlation_id`s for a definition's executions
+   * created since `since` — the first hop of T07's per-node stats join
+   * (`manual-loops/admin-console/console-redesign-builder-v2.md`, "T06
+   * findings"): `definitionId -> correlationIds[]`, handed to
+   * tracking-ingester-service's `GET /node-stats` aggregate. Mirrors
+   * `findExecutionsByDefinition`'s per-definition scoping and
+   * `topDefinitionsByExecutionCount`'s windowed-since convention; `limit`
+   * bounds the returned id count (never unbounded — see
+   * `WorkflowsService.listCorrelationIdsForDefinition`).
+   */
+  findCorrelationIdsByDefinition(
+    definitionId: string,
+    tenantId: string,
+    since: Date,
+    limit: number
+  ): Promise<string[]>;
 }

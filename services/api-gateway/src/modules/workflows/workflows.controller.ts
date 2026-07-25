@@ -190,4 +190,21 @@ export class WorkflowsController {
       tenantId: req.tenantId,
     });
   }
+
+  /**
+   * T07 of manual-loops/admin-console/console-redesign-builder-v2.md — first
+   * hop of the per-node stats join ("T06 findings" in that SPEC): proxies
+   * workflow-service's `GET /workflows/:id/correlation-ids`.
+   */
+  @Get(":id/correlation-ids")
+  async getCorrelationIds(
+    @Req() req: ITenantScopedRequest,
+    @Param("id") id: string
+  ) {
+    return this.proxy.proxy({
+      method: "GET",
+      path: `/workflows/${encodeURIComponent(id)}/correlation-ids`,
+      tenantId: req.tenantId,
+    });
+  }
 }

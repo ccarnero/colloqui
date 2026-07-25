@@ -112,6 +112,16 @@ describe("WorkflowsController", () => {
     });
   });
 
+  // T07 of manual-loops/admin-console/console-redesign-builder-v2.md.
+  it("getCorrelationIds delegates to /workflows/:id/correlation-ids", async () => {
+    await controller.getCorrelationIds(req, "wf-1");
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/workflows/wf-1/correlation-ids",
+      tenantId: "tenant-x",
+    });
+  });
+
   it("getExecutionCounts delegates to /workflows/executions/counts", async () => {
     await controller.getExecutionCounts(req);
     expect(proxy).toHaveBeenCalledWith({

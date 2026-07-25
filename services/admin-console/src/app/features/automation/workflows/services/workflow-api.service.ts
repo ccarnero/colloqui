@@ -1,9 +1,10 @@
 import { HttpClient, HttpParams } from "@angular/common/http";
 import { Injectable, inject } from "@angular/core";
-import type { Observable } from "rxjs";
-import { tap } from "rxjs/operators";
+import { type Observable, of } from "rxjs";
+import { map, switchMap, tap } from "rxjs/operators";
 import { environment } from "../../../../../environments/environment";
 import { ResourceMutationsService } from "../../../../core/services/metrics/resource-mutations.service";
+import type { INodeStatsRow } from "../domain/map-node-stats-to-view-models";
 
 export type WorkflowStatus = "enabled" | "disabled";
 
@@ -116,6 +117,27 @@ export interface IWorkflowsSummary {
   executionsRunningLast7d: number;
   executionsCompletedLast24h: number;
   topByExecutionCountLast7d: ITopDefinitionRow[];
+}
+
+/**
+ * Response shape of `GET /workflows/:id/correlation-ids` — first hop of
+ * T07's per-node stats join (T06 findings' `definitionId -> correlationIds[]`
+ * step, workflow-service `workflows.controller.ts` `getCorrelationIds`).
+ */
+interface ICorrelationIdsResponse {
+  correlationIds: string[];
+}
+
+/**
+ * Response shape of `GET /tracking/node-stats` — second hop of T07's
+ * per-node stats join, wire-faithful to tracking-ingester-service's
+ * `NodeStatsResponse` (`to-node-stats-response.ts`).
+ */
+interface INodeStatsResponse {
+  tenant: string;
+  correlationIdCount: number;
+  rowCount: number;
+  rows: INodeStatsRow[];
 }
 
 interface ICreateWorkflowPayload {
@@ -242,5 +264,43 @@ export class WorkflowApiService {
     return this.http.get<IWorkflowExecutionDetail>(
       `${this.base}/${definitionId}/executions/${executionId}`
     );
+  }
+
+  /**
+   * T07 of console-redesign-builder-v2.md — the option-(b) per-node stats
+   * fetch recorded in that SPEC's "T06 findings": resolves
+   * `definitionId -> correlationIds[]` (workflow-service's
+   * `GET /workflows/:id/correlation-ids`, 7d-windowed) then, only if that
+   * list is non-empty, aggregates over them via tracking-ingester-service's
+   * `GET /tracking/node-stats` (proxied by api-gateway). A definition with
+   * no runs in the window short-circuits to `[]` WITHOUT a second HTTP call
+   * — the legitimate zero-runs empty case, never treated as an error.
+   * Callers (the builder) fetch this ONCE per builder load and cache the
+   * result in a signal; this method itself performs no caching.
+   */
+  getNodeStatsForDefinition(definitionId: string): Observable<INodeStatsRow[]> {
+    return this.http
+      .get<ICorrelationIdsResponse>(
+        `${this.base}/${definitionId}/correlation-ids`
+      )
+      .pipe(
+        switchMap((res) => {
+          if (res.correlationIds.length === 0) {
+            return of<INodeStatsRow[]>([]);
+          }
+          const params = new HttpParams().set(
+            "correlationIds",
+            res.correlationIds.join(",")
+          );
+          return this.http
+            .get<INodeStatsResponse>(
+              `${environment.apiUrl}/tracking/node-stats`,
+              {
+                params,
+              }
+            )
+            .pipe(map((res2) => res2.rows));
+        })
+      );
   }
 }

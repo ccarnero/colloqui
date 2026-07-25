@@ -191,4 +191,31 @@ describe("TrackingController", () => {
     expect(permissions).toBeUndefined();
     expect(scopes).toBeUndefined();
   });
+
+  // T07 of manual-loops/admin-console/console-redesign-builder-v2.md.
+  it("getNodeStats delegates to proxy with tenant, path and the raw query object", async () => {
+    const result = await controller.getNodeStats(req as never, {
+      correlationIds: "corr-1,corr-2",
+    });
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/node-stats",
+      tenantId: "t1",
+      query: { correlationIds: "corr-1,corr-2" },
+    });
+    expect(result).toEqual({ correlationId: "corr-1", events: [] });
+  });
+
+  it("getNodeStats carries no permission guard (unauthenticated-scope, same as getEvents)", () => {
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      TrackingController.prototype.getNodeStats
+    );
+    const scopes = Reflect.getMetadata(
+      SCOPES_KEY,
+      TrackingController.prototype.getNodeStats
+    );
+    expect(permissions).toBeUndefined();
+    expect(scopes).toBeUndefined();
+  });
 });

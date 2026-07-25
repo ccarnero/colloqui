@@ -24,6 +24,7 @@ import {
 import { WorkflowRunActionsService } from "../detail/workflow-run-actions.service";
 import { deserializeFlow } from "../domain/flow-deserializer";
 import { serializeFlow } from "../domain/flow-serializer";
+import { mapNodeStatsToViewModels } from "../domain/map-node-stats-to-view-models";
 import type { ValidationError } from "../domain/validation/validation.types";
 import { validateWorkflow } from "../domain/validation/workflow.validator";
 import {
@@ -41,6 +42,7 @@ import type {
 } from "./components/template-autocomplete/template-autocomplete.component";
 import { VariablesReferenceComponent } from "./components/variables-reference/variables-reference.component";
 import { WorkflowNodeCardComponent } from "./components/workflow-node/workflow-node-card.component";
+import type { IWorkflowNodeStats } from "./components/workflow-node/workflow-node-stats.types";
 import { WorkflowNodeConfigComponent } from "./components/workflow-node-config/workflow-node-config.component";
 import { WorkflowPaletteComponent } from "./components/workflow-palette/workflow-palette.component";
 import { WorkflowTestPanelComponent } from "./components/workflow-test-panel/workflow-test-panel.component";
@@ -200,6 +202,7 @@ function pruneConflictingConnections(
                   [node]="node"
                   [hasError]="errorNodeKeys().has(node.key)"
                   [isSelected]="node.key === selectedNodeKey()"
+                  [stats]="statsFor(node)"
                   (click)="onNodeSurfaceClick($event, node.key)"
                 />
               }
@@ -823,6 +826,29 @@ export class WorkflowBuilderComponent implements OnInit {
   );
 
   /**
+   * T07 of console-redesign-builder-v2.md: per-node stats fetch state,
+   * driving the node card footer's degraded rendering.
+   * - `"idle"` — no persisted workflow id (new/unsaved canvas): nothing to
+   *   fetch, footer stays hidden immediately (never a permanent loading
+   *   skeleton for a workflow that could never have runs).
+   * - `"loading"` — the fetch is in flight; footer renders its
+   *   skeleton/neutral state.
+   * - `"error"` — the fetch failed; logged once via `console.warn`, footer
+   *   degrades to hidden, the canvas itself keeps working.
+   * - `"ready"` — `nodeStatsByName` holds the real, joined aggregate (or is
+   *   legitimately empty for a workflow with zero runs in the window).
+   */
+  readonly nodeStatsFetchState = signal<"idle" | "loading" | "ready" | "error">(
+    "idle"
+  );
+  /** Per-node view models keyed by `action.name` (T06 findings' join-crux
+   * verdict — see `map-node-stats-to-view-models.ts`), populated once per
+   * builder load by `ngOnInit`. */
+  readonly nodeStatsByName = signal<
+    Readonly<Record<string, IWorkflowNodeStats>>
+  >({});
+
+  /**
    * Floating chrome save-state indicator. Reuses only state the builder
    * already tracks (`saving` + whether the flow has been assigned a
    * persisted `key` by a prior save) — no new dirty-diffing state is
@@ -1011,6 +1037,33 @@ export class WorkflowBuilderComponent implements OnInit {
       : [];
   });
 
+  /**
+   * Footer stats view model for a given node (T07). Never blocks canvas
+   * render — reads purely from `nodeStatsFetchState`/`nodeStatsByName`,
+   * both populated asynchronously by the ONE fetch `ngOnInit` triggers.
+   * - fetch not started ("idle", e.g. an unsaved `/workflows/new` canvas
+   *   with no id to fetch stats for) or failed ("error", already logged at
+   *   the fetch site) -> hidden.
+   * - fetch in flight ("loading") -> the skeleton/neutral row.
+   * - fetch done ("ready") -> the real joined view model for this node's
+   *   `name`, or hidden when there is no matching row (a node that never
+   *   ran, or the legitimate zero-runs-workflow empty case, which yields an
+   *   empty `nodeStatsByName` map for every node).
+   */
+  statsFor(node: IWorkflowNode): IWorkflowNodeStats {
+    const fetchState = this.nodeStatsFetchState();
+    if (fetchState === "loading") {
+      return { state: "loading", primaryLabel: "" };
+    }
+    if (fetchState !== "ready") {
+      // "idle" | "error"
+      return { state: "hidden", primaryLabel: "" };
+    }
+    return (
+      this.nodeStatsByName()[node.name] ?? { state: "hidden", primaryLabel: "" }
+    );
+  }
+
   ngOnInit(): void {
     // Phase 3 nested this component under /workflows/:id/builder, so
     // the :id param now lives on the parent route. Read self first for
@@ -1057,6 +1110,33 @@ export class WorkflowBuilderComponent implements OnInit {
           );
         },
       });
+
+      // T07: one per-node stats fetch per builder load, cached in
+      // `nodeStatsByName`, never blocking the canvas render above (this is
+      // a wholly separate subscription against the canvas-driving `flow`
+      // signal).
+      this.nodeStatsFetchState.set("loading");
+      this.api.getNodeStatsForDefinition(id).subscribe({
+        next: (rows) => {
+          const byName = mapNodeStatsToViewModels(rows);
+          this.nodeStatsByName.set(byName);
+          this.nodeStatsFetchState.set("ready");
+          console.debug("[WorkflowBuilderComponent] node stats loaded (T07)", {
+            workflowId: id,
+            rowCount: rows.length,
+            nodeCount: Object.keys(byName).length,
+          });
+        },
+        error: (error) => {
+          this.nodeStatsFetchState.set("error");
+          console.warn(
+            "[WorkflowBuilderComponent] node stats fetch failed — footer degrades to hidden (T07)",
+            { workflowId: id, error }
+          );
+        },
+      });
+    } else {
+      this.nodeStatsFetchState.set("idle");
     }
   }
 

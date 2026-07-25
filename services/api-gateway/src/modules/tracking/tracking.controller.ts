@@ -117,4 +117,25 @@ export class TrackingController {
       query,
     });
   }
+
+  /**
+   * T07 of manual-loops/admin-console/console-redesign-builder-v2.md: proxies
+   * the ingester's `GET /node-stats?correlationIds=a,b,c` (the option-(b)
+   * per-node execution aggregate recommended by that SPEC's "T06 findings").
+   * Query params are forwarded verbatim, same pass-through shape as
+   * `getEvents` — the ingester itself validates `correlationIds` and bounds
+   * its length.
+   */
+  @Get("node-stats")
+  async getNodeStats(
+    @Req() req: ITenantScopedRequest,
+    @Query() query: Record<string, string>
+  ): Promise<object> {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/node-stats",
+      tenantId: req[REQUEST_TENANT_KEY],
+      query,
+    });
+  }
 }

@@ -61,6 +61,7 @@ describe("WorkflowsService", () => {
     countExecutionsGroupedByDefinition: ReturnType<typeof mock>;
     findExecutionById: ReturnType<typeof mock>;
     updateExecutionStatus: ReturnType<typeof mock>;
+    findCorrelationIdsByDefinition: ReturnType<typeof mock>;
   };
 
   beforeEach(async () => {
@@ -153,6 +154,9 @@ describe("WorkflowsService", () => {
         })
       ),
       updateExecutionStatus: mock(() => Promise.resolve()),
+      findCorrelationIdsByDefinition: mock(() =>
+        Promise.resolve(["corr-1", "corr-2"])
+      ),
     };
 
     const moduleRef = await Test.createTestingModule({
@@ -461,6 +465,30 @@ describe("WorkflowsService", () => {
     await expect(
       service.getExecutionStatus("wrong-def", "ex-1", "t1")
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  // T07 of manual-loops/admin-console/console-redesign-builder-v2.md — first
+  // hop of the per-node stats join ("T06 findings" in that SPEC).
+  describe("listCorrelationIdsForDefinition", () => {
+    it("resolves correlation ids from the repository with a 7d window and the bounded limit", async () => {
+      const result = await service.listCorrelationIdsForDefinition(
+        "def-1",
+        "t1"
+      );
+      expect(result.correlationIds).toEqual(["corr-1", "corr-2"]);
+      expect(
+        mockExecutions.findCorrelationIdsByDefinition
+      ).toHaveBeenCalledWith("def-1", "t1", expect.any(Date), 500);
+    });
+
+    it("returns an empty correlationIds array for a definition with no runs (legitimate empty case)", async () => {
+      mockExecutions.findCorrelationIdsByDefinition.mockResolvedValueOnce([]);
+      const result = await service.listCorrelationIdsForDefinition(
+        "def-1",
+        "t1"
+      );
+      expect(result.correlationIds).toEqual([]);
+    });
   });
 
   describe("terminateRunningExecutions", () => {
