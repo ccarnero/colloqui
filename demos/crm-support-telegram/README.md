@@ -1,142 +1,155 @@
 # crm-support-telegram
 
-> Commercial showcase (see `../README.md`) — not an SDK feature sample.
+> Documentación del demo. Explica qué hace, cómo funciona por dentro y qué esperar al
+> presentarlo. El guion paso a paso para el día de la demo, con las respuestas reales
+> verificadas del sistema, vive en [GUION-DEMO.md](./GUION-DEMO.md). (La versión original en
+> inglés de este documento quedó en el historial de git como `README.md` previo a 2026-07-25.)
 
-## Pitch
+## ¿Qué hace este demo?
 
-End-to-end customer support over Telegram, backed by a real HubSpot CRM. A customer messages the
-Telegram bot; a low-code workflow enriches every turn (looks up/creates the HubSpot contact,
-scores priority via a hosted service, calls the AI agent, routes VIP customers to an escalation
-path); an AI agent leads the actual conversation, personalized with the enriched CRM + priority
-context; VIP customers get an escalation notice AND a real HubSpot support ticket, created
-asynchronously.
+Soporte al cliente de extremo a extremo sobre Telegram, respaldado por un CRM real en HubSpot. El
+cliente escribe al bot de Telegram; un workflow low-code enriquece cada turno (busca o crea el
+contacto en HubSpot, calcula un puntaje de prioridad mediante un servicio hosteado, invoca al
+agente de IA y deriva a los clientes VIP por un camino de escalación); un agente de IA lidera la
+conversación, personalizada con el contexto de CRM y prioridad ya enriquecido; los clientes VIP
+reciben un aviso de escalación Y un ticket de soporte real en HubSpot, creado de forma asincrónica.
 
-The demo closes on **two screens**: the admin-console **run-view trace** (showing the whole
-workflow execution — trigger, HubSpot lookup, priority score, agent turn, conditional branch,
-reply — as one causally-linked chain a human can inspect) and the **real HubSpot ticket** the VIP
-branch created, open in a second tab. Nothing in that ticket is faked — it is the SAME async
-`connectors.invoke()` call the workflow fired, resolved by HubSpot itself.
+El demo cierra con **dos pantallas**: la **traza de ejecución** del admin-console (muestra todo el
+workflow — trigger, búsqueda en HubSpot, puntaje de prioridad, turno del agente, rama condicional,
+respuesta — como una cadena causal única que una persona puede inspeccionar) y el **ticket real de
+HubSpot** creado por la rama VIP, abierto en una segunda pestaña. Nada en ese ticket es simulado —
+es la misma llamada asincrónica `connectors.invoke()` que disparó el workflow, resuelta por
+HubSpot.
 
-Two SDK/platform capabilities get their own moment in the demo:
+Dos capacidades del SDK/la plataforma tienen su propio momento en el demo:
 
-- **Code-over-low-code**: the `priority-scorer` hosted service is business logic that is easier to
-  express in a real language than in the workflow builder (deal-count heuristics, tier thresholds)
-  — deployed as an ordinary Knative service and invoked from the workflow like any other resource,
-  no special casing.
-- **Both `connectors.invoke()` modes in one flow**: a **parallel sync** call for the fast path
-  (the priority score is available before the agent's next reply) and an **async invoke with
-  `idempotencyKey` + webhook callback** for the slow path (ticket creation in HubSpot) — see
-  "Async invoke: idempotencyKey and the polling window" below.
-- **Declarative provisioning**: the entire demo — channel, connectors, knowledge base, skill,
-  system variables, AI agent, hosted service, and workflow — is ONE `manifest.yaml`, applied with
-  ONE command, idempotent (a second apply is a full no-op) — see "Declarative provisioning" below.
+- **Código sobre low-code**: el servicio hosteado `priority-scorer` es lógica de negocio más
+  simple de expresar en un lenguaje real que en el constructor de workflows (heurísticas sobre
+  cantidad de deals, umbrales de tier) — desplegado como un servicio Knative común e invocado
+  desde el workflow como cualquier otro recurso, sin tratamiento especial.
+- **Los dos modos de `connectors.invoke()` en un mismo flujo**: una llamada **sincrónica en
+  paralelo** para el camino rápido (el puntaje de prioridad está disponible antes de la respuesta
+  del agente) y una **invocación asincrónica con `idempotencyKey` + callback por webhook** para el
+  camino lento (creación del ticket en HubSpot) — ver "Invocación asincrónica: idempotencyKey y la
+  ventana de polling" más abajo.
+- **Provisioning declarativo**: todo el demo — canal, connectors, base de conocimiento, skill,
+  variables de sistema, agente de IA, servicio hosteado y workflow — es UN `manifest.yaml`,
+  aplicado con UN comando, idempotente (un segundo apply es un no-op completo) — ver "Provisioning
+  declarativo" más abajo.
 
-## Architecture
+## Arquitectura
 
 ```mermaid
 flowchart TD
-    A[Telegram customer message] --> B[Telegram channel<br/>trigger: message_received]
+    A[Mensaje del cliente en Telegram] --> B[Canal de Telegram<br/>trigger: message_received]
     B --> C[searchContact<br/>endpointCall -> demo-hubspot]
     C --> D[normalizeContact<br/>jsFunction]
-    D --> E[scoreContact<br/>serviceCall -> priority-scorer /score<br/>sync connectors.invoke]
-    E --> F[buildAgentContext<br/>jsFunction: CRM + score context block]
+    D --> E[scoreContact<br/>serviceCall -> priority-scorer /score<br/>connectors.invoke sincrónico]
+    E --> F[buildAgentContext<br/>jsFunction: bloque de contexto CRM + score]
     F --> G[supportAgent<br/>agentCall -> crm-support-agent]
     G --> H{vipRoute<br/>tier == vip?}
-    H -- standard --> I[replyStandard<br/>channelSend]
+    H -- estándar --> I[replyStandard<br/>channelSend]
     H -- vip --> J[buildEscalationReply<br/>jsFunction]
-    J --> K[createTicket<br/>serviceCall -> priority-scorer /tickets<br/>async connectors.invoke + webhook]
+    J --> K[createTicket<br/>serviceCall -> priority-scorer /tickets<br/>connectors.invoke asincrónico + webhook]
     K --> L[replyEscalated<br/>channelSend]
-    K -.webhook delivers result.-> M[HubSpot support ticket]
-    I --> N[Telegram reply to customer]
+    K -.el webhook entrega el resultado.-> M[Ticket de soporte en HubSpot]
+    I --> N[Respuesta al cliente en Telegram]
     L --> N
 ```
 
-Every node above except the two `jsFunction` steps is a real platform resource the manifest
-declares: the Telegram channel, the `demo-hubspot` connector (+ its 5 endpoints), the
-`crm-support-agent` AI agent, the `priority-scorer` hosted service, and the
-`crm-support-telegram` workflow that wires them together.
+Cada nodo del diagrama, salvo los dos pasos `jsFunction`, es un recurso real de la plataforma
+declarado en el manifest: el canal de Telegram, el connector `demo-hubspot` (+ sus 5 endpoints),
+el agente de IA `crm-support-agent`, el servicio hosteado `priority-scorer` y el workflow
+`crm-support-telegram` que los conecta.
 
-## Declarative provisioning
+## Provisioning declarativo
 
-The whole demo is **one YAML file, one apply**: `manifest.yaml` declares every platform resource —
-channel, HubSpot connector, LLM connector, knowledge base, skill, system variables, AI agent,
-`priority-scorer` hosted service, and the workflow — and `yoizen manifests apply -f manifest.yaml
---secrets-from-env` converges the live cluster to match it. Re-applying is always safe: a second
-apply against an already-converged cluster is a full **no-op** (0 creates, 0 updates) — the exact
-proof this demo's own provisioning loop shipped with (`manual-loops/crm-support-telegram.md`
-T02–T05).
+Todo el demo es **un único archivo YAML, un único apply**: `manifest.yaml` declara cada recurso de
+la plataforma — canal, connector de HubSpot, connector LLM, base de conocimiento, skill, variables
+de sistema, agente de IA, servicio hosteado `priority-scorer` y el workflow — y `yoizen manifests
+apply -f manifest.yaml --secrets-from-env` converge el clúster real hacia ese estado. Volver a
+aplicarlo siempre es seguro: un segundo apply sobre un clúster ya convergido es un **no-op**
+completo (0 creates, 0 updates) — la misma prueba con la que se entregó este loop de provisioning
+(`manual-loops/demos/crm-support-telegram.md` T02–T05).
 
-**No plaintext secrets anywhere in the spec.** Five credentials this demo needs (the Telegram bot
-token, the HubSpot Service Key, the OpenAI API key, and the `priority-scorer` service's own
-platform login) are all referenced by NAME (`secretRef`) in `manifest.yaml`, never by value — the
-real values are supplied once, out of band, via `--secrets-from-env`. For the two service-scoped
-secrets (`YOIZEN_EMAIL`/`YOIZEN_PASSWORD`, bound to the `priority-scorer` service), the story goes
-further than "not in the repo": they resolve **k8s-natively**, via `valueFrom.secretKeyRef`
-pointing at the `psec-service-priority-scorer` Kubernetes Secret the platform's secrets broker
-already manages — the resolved plaintext value never crosses into the manifest, the apply-engine's
-own logs, or the live Knative Service spec (`kubectl get ksvc -o yaml` shows a secret reference,
-never a value). This is the k8s-native design `manual-loops/provisioning-manifest-gaps-4.md`
-shipped specifically to close that exposure — worth calling out live as part of the pitch: a
-declarative platform that treats "no secrets in the spec" as a structural guarantee, not a
-convention someone has to remember to follow.
+**Ningún secreto en texto plano en el spec.** Las cinco credenciales que necesita este demo (el
+token del bot de Telegram, la Service Key de HubSpot, la API key de OpenAI y el login propio de la
+plataforma para el servicio `priority-scorer`) se referencian por NOMBRE (`secretRef`) en
+`manifest.yaml`, nunca por valor — los valores reales se entregan una sola vez, fuera de banda, vía
+`--secrets-from-env`. Para los dos secretos con scope de servicio (`YOIZEN_EMAIL`/
+`YOIZEN_PASSWORD`, vinculados al servicio `priority-scorer`), la historia va más allá de "no está
+en el repo": resuelven de forma **nativa de Kubernetes**, vía `valueFrom.secretKeyRef` apuntando al
+Secret de Kubernetes `psec-service-priority-scorer` que ya administra el broker de secretos de la
+plataforma — el valor en texto plano nunca cruza hacia el manifest, los logs del motor de apply ni
+el spec vivo del Knative Service (`kubectl get ksvc -o yaml` muestra una referencia al secreto,
+nunca un valor). Este es el diseño nativo de Kubernetes que
+`manual-loops/provisioning-manifest-gaps-4.md` entregó específicamente para cerrar esa exposición
+— vale la pena mencionarlo en vivo como parte del pitch: una plataforma declarativa que trata
+"sin secretos en el spec" como una garantía estructural, no como una convención que alguien debe
+recordar seguir.
 
-The rest of the manifest's symbolic refs follow the same "declare by name, resolve at apply time"
-pattern: `{ connectorRef: demo-hubspot }`, `{ agentRef: crm-support-agent }`,
-`{ serviceRef: priority-scorer }`, even a specific connector ENDPOINT (`{ connectorRef:
-demo-hubspot, endpointMethod: POST, endpointPath: /crm/v3/objects/tickets }`) — every id the
-`priority-scorer` service and the workflow need is resolved from names, in the SAME apply, never
-hand-copied from one provisioning step's output into the next step's input.
+El resto de las referencias simbólicas del manifest sigue el mismo patrón "declarar por nombre,
+resolver en tiempo de apply": `{ connectorRef: demo-hubspot }`, `{ agentRef: crm-support-agent }`,
+`{ serviceRef: priority-scorer }`, incluso un ENDPOINT específico de un connector (`{ connectorRef:
+demo-hubspot, endpointMethod: POST, endpointPath: /crm/v3/objects/tickets }`) — cada id que
+necesitan el servicio `priority-scorer` y el workflow se resuelve por nombre, en el MISMO apply,
+nunca copiado a mano de la salida de un paso de provisioning a la entrada del siguiente.
 
 ## Provisioning
 
-**One declarative path**: `manifest.yaml` is the SOLE provisioning artifact for every platform
-resource this demo needs. The former sequential `01-…05-*.sh`/`setup.sh` scripts are DELETED — there
-is no other provisioning path, do not attempt to resurrect them.
+**Un único camino declarativo**: `manifest.yaml` es el ÚNICO artefacto de provisioning para cada
+recurso de la plataforma que necesita este demo. Los antiguos scripts secuenciales
+`01-…05-*.sh`/`setup.sh` fueron ELIMINADOS — no existe otro camino de provisioning, no intentar
+resucitarlos.
 
-Provisioning order:
+Orden de provisioning:
 
 ```
-./bootstrap.sh                                                       # (1) out-of-band items
-yoizen manifests apply -f manifest.yaml --secrets-from-env            # (2) everything else
-./run.sh                                                              # (3) end-to-end proof
+./bootstrap.sh                                                       # (1) ítems fuera de banda
+yoizen manifests apply -f manifest.yaml --secrets-from-env            # (2) todo lo demás
+./run.sh                                                              # (3) prueba de extremo a extremo
 ```
 
-1. **`./bootstrap.sh`** — the ONLY provisioning step left outside `manifest.yaml`, carrying
-   exclusively what the manifest engine genuinely cannot express: builds/tags the
-   `dev.local/priority-scorer:local` Docker image, ensures the HubSpot custom contact property
-   `telegram_user_id` (a one-time Properties API schema mutation, not a connector endpoint), and
-   registers the Telegram webhook + resolves `TELEGRAM_TEST_CHAT_ID` (direct Telegram Bot API
-   calls, not platform resources). Idempotent — safe to re-run. Its webhook-registration stage
-   reads the Telegram channel account `manifests apply` creates, so it is written to run either
-   before OR after the first apply — before, it registers the webhook against a not-yet-existing
-   account and fails loud with a clear message naming this same order; after, it succeeds
-   immediately. Re-running it after `manifests apply` is the recommended order and always safe.
-2. **`yoizen manifests apply -f manifest.yaml --secrets-from-env`** — creates/updates every
-   platform resource. Needs the SDK checked out at `../../sdk` (run from there, or `bunx yoizen`
-   once published) and the five secret bindings below present in the environment.
-3. **`./run.sh`** — the end-to-end proof (simulated Telegram messages, execution polling,
-   assertions, HubSpot cleanup). Verifies the manifest has been applied itself (fails fast naming
-   this exact order if the workflow/service aren't found yet).
+1. **`./bootstrap.sh`** — el ÚNICO paso de provisioning que queda fuera de `manifest.yaml`, y
+   lleva exclusivamente lo que el motor de manifests genuinamente no puede expresar: construye/tagea
+   la imagen Docker `dev.local/priority-scorer:local`, asegura la propiedad de contacto
+   personalizada `telegram_user_id` en HubSpot (una mutación de esquema vía la Properties API, no
+   un endpoint de connector), y registra el webhook de Telegram + resuelve `TELEGRAM_TEST_CHAT_ID`
+   (llamadas directas a la API de Telegram Bot, no recursos de la plataforma). Idempotente —
+   seguro de re-ejecutar. Su etapa de registro de webhook lee la cuenta de canal de Telegram que
+   crea `manifests apply`, por lo que está escrito para funcionar tanto antes como después del
+   primer apply — antes, registra el webhook contra una cuenta que todavía no existe y falla en
+   forma explícita con un mensaje claro que nombra este mismo orden; después, tiene éxito de
+   inmediato. Re-ejecutarlo después de `manifests apply` es el orden recomendado y siempre seguro.
+2. **`yoizen manifests apply -f manifest.yaml --secrets-from-env`** — crea/actualiza cada recurso
+   de la plataforma. Necesita el SDK clonado en `../../sdk` (ejecutar desde ahí, o `bunx yoizen`
+   una vez publicado) y los cinco bindings de secretos de abajo presentes en el entorno.
+3. **`./run.sh`** — la prueba de extremo a extremo (mensajes de Telegram simulados, polling de
+   ejecución, aserciones, limpieza en HubSpot). Verifica por sí mismo que el manifest ya fue
+   aplicado (falla rápido nombrando este mismo orden si el workflow o el servicio todavía no
+   existen).
 
-Re-running `bootstrap.sh` and `manifests apply` is always safe (both are idempotent,
-create-or-update) — this is the standard recovery path if any step fails partway.
+Volver a ejecutar `bootstrap.sh` y `manifests apply` siempre es seguro (ambos son idempotentes,
+crean o actualizan) — es el camino de recuperación estándar si algún paso falla a mitad de camino.
 
-## Environment variables
+## Variables de entorno
 
-**`--secrets-from-env` bindings** (read by `yoizen manifests apply --secrets-from-env`; binding
-NAME must match the env var name exactly — see `manifest.yaml`'s `secrets:` block):
+**Bindings para `--secrets-from-env`** (leídos por `yoizen manifests apply --secrets-from-env`; el
+NOMBRE del binding debe coincidir exactamente con el nombre de la variable de entorno — ver el
+bloque `secrets:` de `manifest.yaml`):
 
-| Env var | Manifest secret binding | Scope |
+| Variable de entorno | Binding de secreto en el manifest | Scope |
 | --- | --- | --- |
-| `TELEGRAM_BOT_TOKEN` (as `telegram-bot-token`) | `telegram-bot-token` | `channel: crm-support-telegram-bot` |
-| `HUBSPOT_SERVICE_KEY` (as `hubspot-service-key`) | `hubspot-service-key` | `connector: demo-hubspot` |
-| `OPENAI_API_KEY` (as `crm-support-telegram-openai-api-key`) | `crm-support-telegram-openai-api-key` | `connector: sample-openai-llm` |
-| `YOIZEN_EMAIL` (as `priority-scorer-yoizen-email`) | `priority-scorer-yoizen-email` | `service: priority-scorer` |
-| `YOIZEN_PASSWORD` (as `priority-scorer-yoizen-password`) | `priority-scorer-yoizen-password` | `service: priority-scorer` |
+| `TELEGRAM_BOT_TOKEN` (como `telegram-bot-token`) | `telegram-bot-token` | `channel: crm-support-telegram-bot` |
+| `HUBSPOT_SERVICE_KEY` (como `hubspot-service-key`) | `hubspot-service-key` | `connector: demo-hubspot` |
+| `OPENAI_API_KEY` (como `crm-support-telegram-openai-api-key`) | `crm-support-telegram-openai-api-key` | `connector: sample-openai-llm` |
+| `YOIZEN_EMAIL` (como `priority-scorer-yoizen-email`) | `priority-scorer-yoizen-email` | `service: priority-scorer` |
+| `YOIZEN_PASSWORD` (como `priority-scorer-yoizen-password`) | `priority-scorer-yoizen-password` | `service: priority-scorer` |
 
-Each binding name differs from its underlying credential's usual env var name (e.g.
-`TELEGRAM_BOT_TOKEN` binds under `telegram-bot-token`), so `--secrets-from-env` needs the value
-exposed under the BINDING name at apply time, e.g.:
+Cada nombre de binding difiere del nombre habitual de la variable de entorno de su credencial
+(por ejemplo, `TELEGRAM_BOT_TOKEN` se vincula bajo `telegram-bot-token`), por lo que
+`--secrets-from-env` necesita el valor expuesto bajo el nombre del BINDING al momento de aplicar,
+por ejemplo:
 
 ```
 env "telegram-bot-token=$TELEGRAM_BOT_TOKEN" \
@@ -147,89 +160,112 @@ env "telegram-bot-token=$TELEGRAM_BOT_TOKEN" \
     bun run bin/yoizen.ts manifests apply -f ../demos/crm-support-telegram/manifest.yaml --secrets-from-env
 ```
 
-(run from `sdk/`; `YOIZEN_EMAIL`/`YOIZEN_PASSWORD` also double as the `priority-scorer` hosted
-service's OWN platform login credentials at runtime — same values, two different purposes: the
-CLI's own session auth, and the scorer's bound secret. The `priority-scorer-yoizen-*` bindings
-resolve k8s-natively via `valueFrom.secretKeyRef`, never a plaintext env var in the Knative spec —
-see "Declarative provisioning" above and `manual-loops/provisioning-manifest-gaps-4.md`.)
+(ejecutar desde `sdk/`; `YOIZEN_EMAIL`/`YOIZEN_PASSWORD` también funcionan como las credenciales de
+login propias del servicio hosteado `priority-scorer` en tiempo de ejecución — los mismos valores,
+dos propósitos distintos: la autenticación de sesión de la CLI, y el secreto vinculado del
+servicio. Los bindings `priority-scorer-yoizen-*` resuelven de forma nativa de Kubernetes vía
+`valueFrom.secretKeyRef`, nunca como variable de entorno en texto plano en el spec de Knative —
+ver "Provisioning declarativo" más arriba y `manual-loops/provisioning-manifest-gaps-4.md`.)
 
-**Run-side env vars** (not manifest secrets — read directly by `bootstrap.sh`/`run.sh`):
+**Variables de entorno del lado de ejecución** (no son secretos del manifest — las leen
+directamente `bootstrap.sh`/`run.sh`):
 
-| Var | Purpose |
+| Variable | Propósito |
 | --- | --- |
-| `TG_PUBLIC_URL` | Public URL (e.g. cloudflared tunnel) the Telegram webhook is reachable at — read by `bootstrap.sh`'s webhook-registration stage |
-| `TELEGRAM_TEST_CHAT_ID` | Chat id used by `run.sh` to simulate a customer message. Auto-discovered by `bootstrap.sh` (DM the bot first) and cached if unset |
-| `YOIZEN_TENANT`/`YOIZEN_EMAIL`/`YOIZEN_PASSWORD`/`YOIZEN_BASE_URL` | Platform login/session — not demo-specific, auto-defaulted by `lib/resolve-demo-env.sh` to the shared dev-seed convention |
+| `TG_PUBLIC_URL` | URL pública (por ejemplo, un túnel de cloudflared) donde es alcanzable el webhook de Telegram — la lee la etapa de registro de webhook de `bootstrap.sh` |
+| `TELEGRAM_TEST_CHAT_ID` | Id de chat que usa `run.sh` para simular un mensaje de cliente. `bootstrap.sh` lo descubre automáticamente (enviar un DM al bot primero) y lo cachea si no está definido |
+| `YOIZEN_TENANT`/`YOIZEN_EMAIL`/`YOIZEN_PASSWORD`/`YOIZEN_BASE_URL` | Login/sesión de la plataforma — no son específicos del demo, `lib/resolve-demo-env.sh` los completa automáticamente con la convención compartida de datos de desarrollo |
 
-No secrets are committed — every credential above is read from the environment (`.env`, not
-tracked; see `.env.example` for the documented shape) at run time, sourced by
-`lib/resolve-demo-env.sh` (same convention `bootstrap.sh`/`run.sh` both use).
+No se commitea ningún secreto — cada credencial de arriba se lee del entorno (`.env`, no
+trackeado; ver `.env.example` para el formato documentado) en tiempo de ejecución, cargado por
+`lib/resolve-demo-env.sh` (la misma convención que usan `bootstrap.sh` y `run.sh`).
 
-## Async invoke: idempotencyKey and the polling window
+## Invocación asincrónica: idempotencyKey y la ventana de polling
 
-VIP ticket creation (`createTicket`, `priority-scorer/src/create-ticket.ts`) is an **async**
-`connectors.invoke()` call — it does not block the workflow waiting for HubSpot, it returns an
-`invocationId` immediately and delivers the result via a webhook back to the scorer's own
-`/webhooks/invoke` endpoint. Two details matter operationally:
+La creación del ticket VIP (`createTicket`, `priority-scorer/src/create-ticket.ts`) es una
+llamada `connectors.invoke()` **asincrónica** — no bloquea el workflow esperando a HubSpot,
+devuelve un `invocationId` de inmediato y entrega el resultado vía un webhook de vuelta al propio
+endpoint `/webhooks/invoke` del scorer. Dos detalles importan operativamente:
 
-- **`idempotencyKey`**: `ticket-<tenant>-<conversationId>-<turn>`, where `turn` is
-  `{{executionId}}` (a fresh, unique value per workflow execution — one execution == one
-  conversational turn). This is an AT-LEAST-ONCE delivery guarantee (a caller-side retry of the
-  SAME invoke call collapses onto the same invocation instead of creating a second ticket), not a
-  guarantee that re-running the WHOLE demo skips ticket creation — a new VIP-tier conversation
-  turn always gets a new `executionId`, hence a new key, hence a new ticket. This is intentional:
-  each real customer turn should produce its own ticket.
-- **900-second (15-minute) polling window**: `connectors.invocations.get(invocationId)` only
-  returns a result while it is parked in Redis, TTL 900s by default. Webhook delivery failure
-  never blocks result availability (the result is still fetchable by polling until the TTL
-  expires), but after 900s an otherwise-completed invocation returns `status: "expired"` (HTTP
-  404) even though the ticket itself was created successfully in HubSpot. **Poll within 15 minutes
-  of firing the async call**, or rely on the webhook delivery instead — do not assume a stale
-  `invocationId` can be resolved indefinitely after the fact (this is exactly what `run.sh`'s own
-  ticket-cleanup stage does: it polls immediately after the VIP-tier execution completes, well
-  inside the window).
+- **`idempotencyKey`**: `ticket-<tenant>-<conversationId>-<turn>`, donde `turn` es
+  `{{executionId}}` (un valor nuevo y único por cada ejecución del workflow — una ejecución
+  equivale a un turno de conversación). Esta es una garantía de entrega AL MENOS UNA VEZ (un
+  reintento del MISMO llamado invoke, del lado del caller, colapsa sobre la misma invocación en
+  lugar de crear un segundo ticket), no una garantía de que volver a ejecutar TODO el demo
+  se salte la creación del ticket — un nuevo turno de conversación de tier VIP siempre obtiene un
+  `executionId` nuevo, por lo tanto una clave nueva, por lo tanto un ticket nuevo. Esto es
+  intencional: cada turno real de un cliente debe producir su propio ticket.
+- **Ventana de polling de 900 segundos (15 minutos)**: `connectors.invocations.get(invocationId)`
+  solo devuelve un resultado mientras está almacenado en Redis, con un TTL de 900s por defecto. Un
+  fallo en la entrega del webhook nunca bloquea la disponibilidad del resultado (sigue siendo
+  posible obtenerlo por polling hasta que expire el TTL), pero pasados los 900s una invocación ya
+  completada devuelve `status: "expired"` (HTTP 404) aunque el ticket se haya creado correctamente
+  en HubSpot. **Hacer polling dentro de los 15 minutos posteriores a disparar la llamada
+  asincrónica**, o depender de la entrega por webhook en su lugar — no asumir que un
+  `invocationId` viejo puede resolverse indefinidamente después del hecho (esto es exactamente lo
+  que hace la propia etapa de limpieza de tickets de `run.sh`: hace polling inmediatamente después
+  de que termina la ejecución de tier VIP, bien dentro de la ventana).
 
-## Demo-day runbook
+## Guion para el día de la demo
 
-**Before the room**: confirm `bootstrap.sh` and `manifests apply` have both run cleanly against
-the target cluster (a stale image or an un-applied manifest is the single most common failure
-mode — re-run both, they are idempotent). DM the Telegram bot once from the demo phone/account so
-`TELEGRAM_TEST_CHAT_ID` is resolvable, and have the HubSpot demo account and the admin-console open
-in separate tabs ahead of time.
+> **El guion vigente, con los mensajes exactos y las respuestas REALES verificadas en vivo
+> (2026-07-25), está en [GUION-DEMO.md](./GUION-DEMO.md)** — incluye el estado sembrado, la
+> preparación y el housekeeping post-demo. Lo de abajo es la narrativa general; ante cualquier
+> diferencia, manda GUION-DEMO.md.
 
-**What to click, what to say**:
+**Advertencias críticas** (el detalle completo está en GUION-DEMO.md):
 
-1. Open the Telegram chat with the bot on screen. Send a normal support question (e.g. "where is
-   my order?"). Narrate: *"this message hits our channel, a low-code workflow enriches it with the
-   customer's real CRM context and a priority score, then an AI agent — not a scripted bot —
-   replies using that context."* The reply arrives in a few seconds.
-2. Switch to the admin-console **run-view trace** for that execution (Processes → the workflow's
-   latest run). Walk the chain left to right: trigger → HubSpot lookup → priority score →
-   agent turn → reply. *"Every step here is causally linked — this is not a log tail, it's the
-   actual execution graph, inspectable after the fact."*
-3. Send a SECOND message from the same test account, this time crossing the VIP threshold (the
-   demo's seeded test contact/deals control this — see `src/06-run-e2e.ts`'s `VIP_DEAL_COUNT` for
-   the exact seeding logic, or use a pre-seeded VIP contact for a live room). Narrate the
-   conditional branch: *"the same workflow, same agent — but this customer crosses a priority
-   threshold, so the reply tone shifts to an escalation notice AND a real support ticket gets
-   created in HubSpot, asynchronously, without blocking the reply."*
-4. **The two-screen close**: side by side, (a) the admin-console run-view trace for the VIP
-   execution (showing the `createTicket` step and its `invocationId`) and (b) the HubSpot account,
-   open on that exact ticket — same subject, same customer, created live, seconds ago. *"Nothing
-   here is mocked — that ticket exists in a real HubSpot account right now, created by the same
-   platform call you just watched execute."*
-5. Optional close, if the room is technical: pull up `manifest.yaml` and run `yoizen manifests
-   apply` a second time live — *"zero creates, zero updates — the whole demo you just watched is
-   one file, and it's fully idempotent."* See "Declarative provisioning" above for the
-   secret-handling story if asked how credentials are managed.
+- **NO correr `run.sh` antes ni durante una demo en vivo**: su siembra reutiliza el contacto de
+  la demo (create-or-reuse por `telegram_user_id`) y su limpieza LO BORRA con sus deals — el
+  presentador queda `tier=standard` a mitad de conversación. Re-sembrar después.
+- **Cada turno VIP crea un ticket nuevo** (el `idempotencyKey` es por ejecución) y repite el
+  banner de escalación — guion corto o narrarlo como re-verificación en vivo.
+- **Mensajes autocontenidos**: cada mensaje es una ejecución nueva con memoria limitada entre
+  turnos; dar los datos en cuotas hace que el agente vuelva a pedir contexto.
 
-## Script inventory
+**Antes de entrar a la sala**: confirmar que `bootstrap.sh` y `manifests apply` corrieron
+limpiamente contra el clúster objetivo (una imagen desactualizada o un manifest sin aplicar es el
+modo de falla más común — volver a ejecutar ambos, son idempotentes). Enviar un DM al bot de
+Telegram una vez desde el teléfono/cuenta de la demo para que `TELEGRAM_TEST_CHAT_ID` sea
+resoluble, y tener la cuenta de demo de HubSpot y el admin-console abiertos en pestañas separadas
+de antemano.
 
-| Script | Purpose |
+**Qué mostrar, qué decir**:
+
+1. Abrir el chat de Telegram con el bot en pantalla. Enviar una pregunta de soporte normal (por
+   ejemplo, "¿dónde está mi pedido?"). Narrar: *"este mensaje llega a nuestro canal, un workflow
+   low-code lo enriquece con el contexto real de CRM del cliente y un puntaje de prioridad, y
+   luego un agente de IA — no un bot con guion fijo — responde usando ese contexto."* La respuesta
+   llega en unos segundos.
+2. Cambiar a la **traza de ejecución** del admin-console para esa ejecución (Procesos → la última
+   ejecución del workflow). Recorrer la cadena de izquierda a derecha: trigger → búsqueda en
+   HubSpot → puntaje de prioridad → turno del agente → respuesta. *"Cada paso acá está enlazado
+   causalmente — esto no es un log, es el grafo de ejecución real, inspeccionable después del
+   hecho."*
+3. Enviar un SEGUNDO mensaje desde la misma cuenta de prueba, esta vez cruzando el umbral VIP (el
+   contacto/deals de prueba sembrados del demo controlan esto — ver la lógica exacta de siembra en
+   `VIP_DEAL_COUNT` de `src/06-run-e2e.ts`, o usar un contacto VIP ya sembrado para una sala en
+   vivo). Narrar la rama condicional: *"el mismo workflow, el mismo agente — pero este cliente
+   cruza un umbral de prioridad, así que el tono de la respuesta cambia a un aviso de escalación Y
+   se crea un ticket de soporte real en HubSpot, de forma asincrónica, sin bloquear la
+   respuesta."*
+4. **El cierre de dos pantallas**: lado a lado, (a) la traza de ejecución del admin-console para
+   la ejecución VIP (mostrando el paso `createTicket` y su `invocationId`) y (b) la cuenta de
+   HubSpot, abierta en ese ticket exacto — mismo asunto, mismo cliente, creado en vivo, hace
+   segundos. *"Nada acá está simulado — ese ticket existe ahora mismo en una cuenta real de
+   HubSpot, creado por la misma llamada de la plataforma que acaban de ver ejecutarse."*
+5. Cierre opcional, si la sala es técnica: abrir `manifest.yaml` y correr `yoizen manifests apply`
+   una segunda vez en vivo — *"cero creates, cero updates — todo el demo que acaban de ver es un
+   único archivo, y es completamente idempotente."* Ver "Provisioning declarativo" más arriba para
+   la historia del manejo de secretos si preguntan cómo se gestionan las credenciales.
+
+## Inventario de scripts
+
+| Script | Propósito |
 | --- | --- |
-| `bootstrap.sh` | Thin wrapper over `src/bootstrap.ts` — the out-of-band provisioning step (image build, HubSpot custom property, Telegram webhook + chat-id) — see Provisioning above |
-| `run.sh` | Thin wrapper over `src/06-run-e2e.ts` — sends two simulated customer messages (standard-tier, then VIP-tier) end to end and reports the resulting Telegram reply + HubSpot ticket |
+| `bootstrap.sh` | Wrapper delgado sobre `src/bootstrap.ts` — el paso de provisioning fuera de banda (build de imagen, propiedad personalizada de HubSpot, webhook + chat id de Telegram) — ver Provisioning más arriba |
+| `run.sh` | Wrapper delgado sobre `src/06-run-e2e.ts` — envía dos mensajes de cliente simulados (tier estándar, luego tier VIP) de extremo a extremo y reporta la respuesta de Telegram resultante + el ticket de HubSpot |
 
-`manifest.yaml` (applied via the `yoizen` CLI, not a script in this directory) provisions
-everything else. `priority-scorer/` is the hosted service's own source + Dockerfile, unrelated to
-provisioning.
+`manifest.yaml` (aplicado vía la CLI `yoizen`, no un script de este directorio) provisiona todo lo
+demás. `priority-scorer/` es el código + Dockerfile propios del servicio hosteado, no relacionado
+con el provisioning.
