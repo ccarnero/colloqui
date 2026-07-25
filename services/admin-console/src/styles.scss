@@ -1,5 +1,17 @@
 @use "@angular/material" as mat;
 
+// Builder v2 font load (T02 of console-redesign-builder-v2.md): --rd-font-sans
+// / --rd-font-mono below name "Geist" / "Geist Mono", but neither family was
+// ever fetched anywhere in this app — only Inter is loaded, in index.html.
+// Kept as a plain CSS @import (not a Sass module import) here, inside the
+// existing token file, rather than adding a second font <link> to index.html,
+// to stay within this task's touch-scope (features/automation/workflows/ +
+// the token file only). Matches the reference's font-loading intent verbatim
+// (builder-v2-reference/NOTES.md "Fonts" section): weights 400/500/600/700
+// for Geist, 400/500/600 for Geist Mono, the same weight set the reference
+// canvas requests from Google Fonts.
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap");
+
 // Custom M3 theme from boilerplate palette
 html {
   height: 100%;
@@ -261,6 +273,48 @@ html.light-theme {
   --rd-shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.35);
   --rd-shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.35);
   --rd-shadow-2xl: 0 16px 48px rgba(0, 0, 0, 0.4);
+
+  // ─── Builder v2 type-ramp additions (T02 of console-redesign-builder-v2.md) ───
+  // Ported from manual-loops/admin-console/design/builder-v2-reference/
+  // node-card.css + canvas-layout.css (mechanical transcriptions of the
+  // canvas's inline node-card/chrome styles — tokens.css itself carries no
+  // weight/tracking/spacing scale, only color + the mono/sans family names
+  // already mapped onto --rd-font-sans / --rd-font-mono above). These values
+  // have NO exact equivalent in the pre-existing --rd-* foundation scales
+  // (--rd-text-size-*, --rd-space-*, --rd-shadow-*), so they land as new
+  // tokens rather than being folded into the foundation steps, which are
+  // used elsewhere and must not shift. Consumed starting T03 (node card,
+  // chrome, edge labels) — no consumer in this task.
+
+  // Font weights (node title 600, segmented-tab/button/tab-active 500;
+  // 400 covers the inherited body default) — the foundation has no
+  // font-weight tokens at all, every existing usage is a literal number.
+  --rd-font-weight-regular: 400;
+  --rd-font-weight-medium: 500;
+  --rd-font-weight-semibold: 600;
+
+  // Letter-spacing / tracking (tag chip 0.5px, inspector field-label 0.6px,
+  // dock item-label 0.3px) — the foundation has no tracking tokens either.
+  --rd-tracking-1: 0.3px;
+  --rd-tracking-2: 0.5px;
+  --rd-tracking-3: 0.6px;
+
+  // Font sizes that fall between existing --rd-text-size-* steps (dock
+  // item-label 8.5px, node summary line 10.5px, chrome buttons 12.5px).
+  --rd-text-size-8-5: 8.5px;
+  --rd-text-size-10-5: 10.5px;
+  --rd-text-size-12-5: 12.5px;
+
+  // Spacing values that fall between existing --rd-space-* steps (node
+  // header padding 11px/gap 9px, stats-row/chrome padding 7px, dock item
+  // gap 9px) — the foundation scale only covers even steps.
+  --rd-space-3-5: 7px;
+  --rd-space-4-5: 9px;
+  --rd-space-5-5: 11px;
+
+  // Unselected node-card resting shadow (0 4px 16px, dimmer/tighter than
+  // every existing --rd-shadow-* step, all of which start at 8px blur).
+  --rd-shadow-xs: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
 // Color palette — light theme.
