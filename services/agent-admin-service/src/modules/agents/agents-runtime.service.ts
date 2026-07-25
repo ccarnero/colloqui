@@ -10,10 +10,12 @@ import {
   buildPlatformSubject,
   PLATFORM_CHAT_RESPOND,
   TENANT_HEADER,
+  type VariableResolutionContext,
 } from "@yoizen/shared";
 import { createInbox, headers, type NatsConnection } from "nats";
 import { agentAdminServiceConfig } from "../../config";
 import { LAZY_NATS } from "../../providers/nats.provider";
+import { SystemVariablesService } from "../system-variables/system-variables.service";
 import type {
   ChatRequestDto,
   ChatResponseDto,
@@ -43,7 +45,10 @@ export class AgentsRuntimeService {
 
   private readonly logger = new Logger(AgentsRuntimeService.name);
 
-  constructor(@Inject(LAZY_NATS) private readonly lazyNats: LazyNats) {}
+  constructor(
+    @Inject(LAZY_NATS) private readonly lazyNats: LazyNats,
+    private readonly systemVariablesService: SystemVariablesService
+  ) {}
 
   /**
    * Sends a chat request to the runtime and normalizes the response.
@@ -56,6 +61,7 @@ export class AgentsRuntimeService {
   ): Promise<ChatResponseDto> {
     const now = new Date().toISOString();
     const correlationId = dto.conversationId || `chat-${Date.now()}`;
+    const variables = await this.buildVariablesContext(tenantId);
     const responseData = await this.requestRuntime(
       tenantId,
       PLATFORM_CHAT_RESPOND,
@@ -66,12 +72,56 @@ export class AgentsRuntimeService {
         correlationId,
         this.generateTraceId(),
         now,
+        variables,
         userId
       ),
       `chat request for agent ${agentId}`
     );
 
     return this.parseChatResponse(responseData);
+  }
+
+  /**
+   * Builds the `variables.system.*` namespace for the playground path from
+   * agent-admin-service's own system-variables module, mirroring the
+   * published-runtime path's shape (workflow-service's
+   * `SystemVariablesProvider`, which flattens active `system_variables` rows
+   * into a `{ name: value }` map under `variables.system`). Values —
+   * including `secret`-typed ones — are forwarded as-is: the published
+   * runtime path does the same (it reads the table directly and never masks
+   * by type), because the raw value is what the template renderer needs to
+   * resolve `{{variables.system.*}}` placeholders.
+   *
+   * Never throws: a lookup failure must not break the playground chat, so on
+   * any error this logs a warning (without variable values) and returns an
+   * empty context, matching the runtime path's own degrade-to-empty
+   * behavior in `WorkflowsService`.
+   */
+  private async buildVariablesContext(
+    tenantId: string
+  ): Promise<VariableResolutionContext> {
+    const emptyContext: VariableResolutionContext = {
+      system: {},
+      workflow: {},
+      previous: {},
+      node: {},
+      request: {},
+    };
+
+    try {
+      const { variables } = await this.systemVariablesService.findAll(tenantId);
+      const system: Record<string, unknown> = {};
+      for (const variable of variables) {
+        system[variable.name] = variable.value;
+      }
+
+      return { ...emptyContext, system };
+    } catch (error) {
+      this.logger.warn(
+        `Failed to load system variables for tenant '${tenantId}', continuing with empty variables context: ${error instanceof Error ? error.message : String(error)}`
+      );
+      return emptyContext;
+    }
   }
 
   /**
@@ -172,6 +222,7 @@ export class AgentsRuntimeService {
     correlationId: string,
     traceId: string,
     now: string,
+    variables: VariableResolutionContext,
     userId?: string
   ): Record<string, unknown> {
     const payload = {
@@ -181,6 +232,7 @@ export class AgentsRuntimeService {
       conversation_id: correlationId,
       customer_name: dto.customerName || "User",
       context: dto.context || [],
+      variables,
       ...(userId?.trim() ? { user_id: userId.trim() } : {}),
     };
 

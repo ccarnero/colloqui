@@ -8,13 +8,22 @@ import { ToolsModule } from "../tools/tools.module";
 import { ChatService } from "./chat.service";
 import { ContextBuilderService } from "./context-builder.service";
 import { SessionChatService } from "./session-chat.service";
+import { SystemVariablesProvider } from "./system-variables.provider";
 
 @Module({
-  imports: [AgentsModule, LlmModule, MemoryModule, SkillsModule, TemplateRendererModule, ToolsModule],
+  imports: [
+    AgentsModule,
+    LlmModule,
+    MemoryModule,
+    SkillsModule,
+    TemplateRendererModule,
+    ToolsModule,
+  ],
   providers: [
     ChatService,
     ContextBuilderService,
     SessionChatService,
+    SystemVariablesProvider,
   ],
   exports: [ChatService],
 })

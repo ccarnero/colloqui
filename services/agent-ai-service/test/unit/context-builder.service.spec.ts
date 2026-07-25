@@ -1,10 +1,12 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { ContextBuilderService } from "../../src/modules/chat/context-builder.service";
-import { MemoryContextBuilderService } from "../../src/modules/memory/memory-context-builder.service";
+import type { VariableResolutionContext } from "@yoizen/shared";
 import type { Agent } from "../../src/modules/agents/agent.model";
 import type { ChatContextMessage } from "../../src/modules/chat/chat.dto";
+import { ContextBuilderService } from "../../src/modules/chat/context-builder.service";
+import { SystemVariablesProvider } from "../../src/modules/chat/system-variables.provider";
 import type { MemoryContext } from "../../src/modules/memory/memory-context-builder.service";
+import { MemoryContextBuilderService } from "../../src/modules/memory/memory-context-builder.service";
 
 // ── Fixtures ──────────────────────────────────────────────────────────────
 
@@ -36,6 +38,12 @@ const mockMemoryContextBuilder = {
   formatForPrompt: mock(() => FORMATTED_MEMORY_STUB),
 };
 
+const FALLBACK_SYSTEM_VARS = { companyName: "Acme Telco", region: "LATAM" };
+
+const mockSystemVariablesProvider = {
+  loadForTenant: mock(() => Promise.resolve(FALLBACK_SYSTEM_VARS)),
+};
+
 // ── Suite ──────────────────────────────────────────────────────────────────
 
 describe("ContextBuilderService", () => {
@@ -43,10 +51,14 @@ describe("ContextBuilderService", () => {
 
   beforeEach(async () => {
     mockMemoryContextBuilder.buildContext.mockImplementation(() =>
-      Promise.resolve(MEMORY_CONTEXT_STUB),
+      Promise.resolve(MEMORY_CONTEXT_STUB)
     );
     mockMemoryContextBuilder.formatForPrompt.mockImplementation(
-      () => FORMATTED_MEMORY_STUB,
+      () => FORMATTED_MEMORY_STUB
+    );
+    mockSystemVariablesProvider.loadForTenant.mockClear();
+    mockSystemVariablesProvider.loadForTenant.mockImplementation(() =>
+      Promise.resolve(FALLBACK_SYSTEM_VARS)
     );
 
     const moduleRef = await Test.createTestingModule({
@@ -55,6 +67,10 @@ describe("ContextBuilderService", () => {
         {
           provide: MemoryContextBuilderService,
           useValue: mockMemoryContextBuilder,
+        },
+        {
+          provide: SystemVariablesProvider,
+          useValue: mockSystemVariablesProvider,
         },
       ],
     }).compile();
@@ -112,13 +128,13 @@ describe("ContextBuilderService", () => {
       expect(mockMemoryContextBuilder.buildContext).toHaveBeenCalledWith(
         "tenant-42",
         "my-agent",
-        "what is X?",
+        "what is X?"
       );
     });
 
     it("sets memoryContext to formatForPrompt result", async () => {
-      mockMemoryContextBuilder.formatForPrompt.mockImplementation(() =>
-        "Formatted memory text",
+      mockMemoryContextBuilder.formatForPrompt.mockImplementation(
+        () => "Formatted memory text"
       );
       const agent = createMockAgent();
       const state = await service.buildRuntimeState("t1", agent, "hi");
@@ -137,12 +153,7 @@ describe("ContextBuilderService", () => {
 
     it("returns empty conversationHistory when context is empty array", async () => {
       const agent = createMockAgent();
-      const state = await service.buildRuntimeState(
-        "t1",
-        agent,
-        "hi",
-        [],
-      );
+      const state = await service.buildRuntimeState("t1", agent, "hi", []);
 
       expect(state.conversationHistory).toEqual([]);
     });
@@ -150,39 +161,63 @@ describe("ContextBuilderService", () => {
     it('maps sender "customer" to role "user"', async () => {
       const agent = createMockAgent();
       const context: ChatContextMessage[] = [
-        { sender: "customer", content: "I need help", createdAt: "2025-01-01T00:00:00Z" },
+        {
+          sender: "customer",
+          content: "I need help",
+          createdAt: "2025-01-01T00:00:00Z",
+        },
       ];
 
       const state = await service.buildRuntimeState("t1", agent, "hi", context);
 
       expect(state.conversationHistory).toEqual([
-        { role: "user", content: "I need help", timestamp: "2025-01-01T00:00:00Z" },
+        {
+          role: "user",
+          content: "I need help",
+          timestamp: "2025-01-01T00:00:00Z",
+        },
       ]);
     });
 
     it('maps sender "agent" to role "assistant"', async () => {
       const agent = createMockAgent();
       const context: ChatContextMessage[] = [
-        { sender: "agent", content: "Sure thing", createdAt: "2025-01-01T00:01:00Z" },
+        {
+          sender: "agent",
+          content: "Sure thing",
+          createdAt: "2025-01-01T00:01:00Z",
+        },
       ];
 
       const state = await service.buildRuntimeState("t1", agent, "hi", context);
 
       expect(state.conversationHistory).toEqual([
-        { role: "assistant", content: "Sure thing", timestamp: "2025-01-01T00:01:00Z" },
+        {
+          role: "assistant",
+          content: "Sure thing",
+          timestamp: "2025-01-01T00:01:00Z",
+        },
       ]);
     });
 
     it('maps sender "bot" to role "assistant"', async () => {
       const agent = createMockAgent();
       const context: ChatContextMessage[] = [
-        { sender: "bot", content: "Beep boop", createdAt: "2025-01-01T00:02:00Z" },
+        {
+          sender: "bot",
+          content: "Beep boop",
+          createdAt: "2025-01-01T00:02:00Z",
+        },
       ];
 
       const state = await service.buildRuntimeState("t1", agent, "hi", context);
 
       expect(state.conversationHistory).toEqual([
-        { role: "assistant", content: "Beep boop", timestamp: "2025-01-01T00:02:00Z" },
+        {
+          role: "assistant",
+          content: "Beep boop",
+          timestamp: "2025-01-01T00:02:00Z",
+        },
       ]);
     });
 
@@ -204,9 +239,17 @@ describe("ContextBuilderService", () => {
     it("maps multiple context messages preserving order", async () => {
       const agent = createMockAgent();
       const context: ChatContextMessage[] = [
-        { sender: "customer", content: "Q1", createdAt: "2025-01-01T00:00:00Z" },
+        {
+          sender: "customer",
+          content: "Q1",
+          createdAt: "2025-01-01T00:00:00Z",
+        },
         { sender: "agent", content: "A1", createdAt: "2025-01-01T00:01:00Z" },
-        { sender: "customer", content: "Q2", createdAt: "2025-01-01T00:02:00Z" },
+        {
+          sender: "customer",
+          content: "Q2",
+          createdAt: "2025-01-01T00:02:00Z",
+        },
         { sender: "bot", content: "A2", createdAt: "2025-01-01T00:03:00Z" },
       ];
 
@@ -275,7 +318,7 @@ describe("ContextBuilderService", () => {
         agent,
         "hi",
         undefined,
-        extra,
+        extra
       );
 
       expect(state.runtimeContext.conversationId).toBe("conv-123");
@@ -292,7 +335,7 @@ describe("ContextBuilderService", () => {
         agent,
         "hi",
         undefined,
-        extra,
+        extra
       );
 
       // ...extra spreads last, so it overrides the base tenantId
@@ -307,10 +350,15 @@ describe("ContextBuilderService", () => {
         { sender: "customer", content: "Help me" },
       ];
 
-      const state = await service.buildRuntimeState("t1", agent, "msg", context);
+      const state = await service.buildRuntimeState(
+        "t1",
+        agent,
+        "msg",
+        context
+      );
 
       expect(state.runtimeContext.conversationHistory).toBe(
-        "User: Hello\nAssistant: Hi there\nUser: Help me",
+        "User: Hello\nAssistant: Hi there\nUser: Help me"
       );
     });
 
@@ -327,6 +375,121 @@ describe("ContextBuilderService", () => {
 
       expect(state.runtimeContext.context).toEqual({});
       expect(state.runtimeContext.memory).toEqual({});
+    });
+
+    // ── system-variables fallback ────────────────────────────────────────
+    //
+    // Server-side fallback: when a caller (chat handler / execution
+    // handler) supplies no `variables`, or `variables` with an empty/missing
+    // `system` namespace, ContextBuilderService loads the tenant's system
+    // variables itself so `{{variables.system.*}}` still resolves. A
+    // non-empty caller-provided `system` namespace wins untouched.
+
+    describe("system-variables fallback", () => {
+      it("fires when extra.variables is entirely absent", async () => {
+        const agent = createMockAgent();
+        const state = await service.buildRuntimeState("tenant-1", agent, "hi");
+
+        expect(mockSystemVariablesProvider.loadForTenant).toHaveBeenCalledWith(
+          "tenant-1"
+        );
+        expect(
+          (state.runtimeContext.variables as VariableResolutionContext).system
+        ).toEqual(FALLBACK_SYSTEM_VARS);
+      });
+
+      it("fires when variables.system is missing", async () => {
+        const agent = createMockAgent();
+        const extra = {
+          variables: {
+            workflow: { foo: "bar" },
+          } as unknown as VariableResolutionContext,
+        };
+
+        const state = await service.buildRuntimeState(
+          "tenant-1",
+          agent,
+          "hi",
+          undefined,
+          extra
+        );
+
+        const variables = state.runtimeContext
+          .variables as VariableResolutionContext;
+        expect(variables.system).toEqual(FALLBACK_SYSTEM_VARS);
+        // Caller-provided sibling namespaces are preserved, not clobbered.
+        expect(variables.workflow).toEqual({ foo: "bar" });
+      });
+
+      it("fires when variables.system is an empty object", async () => {
+        const agent = createMockAgent();
+        const extra = {
+          variables: {
+            system: {},
+            workflow: {},
+            previous: {},
+            node: {},
+            request: {},
+          } as VariableResolutionContext,
+        };
+
+        const state = await service.buildRuntimeState(
+          "tenant-1",
+          agent,
+          "hi",
+          undefined,
+          extra
+        );
+
+        expect(mockSystemVariablesProvider.loadForTenant).toHaveBeenCalledWith(
+          "tenant-1"
+        );
+        expect(
+          (state.runtimeContext.variables as VariableResolutionContext).system
+        ).toEqual(FALLBACK_SYSTEM_VARS);
+      });
+
+      it("caller-provided non-empty system wins untouched — no fallback query", async () => {
+        const agent = createMockAgent();
+        const callerSystem = { companyName: "Caller Corp" };
+        const extra = {
+          variables: {
+            system: callerSystem,
+            workflow: {},
+            previous: {},
+            node: {},
+            request: {},
+          } as VariableResolutionContext,
+        };
+
+        const state = await service.buildRuntimeState(
+          "tenant-1",
+          agent,
+          "hi",
+          undefined,
+          extra
+        );
+
+        expect(
+          mockSystemVariablesProvider.loadForTenant
+        ).not.toHaveBeenCalled();
+        expect(
+          (state.runtimeContext.variables as VariableResolutionContext).system
+        ).toBe(callerSystem);
+      });
+
+      it("degrades to empty system vars when the fallback query fails", async () => {
+        mockSystemVariablesProvider.loadForTenant.mockImplementationOnce(() =>
+          Promise.reject(new Error("connection refused"))
+        );
+
+        const agent = createMockAgent();
+        const state = await service.buildRuntimeState("tenant-1", agent, "hi");
+
+        expect(
+          (state.runtimeContext.variables as VariableResolutionContext).system
+        ).toEqual({});
+      });
     });
   });
 });

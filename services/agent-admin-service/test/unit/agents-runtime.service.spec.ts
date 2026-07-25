@@ -6,14 +6,22 @@ import { AgentsRuntimeService } from "../../src/modules/agents/agents-runtime.se
 describe("AgentsRuntimeService", () => {
   let service: AgentsRuntimeService;
   const request = vi.fn();
+  const findAll = vi.fn();
   const originalFetch = globalThis.fetch;
 
   beforeEach(() => {
     request.mockReset();
+    findAll.mockReset();
+    findAll.mockResolvedValue({ variables: [], total: 0 });
 
-    service = new AgentsRuntimeService({
-      getConnection: vi.fn().mockResolvedValue({ request }),
-    });
+    service = new AgentsRuntimeService(
+      {
+        getConnection: vi.fn().mockResolvedValue({ request }),
+      },
+      { findAll } as unknown as ConstructorParameters<
+        typeof AgentsRuntimeService
+      >[1]
+    );
   });
 
   afterEach(() => {
@@ -55,6 +63,108 @@ describe("AgentsRuntimeService", () => {
     expect(result).toEqual({
       reply: "Hello from runtime",
       tool_calls: [{ name: "memory.search" }],
+    });
+  });
+
+  it("attaches a VariableResolutionContext built from system variables to the chat_respond payload", async () => {
+    findAll.mockResolvedValue({
+      variables: [
+        {
+          id: "var-1",
+          name: "crm-support-company-name",
+          type: "string",
+          value: "Acme Telco",
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+        {
+          id: "var-2",
+          name: "crm-support-api-key",
+          type: "secret",
+          value: "sk-live-abc123",
+          created_at: new Date(),
+          updated_at: new Date(),
+        },
+      ],
+      total: 2,
+    });
+    request.mockResolvedValue({
+      data: Buffer.from(
+        JSON.stringify({
+          data: { payload: { response: "hi", tool_calls: [] } },
+        })
+      ),
+    });
+
+    await service.chat("acme", "agent-1", {
+      message: "hello",
+      context: [],
+    });
+
+    expect(findAll).toHaveBeenCalledWith("acme");
+
+    const [, payload] = request.mock.calls[0] as [string, string];
+    const parsedPayload = JSON.parse(payload) as {
+      data: {
+        payload: {
+          variables?: {
+            system: Record<string, unknown>;
+            workflow: Record<string, unknown>;
+            previous: Record<string, unknown>;
+            node: Record<string, unknown>;
+            request: Record<string, unknown>;
+          };
+        };
+      };
+    };
+
+    // Mirrors the published-runtime path (workflow-service's
+    // SystemVariablesProvider / WorkflowsService): the shape is the full
+    // VariableResolutionContext, with active system variables flattened
+    // into `system` as a flat `{ name: value }` map — including
+    // `secret`-typed values, which the runtime path forwards unmasked too
+    // because the template renderer needs the raw value to resolve
+    // `{{variables.system.*}}` placeholders.
+    expect(parsedPayload.data.payload.variables).toEqual({
+      system: {
+        "crm-support-company-name": "Acme Telco",
+        "crm-support-api-key": "sk-live-abc123",
+      },
+      workflow: {},
+      previous: {},
+      node: {},
+      request: {},
+    });
+  });
+
+  it("degrades to an empty variables context instead of failing the chat when the system-variables lookup errors", async () => {
+    findAll.mockRejectedValue(new Error("connection refused"));
+    request.mockResolvedValue({
+      data: Buffer.from(
+        JSON.stringify({
+          data: { payload: { response: "hi", tool_calls: [] } },
+        })
+      ),
+    });
+
+    const result = await service.chat("acme", "agent-1", {
+      message: "hello",
+      context: [],
+    });
+
+    expect(result).toEqual({ reply: "hi", tool_calls: [] });
+
+    const [, payload] = request.mock.calls[0] as [string, string];
+    const parsedPayload = JSON.parse(payload) as {
+      data: { payload: { variables?: { system: Record<string, unknown> } } };
+    };
+
+    expect(parsedPayload.data.payload.variables).toEqual({
+      system: {},
+      workflow: {},
+      previous: {},
+      node: {},
+      request: {},
     });
   });
 

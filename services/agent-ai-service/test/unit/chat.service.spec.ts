@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
 import type { Agent } from "../../src/modules/agents/agent.model";
 import { AgentManagerService } from "../../src/modules/agents/agent-manager.service";
@@ -528,6 +528,48 @@ describe("ChatService", () => {
       expect(systemMessage.content).toBe("System: TestAgent rendered");
     });
 
+    it("forwards request.variables to buildRuntimeState so {{variables.*}} resolves for streaming", async () => {
+      const agent = createMockAgent();
+      mockAgentManager.getAgent.mockImplementationOnce(() =>
+        Promise.resolve(agent)
+      );
+
+      const variables = {
+        system: { companyName: "Acme" },
+        workflow: {},
+        previous: {},
+        node: {},
+        request: {},
+      };
+
+      await service.generateStream("tenant-1", {
+        agentId: "agent-1",
+        message: "hi",
+        variables,
+      });
+
+      const call = mockContextBuilder.buildRuntimeState.mock.calls[0];
+      // call signature: (tenantId, agent, message, context, extra)
+      const extra = call[4] as Record<string, unknown>;
+      expect(extra.variables).toBe(variables);
+    });
+
+    it("does not set extra.variables when request has none", async () => {
+      const agent = createMockAgent();
+      mockAgentManager.getAgent.mockImplementationOnce(() =>
+        Promise.resolve(agent)
+      );
+
+      await service.generateStream("tenant-1", {
+        agentId: "agent-1",
+        message: "hi",
+      });
+
+      const call = mockContextBuilder.buildRuntimeState.mock.calls[0];
+      const extra = call[4] as Record<string, unknown>;
+      expect(extra.variables).toBeUndefined();
+    });
+
     it("should pass agent modelConfig to llmExecutor with provider and model", async () => {
       const agent = createMockAgent({
         modelConfig: {
@@ -575,6 +617,97 @@ describe("ChatService", () => {
       const params = call[0] as Record<string, unknown>;
       expect(params.provider).toBe("openai");
       expect(params.model).toBe("gpt-4o");
+    });
+
+    // ────────────────────────────────────────────────────────────────────
+    // modelConfig warn guard (BUG B, agent-mcp-tool-naming.md 2026-07-24
+    // backlog): modelConfig is valid in both the flat shape (`provider`/
+    // `model` at the top level) and the nested `llm.provider`/`llm.model`
+    // shape (see the `?? llm.provider` fallback above). The warn guard
+    // previously only checked the flat fields, so a genuinely valid
+    // nested-only config falsely logged "has no modelConfig.provider/model"
+    // on every call.
+    // ────────────────────────────────────────────────────────────────────
+
+    // `ChatService`'s `logger` is a private `new Logger(ChatService.name)`
+    // field, not DI-injected, so it can't be swapped via the testing module.
+    // `Logger.prototype.warn` is also a `@nestjs/common` decorator-defined
+    // accessor property (bun's `spyOn` can't wrap it — "does not support
+    // accessor properties yet"), and other spec files in this suite
+    // permanently replace the whole `@nestjs/common` module via
+    // `mock.module` for the rest of the bun process, so a fresh
+    // `import { Logger }` here can resolve to a DIFFERENT class object than
+    // the one already cached inside `chat.service.ts`. Patching the
+    // concrete `logger` instance actually held by `service` sidesteps both
+    // problems.
+    let warnCalls: unknown[][];
+    let originalWarn: (...args: unknown[]) => void;
+    let loggerInstance: { warn: (...args: unknown[]) => void };
+
+    beforeEach(() => {
+      warnCalls = [];
+      loggerInstance = (service as unknown as { logger: typeof loggerInstance })
+        .logger;
+      originalWarn = loggerInstance.warn.bind(loggerInstance);
+      Object.defineProperty(loggerInstance, "warn", {
+        value: (message?: unknown, ...optionalParams: unknown[]) => {
+          warnCalls.push([message, ...optionalParams]);
+        },
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(loggerInstance, "warn", {
+        value: originalWarn,
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    it("should NOT warn when modelConfig uses the nested `llm` shape (a genuinely valid config)", async () => {
+      const agent = createMockAgent({
+        modelConfig: {
+          llm: { provider: "anthropic", model: "claude-3-opus" },
+        },
+      });
+      mockAgentManager.getAgent.mockImplementationOnce(() =>
+        Promise.resolve(agent)
+      );
+      mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
+        Promise.resolve(createMockState())
+      );
+
+      await service.generateStream("tenant-1", {
+        agentId: "agent-1",
+        message: "hi",
+      });
+
+      const modelConfigWarnings = warnCalls.filter((c) =>
+        String(c[0]).includes("has no modelConfig.provider/model")
+      );
+      expect(modelConfigWarnings).toHaveLength(0);
+    });
+
+    it("should still warn when modelConfig has neither flat nor nested provider/model", async () => {
+      const agent = createMockAgent({ modelConfig: {} });
+      mockAgentManager.getAgent.mockImplementationOnce(() =>
+        Promise.resolve(agent)
+      );
+      mockContextBuilder.buildRuntimeState.mockImplementationOnce(() =>
+        Promise.resolve(createMockState())
+      );
+
+      await service.generateStream("tenant-1", {
+        agentId: "agent-1",
+        message: "hi",
+      });
+
+      const modelConfigWarnings = warnCalls.filter((c) =>
+        String(c[0]).includes("has no modelConfig.provider/model")
+      );
+      expect(modelConfigWarnings).toHaveLength(1);
     });
 
     it("should include userMessage in the messages array sent to llmExecutor", async () => {

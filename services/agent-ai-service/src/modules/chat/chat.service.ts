@@ -110,11 +110,21 @@ export class ChatService {
       );
     }
 
+    // Same variables forwarding as generateReply/generateStream — this
+    // method has no callers today, but leaving it as the one path that
+    // silently drops caller-supplied variables is a trap for whoever wires
+    // it up next.
+    const streamReplyExtra: Record<string, unknown> = {};
+    if (request.variables) {
+      streamReplyExtra.variables = request.variables;
+    }
+
     let state = await this.contextBuilder.buildRuntimeState(
       tenantId,
       agent,
       request.message,
-      request.context
+      request.context,
+      streamReplyExtra
     );
 
     state = await this.preparePrompt(agent, state);
@@ -143,11 +153,22 @@ export class ChatService {
       );
     }
 
+    // Forward `variables` like generateReply does (extra.variables below) so
+    // `{{variables.system.*}}` placeholders resolve for streaming executions
+    // too — without this, the streaming path never sees caller-supplied
+    // variables and the system-variables fallback (ContextBuilderService)
+    // would always fire, discarding any values the caller actually sent.
+    const streamExtra: Record<string, unknown> = {};
+    if (request.variables) {
+      streamExtra.variables = request.variables;
+    }
+
     let state = await this.contextBuilder.buildRuntimeState(
       tenantId,
       agent,
       request.message,
-      request.context
+      request.context,
+      streamExtra
     );
 
     state = await this.preparePrompt(agent, state);
@@ -163,7 +184,14 @@ export class ChatService {
       (llm.connectorId as string) ??
       undefined;
 
-    if (!modelConfig.provider || !modelConfig.model) {
+    // modelConfig is valid in both the flat shape (`provider`/`model` at the
+    // top level) and the nested shape (`llm.provider`/`llm.model`) — see the
+    // fallback chain above. Only warn when NEITHER shape supplies a value,
+    // otherwise a perfectly valid nested config falsely logs a warning.
+    if (
+      (!modelConfig.provider && !llm.provider) ||
+      (!modelConfig.model && !llm.model)
+    ) {
       this.logger.warn(
         `Agent '${agent.id}' has no modelConfig.provider/model — using defaults: ${provider}/${model}`
       );
