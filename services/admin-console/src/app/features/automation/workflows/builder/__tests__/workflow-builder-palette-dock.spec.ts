@@ -94,6 +94,37 @@ describe("WorkflowBuilderComponent — palette dock (T03)", () => {
     expect(chips).toHaveLength(Object.keys(DEFAULT_NODE_MAP).length);
   });
 
+  /**
+   * Design mockup follow-up (11-builder.png): the palette moved from a
+   * floating bottom-center horizontal dock to a floating LEFT vertical
+   * rail. jsdom does no real layout, so this checks the compiled
+   * stylesheet Angular injects into document.head — same regression-
+   * tripwire style as workflow-builder-chrome.spec.ts's full-bleed-offset
+   * tests.
+   */
+  it("positions the dock as a left-edge vertical rail, not a bottom-center row", () => {
+    const css = Array.from(document.head.querySelectorAll("style"))
+      .map((s) => s.textContent ?? "")
+      .filter((t) => t.includes(".wf-dock"))
+      .join("\n");
+    // Host rule: left-anchored, vertically centered — no bottom-center
+    // remnants from the old horizontal dock.
+    const hostRule = css.split("}")[0];
+    expect(hostRule).toContain("left:");
+    expect(hostRule).not.toContain("bottom:");
+    expect(hostRule).not.toContain("translateX");
+    // The chip container itself (`.wf-dock`, not `.wf-dock-item`) now
+    // stacks chips vertically (rail) instead of the old horizontal row.
+    // Angular's emulated encapsulation appends an attribute selector
+    // (e.g. `.wf-dock[_ngcontent-xxx]`) directly after the class name, so
+    // the brace may not immediately follow `.wf-dock` — allow that.
+    const dockContainerRule = css.match(
+      /\.wf-dock(\[[^\]]*\])?\s*\{[^}]*\}/
+    )?.[0];
+    expect(dockContainerRule).toBeTruthy();
+    expect(dockContainerRule).toContain("flex-direction: column");
+  });
+
   it("creates a node of the dropped type via the SAME onCreateNode handler as before", () => {
     const before = Object.keys(fixture.componentInstance.flow().nodes).length;
 

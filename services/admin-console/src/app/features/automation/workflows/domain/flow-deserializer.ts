@@ -6,10 +6,20 @@ import {
 } from "./workflow-node.types";
 import { createNodeFromDefault } from "./workflow-node-defaults";
 
-const X_START = 50;
-const X_GAP = 280;
-const Y_BASE = 100;
-const Y_BRANCH_GAP = 140;
+// Layout is vertical (top -> bottom): the trunk advances downward per step,
+// and parallel branches fan out horizontally around the trunk's x. Node
+// dimensions (see workflow-node.component.ts): min-width 180px, height
+// ranges roughly 60px (icon/name/badge row only) to ~112px (with the config
+// summary and stats rows). Y_STEP is tuned to that height range the same way
+// the previous X_GAP was tuned to node width; X_BRANCH_GAP is tuned to node
+// width the same way the previous Y_BRANCH_GAP was tuned to node height —
+// the two constants are swapped, not re-derived, since the physical
+// dimension each one targets (height for the trunk axis, width for the fan
+// axis) simply changed axis along with the transposition.
+const Y_START = 50;
+const Y_STEP = 140;
+const X_BASE = 100;
+const X_BRANCH_GAP = 280;
 
 interface DeserializedFlow {
   nodes: Record<string, IWorkflowNode>;
@@ -29,23 +39,24 @@ export function deserializeFlow(dto: {
   const connections: Record<string, IWorkflowConnection> = {};
   let connSeq = 0;
 
-  const link = (src: string, tgt: string): void => {
+  const link = (src: string, tgt: string, label?: string): void => {
     const key = `conn-r-${connSeq++}`;
     connections[key] = {
       key,
       source: src,
       target: tgt,
       type: EWorkflowConnectionType.DEFAULT,
+      ...(label ? { label } : {}),
     };
   };
 
   let tails: string[] = [];
-  let col = 0;
+  let row = 0;
 
   if (dto.trigger) {
     const tn = createNodeFromDefault(EWorkflowNodeType.CHANNEL, {
-      x: X_START,
-      y: Y_BASE,
+      x: X_BASE,
+      y: Y_START,
     });
     const raw = dto.trigger as Record<string, unknown>;
     const cfg = raw["config"];
@@ -59,11 +70,11 @@ export function deserializeFlow(dto: {
     tn.configuration["mode"] = (raw["mode"] as string) ?? "shared";
     nodes[tn.key] = tn;
     tails = [tn.key];
-    col++;
+    row++;
   }
 
   if (Array.isArray(dto.actions)) {
-    const result = deserializeChain(dto.actions, nodes, link, col, Y_BASE);
+    const result = deserializeChain(dto.actions, nodes, link, row, X_BASE);
     for (const tail of tails) {
       for (const head of result.heads) {
         link(tail, head);
@@ -94,8 +105,27 @@ interface ChainResult {
   heads: string[];
   /** Keys that the caller should link the NEXT action to (the converge set). */
   tails: string[];
-  /** Number of X_GAP columns consumed by this chain, starting at the given startCol. */
-  columns: number;
+  /** Number of Y_STEP rows consumed by this chain, starting at the given startRow. */
+  rows: number;
+}
+
+/**
+ * Builds the edge-label text for a conditional branch, e.g.
+ * `request.text contains "precio"` (design mockup 11-builder.png) — derived
+ * verbatim from the branch's own real condition rule, never fabricated.
+ * Returns undefined when the condition is missing/malformed so the edge
+ * simply renders unlabeled instead of showing a broken string.
+ */
+function conditionEdgeLabel(
+  condition: Record<string, unknown> | undefined
+): string | undefined {
+  const variable = condition?.["variable"];
+  const comparator = condition?.["comparator"];
+  const value = condition?.["value"];
+  if (typeof variable !== "string" || typeof comparator !== "string") {
+    return undefined;
+  }
+  return `${variable} ${comparator} "${typeof value === "string" ? value : ""}"`;
 }
 
 /**
@@ -103,22 +133,22 @@ interface ChainResult {
  * path) into nodes, handling nested branches/conditionals recursively.
  *
  * For each action:
- * - Regular node: link every current tail -> new node; tails become [node]; +1 column.
+ * - Regular node: link every current tail -> new node; tails become [node]; +1 row.
  * - branch/conditional node: link tails -> node; recursively deserialize each path one
- *   column to the right, vertically offset around the node's y; link node -> each
+ *   row further down, horizontally offset around the node's x; link node -> each
  *   path's heads; the union of all paths' tails becomes the new tail set (an empty
- *   path contributes the node itself as a tail). Columns consumed = 1 + max path columns.
+ *   path contributes the node itself as a tail). Rows consumed = 1 + max path rows.
  */
 function deserializeChain(
   actions: unknown[],
   nodes: Record<string, IWorkflowNode>,
-  link: (src: string, tgt: string) => void,
-  startCol: number,
-  y: number
+  link: (src: string, tgt: string, label?: string) => void,
+  startRow: number,
+  x: number
 ): ChainResult {
   let tails: string[] = [];
   let heads: string[] = [];
-  let col = startCol;
+  let row = startRow;
 
   for (const raw of actions) {
     const a = raw as Record<string, unknown>;
@@ -129,8 +159,8 @@ function deserializeChain(
     }
 
     const node = createNodeFromDefault(type, {
-      x: X_START + col * X_GAP,
-      y,
+      x,
+      y: Y_START + row * Y_STEP,
     });
     node.name = (a["name"] as string) ?? node.name;
     nodes[node.key] = node;
@@ -141,7 +171,7 @@ function deserializeChain(
     if (heads.length === 0) {
       heads = [node.key];
     }
-    col++;
+    row++;
 
     if (activity === "branch") {
       const paths = extractBranchPaths(a);
@@ -154,12 +184,13 @@ function deserializeChain(
         ([, actions]) => actions.length === 0
       );
       const mid = (paths.length - 1) / 2;
-      const childCol = col;
-      let maxPathCols = 0;
+      const childRow = row;
+      let maxPathRows = 0;
       const converge: string[] = [];
 
       for (let pi = 0; pi < paths.length; pi++) {
-        const pathY = y + (pi - mid) * Y_BRANCH_GAP;
+        const pathName = paths[pi][0];
+        const pathX = x + (pi - mid) * X_BRANCH_GAP;
         const pathActions = paths[pi][1];
         if (pathActions.length === 0) {
           converge.push(node.key);
@@ -169,14 +200,17 @@ function deserializeChain(
           pathActions,
           nodes,
           link,
-          childCol,
-          pathY
+          childRow,
+          pathX
         );
         for (const head of pathResult.heads) {
-          link(node.key, head);
+          // Edge label = the branch's own path key (e.g. "jsonplaceholder",
+          // "pokeapi") — real metadata already stored verbatim in
+          // node.configuration["branches"] above, not fabricated.
+          link(node.key, head, pathName);
         }
         converge.push(...pathResult.tails);
-        maxPathCols = Math.max(maxPathCols, pathResult.columns);
+        maxPathRows = Math.max(maxPathRows, pathResult.rows);
       }
 
       if (paths.length === 0) {
@@ -184,7 +218,7 @@ function deserializeChain(
       }
 
       tails = converge;
-      col = childCol + maxPathCols;
+      row = childRow + maxPathRows;
     } else if (activity === "conditional") {
       const condBranches =
         (a["branches"] as Array<{
@@ -207,12 +241,12 @@ function deserializeChain(
 
       const totalPaths = condBranches.length + (hasDefault ? 1 : 0);
       const mid = (totalPaths - 1) / 2;
-      const childCol = col;
-      let maxPathCols = 0;
+      const childRow = row;
+      let maxPathRows = 0;
       const converge: string[] = [];
 
       for (let bi = 0; bi < condBranches.length; bi++) {
-        const pathY = y + (bi - mid) * Y_BRANCH_GAP;
+        const pathX = x + (bi - mid) * X_BRANCH_GAP;
         const pathActions = condBranches[bi].actions ?? [];
         if (pathActions.length === 0) {
           converge.push(node.key);
@@ -222,34 +256,40 @@ function deserializeChain(
           pathActions,
           nodes,
           link,
-          childCol,
-          pathY
+          childRow,
+          pathX
         );
         for (const head of pathResult.heads) {
-          link(node.key, head);
+          // Edge label = the condition text (e.g. `request.text contains
+          // "precio"`), derived verbatim from this branch's own real
+          // condition rule (condBranches[bi].condition) — not fabricated.
+          link(node.key, head, conditionEdgeLabel(condBranches[bi].condition));
         }
         converge.push(...pathResult.tails);
-        maxPathCols = Math.max(maxPathCols, pathResult.columns);
+        maxPathRows = Math.max(maxPathRows, pathResult.rows);
       }
 
       if (hasDefault) {
-        const defaultY = y + (condBranches.length - mid) * Y_BRANCH_GAP;
+        const defaultX = x + (condBranches.length - mid) * X_BRANCH_GAP;
         const pathResult = deserializeChain(
           defaultActions as unknown[],
           nodes,
           link,
-          childCol,
-          defaultY
+          childRow,
+          defaultX
         );
         if (pathResult.heads.length > 0) {
           for (const head of pathResult.heads) {
-            link(node.key, head);
+            // "default" is a literal, honest label — it IS the real
+            // semantic meaning of this path (the conditional's else/default
+            // branch), not an invented placeholder.
+            link(node.key, head, "default");
           }
           node.configuration["default"] = {
             targetKey: pathResult.heads[0],
           };
           converge.push(...pathResult.tails);
-          maxPathCols = Math.max(maxPathCols, pathResult.columns);
+          maxPathRows = Math.max(maxPathRows, pathResult.rows);
         }
       }
 
@@ -258,7 +298,7 @@ function deserializeChain(
       }
 
       tails = converge;
-      col = childCol + maxPathCols;
+      row = childRow + maxPathRows;
     } else {
       if (a["args"] && typeof a["args"] === "object") {
         node.configuration = {
@@ -281,7 +321,7 @@ function deserializeChain(
     }
   }
 
-  return { heads, tails, columns: col - startCol };
+  return { heads, tails, rows: row - startRow };
 }
 
 function activityToNodeType(activity: string): EWorkflowNodeType | null {

@@ -63,21 +63,30 @@ const DOCK_DIVIDER_AFTER = new Set<EWorkflowNodeType>([
     </div>
   `,
   styles: `
-    /* Floating bottom-center dock (SPEC T03) — replaces the old full-height
-       left sidebar. Positioned absolutely by the host, which is placed as
-       a sibling of <f-flow> inside .builder-canvas-wrap (already
-       position:relative) so it floats over the canvas per the mock. */
+    /*
+     * Floating LEFT vertical rail (design mockup 11-builder.png moved this
+     * from a bottom-center horizontal dock to a left rail; same visual
+     * language as the agent configure screen's collapsed icon rail —
+     * icon + tiny label stacked in a floating pill container, see
+     * agent-editor-nav.component.ts's ".palette"/".palette-item"). Vertically
+     * centered on the canvas's left edge so it never collides with the
+     * floating-top chrome or the bottom-left zoom cluster. Positioned
+     * absolutely by the host, a sibling of <f-flow> inside
+     * .builder-canvas-wrap (already position:relative).
+     */
     :host {
       position: absolute;
-      bottom: var(--rd-space-8);
-      left: 50%;
-      transform: translateX(-50%);
+      left: var(--rd-space-8);
+      top: 50%;
+      transform: translateY(-50%);
       z-index: 5;
       pointer-events: none;
+      max-height: calc(100% - var(--rd-space-8) * 4);
     }
     .wf-dock {
       display: flex;
-      align-items: center;
+      flex-direction: column;
+      align-items: stretch;
       gap: 2px;
       background: var(--rd-panel);
       border: 1px solid var(--rd-line-3);
@@ -85,6 +94,8 @@ const DOCK_DIVIDER_AFTER = new Set<EWorkflowNodeType>([
       padding: var(--rd-space-3);
       box-shadow: var(--rd-shadow-lg);
       pointer-events: auto;
+      max-height: 100%;
+      overflow-y: auto;
       /*
        * Prevent text selection while dragging chips onto the canvas —
        * without this, repeated drags accumulate selection highlights that
@@ -116,11 +127,14 @@ const DOCK_DIVIDER_AFTER = new Set<EWorkflowNodeType>([
       letter-spacing: 0.3px;
       color: var(--rd-text-3);
     }
+    /* Divider between chip groups — horizontal now that the dock is a
+       vertical rail (was a vertical bar between horizontally-laid-out
+       chips). */
     .wf-dock-divider {
-      width: 1px;
-      height: 26px;
+      height: 1px;
+      width: 100%;
       background: var(--rd-line-2);
-      margin: 0 var(--rd-space-2);
+      margin: var(--rd-space-2) 0;
     }
   `,
 })

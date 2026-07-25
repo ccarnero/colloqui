@@ -29,6 +29,19 @@ function hasConnection(
   return outgoingOf(connections, sourceKey).includes(targetKey);
 }
 
+function labelOf(
+  connections: Record<
+    string,
+    { source: string; target: string; label?: string }
+  >,
+  sourceKey: string,
+  targetKey: string
+): string | undefined {
+  return Object.values(connections).find(
+    (c) => c.source === sourceKey && c.target === targetKey
+  )?.label;
+}
+
 describe("deserializeFlow — fan-out branch", () => {
   const fanoutDto = {
     trigger: null,
@@ -65,12 +78,12 @@ describe("deserializeFlow — fan-out branch", () => {
     }
   });
 
-  it("places the join node strictly to the right of the parallel path nodes", () => {
+  it("places the join node strictly below the parallel path nodes", () => {
     const { nodes } = deserializeFlow(fanoutDto);
     const join = nodeByName(nodes, "join");
     for (const pathNodeName of ["getPost", "getPokemon", "getCatFact"]) {
-      expect(join.position.x).toBeGreaterThan(
-        nodeByName(nodes, pathNodeName).position.x
+      expect(join.position.y).toBeGreaterThan(
+        nodeByName(nodes, pathNodeName).position.y
       );
     }
   });
@@ -89,6 +102,24 @@ describe("deserializeFlow — fan-out branch", () => {
     const notify = nodeByName(nodes, "notify");
     expect(hasConnection(connections, join.key, post.key)).toBe(true);
     expect(hasConnection(connections, post.key, notify.key)).toBe(true);
+  });
+
+  /**
+   * Design mockup follow-up (11-builder.png): branch fan-out edges carry the
+   * real path key as their label — the same string already stored verbatim
+   * in the branch node's own `configuration["branches"]`, not fabricated.
+   */
+  it("labels each fan-out edge with its real branch path key", () => {
+    const { nodes, connections } = deserializeFlow(fanoutDto);
+    const branch = nodeByName(nodes, "fanout");
+    const getPost = nodeByName(nodes, "getPost");
+    const getPokemon = nodeByName(nodes, "getPokemon");
+    const getCatFact = nodeByName(nodes, "getCatFact");
+    expect(labelOf(connections, branch.key, getPost.key)).toBe(
+      "jsonplaceholder"
+    );
+    expect(labelOf(connections, branch.key, getPokemon.key)).toBe("pokeapi");
+    expect(labelOf(connections, branch.key, getCatFact.key)).toBe("catfacts");
   });
 });
 
@@ -118,6 +149,68 @@ describe("deserializeFlow — empty-path branch", () => {
     const doWork = nodeByName(nodes, "doWork");
     const after = nodeByName(nodes, "afterBranch");
     expect(hasConnection(connections, doWork.key, after.key)).toBe(true);
+  });
+
+  /**
+   * The direct branch -> converge edge for an empty path is created
+   * generically by the trunk-linking code (shared with every other
+   * next-action link), not the branch-specific loop that knows the path
+   * name — so no label metadata exists there and none must be invented.
+   */
+  it("does not invent a label for the empty path's direct branch -> next edge", () => {
+    const { nodes, connections } = deserializeFlow(emptyPathDto);
+    const branch = nodeByName(nodes, "check");
+    const after = nodeByName(nodes, "afterBranch");
+    expect(labelOf(connections, branch.key, after.key)).toBeUndefined();
+  });
+});
+
+describe("deserializeFlow — conditional edge labels", () => {
+  const conditionalDto = {
+    trigger: null,
+    actions: [
+      {
+        name: "priceCheck",
+        activity: "conditional",
+        branches: [
+          {
+            label: "cheap",
+            condition: {
+              variable: "request.text",
+              comparator: "contains",
+              value: "precio",
+            },
+            actions: [{ name: "replyCheap", activity: "jsFunction", args: {} }],
+          },
+        ],
+        default: [{ name: "replyDefault", activity: "jsFunction", args: {} }],
+      },
+    ],
+  };
+
+  /**
+   * Design mockup follow-up (11-builder.png): the mockup shows the
+   * condition text riding the edge (e.g. `request.text contains "precio"`).
+   * Derived verbatim from the branch's own real condition rule.
+   */
+  it("labels a real conditional branch edge with its condition text", () => {
+    const { nodes, connections } = deserializeFlow(conditionalDto);
+    const node = nodeByName(nodes, "priceCheck");
+    const replyCheap = nodeByName(nodes, "replyCheap");
+    expect(labelOf(connections, node.key, replyCheap.key)).toBe(
+      'request.text contains "precio"'
+    );
+  });
+
+  /**
+   * "default" is the real semantic meaning of this path (the conditional's
+   * else/default branch) — a literal, honest label, not an invented one.
+   */
+  it("labels the default-path edge literally as 'default'", () => {
+    const { nodes, connections } = deserializeFlow(conditionalDto);
+    const node = nodeByName(nodes, "priceCheck");
+    const replyDefault = nodeByName(nodes, "replyDefault");
+    expect(labelOf(connections, node.key, replyDefault.key)).toBe("default");
   });
 });
 

@@ -32,13 +32,16 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
         class="wf-node-input"
         fNodeInput
         [fInputId]="node().key + '-in'"
-        fInputConnectableSide="left"
+        fInputConnectableSide="top"
         [style.background]="accentColor()"
       ></div>
 
       <div class="wf-node-content">
-        <div class="wf-node-icon-wrap">
-          <mat-icon>{{ node().icon }}</mat-icon>
+        <div
+          class="wf-node-icon-wrap"
+          [style.background]="iconChipBackground()"
+        >
+          <mat-icon [style.color]="accentColor()">{{ node().icon }}</mat-icon>
         </div>
         <div class="wf-node-name">{{ node().name }}</div>
         <span
@@ -59,7 +62,7 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
         class="wf-node-output"
         fNodeOutput
         [fOutputId]="node().key + '-out'"
-        fOutputConnectableSide="right"
+        fOutputConnectableSide="bottom"
         [fOutputMultiple]="node().type === branchType || node().type === conditionalType"
         [style.background]="accentColor()"
       ></div>
@@ -127,6 +130,10 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
       width: 32px;
       height: 32px;
       border-radius: var(--rd-radius-6);
+      /* Background is bound to iconChipBackground() (a tinted accentColor())
+         per design mockup 11-builder.png, which colors the leading icon chip
+         by node type (green for the trigger, purple for agent nodes, etc.) —
+         this rule only sets shape/fallback. */
       background: var(--rd-hover);
       flex-shrink: 0;
     }
@@ -134,6 +141,8 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
       font-size: 18px;
       width: 18px;
       height: 18px;
+      /* Color is bound to accentColor() via [style.color] above; this is
+         only the fallback for the (unreachable in practice) unbound case. */
       color: var(--rd-accent);
     }
     .wf-node-name {
@@ -173,7 +182,9 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
     }
     /* Port dot fill color is bound to accentColor() via [style.background]
        (SPEC decision 4, AMENDED); the base rule below only sets
-       shape/position, the type color always wins. */
+       shape/position, the type color always wins. Layout is vertical
+       (top -> bottom), so ports sit on the top/bottom edges rather than
+       left/right — see fInputConnectableSide/fOutputConnectableSide above. */
     .wf-node-input,
     .wf-node-output {
       position: absolute;
@@ -181,16 +192,16 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
       height: 12px;
       border-radius: 50%;
       border: 2px solid var(--rd-panel);
-      top: 50%;
-      transform: translateY(-50%);
+      left: 50%;
+      transform: translateX(-50%);
       z-index: 1;
       cursor: crosshair;
     }
     .wf-node-input {
-      left: -6px;
+      top: -6px;
     }
     .wf-node-output {
-      right: -6px;
+      bottom: -6px;
     }
     /* Per-node mini-stats badge (SPEC decision 5). Hidden by default -
        no caller passes stats yet (T01 finding 6: per-node run/error
@@ -254,6 +265,17 @@ export class WorkflowNodeComponent {
    * node-type-color.ts for the mapping table and its citations.
    */
   readonly accentColor = computed(() => nodeTypeColorToken(this.node().type));
+
+  /**
+   * Leading icon-chip background (design mockup 11-builder.png): a tinted
+   * version of the SAME accentColor() token used by the border/ports/badge
+   * (decision 4, AMENDED) — no new color mapping, just `color-mix` applied
+   * to the existing per-type token so the chip reads as "this node's color,
+   * softened" rather than a flat neutral square.
+   */
+  readonly iconChipBackground = computed(
+    () => `color-mix(in srgb, ${this.accentColor()} 18%, transparent)`
+  );
 
   /**
    * Node border color: error state takes priority, then selection, then

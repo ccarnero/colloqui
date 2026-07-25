@@ -148,10 +148,16 @@ function pruneConflictingConnections(
                   fBehavior="floating"
                 >
                   <!-- Edge label rendered only from real IWorkflowConnection.label
-                       metadata (SPEC T04 — T01 finding 2: this field exists but
-                       is never populated by the current serializer/deserializer;
-                       nothing is invented when it is absent). Uses @foblex/flow's
-                       own supported connection-content mechanism (fConnectionContent),
+                       metadata (SPEC T04). Design mockup follow-up: the
+                       deserializer now derives this label for conditional/
+                       branch fan-out edges from the branch's own metadata
+                       (the path/branch name, the condition text, or the
+                       literal "default" for the default path — see
+                       flow-deserializer.ts) - never fabricated, and still
+                       absent for plain linear edges and for empty-path
+                       direct branch->converge edges, where no such metadata
+                       exists. Uses @foblex/flow's own supported
+                       connection-content mechanism (fConnectionContent),
                        positioned at the path midpoint. -->
                   @if (conn.label) {
                     <div fConnectionContent [position]="0.5" class="wf-edge-label">
@@ -638,10 +644,14 @@ function pruneConflictingConnections(
       flex-direction: column;
     }
 
-    /* Foblex connection rendering (library sets fill:none but no stroke) */
+    /* Foblex connection rendering (library sets fill:none but no stroke).
+       Dashed accent-colored links per the design mockup (11-builder.png);
+       stroke-dasharray isn't overridden by the .f-selected rule below, so
+       selected connections stay dashed too, just thicker/re-colored. */
     :host ::ng-deep .f-connection-path {
       stroke: var(--rd-accent);
       stroke-width: 2px;
+      stroke-dasharray: 6 3;
       transition: stroke 0.15s ease;
     }
     :host ::ng-deep .f-connection.f-selected .f-connection-path {
@@ -930,9 +940,11 @@ export class WorkflowBuilderComponent implements OnInit {
             connections,
           });
           // Verbose logging per SPEC line 59: edge labels are only ever
-          // rendered from real IWorkflowConnection.label metadata (T04,
-          // T01 finding 2 — this field exists but is never populated by
-          // today's serializer/deserializer, so this count is commonly 0).
+          // rendered from real IWorkflowConnection.label metadata (T04).
+          // The deserializer now derives this for conditional/branch
+          // fan-out edges (path name, condition text, or "default") — see
+          // flow-deserializer.ts — so this count is 0 only for flows with no
+          // branch/conditional nodes, or for their empty-path/linear edges.
           const labeledCount = Object.values(connections).filter(
             (c) => !!c.label
           ).length;

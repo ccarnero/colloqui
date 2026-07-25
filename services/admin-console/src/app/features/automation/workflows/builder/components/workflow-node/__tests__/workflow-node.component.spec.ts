@@ -91,6 +91,24 @@ describe("WorkflowNodeComponent", () => {
     expect(input?.style.background).toBe("var(--rd-green)");
   });
 
+  /**
+   * Design mockup follow-up (11-builder.png): the leading icon chip is
+   * tinted per node type (a `color-mix` of the SAME accentColor() token
+   * used by the border/ports/badge), not a flat neutral square.
+   */
+  it("tints the leading icon chip with the node type's accent color", () => {
+    fixture.componentInstance.node = makeNode({
+      type: EWorkflowNodeType.CHANNEL,
+    });
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const iconWrap = el.querySelector<HTMLElement>(".wf-node-icon-wrap");
+    const icon = el.querySelector<HTMLElement>(".wf-node-icon-wrap mat-icon");
+    expect(iconWrap?.style.background).toContain("var(--rd-green)");
+    expect(icon?.style.color).toBe("var(--rd-green)");
+  });
+
   it("falls back to the neutral accent token for a node type without a dedicated color", () => {
     fixture.componentInstance.node = makeNode({
       type: EWorkflowNodeType.JS_FUNCTION,
