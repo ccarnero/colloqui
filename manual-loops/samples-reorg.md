@@ -6,7 +6,7 @@
 > — provisioning-service, `IntegrationManifest`, SDK `client.manifests` +
 > `client.secrets`; T05 here consumes it).
 > SEQUENCING OVERRIDE (user decision 2026-07-15): this loop runs FIRST, BEFORE
-> `manual-loops/crm-support-telegram.md` T08 (which was the original
+> `manual-loops/demos/crm-support-telegram.md` T08 (which was the original
 > prerequisite). T07 here rewrites that SPEC's `sdk/samples/*` Prior-art
 > citations, so crm T08 runs afterwards against the new paths.
 > Origin: user decision 2026-07-14 (Cowork session, taxonomy discussion);
@@ -89,7 +89,7 @@ the living "after" showcase of declarative provisioning.
   bilingual doc convention travels with each folder unchanged.
 - `sdk/samples/http-bridge/` — the reference TS-SDK wrapper pattern all
   samples mirror; becomes the seed of `sdk/examples/`.
-- `manual-loops/crm-support-telegram.md` Prior art section — cites
+- `manual-loops/demos/crm-support-telegram.md` Prior art section — cites
   `sdk/samples/*` paths that must be rewritten (T05).
 - Known referrers of `sdk/samples/` (starting sweep list, NOT exhaustive —
   T01 produces the real map): `sdk/README.md`, `bootstrap-from-scratch.md`,
@@ -286,7 +286,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' \) | wc -l   # == stan
 - `cowork/INDEX.md` entry for the reorg; refresh `bootstrap-from-scratch.md`
   and `DOCS/README.md` sample references.
 - Rewrite the `sdk/samples/*` citations in
-  `manual-loops/crm-support-telegram.md` Prior art to the new paths.
+  `manual-loops/demos/crm-support-telegram.md` Prior art to the new paths.
 - Document the declarative-provisioning usage in `integrations/README.md`
   (manifest.yaml convention, the CLI commands, secrets-from-env rule, what
   STAND-BY means) and link `services/provisioning-service/README.md`; add
@@ -305,7 +305,7 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' \) | wc -l   # == stan
 grep -n "samples-reorg" cowork/INDEX.md
 grep -n "yoizen manifests apply" integrations/README.md
 test -f manual-loops/provisioning-manifest-gaps.md
-rg -l "sdk/samples/" manual-loops/crm-support-telegram.md ; test $? -eq 1
+rg -l "sdk/samples/" manual-loops/demos/crm-support-telegram.md ; test $? -eq 1
 ```
 
 ---
@@ -822,7 +822,7 @@ of `bootstrap-from-scratch.md` (telegram step now CLI flow) and
 in `integrations/README.md` (manifest convention, CLI commands,
 secrets-from-env slug rule, STANDBY.md meaning); CLI section in
 `sdk/README.md`; every `sdk/samples/*` citation in
-`manual-loops/crm-support-telegram.md` rewritten to the new paths with
+`manual-loops/demos/crm-support-telegram.md` rewritten to the new paths with
 accurate migrated/stand-by annotations (crm T08 can now run).
 
 AUTHORED `manual-loops/provisioning-manifest-gaps.md` (487 lines): the

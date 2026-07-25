@@ -166,7 +166,7 @@ Commits only happen after the task's gates run green against the cluster.
 
 **Accept**
 ```
-grep -n "T01 mapping" manual-loops/crm-support-telegram.md
+grep -n "T01 mapping" manual-loops/demos/crm-support-telegram.md
 ```
 
 ### T02 — `manifest.yaml`: channel + HubSpot connector + secrets

@@ -405,7 +405,7 @@ Manual-loop change (not SDD) retaking the `demos/crm-support-telegram` commercia
 and migrating its provisioning from five sequential setup scripts to a single declarative
 `manifest.yaml` applied via `yoizen manifests apply --secrets-from-env` — the same end-state
 `integrations/channels/telegram-transform-reply` reached first. Full task queue, gates, and human
-decisions: `manual-loops/crm-support-telegram.md`. Engram topic:
+decisions: `manual-loops/demos/crm-support-telegram.md`. Engram topic:
 `demo/crm-telegram-showcase`.
 
 > **Triggered a platform gap fix mid-loop**: `services[].env[]` could not express the
@@ -419,7 +419,7 @@ Decision cuádruple:
   needs — the five `01-…05-*.sh`/`setup.sh` scripts and their `src/0N-*.ts` drivers are DELETED
   (T06), not kept as a fallback; only `run.sh` (e2e proof) and a NEW `bootstrap.sh` (the narrow
   set of genuinely out-of-band items: image build, HubSpot custom property, Telegram webhook
-  registration) survive as scripts — `manual-loops/crm-support-telegram.md` user decisions 2-4.
+  registration) survive as scripts — `manual-loops/demos/crm-support-telegram.md` user decisions 2-4.
 - **Why**: proves the declarative-provisioning story end-to-end on the platform's most
   full-shaped commercial showcase (channel + connector + LLM connector + KB + skill +
   systemVariables + agent + hosted service + workflow, all cross-referencing each other by

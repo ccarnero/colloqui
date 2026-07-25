@@ -9,7 +9,7 @@
 > PLAIN-STRINGS-ONLY per a HUMAN RULING this SPEC revisits — see decision 1);
 > `manual-loops/provisioning-manifest-gaps-3.md` (T01-T05 shipped, 12/12
 > samples declarative).
-> Origin: `manual-loops/crm-support-telegram.md` T04 — the `priority-scorer`
+> Origin: `manual-loops/demos/crm-support-telegram.md` T04 — the `priority-scorer`
 > hosted service's `services[].env[]` block needs (a) `YOIZEN_EMAIL`/
 > `YOIZEN_PASSWORD` as secret-bound values (the scorer's own platform login
 > credentials) and (b) `HUBSPOT_CONNECTOR_ID`/`HUBSPOT_DEALS_ENDPOINT_ID`/
@@ -18,7 +18,7 @@
 > expressible under the current `serviceEnvVarSchema = { name, value: string
 > }` (plain literals only). Human decision 2026-07-24: the crm loop PAUSES
 > before T04; this SPEC closes the gap platform-side first. See
-> `manual-loops/crm-support-telegram.md`'s Progress checklist for the pause
+> `manual-loops/demos/crm-support-telegram.md`'s Progress checklist for the pause
 > note.
 > Engram topic: 'platform/provisioning-manifest-gaps-4'.
 
@@ -340,7 +340,7 @@ second apply.
   i.e. none has an `env:` key under `services:`), so this SPEC's schema
   widening is a pure add with zero risk of an existing manifest hitting a
   new code path unexpectedly.
-- `manual-loops/crm-support-telegram.md` T01 mapping's "Manifest-engine gap"
+- `manual-loops/demos/crm-support-telegram.md` T01 mapping's "Manifest-engine gap"
   section (its own citations of `serviceEnvVarSchema`/`registry-services-
   writer.ts`/`substitution-allowlist.ts`) — the ORIGINAL discovery of this
   gap from the CONSUMER side; this SPEC is written from the PROVIDER
@@ -624,7 +624,7 @@ cd services/registry-service && bun test -t "secretKeyRef|env"
   manifest layer).
 - Second apply: full noop (0 create / 0 update) — proves decision 6 holds
   end-to-end, not just in a unit test.
-- Update `manual-loops/crm-support-telegram.md`: replace the PAUSED note
+- Update `manual-loops/demos/crm-support-telegram.md`: replace the PAUSED note
   (added when this SPEC was authored) with a short note that gaps-4 shipped
   and T04 may resume, citing this SPEC's shipped state — human approves
   BEFORE the crm loop actually resumes (Human boundaries).
@@ -633,7 +633,7 @@ cd services/registry-service && bun test -t "secretKeyRef|env"
 ```
 # G9 verbatim (above) — 6-entry env block applies, resolves (verified
 # indirectly, no value ever printed), second apply is a full 0/0 noop
-grep -n "PAUSED before T04" manual-loops/crm-support-telegram.md   # must be GONE after this task
+grep -n "PAUSED before T04" manual-loops/demos/crm-support-telegram.md   # must be GONE after this task
 ```
 
 ---
@@ -658,7 +658,7 @@ grep -n "PAUSED before T04" manual-loops/crm-support-telegram.md   # must be GON
 - `registry-service` canary/traffic-splitting, route collision behavior, or
   any other `registry-service` module — Option B (decision 1) touches ONLY
   the Knative-body env construction, nothing else in that service.
-- Actually resuming `manual-loops/crm-support-telegram.md` T04 — T05 only
+- Actually resuming `manual-loops/demos/crm-support-telegram.md` T04 — T05 only
   unblocks it (removes the PAUSED note); the crm loop's own human approval
   gate for resuming is separate (see that SPEC's Human boundaries).
 

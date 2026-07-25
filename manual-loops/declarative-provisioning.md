@@ -4,7 +4,7 @@
 > and dual review. Queues live in `manual-loops/`.
 > Depends on: `manual-loops/connector-invoke-api.md` (shipped — gateway proxy
 > route + TAXONOMY patterns reused). Sequencing per user decision: run AFTER
-> `manual-loops/crm-support-telegram.md` and `manual-loops/samples-reorg.md`
+> `manual-loops/demos/crm-support-telegram.md` and `manual-loops/samples-reorg.md`
 > complete — the .sh demo is the "before" this feature turns into "after".
 > Origin: user decisions 2026-07-14 (Cowork session, declarative provisioning design).
 > Engram topic: 'platform/declarative-provisioning'.
