@@ -8,28 +8,58 @@ import {
 } from "../../../domain/workflow-node-defaults";
 import { nodeTypeColorToken } from "../workflow-node/node-type-color";
 import { nodeTypeShortLabel } from "../workflow-node/node-type-short-label";
+import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
 
 interface IDockChip {
   type: EWorkflowNodeType;
   defaults: INodeDefault;
   shortLabel: string;
   color: string;
-  dividerAfter: boolean;
+  tint: string;
+}
+
+interface IPaletteGroup {
+  name: string;
+  chips: IDockChip[];
 }
 
 /**
- * Node types after which the mock's dock (`Rediseño Terminal.dc.html:1561-
- * 1574`, `dockItems`) renders a divider: `CHAN, JS | HTTP, MCP, SVC, EVT |
- * AGENT | PAR, IF`. Sourced verbatim from the design ground truth, not the
- * domain `group` field (which categorizes the four Integrations types
- * together under one label but the mock still separates them visually only
- * by icon, no divider — this table matches the mock pixel-for-pixel).
+ * Palette groups, derived from `DEFAULT_NODE_MAP`'s own `group` field (SPEC
+ * T05 of console-redesign-builder-v2.md — "Grouping per DEFAULT_NODE_MAP's
+ * group field"), preserving the map's declaration order within and across
+ * groups. This intentionally REPLACES the previous (T04-era, v1/rejected)
+ * dock divider table that hand-matched the mock's bottom-center dock pixel
+ * layout — the binding contract's PRESERVE item 2 override says the mock's
+ * *visual language* (chip/label/section styling) is ported onto the
+ * left-rail *layout*, not its literal grouping, so the rail groups by the
+ * real domain taxonomy (Channels / Logic / Integrations / AI / Flow
+ * Control) instead of the mock's one-off `dockItems` array.
  */
-const DOCK_DIVIDER_AFTER = new Set<EWorkflowNodeType>([
-  EWorkflowNodeType.JS_FUNCTION,
-  EWorkflowNodeType.SERVICE_BUS_CALL,
-  EWorkflowNodeType.AGENT_CALL,
-]);
+function buildPaletteGroups(): IPaletteGroup[] {
+  const groups: IPaletteGroup[] = [];
+  const groupIndexByName = new Map<string, number>();
+
+  for (const [type, defaults] of Object.entries(DEFAULT_NODE_MAP)) {
+    const nodeType = type as EWorkflowNodeType;
+    const chip: IDockChip = {
+      type: nodeType,
+      defaults,
+      shortLabel: nodeTypeShortLabel(nodeType),
+      color: nodeTypeColorToken(nodeType),
+      tint: nodeTypeTintToken(nodeType),
+    };
+
+    const existingIndex = groupIndexByName.get(defaults.group);
+    if (existingIndex === undefined) {
+      groupIndexByName.set(defaults.group, groups.length);
+      groups.push({ name: defaults.group, chips: [chip] });
+    } else {
+      groups[existingIndex]?.chips.push(chip);
+    }
+  }
+
+  return groups;
+}
 
 @Component({
   selector: "app-workflow-palette",
@@ -42,23 +72,35 @@ const DOCK_DIVIDER_AFTER = new Set<EWorkflowNodeType>([
       aria-label="Add workflow node"
       data-testid="workflow-palette-dock"
     >
-      @for (chip of chips; track chip.type) {
-        <div
-          class="wf-dock-item"
-          fExternalItem
-          [fData]="chip.type"
-          [attr.title]="chip.defaults.name"
-          [attr.aria-label]="chip.defaults.name"
-          data-testid="workflow-palette-chip"
-        >
-          <mat-icon [style.color]="chip.color">{{
-            chip.defaults.icon
-          }}</mat-icon>
-          <span class="wf-dock-label">{{ chip.shortLabel }}</span>
-        </div>
-        @if (chip.dividerAfter) {
+      @for (group of groups; track group.name; let isFirst = $first) {
+        @if (!isFirst) {
           <span class="wf-dock-divider"></span>
         }
+        <div
+          class="wf-dock-group"
+          [attr.aria-label]="group.name"
+          data-testid="workflow-palette-group"
+          [attr.data-group]="group.name"
+        >
+          <span class="wf-dock-group-label">{{ group.name }}</span>
+          @for (chip of group.chips; track chip.type) {
+            <div
+              class="wf-dock-item"
+              fExternalItem
+              [fData]="chip.type"
+              [attr.title]="chip.defaults.name"
+              [attr.aria-label]="chip.defaults.name"
+              data-testid="workflow-palette-chip"
+            >
+              <span class="wf-dock-item-tile" [style.background]="chip.tint">
+                <mat-icon [style.color]="chip.color">{{
+                  chip.defaults.icon
+                }}</mat-icon>
+              </span>
+              <span class="wf-dock-label">{{ chip.shortLabel }}</span>
+            </div>
+          }
+        </div>
       }
     </div>
   `,
@@ -104,11 +146,33 @@ const DOCK_DIVIDER_AFTER = new Set<EWorkflowNodeType>([
       user-select: none;
       -webkit-user-select: none;
     }
+    /* Section (group) wrapper — one per DEFAULT_NODE_MAP group, SPEC T05. */
+    .wf-dock-group {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+    }
+    /* Uppercase mono section label (reference's "chip/label/section
+       styling" — the mock's dock chips already use uppercase mono item
+       labels; this extends the same type ramp to the group header so the
+       rail communicates DEFAULT_NODE_MAP's grouping, which the mock's
+       bottom dock never needed to since it hand-authored its own flat
+       9-item list). */
+    .wf-dock-group-label {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-3xs);
+      letter-spacing: var(--rd-tracking-2);
+      color: var(--rd-text-3);
+      text-transform: uppercase;
+      padding: var(--rd-space-1) var(--rd-space-3);
+      opacity: 0.8;
+    }
     .wf-dock-item {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 2px;
+      gap: var(--rd-space-1);
       padding: var(--rd-space-3) var(--rd-space-4);
       border-radius: var(--rd-radius-6);
       cursor: grab;
@@ -116,15 +180,32 @@ const DOCK_DIVIDER_AFTER = new Set<EWorkflowNodeType>([
     .wf-dock-item:hover {
       background: var(--rd-hover);
     }
-    .wf-dock-item mat-icon {
-      font-size: 17px;
-      width: 17px;
-      height: 17px;
+    .wf-dock-item:active {
+      background: var(--rd-hover);
+      cursor: grabbing;
+    }
+    /* Icon tile: filled, type-tinted square behind the glyph — mirrors the
+       node card's icon-chip treatment (node-type-tint.ts / node-card.css
+       KIND_TINT) so the rail and the cards on canvas read as the same
+       visual system. */
+    .wf-dock-item-tile {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: var(--rd-radius-6);
+      flex-shrink: 0;
+    }
+    .wf-dock-item-tile mat-icon {
+      font-size: 15px;
+      width: 15px;
+      height: 15px;
     }
     .wf-dock-label {
       font-family: var(--rd-font-mono);
-      font-size: 8.5px;
-      letter-spacing: 0.3px;
+      font-size: var(--rd-text-size-8-5);
+      letter-spacing: var(--rd-tracking-1);
       color: var(--rd-text-3);
     }
     /* Divider between chip groups — horizontal now that the dock is a
@@ -140,30 +221,25 @@ const DOCK_DIVIDER_AFTER = new Set<EWorkflowNodeType>([
 })
 export class WorkflowPaletteComponent {
   /**
-   * Dock chips, one per palette entry — SAME node types and SAME create
-   * wiring as the old sidebar (`fExternalItem`/`[fData]`, consumed by
-   * `f-flow[fDraggable]`'s `fCreateNode` in `WorkflowBuilderComponent`).
-   * Only the container markup/styling changed for T03.
+   * Palette groups, one per `DEFAULT_NODE_MAP` `group` value (SPEC T05) —
+   * SAME node types and SAME create wiring as before (`fExternalItem`/
+   * `[fData]`, consumed by `f-flow[fDraggable]`'s `fCreateNode` in
+   * `WorkflowBuilderComponent`). Only the container markup/styling and the
+   * grouping source changed for T05.
    */
-  readonly chips: IDockChip[];
+  readonly groups: IPaletteGroup[];
 
   constructor() {
-    this.chips = Object.entries(DEFAULT_NODE_MAP).map(([type, defaults]) => {
-      const nodeType = type as EWorkflowNodeType;
-      return {
-        type: nodeType,
-        defaults,
-        shortLabel: nodeTypeShortLabel(nodeType),
-        color: nodeTypeColorToken(nodeType),
-        dividerAfter: DOCK_DIVIDER_AFTER.has(nodeType),
-      };
-    });
+    this.groups = buildPaletteGroups();
 
-    // Verbose logging per SPEC constraints: trace dock composition once
-    // per mount so a missing/reordered chip is traceable in logs.
-    console.debug("[WorkflowPaletteComponent] dock chips built", {
-      count: this.chips.length,
-      types: this.chips.map((c) => c.type),
+    // Verbose logging per SPEC constraints: trace rail composition once
+    // per mount so a missing/reordered chip or group is traceable in logs.
+    console.debug("[WorkflowPaletteComponent] rail groups built", {
+      groupCount: this.groups.length,
+      groups: this.groups.map((g) => ({
+        name: g.name,
+        types: g.chips.map((c) => c.type),
+      })),
     });
   }
 }
