@@ -969,7 +969,7 @@ if ! SHOWCASE_JSON="$(
   E2E_DIE_AFTER_APPLY="${E2E_SIMULATE_DRIVER_DEATH:-0}" \
   bun run "$SHOWCASE_DRIVER_PATH"
 )"; then
-  err "T09 showcase driver FAILED (see stderr above for the failed assertion)"
+  err "T09 showcase driver FAILED — the driver's last '[showcase-driver] FAILED' stderr line right above names the failed assertion"
   exit 1
 fi
 SHOWCASE_WALL_ELAPSED_S=$((SECONDS - SHOWCASE_WALL_START))

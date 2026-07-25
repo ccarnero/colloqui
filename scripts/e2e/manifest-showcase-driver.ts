@@ -1210,6 +1210,18 @@ main()
       error instanceof Error ? (error.stack ?? error.message) : String(error);
     console.error(`[showcase-driver] FATAL: ${message}`);
     await runSelfCleanupOnce("uncaught-error");
+    // Known-flake diagnosability (gaps-5 T02 follow-up): the FATAL print
+    // above happens BEFORE self-cleanup, so in a long run its message ends
+    // up buried under the cleanup log lines and the harness can only say
+    // "driver FAILED (see stderr above)". Re-print a one-line summary as the
+    // driver's very LAST stderr line so the failed assertion's own message
+    // sits directly next to manifest-apply.sh's stage-failure line.
+    const firstLine = (
+      error instanceof Error ? error.message : String(error)
+    ).split("\n", 1)[0];
+    console.error(
+      `[showcase-driver] FAILED${error instanceof ShowcaseAssertionError ? " ASSERTION" : ""}: ${firstLine}`
+    );
     process.exit(1);
   });
 
