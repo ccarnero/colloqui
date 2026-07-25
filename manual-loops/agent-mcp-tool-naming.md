@@ -475,8 +475,22 @@ cd services/agent-ai-service && bunx tsc -p tsconfig.json --noEmit
   moved after + gated by mcpEnabled (ordering bug fixed); cross-agent
   isolation test non-circular. Gates: agent-ai 945 green, tsc clean, accept
   filter 12/12, G4b rebuild + e2e PASSED. Review: 2×APPROVED round 1.
-- [ ] T03 e2e residue teardown + live verification (deepwiki +
-      sample-mcp-server re-activated, crm-support-agent proven)
+- [x] T03 e2e residue teardown + live verification (deepwiki +
+      sample-mcp-server re-activated, crm-support-agent proven) —
+  2026-07-24. Driver self-cleanup per the ruling: fail() throws through a
+  single exit path, trackForCleanup registers every round-1/2 resource,
+  selfCleanup runs in insertion/PRIORITY order (mcpServer first — round-1
+  review caught the inverted LIFO), SIGINT/SIGTERM wired, bash sweep kept
+  as second defense, E2E_DIE_AFTER_APPLY honestly documented as
+  bash-sweep-only (SIGKILL-class). Live: soft-failure path proven (ordered
+  removal log, zero residue), e2e residue row DELETED, deepwiki +
+  sample-mcp-server re-activated, and the INCIDENT REPRODUCTION PASSED —
+  crm-support-agent playground execution completed with deepwiki connected
+  and tools merged under `__` names, no AI_APICallError
+  (sample-mcp-server unreachable = environmental placeholder URL, reported
+  not faked). e2e green with servers active. Review: round 1 2×REJECTED
+  (inverted order) → round 2 1×REJECTED (stale JSDoc) → round 3
+  2×APPROVED. LOOP COMPLETE 3/3.
 
 ## Out of scope (explicit)
 

@@ -101,6 +101,29 @@
  * throws an uncaught exception past `main()`. Every secret VALUE (A/B/C/D)
  * is NEVER logged, NEVER included in the JSON summary, and NEVER printed —
  * only names/owners/verdicts are.
+ *
+ * T03 (agent-mcp-tool-naming.md) — DRIVER SELF-CLEANUP (ruled: driver
+ * self-cleanup over a bash prefix/age sweep — see that SPEC's Progress
+ * section). The division of responsibility this file's header used to
+ * describe ("bash owns teardown, this file owns SDK round trips only") is
+ * the ROOT CAUSE of the incident that motivated T03: a live `e2e-mcp-*`
+ * `mcp_servers` row survived a run that died before this file ever printed
+ * its JSON summary, because teardown was 100% summary-dependent. This file
+ * now ALSO tracks every round-1/round-2 resource it successfully creates
+ * (`trackForCleanup`, right after each externalId is known) and, on ANY exit
+ * path that is not "successful JSON printed" — a thrown assertion
+ * (`fail()`), an unexpected SDK error, `SIGINT`/`SIGTERM` — deletes every
+ * tracked resource itself (`selfCleanup`, PRIORITY order — mcpServer
+ * FIRST, see `selfCleanup`'s own comment) BEFORE the
+ * process exits non-zero. This is defense-in-depth, not a replacement:
+ * `manifest-apply.sh`'s own JSON-driven teardown AND its nonce-suffix sweep
+ * (`sweep_by_name`, added in a prior fix attempt) stay exactly as they are —
+ * a hard kill (`SIGKILL`, OOM) bypasses even this file's own signal
+ * handlers, so the bash-side sweep remains the only recovery path for that
+ * case (see `E2E_DIE_AFTER_APPLY` below, which still simulates exactly that
+ * un-recoverable-by-JS scenario on purpose). `E2E_SIMULATE_SOFT_FAILURE_AFTER_APPLY`
+ * (new) simulates the case THIS file's self-cleanup DOES recover from: a
+ * thrown error mid-round, after resources exist but before the JSON summary.
  */
 
 import { randomUUID } from "node:crypto";
@@ -149,9 +172,107 @@ function log(msg: string): void {
   console.error(`[showcase-driver] ${msg}`);
 }
 
+/**
+ * Marks an assertion failure. Used to THROW (never `process.exit` directly)
+ * so every failure path — including this one — flows through the SAME
+ * `main().catch()` handler below, which runs `selfCleanup()` before the
+ * process actually exits (T03: driver self-cleanup). A `process.exit(1)`
+ * here would skip `selfCleanup()` entirely, reintroducing exactly the
+ * residue bug T03 fixes.
+ */
+class ShowcaseAssertionError extends Error {}
+
 function fail(msg: string): never {
   console.error(`[showcase-driver] ASSERTION FAILED: ${msg}`);
-  process.exit(1);
+  throw new ShowcaseAssertionError(msg);
+}
+
+// ---------------------------------------------------------------------------
+// T03 driver self-cleanup — tracks every resource this driver itself
+// creates so it can tear them down from its OWN exit path, independent of
+// whether the process ever reaches the final JSON-summary print or whether
+// `manifest-apply.sh`'s trap/sweep ever runs. See this file's header
+// comment for the full rationale and the division-of-responsibility
+// recheck.
+// ---------------------------------------------------------------------------
+
+interface TrackedResource {
+  readonly kind: string;
+  readonly name: string;
+  readonly remove: () => Promise<void>;
+}
+
+const trackedResources: TrackedResource[] = [];
+
+/**
+ * Registers a successfully-created resource for defense-in-depth teardown.
+ * No-op (with a log line) if `externalId` is missing — a resource whose id
+ * was never captured can't be targeted for deletion here; it stays covered
+ * by `manifest-apply.sh`'s name-resolution fallback / nonce sweep only.
+ */
+function trackForCleanup(
+  kind: string,
+  name: string,
+  externalId: string | undefined,
+  remove: (id: string) => Promise<void>
+): void {
+  if (!externalId) {
+    log(
+      `self-cleanup tracking SKIPPED for ${kind} '${name}': no externalId captured`
+    );
+    return;
+  }
+  trackedResources.push({
+    kind,
+    name,
+    remove: () => remove(externalId),
+  });
+  log(
+    `self-cleanup tracking: ${kind} '${name}' externalId='${externalId}' registered (defense-in-depth, independent of the JSON summary)`
+  );
+}
+
+/**
+ * Deletes every tracked resource in insertion/priority order — mcpServer
+ * first (registered first, see the round-1 `trackForCleanup` call
+ * sequence), NOT reverse-creation/LIFO order. Called from
+ * every non-success exit path (see `main().catch()` and the signal handlers
+ * below) — never from the success path, where `manifest-apply.sh`'s
+ * JSON-driven teardown (using this driver's own summary) remains the owner,
+ * exactly as before T03. Each deletion is best-effort: one failure never
+ * blocks the rest, and any residual failure still falls back to
+ * `manifest-apply.sh`'s nonce-suffix sweep (kept as the second line of
+ * defense per this task's explicit instruction).
+ */
+async function selfCleanup(reason: string): Promise<void> {
+  if (trackedResources.length === 0) {
+    log(`self-cleanup (${reason}): nothing tracked yet, nothing to remove`);
+    return;
+  }
+  log(
+    `self-cleanup (${reason}): removing ${String(trackedResources.length)} driver-tracked resource(s) so residue cannot outlive this run`
+  );
+  // Explicit PRIORITY order, NOT reverse-creation/LIFO order: `mcpServer` is
+  // registered FIRST (see the round-1 `trackForCleanup` call sequence
+  // above) specifically so it is iterated — and removed — FIRST here. A
+  // reverse/LIFO loop would remove it LAST, which is backwards: the
+  // mcpServer is the one resource kind whose residue actively harms OTHER
+  // tenant traffic while it lives (incident root cause 2 — an
+  // enabled+active stray MCP server auto-connects for every agent), so it
+  // must be the highest-priority removal, not the lowest.
+  for (const resource of trackedResources) {
+    try {
+      await resource.remove();
+      log(
+        `self-cleanup (${reason}): removed ${resource.kind} '${resource.name}'`
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(
+        `[showcase-driver] self-cleanup (${reason}): FAILED to remove ${resource.kind} '${resource.name}': ${message} — manifest-apply.sh's own teardown/sweep remains the second line of defense`
+      );
+    }
+  }
 }
 
 /** Injects a `Host` header on every request — the fetch-level equivalent of curl's `--resolve` + `-H "Host: ..."` pairing every other e2e script uses. */
@@ -674,25 +795,6 @@ async function main(): Promise<void> {
     );
   }
 
-  // Regression test hook for the mid-run driver-death leak (see
-  // scripts/e2e/teardown-regression.sh): manifest-apply.sh's cleanup() used
-  // to resolve every showcase resource EXCLUSIVELY from this driver's final
-  // JSON summary line. If the driver dies anywhere before that line prints —
-  // crash, connection failure, ctrl-c — every SHOWCASE_*/LIB_*/NEG_* resource
-  // it already created (this first apply just created 7+ of them, plus 4 k8s
-  // Secrets) leaked with zero teardown. E2E_DIE_AFTER_APPLY=1 simulates
-  // EXACTLY that: die right after the first successful apply, before any of
-  // the later rounds run and before the JSON summary is ever assembled or
-  // printed. manifest-apply.sh's cleanup() must recover via its
-  // name-prefix/nonce sweep regardless of this driver ever having produced
-  // JSON — that sweep is the actual fix under test.
-  if (process.env.E2E_DIE_AFTER_APPLY === "1") {
-    console.error(
-      "[showcase-driver] E2E_DIE_AFTER_APPLY=1 — simulating driver death right after the first apply, before the JSON summary is printed"
-    );
-    process.exit(1);
-  }
-
   const findExternalId = (name: string): string | undefined =>
     firstApply.resources.find((r) => r.name === name)?.externalId;
 
@@ -708,6 +810,83 @@ async function main(): Promise<void> {
       ? ((apply1.knowledgeBases ?? [])[0] as { kbExternalId?: string })
           .kbExternalId
       : undefined;
+
+  // T03 (agent-mcp-tool-naming.md) driver self-cleanup — register every
+  // round-1 resource for defense-in-depth teardown THE MOMENT its
+  // externalId is known, before any later step (including the
+  // E2E_DIE_AFTER_APPLY / E2E_SIMULATE_SOFT_FAILURE_AFTER_APPLY hooks right
+  // below) has a chance to die. The mcpServer is listed FIRST — it is the
+  // one resource kind whose residue actively harms OTHER tenant traffic
+  // (an enabled+active stray MCP server auto-connects for every agent, see
+  // the SPEC's incident root cause 2) — so it is registered FIRST here and
+  // `selfCleanup()` iterates `trackedResources` in this SAME (insertion,
+  // priority) order — NOT reversed — specifically so mcpServer is the
+  // FIRST resource removed on every self-cleanup path, not the last.
+  trackForCleanup("mcpServer", MCP_SERVER_NAME, mcpServerExternalId, (id) =>
+    client.mcpServers.remove(id)
+  );
+  trackForCleanup("agent", AGENT_NAME, agentExternalId, (id) =>
+    client.agents.remove(id)
+  );
+  trackForCleanup("workflow", WORKFLOW_NAME, workflowExternalId, (id) =>
+    client.workflows.remove(id)
+  );
+  trackForCleanup("skill", SKILL_NAME, skillExternalId, (id) =>
+    client.skills.remove(id).then(() => undefined)
+  );
+  trackForCleanup(
+    "systemVariable",
+    SYSVAR_NAME,
+    systemVariableExternalId,
+    (id) => client.systemVariables.remove(id).then(() => undefined)
+  );
+  trackForCleanup("knowledgeBase", KB_NAME, kbExternalId, (id) =>
+    client.knowledgeBases.remove(id).then(() => undefined)
+  );
+  trackForCleanup("connector", CONNECTOR_NAME, connectorExternalId, (id) =>
+    client.connectors.remove(id)
+  );
+  trackForCleanup("channel", CHANNEL_NAME, channelExternalId, (id) =>
+    client.channels.removeAccount(id)
+  );
+
+  // Regression test hook for the mid-run driver-death leak (see
+  // scripts/e2e/teardown-regression.sh): manifest-apply.sh's cleanup() used
+  // to resolve every showcase resource EXCLUSIVELY from this driver's final
+  // JSON summary line. If the driver dies anywhere before that line prints —
+  // crash, connection failure, ctrl-c — every SHOWCASE_*/LIB_*/NEG_* resource
+  // it already created (this first apply just created 7+ of them, plus 4 k8s
+  // Secrets) leaked with zero teardown. E2E_DIE_AFTER_APPLY=1 simulates
+  // EXACTLY that: a HARD kill (`process.exit()` with no chance for this
+  // file's own `finally`/error-handling to run at all) right after the
+  // first successful apply, before any of the later rounds run and before
+  // the JSON summary is ever assembled or printed. This is the ONE failure
+  // mode T03's driver self-cleanup CANNOT recover from (a real `SIGKILL`
+  // bypasses JS exception handling identically) — manifest-apply.sh's
+  // cleanup() must still recover via its name-prefix/nonce sweep regardless
+  // of this driver ever having produced JSON OR ever running its own
+  // self-cleanup; that sweep stays the second line of defense for exactly
+  // this case.
+  if (process.env.E2E_DIE_AFTER_APPLY === "1") {
+    console.error(
+      "[showcase-driver] E2E_DIE_AFTER_APPLY=1 — simulating a HARD driver death (no self-cleanup chance) right after the first apply, before the JSON summary is printed"
+    );
+    process.exit(1);
+  }
+
+  // T03 regression hook (new): simulates the failure mode driver
+  // self-cleanup DOES recover from — a thrown error mid-round, after
+  // resources already exist but before the JSON summary prints. Unlike
+  // E2E_DIE_AFTER_APPLY above, this goes through `fail()`/`throw`, so it
+  // flows through `main().catch()` -> `selfCleanup()` exactly like any real
+  // assertion failure would. Verifies "the driver's failure paths (throw
+  // mid-round) all flow through the cleanup" independent of whether the
+  // bash-side sweep would ALSO have caught it.
+  if (process.env.E2E_SIMULATE_SOFT_FAILURE_AFTER_APPLY === "1") {
+    fail(
+      "E2E_SIMULATE_SOFT_FAILURE_AFTER_APPLY=1 — simulating a thrown mid-round failure right after the first apply, to prove selfCleanup() runs before this process exits non-zero"
+    );
+  }
 
   // --- 5. second plan: all 7 resources noop --------------------------------
 
@@ -838,6 +1017,14 @@ async function main(): Promise<void> {
     (r) => r.name === LIB_CONNECTOR_NAME
   )?.externalId;
 
+  // T03 driver self-cleanup — same tracking as round 1's resources above.
+  trackForCleanup(
+    "connector",
+    LIB_CONNECTOR_NAME,
+    libConnectorExternalId,
+    (id) => client.connectors.remove(id)
+  );
+
   log(
     `manifests.apply('${LIB_MANIFEST_NAME}') again — expect appliedCount=0 noopCount=1`
   );
@@ -903,6 +1090,15 @@ async function main(): Promise<void> {
         `ROUND 3 negative test '${variant}': expected manifests.apply() to THROW (ConflictError), it resolved successfully instead`
       );
     } catch (error) {
+      // `fail()` now THROWS (T03: self-cleanup needs every failure to flow
+      // through `main().catch()`) — a `ShowcaseAssertionError` thrown by the
+      // `fail()` call right above (apply() unexpectedly resolved) would
+      // otherwise be swallowed by this very catch block and reported as
+      // "expected a ConflictError, got ShowcaseAssertionError" instead of
+      // its real, more useful message. Re-throw it untouched.
+      if (error instanceof ShowcaseAssertionError) {
+        throw error;
+      }
       if (!(error instanceof ConflictError)) {
         fail(
           `ROUND 3 negative test '${variant}': expected a ConflictError, got: ${error instanceof Error ? error.constructor.name : String(error)}`
@@ -992,9 +1188,45 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(summary));
 }
 
-main().catch((error) => {
-  const message =
-    error instanceof Error ? (error.stack ?? error.message) : String(error);
-  console.error(`[showcase-driver] FATAL: ${message}`);
-  process.exit(1);
-});
+// T03 driver self-cleanup — a "run in progress" flag so the SIGINT/SIGTERM
+// handlers below never double-run `selfCleanup()` alongside `main()`'s own
+// catch handler (e.g. a signal arriving while the catch handler's own
+// `selfCleanup()` call is already in flight).
+let cleanupInFlight: Promise<void> | undefined;
+
+function runSelfCleanupOnce(reason: string): Promise<void> {
+  cleanupInFlight ??= selfCleanup(reason);
+  return cleanupInFlight;
+}
+
+main()
+  .then(() => {
+    // Success path — unchanged from before T03: manifest-apply.sh's own
+    // JSON-driven teardown (using this driver's JSON summary, just printed)
+    // remains the owner of these resources' lifecycle, exactly as before.
+  })
+  .catch(async (error: unknown) => {
+    const message =
+      error instanceof Error ? (error.stack ?? error.message) : String(error);
+    console.error(`[showcase-driver] FATAL: ${message}`);
+    await runSelfCleanupOnce("uncaught-error");
+    process.exit(1);
+  });
+
+// T03 driver self-cleanup — SIGINT ("manual interruption", the exact
+// residue-causing scenario the SPEC's incident section names) and SIGTERM
+// (the signal Kubernetes/CI job cancellation sends before a hard kill) both
+// get a chance to tear down every tracked resource before the process
+// exits. A `SIGKILL`/OOM-kill bypasses this entirely by design — that case
+// stays covered exclusively by manifest-apply.sh's nonce-suffix sweep (see
+// this file's header comment and `E2E_DIE_AFTER_APPLY` above).
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    console.error(
+      `[showcase-driver] received ${signal} — running self-cleanup before exit`
+    );
+    void runSelfCleanupOnce(signal).then(() => {
+      process.exit(signal === "SIGINT" ? 130 : 143);
+    });
+  });
+}
