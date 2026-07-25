@@ -35,6 +35,7 @@ import type {
   Workflow,
 } from "@yoizen/shared";
 import { DEFAULT_ROUTE_METHODS } from "../../../lib/default-route-methods";
+import { secretResourceName } from "../../secrets/lib/secret-resource-name";
 
 // ---------------------------------------------------------------------------
 // Downstream response DTOs — only the NON-secret fields we are allowed to read.
@@ -101,11 +102,37 @@ export interface RegisteredServiceRouteDto {
   readonly stripPrefix: boolean;
 }
 
+/**
+ * registry-service's k8s-native secretKeyRef reference (manual-loops/
+ * provisioning-manifest-gaps-4.md T04, Option B) — an env var bound to a
+ * Secret, never a resolved plaintext value. Mirrors `knative-builder.ts`'s
+ * `KnativeEnvEntry`'s `valueFrom.secretKeyRef` shape verbatim (registry-
+ * service persists/echoes `envVars` JSONB unchanged — see
+ * `registry-row-mappers.ts`'s `mapRegisteredServiceRow`).
+ */
+export interface RegisteredServiceEnvSecretRef {
+  readonly secretKeyRef: { readonly name: string; readonly key: string };
+}
+
+/**
+ * manual-loops/demos/crm-support-telegram.md T04 findings ("STALE-STATE MASKING")
+ * — the incident this type closes: registry-service's `GET /services` was
+ * previously (mis)typed here as `Record<string, string>`, discarding the
+ * `{ secretKeyRef }` shape a live env var can legitimately hold. That
+ * mistyping is what let a plaintext credential sit in the Knative spec
+ * un-detected — the comparable projection only ever read `Object.keys(...)`
+ * (names), never the value's SHAPE, so a secretRef-declared var whose live
+ * value had regressed to a plaintext literal still reported `noop`. This
+ * widened type is what `serviceEnvMechanismComparable` (below) needs to
+ * catch that drift.
+ */
+export type RegisteredServiceEnvValue = string | RegisteredServiceEnvSecretRef;
+
 export interface RegisteredServiceDto {
   readonly id: string;
   readonly name: string;
   readonly image: string;
-  readonly envVars?: Record<string, string>;
+  readonly envVars?: Record<string, RegisteredServiceEnvValue>;
   // T05, gap 5 — scaling fields registry-service ALWAYS reports a real value
   // for (server-side defaults are applied at creation, never left absent).
   // See `serviceComparable` below for why these are only COMPARED when the
@@ -117,9 +144,22 @@ export interface RegisteredServiceDto {
   readonly routes?: readonly RegisteredServiceRouteDto[];
 }
 
+/**
+ * Live shape from `GET /workflows` (workflow-service's `toCreateResult`).
+ * Deliberately EXCLUDES `id`/`tenantId`/`status`/`createdAt` — server-only
+ * fields with no manifest counterpart (`status` has its own separate PATCH
+ * endpoint, no manifest field maps to it; `tenantId`/`createdAt` are pure
+ * bookkeeping). `application`/`actions`/`trigger`/`variables` round-trip
+ * VERBATIM — workflow-service injects no server-side defaults for them — so
+ * they ARE faithfully comparable (see `workflowComparable` below).
+ */
 export interface WorkflowDto {
   readonly id: string;
   readonly name: string;
+  readonly application: string;
+  readonly actions: readonly unknown[];
+  readonly trigger?: unknown;
+  readonly variables?: unknown;
 }
 
 /** Live shape from `GET /admin/system-variables` (agent-admin-service's `ISystemVariable`). */
@@ -460,10 +500,385 @@ export const serviceComparable: ComparableFieldsContract<
   },
 };
 
-// Workflow: existence-only. The manifest's opaque `definition` and
-// workflow-service's `actions`/`trigger`/`variables` columns are not
-// faithfully mappable yet.
+// Service env MECHANISM-aware comparator (manual-loops/demos/crm-support-telegram.md
+// T04 findings, "STALE-STATE MASKING" gap). `serviceComparable` above
+// deliberately stays envNames-only — it is REUSED verbatim as this
+// contract's plan-time fallback (see `build-manifest-plan.ts`'s service
+// branch), mirroring `workflowExistenceOnlyComparable`'s role for workflows.
+//
+// THE INCIDENT this closes: a live registered service whose env var has the
+// SAME NAME but a DIFFERENT MECHANISM (plaintext literal vs a service-scoped
+// `secretRef` -> `valueFrom.secretKeyRef` vs a resolved connector/endpoint
+// ref) reported `noop` under envNames-only comparison — YOIZEN credentials
+// sat as PLAINTEXT values in the Knative spec and `apply` never re-converged
+// them to the k8s-native secretRef mechanism decision 7 requires.
+//
+// MECHANISM MODEL — only two buckets are actually OBSERVABLE on the live
+// side (`registry-row-mappers.ts`'s `mapRegisteredServiceRow` echoes
+// `envVars` JSONB verbatim, see `RegisteredServiceEnvValue` above):
+//   - `"secretKeyRef"` — the live value is `{ secretKeyRef: { name, key } }`.
+//     Identity-comparable (name/key), never a value to leak.
+//   - `"plain"` — the live value is a bare string. This bucket
+//     UNAVOIDABLY collapses two manifest-side origins that registry-service
+//     itself cannot tell apart once resolved: a manifest literal (schema-
+//     guaranteed non-secret) and a resolved `{ connectorRef }`/
+//     endpoint-ref (a connector/endpoint id, also non-secret) — both are
+//     sent to registry-service as the SAME plain string
+//     (`registry-services-writer.ts`'s `buildEnvVars`), so registry-service
+//     persists/reports them identically. Distinguishing "this plain value
+//     came from connectorRef X" after the fact is NOT possible from live
+//     data alone — a documented, accepted limitation (mirrors this file's
+//     other documented follow-ups, e.g. connector `cache`-only diffs).
+//   - `"unresolved"` — PLAN time could not determine what this entry's
+//     mechanism SHOULD be (an endpoint-ref shape, which never resolves
+//     before apply time, or a `{ connectorRef }` whose target has no live
+//     id yet this run). Projected IDENTICALLY on both the manifest and live
+//     sides for that one entry (never compares the live value at all), so
+//     that ONE unresolvable entry can never forever-diff — see the
+//     PER-ENTRY DEGRADATION note below. This is what fixes a fresh-context
+//     review finding (manual-loops/demos/crm-support-telegram.md T04 follow-up):
+//     degrading the WHOLE service the moment ANY entry was unresolvable
+//     defeated the feature for its own motivating case (a service mixing a
+//     `secretRef` var with an endpoint-ref var — e.g.
+//     `demos/crm-support-telegram/manifest.yaml`'s `priority-scorer` — never
+//     got its secretRef var mechanism-checked, because an endpoint-ref
+//     shape is ALWAYS unresolvable at plan time).
+//
+// SECRET-LEAK DEFENSE (two-sided, mirrors `systemVariableComparable`'s
+// redaction precedent, HARDENED against a second fresh-context review
+// finding — see BYTE-FOR-BYTE GATING below): the MANIFEST side may always
+// include a `"plain"` entry's value — manifest literals are non-secret by
+// schema, and a resolved connectorRef/endpoint-ref value is an id, never a
+// credential. The LIVE side must NEVER assume the manifest's declared
+// mechanism proves the ACTUAL live value is safe — a live row can drift
+// out-of-band (exactly the incident: someone/something writes a live
+// credential under a name the manifest declares as a plain literal or a
+// resolved ref). So:
+//   - manifest declares `{ secretRef }` (expects `"secretKeyRef"`) but live
+//     is a bare string -> THE INCIDENT shape: live value is NEVER read into
+//     the projection, only `mechanism: "plain"` (no `value`) — the mechanism
+//     mismatch alone (`"plain"` vs the manifest's own `"secretKeyRef"`)
+//     surfaces an honest `update` with zero live-secret exposure.
+//   - manifest declares a literal/resolved-ref (expects `"plain"` with a
+//     KNOWN expected value `V`) and live is ALSO a bare string -> BYTE-FOR-
+//     BYTE GATING: the live value is echoed ONLY when it is IDENTICAL to
+//     `V` (an equal string reveals nothing the manifest doesn't already
+//     contain). When it differs, `value` is OMITTED from the live
+//     projection entirely (`{ mechanism: "plain" }`, same shape the
+//     secretKeyRef-mismatch path projects) — NEVER the actual live string,
+//     and never a fixed redaction sentinel either: a sentinel could
+//     coincide with a manifest literal that EQUALS the sentinel string and
+//     deepEqual into a false noop. The desired side always projects
+//     `value` for a literal, so the missing key alone surfaces an honest
+//     `update` without ever echoing a live-only credential.
+//   - the var is UNDECLARED (live-only, extra) -> no independent proof of
+//     safety, `value` is never echoed (mechanism only).
+//
+// PLAN-TIME RESOLUTION for `{ connectorRef }` (whole-connector) entries
+// reuses the SAME `resolvedIds` map / `resolveRef` closure
+// `build-manifest-plan.ts`'s workflow branch already threads through
+// (manual-loops/provisioning-manifest-gaps-5.md) — no parallel resolution
+// mechanism invented. `fromLive` needs the SAME `resolveConnectorRef`
+// closure `fromManifest` does — NOT to resolve anything on the live side
+// itself (live values are always already-real), but to classify the
+// DECLARED counterpart of each live entry identically to how `fromManifest`
+// classifies it, so the two projections can only ever differ on a REAL
+// mechanism/value disagreement, never on which side happened to resolve a
+// ref. The endpoint-ref shape (`{ connectorRef, endpointMethod,
+// endpointPath }`) needs a LIVE `GET /connectors/:id` to resolve a specific
+// endpoint id (`resolve-service-env-refs.ts` only does this at APPLY time)
+// — plan time has no such call wired, so it is always classified
+// `"unresolved"`.
+//
+// PER-ENTRY DEGRADATION: classification never throws and never fails the
+// whole service — a malformed/unrecognized value shape also classifies as
+// `"unresolved"` defensively for THAT entry only. `build-manifest-plan.ts`
+// no longer needs (or has) a whole-service fallback contract; every service
+// always gets the full mechanism-aware projection, entry by entry.
+export interface ServiceEnvMechanismEntry {
+  readonly name: string;
+  readonly mechanism: "plain" | "secretKeyRef" | "unresolved";
+  readonly value?: string;
+  readonly secretKeyRef?: { readonly name: string; readonly key: string };
+}
+
+/** The manifest-side classification of one env var's declared value — the ONE place both `fromManifest` and `fromLive` derive "what mechanism/value SHOULD this entry have". */
+type DeclaredEnvClassification =
+  | { readonly kind: "literal"; readonly value: string }
+  | {
+      readonly kind: "secretKeyRef";
+      readonly secretKeyRef: { readonly name: string; readonly key: string };
+    }
+  | { readonly kind: "unresolved" };
+
+function classifyDeclaredEnvValue(
+  service: HostedService,
+  value: unknown,
+  resolveConnectorRef?: (connectorName: string) => string | undefined
+): DeclaredEnvClassification {
+  if (typeof value === "string") {
+    return { kind: "literal", value };
+  }
+
+  if (typeof value !== "object" || value === null) {
+    // Defensive: a malformed/unexpected shape (should never happen against
+    // a schema-validated manifest) — degrades ONLY this entry, never throws.
+    return { kind: "unresolved" };
+  }
+
+  const valueKeys = Object.keys(value);
+
+  if (valueKeys.length === 1 && valueKeys[0] === "secretRef") {
+    const secretRef = (value as { secretRef: string }).secretRef;
+    return {
+      kind: "secretKeyRef",
+      secretKeyRef: {
+        // secret-resource-name.ts:29-31 — the ONE naming source of truth,
+        // reused verbatim (mirrors `registry-services-writer.ts`'s
+        // `buildEnvVars`).
+        name: secretResourceName("service", service.name),
+        key: secretRef,
+      },
+    };
+  }
+
+  if (valueKeys.length === 1 && valueKeys[0] === "connectorRef") {
+    const connectorName = (value as { connectorRef: string }).connectorRef;
+    const resolved = resolveConnectorRef?.(connectorName);
+    return resolved === undefined
+      ? { kind: "unresolved" }
+      : { kind: "literal", value: resolved };
+  }
+
+  // Endpoint-ref shape (`connectorRef` + `endpointMethod` + `endpointPath`)
+  // — always unresolved at plan time (see header comment). Any other
+  // shape also degrades here defensively.
+  return { kind: "unresolved" };
+}
+
+function projectDeclaredClassification(
+  name: string,
+  classification: DeclaredEnvClassification
+): ServiceEnvMechanismEntry {
+  switch (classification.kind) {
+    case "literal":
+      return { name, mechanism: "plain", value: classification.value };
+    case "secretKeyRef":
+      return {
+        name,
+        mechanism: "secretKeyRef",
+        secretKeyRef: classification.secretKeyRef,
+      };
+    case "unresolved":
+      return { name, mechanism: "unresolved" };
+  }
+}
+
+function sortedByName(
+  entries: ServiceEnvMechanismEntry[]
+): ServiceEnvMechanismEntry[] {
+  return entries.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/** Strips the `serviceComparable`-projected `envNames` key, keeping every other (routes/scaling) key unchanged. */
+function withoutEnvNames(
+  fields: Record<string, unknown>
+): Record<string, unknown> {
+  const { envNames: _envNames, ...rest } = fields;
+  return rest;
+}
+
+export const serviceEnvMechanismComparable = {
+  fromManifest: (
+    service: HostedService,
+    resolveConnectorRef?: (connectorName: string) => string | undefined
+  ): Record<string, unknown> => {
+    const declared = service.env ?? [];
+    const entries = declared.map((envVar) =>
+      projectDeclaredClassification(
+        envVar.name,
+        classifyDeclaredEnvValue(service, envVar.value, resolveConnectorRef)
+      )
+    );
+
+    return {
+      ...withoutEnvNames(serviceComparable.fromManifest(service)),
+      env: sortedByName(entries),
+    };
+  },
+
+  fromLive: (
+    live: RegisteredServiceDto,
+    declared?: HostedService,
+    resolveConnectorRef?: (connectorName: string) => string | undefined
+  ): Record<string, unknown> => {
+    const declaredValueByName = new Map(
+      (declared?.env ?? []).map((envVar) => [envVar.name, envVar.value])
+    );
+    const entries: ServiceEnvMechanismEntry[] = [];
+
+    for (const [name, liveValue] of Object.entries(live.envVars ?? {})) {
+      const declaredValue = declaredValueByName.get(name);
+      const classification =
+        declaredValue === undefined
+          ? undefined
+          : classifyDeclaredEnvValue(
+              declared as HostedService,
+              declaredValue,
+              resolveConnectorRef
+            );
+
+      // Unresolvable at plan time (endpoint-ref shape, or a connectorRef
+      // with no live id yet) — project IDENTICALLY to what `fromManifest`
+      // projects for this SAME name, regardless of the live value's actual
+      // shape/content, so this one entry can never forever-diff.
+      if (classification?.kind === "unresolved") {
+        entries.push({ name, mechanism: "unresolved" });
+        continue;
+      }
+
+      const liveIsSecretKeyRef =
+        typeof liveValue === "object" &&
+        liveValue !== null &&
+        "secretKeyRef" in liveValue;
+
+      if (liveIsSecretKeyRef) {
+        // Identity only — never a value to leak, safe regardless of what
+        // the manifest expects (a mismatch vs. the manifest's OWN
+        // `secretKeyRef`/`"plain"` projection still surfaces honestly via
+        // `deepEqual` on the whole entry).
+        const secretKeyRef = (
+          liveValue as { secretKeyRef: { name: string; key: string } }
+        ).secretKeyRef;
+        entries.push({
+          name,
+          mechanism: "secretKeyRef",
+          secretKeyRef: { name: secretKeyRef.name, key: secretKeyRef.key },
+        });
+        continue;
+      }
+
+      // Live value is a bare string ("plain"). Decide whether it is safe
+      // to echo — see this contract's header comment ("SECRET-LEAK
+      // DEFENSE") for the full reasoning:
+      //   - undeclared (no manifest counterpart) -> never echo.
+      //   - manifest expects `secretKeyRef` (THE INCIDENT shape) -> never
+      //     echo; the mechanism mismatch alone is the signal.
+      //   - manifest expects a literal/resolved-ref value `V` -> echo ONLY
+      //     when the live string is BYTE-FOR-BYTE equal to `V`; otherwise
+      //     OMIT `value` entirely (same shape the secretKeyRef-mismatch
+      //     path projects). The desired side always projects `value` for a
+      //     literal, so the missing key alone yields an honest `update` —
+      //     and unlike a fixed redaction sentinel, an omitted key cannot
+      //     collide with a manifest literal that happens to EQUAL the
+      //     sentinel string (which would deepEqual into a false noop and
+      //     mask the drift).
+      if (classification === undefined) {
+        entries.push({ name, mechanism: "plain" });
+        continue;
+      }
+      if (classification.kind === "secretKeyRef") {
+        entries.push({ name, mechanism: "plain" });
+        continue;
+      }
+      // classification.kind === "literal"
+      if (liveValue === classification.value) {
+        entries.push({ name, mechanism: "plain", value: classification.value });
+      } else {
+        entries.push({ name, mechanism: "plain" });
+      }
+    }
+
+    return {
+      ...withoutEnvNames(serviceComparable.fromLive(live, declared)),
+      env: sortedByName(entries),
+    };
+  },
+};
+
+// Workflow (manual-loops/provisioning-manifest-gaps-5.md — content-aware
+// workflow comparator): the manifest's `definition.application`/`.actions`/
+// `.trigger`/`.variables` map 1:1 onto workflow-service's own columns
+// (`WorkflowDto` above) — `workflows-writer.ts`'s `create()` already reads
+// EXACTLY these four keys off `definition` to build its POST body, so
+// projecting the same four keys here is an honest, already-proven mapping.
+//
+// THE CENTRAL TRAP (why this contract alone is not enough): the manifest's
+// `definition` tree may embed SYMBOLIC ref-objects at allowlisted argument
+// keys (`accountId: { channelRef }`, `adapterId: { connectorRef }`,
+// `agentId: { agentRef }`, `serviceId: { serviceRef }`, `serverId:
+// { mcpServerRef }`, `connectorId: { connectorRef }`, plus the plural
+// `accountIds: [{ channelRef }, ...]`), while the LIVE `actions`/`trigger`
+// this DTO reports already hold the SUBSTITUTED real platform ids — a naive
+// diff between the two never converges (every workflow with a ref-bearing
+// action forever `update`s). `fromManifest` therefore assumes its caller has
+// ALREADY substituted every allowlisted ref in `resource.definition` with
+// its real id BEFORE calling this function — `build-manifest-plan.ts` is
+// the ONE call site that does this, using a plan-time `resolvedIds` map
+// built from the SAME live lookups the planner already performs for every
+// other resource kind (see that file for the graceful-degradation fallback
+// to `workflowExistenceOnlyComparable` below when a ref cannot yet be
+// resolved, e.g. its target is being created in the SAME plan).
+//
+// `{{...}}` runtime template strings are untouched by the substitution
+// walker and appear byte-identical on both sides — safe to compare as-is.
+//
+// `actions` is compared ARRAY-ORDER-SENSITIVE (unlike the sorted-array
+// idiom `connectorComparable`/`serviceComparable` use for endpoints/routes):
+// action execution order is semantically meaningful, so `deepEqual`
+// (order-sensitive for arrays) is exactly the right comparison — no
+// normalization/sorting here.
+//
+// `trigger`/`variables` follow the SAME declared-gate idiom
+// `serviceComparable`/`agentComparable` established: `workflows-writer.ts`'s
+// `create()` only sends `trigger`/`variables` in the request body when
+// `definition.trigger`/`.variables !== undefined`, so the comparator must
+// mirror that OMIT-symmetry exactly — both sides omit the key when the
+// manifest omits it, never comparing against a live `null`/absent value the
+// manifest never declared an opinion about.
 export const workflowComparable: ComparableFieldsContract<
+  Workflow,
+  WorkflowDto
+> = {
+  fromManifest: (workflow) => {
+    const definition = workflow.definition;
+    const fields: Record<string, unknown> = {
+      application: definition.application,
+      actions: definition.actions,
+    };
+    if (definition.trigger !== undefined) {
+      fields.trigger = definition.trigger;
+    }
+    if (definition.variables !== undefined) {
+      fields.variables = definition.variables;
+    }
+    return fields;
+  },
+  fromLive: (live, declared) => {
+    const fields: Record<string, unknown> = {
+      application: live.application,
+      actions: live.actions,
+    };
+    if (declared?.definition.trigger !== undefined) {
+      fields.trigger = live.trigger;
+    }
+    if (declared?.definition.variables !== undefined) {
+      fields.variables = live.variables;
+    }
+    return fields;
+  },
+};
+
+// Workflow FALLBACK (graceful degradation): the ORIGINAL T03 existence-only
+// contract, kept verbatim as the safety net `build-manifest-plan.ts` falls
+// back to for ONE workflow at a time when `substituteSymbolicRefs` cannot
+// fully resolve that workflow's `definition` at plan time (e.g. a
+// referenced resource is being created in the SAME plan and has no live id
+// yet). Falling back to existence-only rather than failing the whole plan
+// or diffing against a still-symbolic definition (which would emit a
+// spurious `update` every single time) — see `build-manifest-plan.ts`'s
+// workflow branch for where this is invoked.
+export const workflowExistenceOnlyComparable: ComparableFieldsContract<
   Workflow,
   WorkflowDto
 > = {

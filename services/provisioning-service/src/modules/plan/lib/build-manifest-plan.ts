@@ -6,7 +6,12 @@
 // thrown. Verbose logging at every stage per SPEC.md's "nothing fails
 // silently" constraint.
 
-import type { IntegrationManifest } from "@yoizen/shared";
+import type {
+  HostedService,
+  IntegrationManifest,
+  SymbolicRefType,
+  Workflow,
+} from "@yoizen/shared";
 import {
   buildKbPlan,
   type StoredKbChecksumLookup,
@@ -22,11 +27,19 @@ import type { RouteCollisionChecker } from "../domain/route-collision-checker.in
 import { NOOP_ROUTE_COLLISION_CHECKER } from "../domain/route-collision-checker.interface";
 import type { SecretExistenceChecker } from "../domain/secret-existence-checker.interface";
 import { NOOP_SECRET_EXISTENCE_CHECKER } from "../domain/secret-existence-checker.interface";
+import {
+  type RegisteredServiceDto,
+  serviceEnvMechanismComparable,
+  workflowComparable,
+  workflowExistenceOnlyComparable,
+} from "./comparable-fields";
 import { desiredFieldsOfResource } from "./desired-fields-of-resource";
 import { diffResource } from "./diff-resource";
 import { gatherSecretReferences } from "./gather-secret-references";
 import { listManifestResources } from "./list-manifest-resources";
 import { NOOP_PLAN_LOGGER, type PlanLogger } from "./plan-logger.interface";
+import { resourceKindOfRefType } from "./resource-kind-of-ref-type";
+import { substituteSymbolicRefs } from "./substitute-symbolic-refs";
 import { computeResourceOrder } from "./topological-resource-order";
 
 export type BuildManifestPlanResult =
@@ -70,6 +83,35 @@ export async function buildManifestPlan(
   const preconditions: PlanPrecondition[] = [];
   const resources: ResourcePlanEntry[] = [];
 
+  // manual-loops/provisioning-manifest-gaps-5.md — plan-time id resolution
+  // for the content-aware workflow comparator below. Populated as EACH
+  // resource in dependency order is looked up against live platform state
+  // (mirrors `apply-manifest.ts`'s `resolvedIds`, but built from `findByName`
+  // reads here instead of writer results). Because `order.value` is already
+  // dependency-ordered (`RESOURCE_KIND_ORDER` places every ref-target kind —
+  // channel/connector/mcpServer/skill/agent/service — BEFORE `workflow`), by
+  // the time a workflow is reached every resource its `definition` may
+  // reference by symbolic ref has ALREADY been looked up in this SAME loop,
+  // so this map is complete for that workflow's refs whenever their targets
+  // already exist live.
+  const resolvedIds = new Map<string, string>();
+
+  // Shared `resolveRef` closure over `resolvedIds` — used by BOTH the
+  // workflow branch (below) and the service env-mechanism branch (manual-
+  // loops/crm-support-telegram.md T04 findings) so a `{ connectorRef }` env
+  // value resolves through the EXACT SAME plan-time id map a workflow
+  // symbolic ref does, rather than inventing a second resolution mechanism.
+  const resolveRef = (
+    refType: SymbolicRefType,
+    refName: string
+  ): string | undefined => {
+    const targetKind = resourceKindOfRefType(refType);
+    if (!targetKind) {
+      return undefined;
+    }
+    return resolvedIds.get(`${targetKind}:${refName}`);
+  };
+
   for (const { kind, name } of order.value) {
     const entry = resourcesByKey.get(`${kind}:${name}`);
     if (!entry) {
@@ -112,6 +154,7 @@ export async function buildManifestPlan(
       logger.log(
         `plan: external ${kind} '${name}' resolved to externalId='${lookup.value.externalId}'`
       );
+      resolvedIds.set(`${kind}:${name}`, lookup.value.externalId);
       resources.push({
         kind,
         name,
@@ -123,9 +166,111 @@ export async function buildManifestPlan(
       continue;
     }
 
-    const desired = desiredFieldsOfResource(kind, entry.resource);
     const live = lookup.value;
-    const { verdict, diff } = diffResource(desired, live?.fields ?? null);
+    if (live) {
+      resolvedIds.set(`${kind}:${name}`, live.externalId);
+    }
+
+    let desired: Record<string, unknown>;
+    let liveFieldsForDiff: Readonly<Record<string, unknown>> | null;
+
+    if (kind === "workflow") {
+      // manual-loops/provisioning-manifest-gaps-5.md — content-aware
+      // workflow comparator. The manifest's `definition` may embed
+      // allowlisted symbolic refs (`accountId: { channelRef }`, etc. — see
+      // `substitution-allowlist.ts`) that the LIVE `actions`/`trigger`
+      // already hold as REAL ids, so we must substitute BEFORE projecting
+      // comparable fields, exactly like `apply-manifest.ts` does at apply
+      // time — but using the `resolvedIds` accumulated from THIS plan's own
+      // live lookups instead of already-applied writer results.
+      const workflow = entry.resource as Workflow;
+      const substitution = substituteSymbolicRefs({
+        value: workflow.definition,
+        owningResourceKind: "workflow",
+        owningResourceName: name,
+        resolveRef,
+      });
+
+      if (!substitution.ok) {
+        // GRACEFUL DEGRADATION (design decision, manual-loops/
+        // provisioning-manifest-gaps-5.md): a symbolic ref could not be
+        // resolved at PLAN time — most commonly because its target
+        // resource is itself being CREATED in this same plan and has no
+        // live id yet (`unresolved_symbolic_ref`), but any substitution
+        // failure is treated the same way here. Rather than failing the
+        // whole plan or diffing a still-symbolic `definition` against the
+        // live (already-substituted) actions — which would report a
+        // spurious `update` on every single plan run — fall back to the
+        // ORIGINAL existence-only comparison for THIS workflow only.
+        // `applyManifestPlan` still fails loud on a genuinely malformed ref
+        // (mismatched/unallowlisted/invalid-shape) when it re-runs this
+        // exact substitution with the FULL resolvedIds at apply time.
+        logger.log(
+          `plan: workflow '${name}' definition could not be fully substituted for comparison (${substitution.error.kind}: ${substitution.error.message}) — falling back to existence-only comparison for this workflow`
+        );
+        desired = workflowExistenceOnlyComparable.fromManifest(workflow);
+        // `workflowExistenceOnlyComparable.fromLive` ignores its argument
+        // (always returns `{}`) — there is no substituted `WorkflowDto` to
+        // pass it in this branch, so the call is skipped; `live`'s mere
+        // presence/absence is all that matters for the create/noop verdict.
+        liveFieldsForDiff = live ? {} : null;
+      } else {
+        const substitutedWorkflow: Workflow = {
+          ...workflow,
+          definition: substitution.value as Record<string, unknown>,
+        };
+        desired = workflowComparable.fromManifest(substitutedWorkflow);
+        // `live.fields` was already projected by `workflows-client.ts` via
+        // `workflowComparable.fromLive(item, declared)` at lookup time,
+        // using the RAW (unsubstituted) manifest resource as `declared` —
+        // that is fine because `fromLive`'s declared-gate only checks
+        // trigger/variables KEY PRESENCE, which substitution never changes.
+        liveFieldsForDiff = live?.fields ?? null;
+      }
+    } else if (kind === "service") {
+      // manual-loops/demos/crm-support-telegram.md T04 findings ("STALE-STATE
+      // MASKING") — mechanism-aware service env comparator. A `{
+      // connectorRef }` env value needs the SAME plan-time `resolvedIds`
+      // resolution the workflow branch above performs, reusing the SAME
+      // `resolveRef` closure (never a parallel resolution mechanism).
+      //
+      // PER-ENTRY degradation (not whole-service): a fresh-context review
+      // found that degrading the WHOLE service the moment ANY env var was
+      // unresolvable defeated the feature for its own motivating case (a
+      // service mixing a `secretRef` var with an always-unresolvable
+      // endpoint-ref var never got its secretRef var mechanism-checked).
+      // `serviceEnvMechanismComparable` now degrades PER ENTRY internally
+      // (see its header comment) — this branch just calls both sides with
+      // the SAME `resolveConnectorRef` closure, no fallback logic needed
+      // here anymore.
+      //
+      // `live.raw` is the raw `RegisteredServiceDto` `registry-services-
+      // client.ts` exposes (see that file's header comment) — this client
+      // has no access to `resolvedIds`, so the mechanism-aware LIVE
+      // projection must be computed HERE, not at lookup time, mirroring how
+      // the workflow branch above is the one place that performs plan-time
+      // substitution.
+      const service = entry.resource as HostedService;
+      const resolveConnectorRef = (connectorName: string) =>
+        resolveRef("connectorRef", connectorName);
+
+      desired = serviceEnvMechanismComparable.fromManifest(
+        service,
+        resolveConnectorRef
+      );
+      liveFieldsForDiff = live
+        ? serviceEnvMechanismComparable.fromLive(
+            live.raw as RegisteredServiceDto,
+            service,
+            resolveConnectorRef
+          )
+        : null;
+    } else {
+      desired = desiredFieldsOfResource(kind, entry.resource);
+      liveFieldsForDiff = live?.fields ?? null;
+    }
+
+    const { verdict, diff } = diffResource(desired, liveFieldsForDiff);
 
     logger.log(
       `plan: ${kind} '${name}' verdict='${verdict}' fieldsChanged=${String(diff.length)}`

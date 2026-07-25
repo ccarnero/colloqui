@@ -101,21 +101,47 @@
 
 import type { SymbolicRefType } from "@yoizen/shared";
 import { SYMBOLIC_REF_KEYS } from "@yoizen/shared";
-import type { ResourceKind } from "../../plan/domain/plan.interfaces";
-import type { ApplyWriteError } from "../domain/apply.interfaces";
+import type { ResourceKind } from "../domain/plan.interfaces";
 import { ALLOWLISTED_ARRAY_SUBSTITUTION_KEYS } from "./array-substitution-allowlist";
 import { ALLOWLISTED_SUBSTITUTION_KEYS } from "./substitution-allowlist";
 
 const REF_KEY_SET: ReadonlySet<string> = new Set(SYMBOLIC_REF_KEYS);
+
+// manual-loops/provisioning-manifest-gaps-5.md T0X — this file moved from
+// `apply/lib/` to `plan/lib/` so `build-manifest-plan.ts` (T0X's plan-time
+// content-aware workflow comparator) can reuse the SAME walker the apply
+// engine already used, instead of forking it. `apply` already depends on
+// `plan` (`apply.module.ts` imports `PlanModule`) — the reverse direction
+// would cycle — so this walker's error type is declared LOCALLY here
+// (`SymbolicRefSubstitutionError` below) rather than importing
+// `apply/domain/apply.interfaces.ts`'s `ApplyWriteError`. The two types are
+// structurally compatible (this file's error `kind` union is a subset of
+// `ApplyWriteErrorKind`, and `resourceKind` shares the exact same
+// `ResourceKind | "knowledgeBase"` shape), so every existing apply-side
+// caller (`build-substituted-resource.ts`, `substitute-kb-ingestion-config.ts`)
+// keeps compiling unchanged — TypeScript's structural typing accepts a
+// `SymbolicRefSubstitutionError` wherever an `ApplyWriteError` is expected.
+export type SymbolicRefSubstitutionErrorKind =
+  | "unresolved_symbolic_ref"
+  | "mismatched_symbolic_ref"
+  | "unallowlisted_symbolic_ref"
+  | "invalid_array_substitution_shape";
+
+export interface SymbolicRefSubstitutionError {
+  readonly kind: SymbolicRefSubstitutionErrorKind;
+  readonly resourceKind: ResourceKind | "knowledgeBase";
+  readonly resourceName: string;
+  readonly message: string;
+}
 
 export interface SubstituteSymbolicRefsArgs {
   readonly value: unknown;
   // manual-loops/provisioning-manifest-gaps-2.md T03, gap 2 — widened with
   // "knowledgeBase" so `substitute-kb-ingestion-config.ts` (a NEW tree root,
   // `knowledgeBases[].ingestion_config`) can reuse this SAME walker; see
-  // `apply.interfaces.ts`'s `ApplyWriteError.resourceKind` comment for why
-  // this is a narrow widening of the error-reporting type only, not of
-  // `ResourceKind` itself.
+  // `SymbolicRefSubstitutionError.resourceKind` above for why this is a
+  // narrow widening of the error-reporting type only, not of `ResourceKind`
+  // itself.
   readonly owningResourceKind: ResourceKind | "knowledgeBase";
   readonly owningResourceName: string;
   /** Resolves `(refType, manifestName) -> realId`, `undefined` if unresolved. */
@@ -134,7 +160,7 @@ export interface SubstituteSymbolicRefsArgs {
 
 export type SubstituteSymbolicRefsResult =
   | { readonly ok: true; readonly value: unknown }
-  | { readonly ok: false; readonly error: ApplyWriteError };
+  | { readonly ok: false; readonly error: SymbolicRefSubstitutionError };
 
 /** Returns the single `{ refType: name }` entry recognized as a ref object, or `null`. */
 function readRecognizedRefObject(

@@ -14,6 +14,17 @@ import type { ResourceKind } from "./plan.interfaces";
 export interface LivePlatformResource {
   readonly externalId: string;
   readonly fields: Readonly<Record<string, unknown>>;
+  /**
+   * Optional escape hatch for kind-specific RAW data a `build-manifest-
+   * plan.ts` branch needs beyond the generic `fields` projection —
+   * currently only `registry-services-client.ts` sets this (the raw
+   * `RegisteredServiceDto`, so `build-manifest-plan.ts`'s service branch can
+   * re-project env mechanism using the plan-time `resolvedIds` this client
+   * has no access to; manual-loops/demos/crm-support-telegram.md T04 findings).
+   * NEVER read by `diffResource` — `fields` remains the ONLY diffed
+   * projection, so `raw` can never leak into the serialized plan by itself.
+   */
+  readonly raw?: unknown;
 }
 
 export interface DownstreamError {

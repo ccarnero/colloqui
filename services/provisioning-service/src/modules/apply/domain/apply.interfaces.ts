@@ -42,7 +42,7 @@ export type ApplyWriteErrorKind =
   | "downstream_error"
   // manual-loops/provisioning-manifest-gaps.md T03, gap 3 — a workflow/agent
   // definition declared an ALLOWLISTED symbolic ref (see
-  // `apply/lib/substitution-allowlist.ts`) whose target name has no
+  // `plan/lib/substitution-allowlist.ts`) whose target name has no
   // resolved real id yet (never created/resolved, or created AFTER this
   // resource in dependency order — should not happen given
   // `topological-resource-order.ts`, but fails loud instead of assuming).
@@ -66,7 +66,7 @@ export type ApplyWriteErrorKind =
   // siblings above.
   | "unallowlisted_symbolic_ref"
   // manual-loops/provisioning-manifest-gaps-3.md T03, workstream d — an
-  // ARRAY-allowlisted key (`array-substitution-allowlist.ts`, e.g.
+  // ARRAY-allowlisted key (`plan/lib/array-substitution-allowlist.ts`, e.g.
   // `accountIds`) held a NON-array value. The array allowlist only knows how
   // to substitute per-element inside a real array; a scalar/object/other
   // shape at that key is not a shape this substitution path can walk, and

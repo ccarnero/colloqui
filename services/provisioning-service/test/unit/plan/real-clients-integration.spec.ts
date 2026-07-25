@@ -72,7 +72,7 @@ function realisticManifest(): IntegrationManifest {
         {
           name: "priority-scorer",
           image: "registry.example.com/priority-scorer:1.0",
-          env: [{ name: "API_KEY", secretRef: "scorer-api-key" }],
+          env: [{ name: "API_KEY", value: { secretRef: "scorer-api-key" } }],
         },
       ],
       systemVariables: [],
@@ -156,7 +156,19 @@ function installMatchingDownstream(): void {
           id: "svc-1",
           name: "priority-scorer",
           image: "registry.example.com/priority-scorer:1.0",
-          envVars: { API_KEY: LIVE_ENV_SECRET_VALUE },
+          // A healthy, CONVERGED live state: the k8s-native secretKeyRef
+          // mechanism the manifest's `secretRef` binding resolves to — never
+          // a plaintext value (see comparable-fields.ts's
+          // `serviceEnvMechanismComparable` for why a plaintext literal here
+          // would instead be a mechanism-drift `update`, not `noop`).
+          envVars: {
+            API_KEY: {
+              secretKeyRef: {
+                name: "psec-service-priority-scorer",
+                key: "scorer-api-key",
+              },
+            },
+          },
         },
       ]);
     }

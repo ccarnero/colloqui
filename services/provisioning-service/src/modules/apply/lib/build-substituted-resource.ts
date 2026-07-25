@@ -26,10 +26,10 @@ import type { AnyManifestResource } from "../../plan/lib/list-manifest-resources
 import type { PlanLogger } from "../../plan/lib/plan-logger.interface";
 import { NOOP_PLAN_LOGGER } from "../../plan/lib/plan-logger.interface";
 import { resourceKindOfRefType } from "../../plan/lib/resource-kind-of-ref-type";
+import { substituteSymbolicRefs } from "../../plan/lib/substitute-symbolic-refs";
 import type { ApplyWriteError } from "../domain/apply.interfaces";
 import type { FetchConnectorEndpoints } from "./resolve-service-env-refs";
 import { resolveServiceEnvRefs } from "./resolve-service-env-refs";
-import { substituteSymbolicRefs } from "./substitute-symbolic-refs";
 
 export type BuildSubstitutedResourceResult =
   | { readonly ok: true; readonly value: AnyManifestResource }

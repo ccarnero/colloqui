@@ -70,109 +70,22 @@ describe("desiredFieldsOfResource", () => {
     expect(desiredFieldsOfResource("agent", agent)).toEqual({});
   });
 
-  it("service: projects env var NAMES only, sorted (never values, never secretRef, never image/buildRef)", () => {
+  // manual-loops/demos/crm-support-telegram.md T04 findings ("STALE-STATE
+  // MASKING") — service is now ALSO absent from this switch, mirroring the
+  // workflow guard test below: `serviceEnvMechanismComparable`'s
+  // `{ connectorRef }` resolution needs the SAME plan-time `resolvedIds`
+  // substitution workflow refs need, I/O this pure dispatcher cannot do.
+  // `build-manifest-plan.ts` branches around this function for
+  // `kind === "service"` — see `service-comparable.spec.ts` and
+  // `build-manifest-plan.spec.ts`'s service describe block for the actual
+  // projection/plan-level coverage.
+  it("service: falls to the empty default — build-manifest-plan.ts owns the service env-mechanism projection", () => {
     const service: HostedService = {
       name: "priority-scorer",
       image: "registry.example.com/priority-scorer:1.0",
-      env: [
-        { name: "ZED_VAR" },
-        { name: "API_KEY", secretRef: "scorer-api-key" },
-      ],
+      env: [{ name: "API_KEY", value: { secretRef: "scorer-api-key" } }],
     };
-    // T05 (gap 5): `routes` always projects (empty array when undeclared,
-    // mirroring `connectorComparable`'s endpoint precedent); scaling fields
-    // are absent here because the manifest never declared them.
-    expect(desiredFieldsOfResource("service", service)).toEqual({
-      envNames: ["API_KEY", "ZED_VAR"],
-      routes: [],
-    });
-  });
-
-  // manual-loops/provisioning-manifest-gaps-4.md T01, decision 6 — REGRESSION
-  // proving `serviceComparable`'s `envNames`-only projection (comparable-
-  // fields.ts:425, `.map(envVar => envVar.name)`) still noops correctly
-  // against the WIDENED `value` union: a ref-shaped value (any of the three
-  // new shapes) does not change the entry's `.name`, so it projects
-  // IDENTICALLY to a plain-string entry with the same name — ZERO changes to
-  // `comparable-fields.ts`/`desired-fields-of-resource.ts` needed. Verified,
-  // not assumed.
-  it("service: a ref-shaped env value (secretRef/connectorRef/endpoint-ref) still projects only its NAME, identically to a plain-string value with the same name", () => {
-    const service: HostedService = {
-      name: "priority-scorer",
-      image: "registry.example.com/priority-scorer:1.0",
-      env: [
-        { name: "YOIZEN_EMAIL", value: { secretRef: "scorer-email" } },
-        { name: "HUBSPOT_CONNECTOR_ID", value: { connectorRef: "hubspot" } },
-        {
-          name: "HUBSPOT_DEALS_ENDPOINT_ID",
-          value: {
-            connectorRef: "hubspot",
-            endpointMethod: "GET",
-            endpointPath: "/crm/v3/objects/deals",
-          },
-        },
-      ],
-    };
-    expect(desiredFieldsOfResource("service", service)).toEqual({
-      envNames: [
-        "HUBSPOT_CONNECTOR_ID",
-        "HUBSPOT_DEALS_ENDPOINT_ID",
-        "YOIZEN_EMAIL",
-      ],
-      routes: [],
-    });
-  });
-
-  it("service: buildRef-declared service projects the same env-only shape (no image/buildRef key)", () => {
-    const service: HostedService = {
-      name: "built-service",
-      buildRef: "git:abc123",
-      env: [{ name: "PORT" }],
-    };
-    expect(desiredFieldsOfResource("service", service)).toEqual({
-      envNames: ["PORT"],
-      routes: [],
-    });
-  });
-
-  it("service: projects declared scaling fields (T05, gap 5) — only the ones the manifest declares", () => {
-    const service: HostedService = {
-      name: "priority-scorer",
-      image: "registry.example.com/priority-scorer:1.0",
-      port: 8080,
-      maxScale: 5,
-    };
-    expect(desiredFieldsOfResource("service", service)).toEqual({
-      envNames: [],
-      routes: [],
-      port: 8080,
-      maxScale: 5,
-    });
-  });
-
-  it("service: projects declared routes, normalized and sorted (T05, gap 5)", () => {
-    const service: HostedService = {
-      name: "priority-scorer",
-      image: "registry.example.com/priority-scorer:1.0",
-      routes: [{ pathPrefix: "/b", methods: ["get"] }, { pathPrefix: "/a" }],
-    };
-    expect(desiredFieldsOfResource("service", service)).toEqual({
-      envNames: [],
-      routes: [
-        {
-          pathPrefix: "/a",
-          methods: ["DELETE", "GET", "PATCH", "POST", "PUT"],
-          isPublic: false,
-          stripPrefix: true,
-        },
-        {
-          pathPrefix: "/b",
-          methods: ["GET"],
-          isPublic: false,
-          stripPrefix: true,
-        },
-      ],
-    });
+    expect(desiredFieldsOfResource("service", service)).toEqual({});
   });
 
   it("mcpServer (T07): projects transport_type/url/enabled — same key set the live side supplies, so a converged server reaches noop (not a forever-update)", () => {
@@ -207,10 +120,26 @@ describe("desiredFieldsOfResource", () => {
     });
   });
 
-  it("workflow: existence-only projection (opaque definition not mappable to actions/trigger/variables)", () => {
+  it("workflow: falls to the empty default — build-manifest-plan.ts owns the workflow projection (substitute-then-project), so this dispatcher must NOT feed raw refs to workflowComparable", () => {
+    // Guard against re-wiring `case "workflow"` into this switch: a workflow
+    // definition WITH real content (application/actions carrying a symbolic
+    // ref) must still project empty here. If someone reconnects the
+    // content-aware comparator to this pure dispatcher, this fixture makes
+    // the test fail loudly instead of coincidentally passing on an empty
+    // definition (the pre-content-aware version of this test asserted {}
+    // against a definition with no application/actions keys at all).
     const workflow: Workflow = {
       name: "ticket-router",
-      definition: { steps: [{ type: "agentCall", agentRef: "support-agent" }] },
+      definition: {
+        application: "e2e",
+        actions: [
+          {
+            name: "route",
+            activity: "agentCall",
+            args: { agentId: { agentRef: "support-agent" } },
+          },
+        ],
+      },
     };
     expect(desiredFieldsOfResource("workflow", workflow)).toEqual({});
   });

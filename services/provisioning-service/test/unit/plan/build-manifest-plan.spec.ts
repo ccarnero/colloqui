@@ -1,6 +1,6 @@
 import "../../setup-env";
 import { describe, expect, it } from "bun:test";
-import type { IntegrationManifest } from "@yoizen/shared";
+import type { HostedService, IntegrationManifest } from "@yoizen/shared";
 import type {
   ManifestPlan,
   ResourceKind,
@@ -15,7 +15,7 @@ import { buildManifestPlan } from "../../../src/modules/plan/lib/build-manifest-
 import {
   channelComparable,
   connectorComparable,
-  serviceComparable,
+  type RegisteredServiceDto,
   systemVariableComparable,
   workflowComparable,
 } from "../../../src/modules/plan/lib/comparable-fields";
@@ -552,10 +552,10 @@ describe("buildManifestPlan", () => {
   });
 
   describe("diff correctness per resource kind — service", () => {
-    const service = {
+    const service: HostedService = {
       name: "priority-scorer",
       image: "registry.example.com/priority-scorer:1.0",
-      env: [{ name: "API_KEY", secretRef: "scorer-api-key" }],
+      env: [{ name: "API_KEY", value: { secretRef: "scorer-api-key" } }],
     };
     const manifest = manifestWith({
       channels: [{ name: "http-in", type: "http", direction: "inbound" }],
@@ -570,6 +570,29 @@ describe("buildManifestPlan", () => {
       ],
     });
 
+    /**
+     * `build-manifest-plan.ts`'s service branch reads the RAW
+     * `RegisteredServiceDto` off `LivePlatformResource.raw` (never `.fields`
+     * — that stays whatever `serviceComparable` computes, unused by the
+     * service branch). These fixtures mirror exactly what
+     * `registry-services-client.ts` puts there.
+     */
+    function serviceLive(
+      externalId: string,
+      envVars: RegisteredServiceDto["envVars"]
+    ): LivePlatformResource {
+      return {
+        externalId,
+        fields: {},
+        raw: {
+          id: externalId,
+          name: "priority-scorer",
+          image: "registry.example.com/priority-scorer:1.0",
+          envVars,
+        },
+      };
+    }
+
     it("create when absent live", async () => {
       const result = await buildManifestPlan(manifest, "t", noopClients());
       expect(
@@ -577,19 +600,37 @@ describe("buildManifestPlan", () => {
       ).toBe("create");
     });
 
-    it("noop when live env var NAMES match (live values are dropped by fromLive)", async () => {
+    it("noop when the service declares NO env vars at all (empty env still converges)", async () => {
+      const noEnvService: HostedService = {
+        name: "priority-scorer",
+        image: "registry.example.com/priority-scorer:1.0",
+      };
+      const noEnvManifest = manifestWith({
+        channels: [{ name: "http-in", type: "http", direction: "inbound" }],
+        agents: [{ name: "agent-1", profile: {} }],
+        services: [noEnvService],
+      });
       const clients = noopClients();
       clients.service = fakeClient("service", {
-        "priority-scorer": {
-          externalId: "svc-1",
-          fields: serviceComparable.fromLive({
-            id: "svc-1",
-            name: "priority-scorer",
-            image: "registry.example.com/priority-scorer:1.0",
-            // live value present here MUST NOT leak into the projection
-            envVars: { API_KEY: "super-secret-value" },
-          }),
-        },
+        "priority-scorer": serviceLive("svc-1", {}),
+      });
+      const result = await buildManifestPlan(noEnvManifest, "t", clients);
+      expect(
+        result.ok && entryFor(result.value, "priority-scorer")?.verdict
+      ).toBe("noop");
+    });
+
+    it("noop when the live secretKeyRef identity matches the manifest's secretRef binding", async () => {
+      const clients = noopClients();
+      clients.service = fakeClient("service", {
+        "priority-scorer": serviceLive("svc-1", {
+          API_KEY: {
+            secretKeyRef: {
+              name: "psec-service-priority-scorer",
+              key: "scorer-api-key",
+            },
+          },
+        }),
       });
       const result = await buildManifestPlan(manifest, "t", clients);
       expect(
@@ -600,21 +641,220 @@ describe("buildManifestPlan", () => {
     it("update when the set of env var names changed", async () => {
       const clients = noopClients();
       clients.service = fakeClient("service", {
-        "priority-scorer": {
-          externalId: "svc-1",
-          fields: serviceComparable.fromLive({
-            id: "svc-1",
-            name: "priority-scorer",
-            image: "registry.example.com/priority-scorer:1.0",
-            envVars: { OTHER_VAR: "x" },
-          }),
-        },
+        "priority-scorer": serviceLive("svc-1", { OTHER_VAR: "x" }),
       });
       const result = await buildManifestPlan(manifest, "t", clients);
       if (result.ok) {
         const entry = entryFor(result.value, "priority-scorer");
         expect(entry?.verdict).toBe("update");
-        expect(entry?.diff.map((d) => d.field)).toEqual(["envNames"]);
+        expect(entry?.diff.map((d) => d.field)).toEqual(["env"]);
+      }
+    });
+
+    // manual-loops/demos/crm-support-telegram.md T04 findings ("STALE-STATE
+    // MASKING") — THE INCIDENT: a live registered service whose env var has
+    // the SAME NAME but a DIFFERENT MECHANISM (plaintext literal instead of
+    // the manifest's `secretRef` -> `valueFrom.secretKeyRef`) must now
+    // produce `update`, not the masked `noop` envNames-only comparison gave
+    // it. No live secret value may appear anywhere in the serialized plan.
+    it("update when the live mechanism is a plaintext literal but the manifest declares secretRef (mechanism drift) — never leaks the live value", async () => {
+      const PLAINTEXT_CREDENTIAL = "sk-live-yoizen-credential-DO-NOT-LEAK";
+      const clients = noopClients();
+      clients.service = fakeClient("service", {
+        "priority-scorer": serviceLive("svc-1", {
+          API_KEY: PLAINTEXT_CREDENTIAL,
+        }),
+      });
+      const result = await buildManifestPlan(manifest, "t", clients);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const entry = entryFor(result.value, "priority-scorer");
+        expect(entry?.verdict).toBe("update");
+        expect(entry?.diff.map((d) => d.field)).toEqual(["env"]);
+        expect(JSON.stringify(result.value)).not.toContain(
+          PLAINTEXT_CREDENTIAL
+        );
+      }
+    });
+
+    it("noop when a { connectorRef } env value resolves to the SAME plain id the live side reports (plan-time resolvedIds reuse)", async () => {
+      const serviceWithConnectorRef: HostedService = {
+        name: "priority-scorer",
+        image: "registry.example.com/priority-scorer:1.0",
+        env: [
+          { name: "HUBSPOT_CONNECTOR_ID", value: { connectorRef: "hubspot" } },
+        ],
+      };
+      const manifestWithConnector = manifestWith({
+        channels: [{ name: "http-in", type: "http", direction: "inbound" }],
+        agents: [{ name: "agent-1", profile: {} }],
+        connectors: [
+          { name: "hubspot", type: "http", config: { baseUrl: "https://x" } },
+        ],
+        services: [serviceWithConnectorRef],
+      });
+      const clients = noopClients();
+      clients.connector = fakeClient("connector", {
+        hubspot: {
+          externalId: "conn-1",
+          fields: connectorComparable.fromLive({
+            id: "conn-1",
+            name: "hubspot",
+            context: "external",
+          }),
+        },
+      });
+      clients.service = fakeClient("service", {
+        "priority-scorer": serviceLive("svc-1", {
+          HUBSPOT_CONNECTOR_ID: "conn-1",
+        }),
+      });
+
+      const result = await buildManifestPlan(
+        manifestWithConnector,
+        "t",
+        clients
+      );
+      expect(
+        result.ok && entryFor(result.value, "priority-scorer")?.verdict
+      ).toBe("noop");
+    });
+
+    it("noop despite an unresolvable { connectorRef } sibling — degrades ONLY that entry, never the whole service — while still mechanism-checking a converged secretRef entry", async () => {
+      const serviceMixed: HostedService = {
+        name: "priority-scorer",
+        image: "registry.example.com/priority-scorer:1.0",
+        env: [
+          { name: "API_KEY", value: { secretRef: "scorer-api-key" } },
+          { name: "HUBSPOT_CONNECTOR_ID", value: { connectorRef: "hubspot" } },
+        ],
+      };
+      const manifestWithConnector = manifestWith({
+        channels: [{ name: "http-in", type: "http", direction: "inbound" }],
+        agents: [{ name: "agent-1", profile: {} }],
+        connectors: [
+          { name: "hubspot", type: "http", config: { baseUrl: "https://x" } },
+        ],
+        services: [serviceMixed],
+        secrets: [
+          {
+            name: "scorer-api-key",
+            scope: { kind: "service", owner: "priority-scorer" },
+            external: true,
+          },
+        ],
+      });
+      const clients = noopClients();
+      // connector is DECLARED (so it's a graph node/ordered before the
+      // service) but has NO live match yet (still to be created in this
+      // same plan) — resolveRef("connectorRef", "hubspot") stays
+      // unresolved.
+      clients.service = fakeClient("service", {
+        "priority-scorer": serviceLive("svc-1", {
+          API_KEY: {
+            secretKeyRef: {
+              name: "psec-service-priority-scorer",
+              key: "scorer-api-key",
+            },
+          },
+          HUBSPOT_CONNECTOR_ID: "conn-1",
+        }),
+      });
+
+      const result = await buildManifestPlan(
+        manifestWithConnector,
+        "t",
+        clients
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const entry = entryFor(result.value, "priority-scorer");
+        // Both entries converge: the secretRef var matches its live
+        // secretKeyRef identity, and the unresolvable connectorRef entry
+        // projects identically ("unresolved") on both sides — never a
+        // spurious diff from the unresolvable sibling.
+        expect(entry?.verdict).toBe("noop");
+      }
+    });
+
+    // DEFECT 1 (fresh-context review, CRITICAL) — REQUIRED test: a service
+    // with BOTH a secretRef var AND an endpoint-ref var; live has the
+    // secretRef var drifted to plaintext -> verdict `update` (mechanism
+    // mismatch caught DESPITE the unresolvable sibling), and the
+    // endpoint-ref entry itself does not produce a spurious diff.
+    it("catches secretRef mechanism drift on ONE entry even when a sibling endpoint-ref entry is unresolvable — the unresolvable entry never spuriously diffs", async () => {
+      const serviceMixed: HostedService = {
+        name: "priority-scorer",
+        image: "registry.example.com/priority-scorer:1.0",
+        env: [
+          { name: "API_KEY", value: { secretRef: "scorer-api-key" } },
+          {
+            name: "HUBSPOT_DEALS_ENDPOINT_ID",
+            value: {
+              connectorRef: "hubspot",
+              endpointMethod: "GET",
+              endpointPath: "/crm/v3/objects/deals",
+            },
+          },
+        ],
+      };
+      const manifestMixed = manifestWith({
+        channels: [{ name: "http-in", type: "http", direction: "inbound" }],
+        agents: [{ name: "agent-1", profile: {} }],
+        connectors: [
+          { name: "hubspot", type: "http", config: { baseUrl: "https://x" } },
+        ],
+        services: [serviceMixed],
+        secrets: [
+          {
+            name: "scorer-api-key",
+            scope: { kind: "service", owner: "priority-scorer" },
+            external: true,
+          },
+        ],
+      });
+      const PLAINTEXT_CREDENTIAL = "sk-live-yoizen-credential-DO-NOT-LEAK";
+      const clients = noopClients();
+      clients.connector = fakeClient("connector", {
+        hubspot: {
+          externalId: "conn-1",
+          fields: connectorComparable.fromLive({
+            id: "conn-1",
+            name: "hubspot",
+            context: "external",
+          }),
+        },
+      });
+      clients.service = fakeClient("service", {
+        "priority-scorer": serviceLive("svc-1", {
+          // THE INCIDENT: API_KEY drifted to a plaintext literal even
+          // though the manifest declares `secretRef` for it.
+          API_KEY: PLAINTEXT_CREDENTIAL,
+          // The endpoint-ref var has SOME live value (whatever apply
+          // resolved it to) — irrelevant, it must never be inspected.
+          HUBSPOT_DEALS_ENDPOINT_ID: "ep-456",
+        }),
+      });
+
+      const result = await buildManifestPlan(manifestMixed, "t", clients);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const entry = entryFor(result.value, "priority-scorer");
+        expect(entry?.verdict).toBe("update");
+        const envDiff = entry?.diff.find((d) => d.field === "env");
+        // Exactly the API_KEY entry mismatches (mechanism "plain" vs
+        // "secretKeyRef"); the endpoint-ref entry contributes no diff of
+        // its own — both sides project "unresolved" for it identically.
+        const desiredEnv = envDiff?.desired as { name: string }[];
+        const currentEnv = envDiff?.current as { name: string }[];
+        expect(
+          desiredEnv.find((e) => e.name === "HUBSPOT_DEALS_ENDPOINT_ID")
+        ).toEqual(
+          currentEnv.find((e) => e.name === "HUBSPOT_DEALS_ENDPOINT_ID")
+        );
+        expect(JSON.stringify(result.value)).not.toContain(
+          PLAINTEXT_CREDENTIAL
+        );
       }
     });
   });
@@ -912,14 +1152,16 @@ describe("buildManifestPlan", () => {
     });
   });
 
-  describe("diff correctness per resource kind — workflow (existence-only)", () => {
+  describe("diff correctness per resource kind — workflow (content-aware)", () => {
     const workflow = {
       name: "ticket-router",
-      definition: { steps: [{ type: "agentCall", agentRef: "agent-1" }] },
+      definition: {
+        application: "support",
+        actions: [{ type: "jsFunction", code: "() => 1" }],
+      },
     };
     const manifest = manifestWith({
       channels: [{ name: "http-in", type: "http", direction: "inbound" }],
-      agents: [{ name: "agent-1", profile: {} }],
       workflows: [workflow],
     });
 
@@ -930,21 +1172,93 @@ describe("buildManifestPlan", () => {
       ).toBe("create");
     });
 
-    it("noop when a same-named workflow exists live", async () => {
+    it("noop when a same-named workflow exists live with matching application/actions", async () => {
       const clients = noopClients();
       clients.workflow = fakeClient("workflow", {
         "ticket-router": {
           externalId: "wf-1",
-          fields: workflowComparable.fromLive({
-            id: "wf-1",
-            name: "ticket-router",
-          }),
+          fields: workflowComparable.fromLive(
+            {
+              id: "wf-1",
+              name: "ticket-router",
+              application: "support",
+              actions: [{ type: "jsFunction", code: "() => 1" }],
+            },
+            workflow
+          ),
         },
       });
       const result = await buildManifestPlan(manifest, "t", clients);
       expect(
         result.ok && entryFor(result.value, "ticket-router")?.verdict
       ).toBe("noop");
+    });
+
+    // (a) manual-loops/provisioning-manifest-gaps-5.md — a live workflow
+    // whose `actions` diverge from the manifest now produces a real
+    // `update` verdict with a `FieldDiff` naming `actions` (T03's
+    // existence-only comparator could never detect this).
+    it("update when the live workflow's actions differ from the manifest, with a FieldDiff on 'actions'", async () => {
+      const clients = noopClients();
+      clients.workflow = fakeClient("workflow", {
+        "ticket-router": {
+          externalId: "wf-1",
+          fields: workflowComparable.fromLive(
+            {
+              id: "wf-1",
+              name: "ticket-router",
+              application: "support",
+              actions: [{ type: "jsFunction", code: "() => 2" }],
+            },
+            workflow
+          ),
+        },
+      });
+      const result = await buildManifestPlan(manifest, "t", clients);
+      const entry = result.ok
+        ? entryFor(result.value, "ticket-router")
+        : undefined;
+      expect(entry?.verdict).toBe("update");
+      expect(entry?.diff.some((d) => d.field === "actions")).toBe(true);
+    });
+
+    // (b) GRACEFUL DEGRADATION — a workflow referencing a resource that is
+    // itself being CREATED in the same plan (no live id yet) cannot be
+    // fully substituted, so the planner falls back to existence-only
+    // comparison for THAT workflow instead of failing the plan or emitting
+    // a spurious `update` against a still-symbolic definition.
+    it("falls back to existence-only (noop) when a workflow's ref cannot be resolved at plan time", async () => {
+      const workflowWithUnresolvedRef = {
+        name: "ticket-router-with-ref",
+        definition: {
+          application: "support",
+          actions: [
+            { type: "agentCall", agentId: { agentRef: "agent-not-live-yet" } },
+          ],
+        },
+      };
+      const manifestWithRef = manifestWith({
+        channels: [{ name: "http-in", type: "http", direction: "inbound" }],
+        agents: [{ name: "agent-not-live-yet", profile: {} }],
+        workflows: [workflowWithUnresolvedRef],
+      });
+      const clients = noopClients();
+      // `agent` client stays the default `noopClients()` fake (no live
+      // match) -> the agent is a plan-time `create`, so its real id is
+      // NOT available in `resolvedIds` yet when the workflow is reached.
+      clients.workflow = fakeClient("workflow", {
+        "ticket-router-with-ref": {
+          externalId: "wf-2",
+          // Deliberately non-empty/mismatched — the existence-only fallback
+          // must ignore this entirely (never diff it against `desired`).
+          fields: { application: "support", actions: [] },
+        },
+      });
+      const result = await buildManifestPlan(manifestWithRef, "t", clients);
+      const entry = result.ok
+        ? entryFor(result.value, "ticket-router-with-ref")
+        : undefined;
+      expect(entry?.verdict).toBe("noop");
     });
   });
 });

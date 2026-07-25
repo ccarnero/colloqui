@@ -1,5 +1,5 @@
 import { describe, expect, it, mock } from "bun:test";
-import { substituteSymbolicRefs } from "../../../src/modules/apply/lib/substitute-symbolic-refs";
+import { substituteSymbolicRefs } from "../../../src/modules/plan/lib/substitute-symbolic-refs";
 
 describe("substituteSymbolicRefs — T03 manifest-time real-ID substitution", () => {
   it("substitutes accountId when its value is { channelRef } and resolvable", () => {

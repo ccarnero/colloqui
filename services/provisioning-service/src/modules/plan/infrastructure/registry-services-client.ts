@@ -3,10 +3,21 @@
 // "serviceRef resolves through registry-service, same rule as workflow
 // serviceCall").
 //
-// The live projection uses `serviceComparable.fromLive` — the SAME contract
-// the manifest desired projection uses — so a matching service converges to
-// `noop`. Comparison is env var NAMES only (never values, never secretRef
-// bindings, never image/buildRef); see `comparable-fields.ts` for why.
+// The `fields` projection uses `serviceComparable.fromLive` (envNames only,
+// plus routes/scaling) — env MECHANISM comparison
+// (manual-loops/demos/crm-support-telegram.md T04 findings, "STALE-STATE MASKING")
+// needs the plan-time `resolvedIds` map (to resolve a `{ connectorRef }` env
+// value), which THIS client has no access to (it is built incrementally by
+// `build-manifest-plan.ts`'s dependency-ordered loop as OTHER resources are
+// looked up first). So this client instead exposes the raw
+// `RegisteredServiceDto` via `LivePlatformResource.raw`, and
+// `build-manifest-plan.ts`'s service branch calls
+// `serviceEnvMechanismComparable.fromLive(raw, declared, resolveConnectorRef)`
+// itself — the SAME contract, just invoked where the resolver closure
+// actually lives. `raw` is NEVER read by `diffResource` (only `fields` is),
+// so this can never leak a live secret VALUE into the serialized plan by
+// itself; see `comparable-fields.ts` for the full two-sided redaction
+// reasoning `serviceEnvMechanismComparable` implements.
 //
 // T05 (manual-loops/provisioning-manifest-gaps.md, gap 5): this is a BESPOKE
 // client, not the generic `createHttpListResourceClient` factory, for two
@@ -32,6 +43,7 @@ import type {
 } from "../domain/platform-resource-client.interface";
 import {
   type RegisteredServiceDto,
+  type RegisteredServiceEnvValue,
   type RegisteredServiceRouteDto,
   serviceComparable,
 } from "../lib/comparable-fields";
@@ -42,7 +54,7 @@ interface RawRegisteredService {
   readonly id: string;
   readonly name: string;
   readonly image: string;
-  readonly envVars?: Record<string, string>;
+  readonly envVars?: Record<string, RegisteredServiceEnvValue>;
   readonly port?: number;
   readonly minScale?: number;
   readonly maxScale?: number;
@@ -219,6 +231,11 @@ export function createRegistryServicesClient(
       const value: LivePlatformResource = {
         externalId: dto.id,
         fields: serviceComparable.fromLive(dto, declaredResource),
+        // Raw passthrough — `build-manifest-plan.ts`'s service branch
+        // re-projects env mechanism from this using the plan-time
+        // `resolveConnectorRef` closure this client never has. See the
+        // header comment above.
+        raw: dto,
       };
       logger.log(
         `findByName: matched service '${name}' -> externalId='${value.externalId}'`

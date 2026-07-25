@@ -12,12 +12,10 @@
 import type {
   Agent,
   Connector,
-  HostedService,
   ManifestChannel,
   ManifestMcpServer,
   ManifestSkill,
   ManifestSystemVariable,
-  Workflow,
 } from "@yoizen/shared";
 import type { ResourceKind } from "../domain/plan.interfaces";
 import {
@@ -25,10 +23,8 @@ import {
   channelComparable,
   connectorComparable,
   mcpServerComparable,
-  serviceComparable,
   skillComparable,
   systemVariableComparable,
-  workflowComparable,
 } from "./comparable-fields";
 import type { AnyManifestResource } from "./list-manifest-resources";
 
@@ -56,14 +52,30 @@ export function desiredFieldsOfResource(
       return skillComparable.fromManifest(resource as ManifestSkill);
     case "agent":
       return agentComparable.fromManifest(resource as Agent);
-    case "service":
-      return serviceComparable.fromManifest(resource as HostedService);
     case "systemVariable":
       return systemVariableComparable.fromManifest(
         resource as ManifestSystemVariable
       );
-    case "workflow":
-      return workflowComparable.fromManifest(resource as Workflow);
+    // Workflow is DELIBERATELY absent from this switch: its content-aware
+    // projection requires the definition's symbolic refs to be substituted
+    // with live ids FIRST, and that substitution needs plan-time I/O this
+    // pure dispatcher cannot do. `build-manifest-plan.ts` branches around
+    // this function for `kind === "workflow"` (substitute -> project, with
+    // an existence-only fallback on unresolved refs). Wiring
+    // `workflowComparable.fromManifest` here directly would feed it RAW
+    // `{ channelRef: ... }` ref objects that can never equal the live side's
+    // real ids — the exact forever-update trap the mcpServer/skill comments
+    // above describe.
+    //
+    // Service is ALSO DELIBERATELY absent (manual-loops/crm-support-
+    // telegram.md T04 findings — mechanism-aware env comparator): a
+    // `{ connectorRef }` env value needs the SAME plan-time `resolvedIds`
+    // substitution as workflow refs before it can be honestly compared
+    // against the live side's resolved plain value — I/O this pure
+    // dispatcher cannot do. `build-manifest-plan.ts` branches around this
+    // function for `kind === "service"` too (`serviceEnvMechanismComparable`,
+    // with a graceful fallback to the plain envNames-only `serviceComparable`
+    // when an env ref cannot be resolved at plan time).
     default:
       return {};
   }

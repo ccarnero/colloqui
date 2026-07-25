@@ -19,7 +19,7 @@
 // `unallowlisted_symbolic_ref`).
 
 import type { SymbolicRefType } from "@yoizen/shared";
-import { substituteSymbolicRefs } from "../../apply/lib/substitute-symbolic-refs";
+import { substituteSymbolicRefs } from "../../plan/lib/substitute-symbolic-refs";
 import type { KbReconcileError, KbResolveRef } from "../domain/kb.interfaces";
 
 export type SubstituteKbIngestionConfigResult =
