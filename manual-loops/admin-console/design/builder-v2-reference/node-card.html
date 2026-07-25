@@ -1,0 +1,195 @@
+<!--
+  Extracted verbatim from:
+    manual-loops/admin-console/design/Rediseño Terminal.dc.html, lines 378-392
+    (inside the Builder screen's <sc-for list="{{ builderNodes }}" as="bn"> loop)
+
+  IMPORTANT: the canvas defines ONE node-card template, driven entirely by
+  per-node data (icon/color/tag/summary/stats). It does NOT define separate
+  markup blocks per node "type" — there is no dedicated trigger-card /
+  branch-card / agent-card template. Visual variants (trigger vs conditional
+  vs agent vs plain action) come purely from the `kind` field on each node
+  object, mapped to a stripe/tint color by KIND_STRIPE / KIND_TINT
+  (renderVals(), lines ~1548-1549), plus an optional `tag` chip.
+
+  There are NO CSS classes anywhere in this file except `.material-icons`
+  (confirmed via `rg 'class="'` over the whole canvas) — every element below
+  is styled with inline `style="..."` attributes referencing var(--token).
+  `style-hover="..."` is a design-canvas-only pseudo-attribute (not real CSS)
+  used by this tool to preview :hover states; it is not valid HTML/CSS.
+-->
+
+<!-- ============================================================ -->
+<!-- 1. RAW TEMPLATE (verbatim, with {{ }} bindings from support.js) -->
+<!-- ============================================================ -->
+
+<sc-for list="{{ builderNodes }}" as="bn" hint-placeholder-count="5">
+  <div onClick="{{ bn.onClick }}" style="position:absolute; left:{{ bn.x }}px; top:{{ bn.y }}px; width:236px; background:var(--bg); border:1px solid {{ bn.border }}; border-radius:12px; cursor:grab; box-shadow:{{ bn.glow }};" style-hover="border-color:var(--t3);">
+    <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid {{ bn.stripe }}; top:50%; transform:translateY(-50%); left:-6px; cursor:crosshair;"></span>
+    <div style="display:flex; align-items:center; gap:9px; padding:11px 14px 8px;">
+      <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; background:{{ bn.tint }}; flex-shrink:0;"><span class="material-icons" style="font-size:15px; color:{{ bn.stripe }};">{{ bn.icon }}</span></span>
+      <span style="flex:1; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ bn.name }}</span>
+      <sc-if value="{{ bn.tag }}" hint-placeholder-val="{{ false }}"><span style="font-family:var(--mono); font-size:9px; letter-spacing:0.5px; color:{{ bn.stripe }}; border:1px solid {{ bn.stripe }}; border-radius:5px; padding:1px 6px; opacity:0.9;">{{ bn.tag }}</span></sc-if>
+    </div>
+    <div style="padding:0 14px 9px; font-family:var(--mono); font-size:10.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ bn.summary }}</div>
+    <div style="display:flex; gap:14px; padding:7px 14px; border-top:1px solid var(--line2); font-family:var(--mono); font-size:10px; color:var(--t3);">
+      <span>{{ bn.stat1 }}</span><span>{{ bn.stat2 }}</span><span style="margin-left:auto; color:{{ bn.okColor }};">{{ bn.ok }}</span>
+    </div>
+    <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid {{ bn.stripe }}; top:50%; transform:translateY(-50%); right:-6px; cursor:crosshair;"></span>
+  </div>
+</sc-for>
+
+<!-- ============================================================ -->
+<!-- Binding logic (renderVals(), lines 1548-1558) that produces  -->
+<!-- the `bn` object fed into the template above:                 -->
+<!--
+  const KIND_STRIPE = { channel: "var(--green)", conditional: "var(--yellow)", agent: "var(--purple)" };
+  const KIND_TINT   = { channel: "var(--green-dim)", conditional: "var(--yellow-dim)", agent: "rgba(191,122,240,0.12)" };
+  const builderNodes = this.BUILDER_NODES.map((n) => ({
+    name: n.name, tag: n.tag, icon: n.icon, x: n.x, y: n.y,
+    summary: n.summary, stat1: n.stat1, stat2: n.stat2, ok: n.ok, okColor: "var(--green)",
+    stripe: KIND_STRIPE[n.kind] || "var(--line3)",
+    tint: KIND_TINT[n.kind] || "var(--hover)",
+    border: bSel === n.id ? "var(--accent)" : "var(--line3)",
+    glow: bSel === n.id ? "0 0 0 3px var(--accent-soft), 0 12px 32px rgba(0,0,0,0.35)" : "0 4px 16px rgba(0,0,0,0.2)",
+    onClick: () => this.setState({ bSel: bSel === n.id ? null : n.id }),
+  }));
+-->
+<!-- ============================================================ -->
+
+<!-- ============================================================ -->
+<!-- 2. RESOLVED VARIANTS                                          -->
+<!-- These are the concrete instances produced by BUILDER_NODES     -->
+<!-- (canvas lines 1434-1455), fully resolved to show every         -->
+<!-- distinct visual variant that exists on the builder screen.     -->
+<!-- Source data for each, verbatim: -->
+<!--
+  { id: "wf_node_a81f", name: "WhatsApp Trigger", tag: "TRIGGER", icon: "bolt", x: 48, y: 170, kind: "channel",
+    summary: "accounts: ventas-ar · patterns: hola, info, precio", stat1: "1,842 runs", stat2: "24h: 312", ok: "● ok",
+    fields: [{ label: "Direction", value: "Inbound (receive)", select: true }, { label: "Mode", value: "Shared", select: true }, { label: "Channel accounts", value: "Ventas AR (whatsapp)", select: true }, { label: "Keyword patterns", value: "hola, info, precio", select: false }],
+    hint: "Inbound trigger — arranca el workflow cuando llega un mensaje que matchea." },
+
+  { id: "wf_node_c22d", name: "Intent Router", tag: "IF", icon: "alt_route", x: 360, y: 170, kind: "conditional",
+    summary: "request.text contains \"precio\" → qualify · else fallback", stat1: "2 branches", stat2: "p95: 2ms", ok: "● ok",
+    fields: [{ label: "Branch 1 · variable", value: "request.text", select: true }, { label: "Comparator", value: "contains", select: true }, { label: "Value", value: "precio", select: false }],
+    hint: "Rutea a la primera rama cuya condición matchea; si no, toma el default." },
+
+  { id: "wf_node_e903", name: "Qualify Lead", tag: "AGENT", icon: "smart_toy", x: 700, y: 60, kind: "agent",
+    summary: "agent: lead-qualifier · msg: {{request.text}}", stat1: "1,124 runs", stat2: "p95: 620ms", ok: "● ok",
+    fields: [{ label: "Agent", value: "lead-qualifier", select: true }, { label: "Message", value: "{{request.text}}", select: false }, { label: "Conversation ID", value: "{{request.conversationId}}", select: false }],
+    hint: "Invoca al agente de IA y espera su respuesta." },
+
+  { id: "wf_node_f114", name: "Send Reply", tag: null, icon: "send", x: 1040, y: 60, kind: "channel",
+    summary: "outbound · same account · to: {{request.from}}", stat1: "1,109 sent", stat2: "p95: 240ms", ok: "● ok",
+    fields: [{ label: "Direction", value: "Outbound (send)", select: true }, { label: "Account", value: "Same as incoming message", select: true }, { label: "To", value: "{{request.from}}", select: false }],
+    hint: "Responde por la misma cuenta de canal que recibió el mensaje entrante." },
+
+  { id: "wf_node_b7c0", name: "Fallback Message", tag: null, icon: "send", x: 700, y: 300, kind: "channel",
+    summary: "outbound · onboarding link · to: {{request.from}}", stat1: "718 sent", stat2: "p95: 198ms", ok: "● ok",
+    fields: [{ label: "Direction", value: "Outbound (send)", select: true }, { label: "Account", value: "Same as incoming message", select: true }, { label: "To", value: "{{request.from}}", select: false }],
+    hint: "Camino default — envía el link de onboarding self-service." },
+-->
+<!-- ============================================================ -->
+
+<!-- Variant A: TRIGGER node (kind: channel, tag: "TRIGGER") — icon "bolt", stripe/tint = green -->
+<div style="position:absolute; left:48px; top:170px; width:236px; background:var(--bg); border:1px solid var(--line3); border-radius:12px; cursor:grab; box-shadow:0 4px 16px rgba(0,0,0,0.2);">
+  <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid var(--green); top:50%; transform:translateY(-50%); left:-6px; cursor:crosshair;"></span>
+  <div style="display:flex; align-items:center; gap:9px; padding:11px 14px 8px;">
+    <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; background:var(--green-dim); flex-shrink:0;"><span class="material-icons" style="font-size:15px; color:var(--green);">bolt</span></span>
+    <span style="flex:1; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">WhatsApp Trigger</span>
+    <span style="font-family:var(--mono); font-size:9px; letter-spacing:0.5px; color:var(--green); border:1px solid var(--green); border-radius:5px; padding:1px 6px; opacity:0.9;">TRIGGER</span>
+  </div>
+  <div style="padding:0 14px 9px; font-family:var(--mono); font-size:10.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">accounts: ventas-ar · patterns: hola, info, precio</div>
+  <div style="display:flex; gap:14px; padding:7px 14px; border-top:1px solid var(--line2); font-family:var(--mono); font-size:10px; color:var(--t3);">
+    <span>1,842 runs</span><span>24h: 312</span><span style="margin-left:auto; color:var(--green);">● ok</span>
+  </div>
+  <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid var(--green); top:50%; transform:translateY(-50%); right:-6px; cursor:crosshair;"></span>
+</div>
+
+<!-- Variant B: CONDITIONAL/branch node (kind: conditional, tag: "IF") — icon "alt_route", stripe/tint = yellow -->
+<div style="position:absolute; left:360px; top:170px; width:236px; background:var(--bg); border:1px solid var(--line3); border-radius:12px; cursor:grab; box-shadow:0 4px 16px rgba(0,0,0,0.2);">
+  <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid var(--yellow); top:50%; transform:translateY(-50%); left:-6px; cursor:crosshair;"></span>
+  <div style="display:flex; align-items:center; gap:9px; padding:11px 14px 8px;">
+    <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; background:var(--yellow-dim); flex-shrink:0;"><span class="material-icons" style="font-size:15px; color:var(--yellow);">alt_route</span></span>
+    <span style="flex:1; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Intent Router</span>
+    <span style="font-family:var(--mono); font-size:9px; letter-spacing:0.5px; color:var(--yellow); border:1px solid var(--yellow); border-radius:5px; padding:1px 6px; opacity:0.9;">IF</span>
+  </div>
+  <div style="padding:0 14px 9px; font-family:var(--mono); font-size:10.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">request.text contains "precio" → qualify · else fallback</div>
+  <div style="display:flex; gap:14px; padding:7px 14px; border-top:1px solid var(--line2); font-family:var(--mono); font-size:10px; color:var(--t3);">
+    <span>2 branches</span><span>p95: 2ms</span><span style="margin-left:auto; color:var(--green);">● ok</span>
+  </div>
+  <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid var(--yellow); top:50%; transform:translateY(-50%); right:-6px; cursor:crosshair;"></span>
+</div>
+
+<!-- Variant C: AGENT node (kind: agent, tag: "AGENT") — icon "smart_toy", stripe/tint = purple; shown SELECTED (border=accent, glow=selection ring) -->
+<div style="position:absolute; left:700px; top:60px; width:236px; background:var(--bg); border:1px solid var(--accent); border-radius:12px; cursor:grab; box-shadow:0 0 0 3px var(--accent-soft), 0 12px 32px rgba(0,0,0,0.35);">
+  <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid var(--purple); top:50%; transform:translateY(-50%); left:-6px; cursor:crosshair;"></span>
+  <div style="display:flex; align-items:center; gap:9px; padding:11px 14px 8px;">
+    <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; background:rgba(191,122,240,0.12); flex-shrink:0;"><span class="material-icons" style="font-size:15px; color:var(--purple);">smart_toy</span></span>
+    <span style="flex:1; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Qualify Lead</span>
+    <span style="font-family:var(--mono); font-size:9px; letter-spacing:0.5px; color:var(--purple); border:1px solid var(--purple); border-radius:5px; padding:1px 6px; opacity:0.9;">AGENT</span>
+  </div>
+  <div style="padding:0 14px 9px; font-family:var(--mono); font-size:10.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">agent: lead-qualifier · msg: {{request.text}}</div>
+  <div style="display:flex; gap:14px; padding:7px 14px; border-top:1px solid var(--line2); font-family:var(--mono); font-size:10px; color:var(--t3);">
+    <span>1,124 runs</span><span>p95: 620ms</span><span style="margin-left:auto; color:var(--green);">● ok</span>
+  </div>
+  <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid var(--purple); top:50%; transform:translateY(-50%); right:-6px; cursor:crosshair;"></span>
+</div>
+
+<!-- Variant D: plain ACTION node, no tag (kind: channel, tag: null) — icon "send", stripe/tint = green -->
+<div style="position:absolute; left:1040px; top:60px; width:236px; background:var(--bg); border:1px solid var(--line3); border-radius:12px; cursor:grab; box-shadow:0 4px 16px rgba(0,0,0,0.2);">
+  <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid var(--green); top:50%; transform:translateY(-50%); left:-6px; cursor:crosshair;"></span>
+  <div style="display:flex; align-items:center; gap:9px; padding:11px 14px 8px;">
+    <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; background:var(--green-dim); flex-shrink:0;"><span class="material-icons" style="font-size:15px; color:var(--green);">send</span></span>
+    <span style="flex:1; font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Send Reply</span>
+    <!-- no tag chip rendered: bn.tag is null, sc-if is false -->
+  </div>
+  <div style="padding:0 14px 9px; font-family:var(--mono); font-size:10.5px; color:var(--t3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">outbound · same account · to: {{request.from}}</div>
+  <div style="display:flex; gap:14px; padding:7px 14px; border-top:1px solid var(--line2); font-family:var(--mono); font-size:10px; color:var(--t3);">
+    <span>1,109 sent</span><span>p95: 240ms</span><span style="margin-left:auto; color:var(--green);">● ok</span>
+  </div>
+  <span style="position:absolute; width:10px; height:10px; border-radius:50%; background:var(--bg); border:2px solid var(--green); top:50%; transform:translateY(-50%); right:-6px; cursor:crosshair;"></span>
+</div>
+
+<!--
+  A 5th node ("Fallback Message", id wf_node_b7c0, x:700 y:300) exists in
+  BUILDER_NODES but is the SAME visual variant as D (kind: channel, tag: null,
+  icon "send") — omitted here as a duplicate variant, not a new one.
+-->
+
+<!-- ============================================================ -->
+<!-- 3. INSPECTOR PANEL (opens when a node is selected)            -->
+<!-- Extracted verbatim from lines 461-491. Shows the node's        -->
+<!-- config fields — the per-node `fields` array from BUILDER_NODES. -->
+<!-- ============================================================ -->
+
+<sc-if value="{{ builderSelNode }}" hint-placeholder-val="{{ false }}">
+  <div style="position:absolute; top:68px; right:16px; bottom:64px; width:320px; display:flex; flex-direction:column; background:var(--bg); border:1px solid var(--line3); border-radius:14px; box-shadow:0 16px 48px rgba(0,0,0,0.4); overflow:hidden;">
+    <div style="display:flex; align-items:center; gap:9px; padding:14px 16px; border-bottom:1px solid var(--line);">
+      <span style="display:flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:7px; background:var(--hover);"><span class="material-icons" style="font-size:15px; color:var(--t2);">{{ bSelIcon }}</span></span>
+      <span style="flex:1; font-weight:600; font-size:13px;">{{ bSelName }}</span>
+      <button onClick="{{ builderDeselect }}" style="width:26px; height:26px; border:none; background:transparent; border-radius:6px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover);" aria-label="Close"><span class="material-icons" style="font-size:16px;">close</span></button>
+    </div>
+    <div style="display:flex; border-bottom:1px solid var(--line); padding:0 16px; gap:2px;">
+      <span style="padding:8px 10px; font-size:12px; font-weight:500; color:var(--t1); border-bottom:2px solid var(--t1); margin-bottom:-1px;">Config</span>
+      <span style="padding:8px 10px; font-size:12px; color:var(--t3); cursor:pointer;" style-hover="color:var(--t1);">Output</span>
+      <span style="padding:8px 10px; font-size:12px; color:var(--t3); cursor:pointer;" style-hover="color:var(--t1);">Runs</span>
+    </div>
+    <div style="flex:1; padding:16px; display:flex; flex-direction:column; gap:14px; overflow-y:auto;">
+      <label style="display:flex; flex-direction:column; gap:5px;">
+        <span style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--t3);">Name</span>
+        <input value="{{ bSelName }}" style="height:34px; padding:0 12px; border:1px solid var(--line3); border-radius:8px; background:transparent; color:var(--t1); font-size:13px; outline:none; font-family:inherit;" style-focus="border-color:var(--accent);">
+      </label>
+      <sc-for list="{{ bSelFields }}" as="f" hint-placeholder-count="3">
+        <label style="display:flex; flex-direction:column; gap:5px;">
+          <span style="font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:0.6px; color:var(--t3);">{{ f.label }}</span>
+          <span style="height:34px; padding:0 12px; border:1px solid var(--line3); border-radius:8px; color:var(--t1); font-size:13px; display:flex; align-items:center; justify-content:space-between;">{{ f.value }}<sc-if value="{{ f.select }}" hint-placeholder-val="{{ false }}"><span class="material-icons" style="font-size:15px; color:var(--t3);">unfold_more</span></sc-if></span>
+        </label>
+      </sc-for>
+      <p style="font-size:12px; color:var(--t3); margin:0; line-height:1.5;">{{ bSelHint }}</p>
+    </div>
+    <div style="padding:12px 16px; border-top:1px solid var(--line); display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-family:var(--mono); font-size:10px; color:var(--t3);">{{ bSelId }}</span>
+      <button style="padding:6px 12px; border-radius:8px; font-size:12px; font-weight:500; cursor:pointer; background:transparent; color:var(--red); border:1px solid var(--line3); font-family:inherit;" style-hover="background:var(--red-dim); border-color:var(--red);">Remove</button>
+    </div>
+  </div>
+</sc-if>

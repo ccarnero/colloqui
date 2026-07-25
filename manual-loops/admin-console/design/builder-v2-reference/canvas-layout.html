@@ -1,0 +1,135 @@
+<!--
+  Extracted verbatim from:
+    manual-loops/admin-console/design/Rediseño Terminal.dc.html, lines 361-493
+    (the full Workflow Builder screen: <sc-if value="{{ showBuilder }}">)
+
+  Node cards themselves are factored out into node-card.html — this file has
+  everything else: the screen root, dotted background, SVG edges + edge
+  labels, floating top chrome (breadcrumb/name/status, view segmented
+  control, run/publish actions), floating bottom dock palette, zoom control,
+  minimap, and the node inspector panel host (markup itself in node-card.html).
+
+  Same caveat as elsewhere: no CSS classes in the canvas — everything below
+  is inline `style="..."`. `style-hover="..."` / `style-focus="..."` are
+  design-canvas pseudo-attributes, not real HTML/CSS.
+-->
+
+<!-- Screen root: full-bleed canvas with floating chrome overlaid -->
+<div data-screen-label="Workflow Builder" style="position:relative; height:calc(100vh - 96px); background:var(--bg); overflow:hidden; background-image:radial-gradient(circle, var(--line) 1px, transparent 1px); background-size:24px 24px;">
+
+  <!-- Canvas (scrollable node surface) -->
+  <div style="position:absolute; inset:0; overflow:auto;">
+    <div style="position:relative; width:1340px; height:560px; margin:24px;">
+
+      <!-- Edges: cubic-bezier SVG paths. Two visual styles: -->
+      <!--   - "active/selected path" edges: stroke var(--accent), dashed, animated (dashmove) -->
+      <!--   - "default/inactive" edge: stroke var(--line3), solid, no animation -->
+      <svg width="1340" height="560" style="position:absolute; inset:0; pointer-events:none;">
+        <path d="M 284 216 C 322 216, 322 216, 358 216" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 5" style="animation:dashmove 1s linear infinite;"></path>
+        <path d="M 596 216 C 650 216, 644 106, 698 106" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 5" style="animation:dashmove 1s linear infinite;"></path>
+        <path d="M 596 216 C 650 216, 644 346, 698 346" fill="none" stroke="var(--line3)" stroke-width="1.5"></path>
+        <path d="M 936 106 C 990 106, 984 106, 1038 106" fill="none" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="5 5" style="animation:dashmove 1s linear infinite;"></path>
+      </svg>
+
+      <!-- Edge labels: floating pill positioned over the branch point. -->
+      <!-- "Matched" branch label uses stronger border (var(--line3)) + var(--t2) text; -->
+      <!-- "default" branch label uses weaker border (var(--line2)) + var(--t3) text. -->
+      <span style="position:absolute; left:614px; top:142px; font-family:var(--mono); font-size:10px; color:var(--t2); background:var(--bg); border:1px solid var(--line3); border-radius:5px; padding:1px 7px;">text contains "precio"</span>
+      <span style="position:absolute; left:632px; top:300px; font-family:var(--mono); font-size:10px; color:var(--t3); background:var(--bg); border:1px solid var(--line2); border-radius:5px; padding:1px 7px;">default</span>
+
+      <!-- Node cards render here: see node-card.html -->
+      <sc-for list="{{ builderNodes }}" as="bn" hint-placeholder-count="5">
+        <!-- ... node-card markup, see node-card.html section 1 ... -->
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- Floating top chrome: single row, wraps on narrow widths -->
+  <div style="position:absolute; top:16px; left:16px; right:16px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; pointer-events:none;">
+
+    <!-- Breadcrumb + editable workflow name + ACTIVE badge + saved indicator -->
+    <div style="display:flex; align-items:center; gap:8px; pointer-events:auto;">
+      <div style="display:flex; align-items:center; gap:8px; background:var(--bg); border:1px solid var(--line3); border-radius:10px; padding:6px 12px; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
+        <button onClick="{{ backToWorkflows }}" style="width:24px; height:24px; border:none; background:transparent; border-radius:6px; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover); color:var(--t1);" aria-label="Back"><span class="material-icons" style="font-size:15px;">arrow_back</span></button>
+        <span style="font-family:var(--mono); font-size:11px; color:var(--t3);">workflows /</span>
+        <input value="lead-qualification" style="font-size:13px; font-weight:600; border:1px solid transparent; border-radius:5px; background:transparent; color:inherit; padding:1px 6px; width:150px; outline:none; font-family:inherit;" style-hover="border-color:var(--line3);" style-focus="border-color:var(--accent);">
+        <span style="font-size:10px; color:var(--green); background:var(--green-dim); border-radius:5px; padding:1px 7px; font-family:var(--mono);">ACTIVE</span>
+      </div>
+      <span style="display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px; color:var(--t3); background:var(--bg); border:1px solid var(--line2); border-radius:10px; padding:7px 12px;"><span class="material-icons" style="font-size:13px; color:var(--green);">check_circle</span>saved · 12s</span>
+    </div>
+
+    <span style="flex:1;"></span>
+
+    <!-- View segmented control: Editor / Runs / Settings -->
+    <div style="display:inline-flex; border:1px solid var(--line3); border-radius:10px; overflow:hidden; background:var(--bg); box-shadow:0 8px 24px rgba(0,0,0,0.25); pointer-events:auto;">
+      <button style="padding:7px 16px; font-size:12px; font-weight:500; color:var(--t1); background:var(--hover); border:none; border-right:1px solid var(--line2); cursor:pointer; font-family:inherit;">Editor</button>
+      <button style="padding:7px 16px; font-size:12px; color:var(--t3); background:transparent; border:none; border-right:1px solid var(--line2); cursor:pointer; font-family:inherit;" style-hover="color:var(--t1);">Runs <span style="font-family:var(--mono); font-size:10px;">1,842</span></button>
+      <button style="padding:7px 16px; font-size:12px; color:var(--t3); background:transparent; border:none; cursor:pointer; font-family:inherit;" style-hover="color:var(--t1);">Settings</button>
+    </div>
+
+    <span style="flex:1;"></span>
+
+    <!-- Actions: validity badge + Run test + Publish -->
+    <div style="display:flex; align-items:center; gap:8px; pointer-events:auto;">
+      <span style="display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:11px; color:var(--green); background:var(--bg); border:1px solid var(--line3); border-radius:10px; padding:7px 12px;"><span class="material-icons" style="font-size:13px;">verified</span>valid · 5 nodes</span>
+      <button style="display:inline-flex; align-items:center; gap:6px; padding:7px 14px; border-radius:10px; font-size:12.5px; font-weight:500; cursor:pointer; background:var(--bg); color:var(--t1); border:1px solid var(--line3); font-family:inherit; box-shadow:0 8px 24px rgba(0,0,0,0.25);" style-hover="background:var(--hover);"><span class="material-icons" style="font-size:14px;">play_arrow</span>Run test</button>
+      <button style="display:inline-flex; align-items:center; gap:6px; padding:7px 16px; border-radius:10px; font-size:12.5px; font-weight:500; cursor:pointer; background:var(--btn-bg); color:var(--btn-fg); border:none; font-family:inherit; box-shadow:0 8px 24px rgba(0,0,0,0.25);" style-hover="opacity:0.85;">Publish</button>
+    </div>
+  </div>
+
+  <!-- Floating bottom-center: dock palette (draggable node types) -->
+  <div style="position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:2px; background:var(--bg); border:1px solid var(--line3); border-radius:14px; padding:6px; box-shadow:0 12px 32px rgba(0,0,0,0.35);">
+    <sc-for list="{{ dockItems }}" as="d" hint-placeholder-count="9">
+      <sc-if value="{{ d.divider }}" hint-placeholder-val="{{ false }}">
+        <span style="width:1px; height:26px; background:var(--line2); margin:0 5px;"></span>
+      </sc-if>
+      <sc-if value="{{ d.item }}" hint-placeholder-val="{{ true }}">
+        <div title="{{ d.name }}" style="display:flex; flex-direction:column; align-items:center; gap:2px; padding:6px 9px; border-radius:9px; cursor:grab;" style-hover="background:var(--hover);">
+          <span class="material-icons" style="font-size:17px; color:{{ d.color }};">{{ d.icon }}</span>
+          <span style="font-family:var(--mono); font-size:8.5px; color:var(--t3); letter-spacing:0.3px;">{{ d.short }}</span>
+        </div>
+      </sc-if>
+    </sc-for>
+  </div>
+
+  <!-- Floating bottom-left: zoom control -->
+  <div style="position:absolute; bottom:20px; left:16px; display:flex; align-items:center; background:var(--bg); border:1px solid var(--line3); border-radius:10px; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,0.25);">
+    <button style="width:30px; height:30px; border:none; background:transparent; color:var(--t2); cursor:pointer; font-size:15px; font-family:inherit;" style-hover="background:var(--hover);">−</button>
+    <span style="font-family:var(--mono); font-size:11px; color:var(--t2); padding:0 8px; border-left:1px solid var(--line2); border-right:1px solid var(--line2); line-height:30px;">100%</span>
+    <button style="width:30px; height:30px; border:none; background:transparent; color:var(--t2); cursor:pointer; font-size:15px; font-family:inherit;" style-hover="background:var(--hover);">+</button>
+    <button style="width:30px; height:30px; border:none; border-left:1px solid var(--line2); background:transparent; color:var(--t2); cursor:pointer; display:flex; align-items:center; justify-content:center;" style-hover="background:var(--hover);" title="Fit to screen"><span class="material-icons" style="font-size:14px;">fit_screen</span></button>
+  </div>
+
+  <!-- Floating bottom-right: minimap (static SVG rects standing in for node positions) -->
+  <div style="position:absolute; bottom:20px; right:16px; width:132px; height:76px; background:var(--bg); border:1px solid var(--line3); border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.25); overflow:hidden;">
+    <svg width="132" height="76" style="display:block;">
+      <rect x="8" y="32" width="20" height="9" rx="2" fill="var(--line3)"></rect>
+      <rect x="38" y="32" width="20" height="9" rx="2" fill="var(--line3)"></rect>
+      <rect x="70" y="14" width="20" height="9" rx="2" fill="var(--line3)"></rect>
+      <rect x="102" y="14" width="20" height="9" rx="2" fill="var(--line3)"></rect>
+      <rect x="70" y="52" width="20" height="9" rx="2" fill="var(--line3)"></rect>
+      <rect x="2" y="2" width="86" height="72" rx="3" fill="none" stroke="var(--accent)" stroke-width="1"></rect>
+    </svg>
+  </div>
+
+  <!-- Node inspector panel host: see node-card.html section 3 for the full markup -->
+  <sc-if value="{{ builderSelNode }}" hint-placeholder-val="{{ false }}">
+    <!-- ... inspector markup, see node-card.html section 3 ... -->
+  </sc-if>
+</div>
+
+<!--
+  Dock palette data (dockItems, canvas lines 1561-1574):
+    { name: "Channel",         short: "CHAN",  icon: "swap_horiz", color: "var(--green)" }
+    { name: "JS Function",     short: "JS",    icon: "code",       color: "var(--t2)" }
+    -- divider --
+    { name: "HTTP Connector",  short: "HTTP",  icon: "http",       color: "var(--t2)" }
+    { name: "MCP Tool",        short: "MCP",   icon: "extension",  color: "var(--t2)" }
+    { name: "Service Call",    short: "SVC",   icon: "dns",        color: "var(--t2)" }
+    { name: "Publish Event",   short: "EVT",   icon: "send",       color: "var(--t2)" }
+    -- divider --
+    { name: "Agent",           short: "AGENT", icon: "smart_toy",  color: "var(--purple)" }
+    -- divider --
+    { name: "Parallel Branch", short: "PAR",   icon: "call_split", color: "var(--yellow)" }
+    { name: "Conditional",     short: "IF",    icon: "alt_route",  color: "var(--yellow)" }
+-->

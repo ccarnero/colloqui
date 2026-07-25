@@ -1,0 +1,85 @@
+/*
+ * Design tokens extracted verbatim from:
+ *   manual-loops/admin-console/design/Rediseño Terminal.dc.html
+ *   <style> block, lines 14-46 (the file's ONLY <style> block — everything
+ *   else in the canvas is inline `style="..."` attributes).
+ *
+ * These are the tokens used by the Workflow Builder screen (design/11-builder.png),
+ * but note they are GLOBAL tokens shared by all 19 screens in the canvas, not
+ * builder-specific. The builder does not define any tokens of its own.
+ *
+ * Fonts loaded via <link> in <helmet> (not in this file, listed here for reference):
+ *   https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap
+ *   https://fonts.googleapis.com/icon?family=Material+Icons
+ */
+
+:root {
+  --bg: #0a0a0a;
+  --panel: #0f0f0f;
+  --hover: #1a1a1a;
+  --line: #1f1f1f;
+  --line2: #161616;
+  --line3: #2e2e2e;
+  --t1: #ededed;
+  --t2: #a1a1a1;
+  --t3: #7a7a7a;
+  --accent: #1A66FF;
+  --accent-soft: rgba(26, 102, 255, 0.14);
+  --link: #6d9bff;
+  --green: #50e3a4;
+  --green-dim: rgba(80, 227, 164, 0.1);
+  --red: #f5455c;
+  --red-dim: rgba(245, 69, 92, 0.1);
+  --yellow: #f5a623;
+  --yellow-dim: rgba(245, 166, 35, 0.1);
+  --purple: #bf7af0;
+  --btn-bg: #ededed;
+  --btn-fg: #0a0a0a;
+  --mono: 'Geist Mono', ui-monospace, monospace;
+}
+
+:root.light-theme {
+  --bg: #fafafa;
+  --panel: #ffffff;
+  --hover: #f0f0f0;
+  --line: #e4e4e4;
+  --line2: #eeeeee;
+  --line3: #d4d4d4;
+  --t1: #171717;
+  --t2: #666666;
+  --t3: #999999;
+  --accent: #1A66FF;
+  --accent-soft: rgba(26, 102, 255, 0.09);
+  --link: #1A66FF;
+  --green: #0c9f5f;
+  --green-dim: rgba(12, 159, 95, 0.08);
+  --red: #e5484d;
+  --red-dim: rgba(229, 72, 77, 0.08);
+  --yellow: #b26b00;
+  --yellow-dim: rgba(178, 107, 0, 0.08);
+  --purple: #8e4ec6;
+  --btn-bg: #171717;
+  --btn-fg: #ffffff;
+}
+
+/* Base typography/layout rules that apply globally, incl. inside the builder. */
+html, body { height: 100%; margin: 0; }
+body { font-family: 'Geist', system-ui, sans-serif; font-size: 13px; line-height: 1.5; background: var(--bg); color: var(--t1); }
+a { color: var(--link); text-decoration: none; }
+a:hover { color: var(--t1); }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-thumb { background: var(--line3); border-radius: 4px; }
+.material-icons { font-size: 16px; }
+
+/* Used by the builder's animated connection edges (see canvas-layout.css). */
+@keyframes dashmove { to { stroke-dashoffset: -20; } }
+
+/*
+ * NOTE ON "font stacks incl. typography": there is no dedicated type-scale
+ * token system (no --font-size-*, --radius-*, --space-* custom properties)
+ * in this canvas. Font sizes, weights, border-radius, padding and gap
+ * values are all hardcoded per-element in inline styles (e.g. font-size:13px,
+ * border-radius:12px, padding:11px 14px 8px). See node-card.css and
+ * canvas-layout.css for the concrete values used by the builder screen,
+ * extracted verbatim from those inline styles.
+ */

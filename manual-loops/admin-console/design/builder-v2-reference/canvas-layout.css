@@ -1,0 +1,308 @@
+/*
+ * Same caveat as node-card.css: the canvas has zero CSS classes for these
+ * elements; all values below are transcribed verbatim from the inline
+ * `style="..."` attributes in canvas-layout.html (sourced from
+ * Rediseño Terminal.dc.html lines 361-493). Class names are invented hooks,
+ * not canvas-original names.
+ */
+
+/* Screen root: full-bleed canvas with dotted-grid background */
+.builder-screen {
+  position: relative;
+  height: calc(100vh - 96px);
+  background: var(--bg);
+  overflow: hidden;
+  /* Dot grid: 1px radial dot every 24px, using the (dim) --line token as dot color */
+  background-image: radial-gradient(circle, var(--line) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+/* Scrollable canvas surface containing nodes + edges */
+.builder-canvas-scroll {
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+}
+.builder-canvas-surface {
+  position: relative;
+  width: 1340px;  /* fixed canvas size in this mock, not measured/dynamic */
+  height: 560px;
+  margin: 24px;
+}
+
+/* Edges (SVG <path>, cubic bezier, drawn with two visual states) */
+.builder-edge--active {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+  animation: dashmove 1s linear infinite; /* @keyframes dashmove defined in tokens.css */
+}
+.builder-edge--default {
+  fill: none;
+  stroke: var(--line3);
+  stroke-width: 1.5;
+  /* no dash, no animation — visually "less important" / untaken branch */
+}
+
+/* Edge label pill (floating over the branch point) */
+.builder-edge-label {
+  position: absolute; /* left/top set per-label */
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--t2);
+  background: var(--bg);
+  border: 1px solid var(--line3);
+  border-radius: 5px;
+  padding: 1px 7px;
+}
+.builder-edge-label--default {
+  /* the "default" branch fallback label uses a dimmer border/text pairing */
+  color: var(--t3);
+  border-color: var(--line2);
+}
+
+/* Floating top chrome row */
+.builder-topbar {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  pointer-events: none; /* re-enabled (pointer-events:auto) on each child cluster */
+}
+.builder-topbar__cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+.builder-topbar__breadcrumb-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg);
+  border: 1px solid var(--line3);
+  border-radius: 10px;
+  padding: 6px 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.builder-topbar__name-input {
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: inherit;
+  padding: 1px 6px;
+  width: 150px;
+  outline: none;
+  font-family: inherit;
+}
+.builder-topbar__name-input:hover { border-color: var(--line3); }
+.builder-topbar__name-input:focus { border-color: var(--accent); }
+.builder-topbar__active-badge {
+  font-size: 10px;
+  color: var(--green);
+  background: var(--green-dim);
+  border-radius: 5px;
+  padding: 1px 7px;
+  font-family: var(--mono);
+}
+.builder-topbar__saved-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t3);
+  background: var(--bg);
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  padding: 7px 12px;
+}
+
+/* View segmented control (Editor / Runs / Settings) */
+.builder-view-tabs {
+  display: inline-flex;
+  border: 1px solid var(--line3);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  pointer-events: auto;
+}
+.builder-view-tabs__btn {
+  padding: 7px 16px;
+  font-size: 12px;
+  color: var(--t3);
+  background: transparent;
+  border: none;
+  border-right: 1px solid var(--line2);
+  cursor: pointer;
+  font-family: inherit;
+}
+.builder-view-tabs__btn:last-child { border-right: none; }
+.builder-view-tabs__btn:hover { color: var(--t1); }
+.builder-view-tabs__btn--active {
+  font-weight: 500;
+  color: var(--t1);
+  background: var(--hover);
+}
+
+/* Actions cluster: validity badge, Run test, Publish */
+.builder-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+.builder-validity-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--green);
+  background: var(--bg);
+  border: 1px solid var(--line3);
+  border-radius: 10px;
+  padding: 7px 12px;
+}
+.builder-btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--t1);
+  border: 1px solid var(--line3);
+  font-family: inherit;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.builder-btn-secondary:hover { background: var(--hover); }
+.builder-btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  border: none;
+  font-family: inherit;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.builder-btn-primary:hover { opacity: 0.85; }
+
+/* Floating bottom-center dock / palette rail */
+.builder-dock {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--line3);
+  border-radius: 14px;
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+.builder-dock__divider {
+  width: 1px;
+  height: 26px;
+  background: var(--line2);
+  margin: 0 5px;
+}
+.builder-dock__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  cursor: grab;
+}
+.builder-dock__item:hover { background: var(--hover); }
+.builder-dock__item .material-icons { font-size: 17px; } /* color set per item (see canvas-layout.html data comment) */
+.builder-dock__item-label {
+  font-family: var(--mono);
+  font-size: 8.5px;
+  color: var(--t3);
+  letter-spacing: 0.3px;
+}
+
+/* Floating bottom-left zoom control */
+.builder-zoom {
+  position: absolute;
+  bottom: 20px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  background: var(--bg);
+  border: 1px solid var(--line3);
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+}
+.builder-zoom__btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: transparent;
+  color: var(--t2);
+  cursor: pointer;
+  font-size: 15px;
+  font-family: inherit;
+}
+.builder-zoom__btn:hover { background: var(--hover); }
+.builder-zoom__pct {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--t2);
+  padding: 0 8px;
+  border-left: 1px solid var(--line2);
+  border-right: 1px solid var(--line2);
+  line-height: 30px;
+}
+.builder-zoom__fit-btn {
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-left: 1px solid var(--line2);
+  background: transparent;
+  color: var(--t2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.builder-zoom__fit-btn:hover { background: var(--hover); }
+
+/* Floating bottom-right minimap */
+.builder-minimap {
+  position: absolute;
+  bottom: 20px;
+  right: 16px;
+  width: 132px;
+  height: 76px;
+  background: var(--bg);
+  border: 1px solid var(--line3);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  overflow: hidden;
+}
+.builder-minimap__node-rect { fill: var(--line3); } /* rx:2, roughly 20x9 per node */
+.builder-minimap__viewport-rect { fill: none; stroke: var(--accent); stroke-width: 1; } /* rx:3 */

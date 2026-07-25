@@ -1,0 +1,271 @@
+/*
+ * IMPORTANT: The canvas file (Rediseño Terminal.dc.html) does NOT contain a
+ * separate CSS ruleset for node cards. There is exactly one <style> block in
+ * the whole file (lines 14-46, see tokens.css) and it holds only :root
+ * tokens + a handful of global base rules (html/body/a/scrollbar/.material-icons)
+ * + the @keyframes dashmove animation. Every node-card visual property is an
+ * inline `style="..."` attribute on the elements in node-card.html
+ * (lines 378-392 of the canvas). Confirmed via `rg 'class="'` — the only
+ * class in the entire file is `.material-icons`.
+ *
+ * What follows is a MECHANICAL transcription of those exact inline
+ * property:value pairs into class-based rules — the values are copied
+ * verbatim (nothing renamed, resized, or "improved"), only the delivery
+ * mechanism changes (inline -> selector) so this is reusable as a stylesheet.
+ * Class names below (.node-card, .node-card__*) are NOT from the canvas —
+ * invented here only as hooks; the canvas has no class names for these
+ * elements at all. Cross-reference node-card.html for the literal source.
+ */
+
+.node-card {
+  position: absolute; /* left/top set inline per node: bn.x / bn.y */
+  width: 236px;
+  background: var(--bg);
+  border: 1px solid var(--line3); /* var(--accent) + glow when selected, see below */
+  border-radius: 12px;
+  cursor: grab;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2); /* unselected */
+}
+.node-card:hover {
+  border-color: var(--t3); /* canvas: style-hover="border-color:var(--t3);" */
+}
+.node-card--selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+/* Left/right connector dots (two <span> siblings, absolutely positioned) */
+.node-card__port {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--line3); /* set to bn.stripe per node kind, see NOTES.md */
+  top: 50%;
+  transform: translateY(-50%);
+  cursor: crosshair;
+}
+.node-card__port--left { left: -6px; }
+.node-card__port--right { right: -6px; }
+
+/* Header row: icon chip + title + optional tag chip */
+.node-card__header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 14px 8px;
+}
+.node-card__icon-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--hover); /* set to bn.tint per node kind */
+  flex-shrink: 0;
+}
+.node-card__icon-chip .material-icons {
+  font-size: 15px;
+  color: var(--t2); /* set to bn.stripe per node kind */
+}
+.node-card__title {
+  flex: 1;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.node-card__tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--t2); /* set to bn.stripe per node kind */
+  border: 1px solid var(--t2); /* set to bn.stripe per node kind */
+  border-radius: 5px;
+  padding: 1px 6px;
+  opacity: 0.9;
+  /* rendered only when bn.tag is truthy (canvas <sc-if value="{{ bn.tag }}">) */
+}
+
+/* Summary line (monospace, single line, ellipsis-truncated) */
+.node-card__summary {
+  padding: 0 14px 9px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--t3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Stats footer row: stat1, stat2, ok-status (pushed right via margin-left:auto) */
+.node-card__stats {
+  display: flex;
+  gap: 14px;
+  padding: 7px 14px;
+  border-top: 1px solid var(--line2);
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--t3);
+}
+.node-card__stats .node-card__ok {
+  margin-left: auto;
+  color: var(--green); /* bn.okColor — always var(--green) in canvas data */
+}
+
+/*
+ * Per-`kind` color mapping (from renderVals(), lines 1548-1549 of the
+ * canvas). Applies to .node-card__port, .node-card__icon-chip background,
+ * .node-card__icon-chip .material-icons color, and .node-card__tag
+ * color/border-color — all four use the SAME stripe color per node.
+ *
+ *   kind: "channel"     -> stripe: var(--green)  tint: var(--green-dim)
+ *   kind: "conditional" -> stripe: var(--yellow)  tint: var(--yellow-dim)
+ *   kind: "agent"       -> stripe: var(--purple)  tint: rgba(191,122,240,0.12)
+ *   (no other kind values appear in BUILDER_NODES; fallback in source code
+ *    is stripe: var(--line3), tint: var(--hover), unused on this screen)
+ */
+.node-card--channel     .node-card__port,
+.node-card--channel     .node-card__icon-chip .material-icons,
+.node-card--channel     .node-card__tag        { border-color: var(--green); color: var(--green); }
+.node-card--channel     .node-card__icon-chip  { background: var(--green-dim); }
+
+.node-card--conditional .node-card__port,
+.node-card--conditional .node-card__icon-chip .material-icons,
+.node-card--conditional .node-card__tag        { border-color: var(--yellow); color: var(--yellow); }
+.node-card--conditional .node-card__icon-chip  { background: var(--yellow-dim); }
+
+.node-card--agent       .node-card__port,
+.node-card--agent       .node-card__icon-chip .material-icons,
+.node-card--agent       .node-card__tag        { border-color: var(--purple); color: var(--purple); }
+.node-card--agent       .node-card__icon-chip  { background: rgba(191, 122, 240, 0.12); }
+
+/*
+ * Inspector panel (opens on node select) — lines 461-491 of the canvas.
+ * Also 100% inline in source; transcribed the same way for completeness
+ * since it is the card's paired "detail" surface.
+ */
+.node-inspector {
+  position: absolute;
+  top: 68px;
+  right: 16px;
+  bottom: 64px;
+  width: 320px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--line3);
+  border-radius: 14px;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+}
+.node-inspector__header {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.node-inspector__close-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  color: var(--t2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.node-inspector__close-btn:hover { background: var(--hover); }
+.node-inspector__tabs {
+  display: flex;
+  border-bottom: 1px solid var(--line);
+  padding: 0 16px;
+  gap: 2px;
+}
+.node-inspector__tab {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--t3);
+  cursor: pointer;
+}
+.node-inspector__tab:hover { color: var(--t1); }
+.node-inspector__tab--active {
+  font-weight: 500;
+  color: var(--t1);
+  border-bottom: 2px solid var(--t1);
+  margin-bottom: -1px;
+}
+.node-inspector__body {
+  flex: 1;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+.node-inspector__field-label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.node-inspector__field-label > span:first-child {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--t3);
+}
+.node-inspector__field-input {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line3);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--t1);
+  font-size: 13px;
+  outline: none;
+  font-family: inherit;
+}
+.node-inspector__field-input:focus { border-color: var(--accent); }
+.node-inspector__field-value {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line3);
+  border-radius: 8px;
+  color: var(--t1);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.node-inspector__hint {
+  font-size: 12px;
+  color: var(--t3);
+  margin: 0;
+  line-height: 1.5;
+}
+.node-inspector__footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.node-inspector__remove-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--line3);
+  font-family: inherit;
+}
+.node-inspector__remove-btn:hover { background: var(--red-dim); border-color: var(--red); }
