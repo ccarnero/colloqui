@@ -65,13 +65,21 @@ describe("WorkflowBuilderComponent — floating chrome (T03)", () => {
     expect(saveState?.textContent).toContain("Unsaved");
   });
 
-  it("renders 'Saved' once the workflow has a persisted key", () => {
-    fixture.componentInstance.flow.update((f) => ({ ...f, key: "wf-1" }));
+  /**
+   * T08 — the reference's saved-indicator pill reads "saved · Ns" (seconds
+   * since the last real save), not a static "Saved". `lastSavedAt` is the
+   * new signal that drives this (set on load for an already-persisted
+   * workflow, and again after every successful performSave() — see
+   * workflow-builder.component.ts); this test exercises it directly, same
+   * as `saving` above.
+   */
+  it("renders 'saved · Ns' once the workflow has a recorded last-saved timestamp", () => {
+    fixture.componentInstance.lastSavedAt.set(Date.now());
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
     const saveState = el.querySelector('[data-testid="builder-save-state"]');
-    expect(saveState?.textContent).toContain("Saved");
+    expect(saveState?.textContent).toMatch(/saved · \d+s/);
     expect(saveState?.textContent).not.toContain("Unsaved");
   });
 
@@ -104,16 +112,22 @@ describe("WorkflowBuilderComponent — floating chrome (T03)", () => {
   });
 
   /**
-   * T03 — "N nodes" pill (T01 finding 10). No "valid" prefix: the builder
-   * only computes validationErrors from saveWorkflow(), so claiming
-   * "valid" before any save would invent an unverified state.
+   * T03, polished T08 — the validity pill (T01 finding 10 for the plain
+   * count, T08 for the "valid ·" prefix). T03 deliberately withheld the
+   * "valid" word because validateWorkflow() only ran from saveWorkflow();
+   * T08 now runs the SAME validator live off flow() (isWorkflowValid), so
+   * an incomplete canvas (0 nodes, no trigger) correctly shows the
+   * invalid state — no "valid" prefix, and the is-invalid class/icon
+   * reflect it — rather than a fabricated pass.
    */
-  it("renders the node-count pill with 0 nodes on a fresh canvas", () => {
+  it("renders the node-count pill with 0 nodes and the invalid state on a fresh (trigger-less) canvas", () => {
     const el = fixture.nativeElement as HTMLElement;
     const pill = el.querySelector('[data-testid="builder-node-count-pill"]');
     expect(pill).toBeTruthy();
     expect(pill!.textContent).toContain("0 nodes");
     expect(pill!.textContent).not.toContain("valid");
+    expect(pill!.classList.contains("is-invalid")).toBe(true);
+    expect(fixture.componentInstance.isWorkflowValid()).toBe(false);
   });
 
   it("updates the node-count pill as nodes are added", () => {

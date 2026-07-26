@@ -150,12 +150,14 @@ describe("WorkflowBuilderComponent — floating segmented control + Run now/Paus
       expect(pause).toHaveBeenCalledWith("wf-1");
     });
 
-    it("still fires Run Test / Save unaffected by the relocated actions", () => {
+    it("still fires Run test / Save unaffected by the relocated actions", () => {
+      // T08: button copy matches the mock's "Run test" casing (was "Run
+      // Test") — the wiring (toggleTestPanel()) is untouched.
       const el = fixture.nativeElement as HTMLElement;
       const buttons = Array.from(
         el.querySelectorAll<HTMLButtonElement>(".chrome-actions button")
       );
-      expect(buttons.some((b) => b.textContent?.includes("Run Test"))).toBe(
+      expect(buttons.some((b) => b.textContent?.includes("Run test"))).toBe(
         true
       );
       expect(buttons.some((b) => b.textContent?.includes("Save"))).toBe(true);

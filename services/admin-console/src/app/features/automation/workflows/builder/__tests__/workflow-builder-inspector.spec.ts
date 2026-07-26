@@ -227,6 +227,35 @@ describe("WorkflowBuilderComponent — floating inspector (T05)", () => {
     );
   });
 
+  /**
+   * SPEC T08 — the inspector's container gained a Config/Output/Runs tab
+   * row (ported from builder-v2-reference/node-card.html section 3) and a
+   * footer node id alongside Remove. This asserts the new container
+   * pieces render without touching the open/close/Esc behavior asserted
+   * above (which stays green, unmodified, in the same suite).
+   */
+  it("renders the Config/Output/Runs tab row with Config active, and the node id in the footer (T08)", () => {
+    const key = addJsFunctionNode();
+    fixture.componentInstance.selectNode(key);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const tabs = Array.from(el.querySelectorAll(".config-tab")).map((t) =>
+      t.textContent?.trim()
+    );
+    expect(tabs).toEqual(["Config", "Output", "Runs"]);
+    expect(el.querySelector(".config-tab--active")?.textContent?.trim()).toBe(
+      "Config"
+    );
+
+    const nodeId = el.querySelector('[data-testid="inspector-node-id"]');
+    expect(nodeId?.textContent?.trim()).toBe(key);
+
+    const removeBtn = el.querySelector(".config-footer .config-remove-btn");
+    expect(removeBtn).toBeTruthy();
+    expect(removeBtn?.textContent).toContain("Remove");
+  });
+
   it("drives a config field edit (JS Function code textarea) through the same onNodeConfigChange path", () => {
     const key = addJsFunctionNode();
     fixture.componentInstance.selectNode(key);

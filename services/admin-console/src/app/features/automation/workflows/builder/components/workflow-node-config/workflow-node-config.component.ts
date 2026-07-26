@@ -59,15 +59,36 @@ import { TemplateAutocompleteComponent } from "../template-autocomplete/template
     @if (node(); as n) {
       <div class="config-panel">
         <div class="config-header">
-          <mat-icon>{{ n.icon }}</mat-icon>
+          <span class="config-icon-chip">
+            <mat-icon>{{ n.icon }}</mat-icon>
+          </span>
           <span class="config-title">{{ n.name }}</span>
           <button
-            mat-icon-button
+            class="config-close-btn"
             type="button"
             (click)="close.emit()"
+            aria-label="Close"
           >
             <mat-icon>close</mat-icon>
           </button>
+        </div>
+
+        <!-- Tab row (SPEC T08), ported verbatim from
+             builder-v2-reference/node-card.html section 3's inspector
+             markup: Config / Output / Runs. Only Config has real content
+             in the reference AND in this builder — the EXISTING
+             WorkflowNodeConfigComponent form fields below are exactly the
+             Config tab's content, unchanged. Output/Runs render as
+             visually-present but inert tabs (no click handler, no
+             fabricated content), same as the reference's static preview —
+             a real per-node "Output"/"Runs" tab needs data this component
+             has no source for today (the same per-node execution data gap
+             T06/T07 investigated for the card footer), so they stay
+             non-interactive rather than showing empty/fake panels. -->
+        <div class="config-tabs" role="tablist">
+          <span class="config-tab config-tab--active" role="tab" aria-selected="true">Config</span>
+          <span class="config-tab config-tab--disabled" role="tab" aria-selected="false" aria-disabled="true">Output</span>
+          <span class="config-tab config-tab--disabled" role="tab" aria-selected="false" aria-disabled="true">Runs</span>
         </div>
 
         <div class="config-body">
@@ -708,10 +729,13 @@ import { TemplateAutocompleteComponent } from "../template-autocomplete/template
           }
         </div>
 
+        <!-- Footer (SPEC T08): node id (mono, per node-card.html section
+             3's {{ bSelId }} span) alongside Remove — Remove itself is
+             the EXISTING (click)="remove.emit(n.key)" wiring, unchanged. -->
         <div class="config-footer">
+          <span class="config-node-id" data-testid="inspector-node-id">{{ n.key }}</span>
           <button
-            mat-flat-button
-            color="warn"
+            class="config-remove-btn"
             type="button"
             (click)="remove.emit(n.key)"
           >
@@ -747,9 +771,83 @@ import { TemplateAutocompleteComponent } from "../template-autocomplete/template
     .config-header {
       display: flex;
       align-items: center;
-      gap: 8px;
-      padding: 12px 16px;
+      gap: 9px;
+      padding: 14px 16px;
       border-bottom: 1px solid var(--border);
+    }
+    /*
+     * Icon chip + tab row + close/remove buttons (SPEC T08), ported from
+     * builder-v2-reference/node-card.html section 3's inspector markup
+     * (26x26 hover-tinted icon chip, header close button, Config/Output/
+     * Runs tab row, red-outlined Remove). These are new elements this
+     * task adds to the existing config panel container; the pre-existing
+     * form fields below (.config-body downward) keep their current
+     * --border/--text2/--text3/--bg tokens untouched, per the "only the
+     * container styling changes" scope — these new pieces use the
+     * builder-scoped --rd-* tokens (SPEC T02) to match the same chrome
+     * language as workflow-builder.component.ts's floating pills.
+     */
+    .config-icon-chip {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      border-radius: var(--rd-radius-8);
+      background: var(--rd-hover);
+      flex-shrink: 0;
+    }
+    .config-icon-chip mat-icon {
+      font-size: 15px;
+      width: 15px;
+      height: 15px;
+      color: var(--rd-text-2);
+    }
+    .config-close-btn {
+      width: 26px;
+      height: 26px;
+      border: none;
+      background: transparent;
+      border-radius: var(--rd-radius-5);
+      color: var(--rd-text-2);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .config-close-btn:hover {
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
+    }
+    .config-close-btn mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
+    }
+    .config-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--rd-line);
+      padding: 0 var(--rd-space-8);
+      gap: var(--rd-space-1);
+    }
+    .config-tab {
+      padding: var(--rd-space-4) var(--rd-space-5);
+      font-size: var(--rd-text-size-sm);
+      color: var(--rd-text-3);
+      margin-bottom: -1px;
+    }
+    .config-tab--active {
+      font-weight: 500;
+      color: var(--rd-text-1);
+      border-bottom: 2px solid var(--rd-text-1);
+    }
+    /* Output/Runs tabs (SPEC T08): visually present, per the reference,
+       but inert — no click handler, no per-node output/run data source
+       exists to back a real tab switch today (same data gap as T06/T07's
+       per-node stats). Not a disabled <button> (nothing to disable, no
+       action wired) — a plain non-interactive label, cursor:default. */
+    .config-tab--disabled {
+      cursor: default;
     }
     .config-title {
       flex: 1;
@@ -780,8 +878,44 @@ import { TemplateAutocompleteComponent } from "../template-autocomplete/template
       transform: none;
     }
     .config-footer {
-      padding: 12px 16px;
-      border-top: 1px solid var(--border);
+      padding: var(--rd-space-6) var(--rd-space-8);
+      border-top: 1px solid var(--rd-line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--rd-space-4);
+    }
+    .config-node-id {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-2xs);
+      color: var(--rd-text-3);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .config-remove-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--rd-space-2);
+      padding: var(--rd-space-3) var(--rd-space-6);
+      border-radius: var(--rd-radius-7);
+      font-size: var(--rd-text-size-sm);
+      font-weight: 500;
+      cursor: pointer;
+      background: transparent;
+      color: var(--rd-red);
+      border: 1px solid var(--rd-line-3);
+      font-family: inherit;
+      flex-shrink: 0;
+    }
+    .config-remove-btn:hover {
+      background: var(--rd-red-dim);
+      border-color: var(--rd-red);
+    }
+    .config-remove-btn mat-icon {
+      font-size: 16px;
+      width: 16px;
+      height: 16px;
     }
     .config-json-textarea {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

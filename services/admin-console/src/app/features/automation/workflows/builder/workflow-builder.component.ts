@@ -4,6 +4,7 @@ import {
   computed,
   HostListener,
   inject,
+  type OnDestroy,
   type OnInit,
   signal,
   viewChild,
@@ -209,9 +210,16 @@ function pruneConflictingConnections(
             </f-canvas>
           </f-flow>
 
-          <!-- Floating chrome: back / name / save state (SPEC decision 3
-               amendment — overlays the canvas, the app header/tabs stay
-               visible above the shell). -->
+          <!-- Floating chrome (SPEC T08, T01 finding 8): ported from
+               builder-v2-reference/canvas-layout.html's floating topbar
+               row, replacing the previous solid full-width bar. Each
+               cluster below is its own translucent pill (chrome-pill /
+               chrome-identity / chrome-segmented / chrome-actions) with
+               independent pointer-events:auto, matching .builder-topbar in
+               canvas-layout.css — the row itself stays pointer-events:none
+               (.floating-chrome) so only the pills, not the gaps between
+               them, intercept clicks/drags meant for the canvas
+               underneath. -->
           <div class="floating-chrome floating-top">
             <div class="chrome-pill chrome-identity">
               <button
@@ -232,6 +240,13 @@ function pruneConflictingConnections(
                 (keydown.enter)="$event.target.blur()"
               />
             </div>
+            <!-- Saved-state pill (SPEC T08): the reference's
+                 saved-indicator pill reads "saved · Ns" (seconds since the
+                 last successful save), not just "Saved". See
+                 saveStateLabel() below: the "Ns" part is derived purely
+                 from the existing saving signal plus a local lastSavedAt
+                 timestamp, ticked once a second by chromeClockTick — no
+                 new fetch, no new capability. -->
             <div
               class="chrome-pill chrome-save-state"
               [class.is-saving]="saving()"
@@ -241,13 +256,23 @@ function pruneConflictingConnections(
               {{ saveStateLabel() }}
             </div>
 
-            <!-- Segmented control (T02): replaces the detail wrapper's
-                 sub-tabs row for this route — mock's "Editor / Runs /
-                 Settings" navigation, targeting the same child routes the
-                 wrapper's sub-tabs used (:id/builder, :id/executions,
-                 :id/settings). Only rendered once a persisted workflow id
-                 is known (unsaved /workflows/new has nothing to navigate
-                 to yet). -->
+            <!-- Segmented control (T02, polished T08): replaces the detail
+                 wrapper's sub-tabs row for this route — mock's "Editor /
+                 Runs / Settings" navigation, targeting the same child
+                 routes the wrapper's sub-tabs used (:id/builder,
+                 :id/executions, :id/settings). Only rendered once a
+                 persisted workflow id is known (unsaved /workflows/new has
+                 nothing to navigate to yet).
+                 T08 / T01 finding 8 follow-up: the mock's Runs segment
+                 shows a live run-count badge next to the label, sourced
+                 from the design canvas's static mock data. No aggregate
+                 "total runs for this definition" count exists anywhere the
+                 builder can read today (T07's node-stats join is per-node;
+                 workflows.component.ts's topByExecutionCountLast7d only
+                 covers the top 5 workflows over 7 days, not this arbitrary
+                 workflow's all-time count) — DATA-GAP, not fabricated
+                 here; the segment stays "Runs" with no number, same
+                 standing precedent as the T06/T07 per-node stats gap. -->
             @if (workflowId(); as wfId) {
               <div
                 class="chrome-pill chrome-segmented"
@@ -286,18 +311,25 @@ function pruneConflictingConnections(
 
             <span class="chrome-spacer"></span>
 
-            <!-- Node-count pill (SPEC T03, T01 finding 10): N = current
-                 node count (real, from the nodes() computed). No "valid"
-                 prefix: per SPEC, that word is only warranted when the
-                 builder exposes an already-computed validation state
-                 without a new run; validationErrors here is only ever
-                 populated by saveWorkflow(), so showing "valid" before any
-                 save would invent a state nothing has actually verified
-                 yet. -->
+            <!-- Validity pill (SPEC T08 — mock's "valid · N nodes"): T03
+                 deliberately withheld the "valid" prefix because, at the
+                 time, validateWorkflow() only ran from saveWorkflow(), and
+                 showing "valid" before any save would have claimed an
+                 unverified state. T08 closes that gap the right way — by
+                 running the SAME existing pure validateWorkflow() function
+                 live off the current flow() signal (see isWorkflowValid
+                 below) instead of only at save time — so "valid" / "N
+                 issues" now reflects a real, continuously up-to-date
+                 check, never a fabricated claim. No new validation logic,
+                 no new capability: same validator, called more often. -->
             <span
               class="chrome-pill chrome-node-count"
+              [class.is-invalid]="!isWorkflowValid()"
               data-testid="builder-node-count-pill"
             >
+              <mat-icon>{{
+                isWorkflowValid() ? "verified" : "error_outline"
+              }}</mat-icon>
               {{ nodeCountLabel() }}
             </span>
 
@@ -332,8 +364,19 @@ function pruneConflictingConnections(
                 [class.active]="testPanelOpen()"
               >
                 <mat-icon>play_arrow</mat-icon>
-                Run Test
+                Run test
               </button>
+              <!-- No Publish button (SPEC T08 / T01 finding 9,
+                   NEW-CAPABILITY): the mock's primary action publishes the
+                   workflow to an ACTIVE state via a publish endpoint that
+                   does not exist in workflow-api.service.ts today (the
+                   live API only has create/update/run-now/pause). Per the
+                   polish loop's standing decision 3 (no capability without
+                   a signed-off API), this stays UNBUILT — Save keeps doing
+                   the real, existing persistence action instead of a
+                   button that would look like Publish but silently just
+                   save. Human sign-off needed before a Publish flow is
+                   built; default is NOT BUILT. -->
               <button
                 mat-flat-button
                 type="button"
@@ -487,24 +530,35 @@ function pruneConflictingConnections(
       flex-wrap: wrap;
     }
     .floating-chrome.floating-zoom {
+      /* SPEC T08 — border-radius:10px in canvas-layout.css's
+         .builder-zoom, matching every other floating pill; was
+         --rd-radius-7 (8px), one step tighter than the reference. */
       bottom: var(--rd-space-8);
       left: var(--rd-space-8);
       pointer-events: auto;
       background: var(--rd-panel);
       border: 1px solid var(--rd-line-3);
-      border-radius: var(--rd-radius-7);
+      border-radius: var(--rd-radius-9);
       box-shadow: var(--rd-shadow-md);
       overflow: hidden;
       gap: 0;
     }
+    /* Pill surface (SPEC T08), ported verbatim from
+       builder-v2-reference/canvas-layout.css's .builder-topbar__*-pill /
+       .builder-view-tabs / .builder-validity-badge / .builder-btn-*:
+       border-radius:10px, box-shadow:0 8px 24px rgba(0,0,0,.25),
+       padding ~7px 12px. --rd-radius-9 (10px) and --rd-shadow-md (the
+       exact same shadow value) already exist as tokens; --rd-space-3-5
+       (7px) is the closest existing token to the reference's 7px
+       vertical pill padding. */
     .chrome-pill {
       display: flex;
       align-items: center;
       gap: var(--rd-space-4);
       background: var(--rd-panel);
       border: 1px solid var(--rd-line-3);
-      border-radius: var(--rd-radius-7);
-      padding: var(--rd-space-3) var(--rd-space-6);
+      border-radius: var(--rd-radius-9);
+      padding: var(--rd-space-3-5) var(--rd-space-6);
       box-shadow: var(--rd-shadow-md);
       pointer-events: auto;
     }
@@ -579,15 +633,30 @@ function pruneConflictingConnections(
       flex: 1;
       pointer-events: none;
     }
-    /* Node-count pill (SPEC T03) — see the template comment above for why
-       it never claims "valid" without a real validation run. */
+    /* Validity pill (SPEC T08 — was the T03 node-count-only pill; see the
+       template comment above for why "valid" is now a live, real check
+       instead of a withheld claim). Green/verified when
+       validateWorkflow() passes, matching the reference's
+       .builder-validity-badge; degrades to a warning tone (never a
+       fabricated pass) when it does not. */
     .chrome-node-count {
       font-family: var(--rd-font-mono);
       font-size: var(--rd-text-size-xs);
-      color: var(--rd-text-2);
+      color: var(--rd-green);
     }
-    /* Segmented control (T02) — Editor / Runs / Settings, replacing the
-       detail wrapper's sub-tabs row while the builder is full-bleed. */
+    .chrome-node-count mat-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+      color: var(--rd-green);
+    }
+    .chrome-node-count.is-invalid,
+    .chrome-node-count.is-invalid mat-icon {
+      color: var(--rd-yellow, var(--rd-text-2));
+    }
+    /* Segmented control (T02, polished T08) — Editor / Runs / Settings,
+       replacing the detail wrapper's sub-tabs row while the builder is
+       full-bleed. */
     .chrome-segmented {
       padding: 2px;
       gap: 2px;
@@ -784,7 +853,7 @@ function pruneConflictingConnections(
     }
   `,
 })
-export class WorkflowBuilderComponent implements OnInit {
+export class WorkflowBuilderComponent implements OnInit, OnDestroy {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly api = inject(WorkflowApiService);
@@ -815,6 +884,25 @@ export class WorkflowBuilderComponent implements OnInit {
   readonly saving = signal(false);
   /** Current canvas zoom, mirrored from FCanvasComponent's scale for the floating zoom readout. */
   readonly zoomPercent = signal(100);
+
+  /**
+   * SPEC T08 — timestamp (ms) of the last successful save, feeding the
+   * floating chrome's "saved · Ns" pill (reference:
+   * .builder-topbar__saved-indicator in canvas-layout.css). Set once on
+   * load for an already-persisted workflow (it was saved as of the load)
+   * and again after every successful performSave(). `null` before any
+   * save has ever happened (fresh /workflows/new canvas), matching the
+   * existing "Unsaved" case.
+   */
+  readonly lastSavedAt = signal<number | null>(null);
+  /**
+   * SPEC T08 — a 1s clock tick, read only by savedSecondsAgo() below, so
+   * the "saved · Ns" pill counts up live without polling any API. Started
+   * in ngOnInit, cleared in ngOnDestroy — the only side effect this task
+   * introduces, and it is purely a local UI clock, not a new data source.
+   */
+  private readonly chromeClockTick = signal(0);
+  private chromeClockIntervalId: ReturnType<typeof setInterval> | undefined;
   readonly validationErrors = signal<ValidationError[]>([]);
   readonly errorNodeKeys = computed(
     () =>
@@ -849,31 +937,45 @@ export class WorkflowBuilderComponent implements OnInit {
   >({});
 
   /**
-   * Floating chrome save-state indicator. Reuses only state the builder
-   * already tracks (`saving` + whether the flow has been assigned a
-   * persisted `key` by a prior save) — no new dirty-diffing state is
-   * introduced, per the SPEC's re-skin-only constraint.
+   * Floating chrome save-state indicator (SPEC T08 — reference's
+   * "saved · Ns" pill, not just "Saved"). Reuses only state the builder
+   * already tracks (`saving` + `lastSavedAt`, set at load time for an
+   * already-persisted workflow and again on every successful save) —
+   * `chromeClockTick` is read here purely to force this computed to
+   * re-run every second while a save timestamp exists, so "Ns" counts up
+   * live.
    */
   readonly saveStateLabel = computed<string>(() => {
     if (this.saving()) {
       return "Saving…";
     }
-    return this.flow().key ? "Saved" : "Unsaved";
+    const savedAt = this.lastSavedAt();
+    if (savedAt === null) {
+      return "Unsaved";
+    }
+    this.chromeClockTick(); // re-run this computed every tick (see effect below)
+    const seconds = Math.max(0, Math.floor((Date.now() - savedAt) / 1000));
+    return `saved · ${seconds}s`;
   });
 
   readonly nodes = computed(() => Object.values(this.flow().nodes));
 
   /**
-   * Floating chrome node-count pill (SPEC T03, T01 finding 10). Always
-   * "N nodes" from the real node count — no "valid" prefix, because
-   * validateWorkflow() only ever runs from saveWorkflow() (see
-   * validationErrors below); showing "valid" here would claim a
-   * verification that has not actually happened for the current canvas
-   * state.
+   * Floating chrome validity pill (SPEC T08 — mock's "valid · N nodes";
+   * T01 finding 10 for the plain node count). Runs the SAME existing pure
+   * validateWorkflow() validator live off the current flow() signal, so
+   * "valid"/"N issues" is always a real, up-to-date check — never a
+   * fabricated claim (see the T08 template comment above the validity
+   * pill for the full rationale of why this replaces T03's
+   * save-gated-only version).
    */
+  readonly isWorkflowValid = computed<boolean>(
+    () => validateWorkflow(this.flow()).valid
+  );
+
   readonly nodeCountLabel = computed<string>(() => {
     const count = this.nodes().length;
-    return `${count} nodes`;
+    return this.isWorkflowValid() ? `valid · ${count} nodes` : `${count} nodes`;
   });
 
   readonly connections = computed(() => Object.values(this.flow().connections));
@@ -1065,6 +1167,14 @@ export class WorkflowBuilderComponent implements OnInit {
   }
 
   ngOnInit(): void {
+    // SPEC T08 — starts the 1s local clock that ticks the floating
+    // chrome's "saved · Ns" pill (chromeClockTick / saveStateLabel
+    // above). No new data source: this only forces the existing
+    // computed to re-evaluate against Date.now() once a second.
+    this.chromeClockIntervalId = setInterval(() => {
+      this.chromeClockTick.update((n) => n + 1);
+    }, 1000);
+
     // Phase 3 nested this component under /workflows/:id/builder, so
     // the :id param now lives on the parent route. Read self first for
     // back-compat (e.g. /workflows/:id/edit redirects), then fall back
@@ -1091,6 +1201,11 @@ export class WorkflowBuilderComponent implements OnInit {
             nodes,
             connections,
           });
+          // SPEC T08 — an already-persisted workflow was saved as of this
+          // successful load; seeds the "saved · Ns" pill instead of
+          // leaving it in the "Unsaved" state for a workflow that
+          // demonstrably has been saved before.
+          this.lastSavedAt.set(Date.now());
           // Verbose logging per SPEC line 59: edge labels are only ever
           // rendered from real IWorkflowConnection.label metadata (T04).
           // The deserializer now derives this for conditional/branch
@@ -1137,6 +1252,19 @@ export class WorkflowBuilderComponent implements OnInit {
       });
     } else {
       this.nodeStatsFetchState.set("idle");
+    }
+  }
+
+  /**
+   * SPEC T08 — stops the "saved · Ns" clock started in ngOnInit. Nothing
+   * else in this component holds a subscription/interval that needs
+   * manual teardown; the api.get()/getNodeStatsForDefinition() calls are
+   * one-shot HTTP observables that already complete on their own.
+   */
+  ngOnDestroy(): void {
+    if (this.chromeClockIntervalId !== undefined) {
+      clearInterval(this.chromeClockIntervalId);
+      this.chromeClockIntervalId = undefined;
     }
   }
 
@@ -1461,6 +1589,9 @@ export class WorkflowBuilderComponent implements OnInit {
     request$.subscribe({
       next: (saved) => {
         this.saving.set(false);
+        // SPEC T08 — resets the "saved · Ns" pill's clock to this real
+        // successful save.
+        this.lastSavedAt.set(Date.now());
         if (!id) {
           this.flow.update((f) => ({ ...f, key: saved.id }));
           // After first save we route into the new detail mini-app's
