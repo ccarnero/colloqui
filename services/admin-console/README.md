@@ -758,3 +758,99 @@ in `cowork/INDEX.md`, "Change: console redesign polish". Per-area changes:
   ⌘K`, dashboard health rollup, analytics time-range selector, AI `Sync
   from seed`, AI editor version-management UI, builder `Publish`) stays a
   finding only, catalogued in INDEX for human sign-off — decision 5(a).
+
+## Redesign builder v2 (workflow builder visual-parity pass)
+
+`manual-loops/admin-console/console-redesign-builder-v2.md` re-skinned the
+workflow builder (`/workflows/:id/builder`) onto `design/builder-v2-reference/`
+(`tokens.css`, `node-card.html`/`.css`, `canvas-layout.html`/`.css`) while
+keeping PRESERVE item 1 (vertical top→bottom flow) and PRESERVE item 2 (left
+palette rail) — the mock itself is left→right with a bottom dock; per the
+binding contract, PRESERVE wins on orientation/placement and the mock wins on
+everything else (card anatomy, typography, spacing, chrome). Before/after
+screenshots live under `manual-loops/admin-console/audit/builder-v2/{before,after}/`;
+the full findings list and INDEX pointers are in `cowork/INDEX.md`, "Change:
+console redesign builder v2".
+
+- **New node card component (T03).** A fresh component ported from
+  `node-card.html`/`node-card.css` replaces the old node markup outright
+  (deleted in the same task, no dead legacy skin) —
+  `features/automation/workflows/builder/components/workflow-node/workflow-node-card.component.ts`.
+  Anatomy: a type-tinted filled icon chip, truncating title, right-aligned
+  type badge (`TRIGGER`/`IF`/`AGENT`/none), a one-line mono config summary
+  (reused pure summary function), and a footer stats row. Ports render as
+  small type-tinted ringed dots on the card's top/bottom edges (vertical
+  flow, PRESERVE item 1); the Foblex `fNode`/`fDragHandle`/`fNodePosition`/
+  `fNodeInput`/`fNodeOutput` bindings and connector ids are unchanged.
+- **Token layer (T02).** `builder-v2-reference/tokens.css` is ported into a
+  builder-scoped token layer, mapped onto existing `--rd-*` foundation
+  tokens where an exact equivalent exists; new builder-scoped tokens were
+  introduced only where the reference had no foundation equivalent
+  (colors/surfaces/borders/radii/spacing/shadows plus the mono/sans type
+  ramp used by the node card and edge labels). No component markup changed
+  in that task — T03–T05 consume the tokens.
+- **Canvas + edges (T04).** The canvas field now carries the mock's
+  dot-grid texture; edge stroke/dash/waypoint-marker density and the
+  selected/hover edge state were tuned to the reference. Edge labels render
+  a small mono chip sourced from `IWorkflowConnection.label` or the
+  branch/conditional path name where the domain model provides one;
+  structurally label-less edges render no chip (never a fabricated label).
+  `f-connection` mechanics (`fType`, `fBehavior`, reassignable ends) are
+  unchanged — style only.
+- **Palette rail (T05).** Restyled per the reference (icon tiles, uppercase
+  mono group labels grouped by `DEFAULT_NODE_MAP`'s `group` field) while
+  staying a **left rail**, not the mock's bottom-center dock — PRESERVE
+  item 2. Same node types, same `createNodeFromDefault` wiring, same
+  drag-to-canvas behavior.
+- **Floating chrome + inspector (T08).** The header/zoom-control/inspector
+  moved from a solid full-width toolbar to the mock's floating translucent
+  pill treatment: back arrow + breadcrumb + name, `saved · Ns` pill,
+  node-count pill, `Run now`/`Pause`/`Run test`/`Save` actions, the
+  `Editor / Runs / Settings` segmented control (no run-count badge on
+  `Runs` — DATA-GAP, no aggregate all-time run count exists for an
+  arbitrary definition), and a floating zoom control (`− 100% + fit`)
+  bottom-left. **PARTIAL, per the T09 audit:** the mock composes this
+  chrome as two separate floating rows with the canvas/dot-grid visible
+  through the gap between them; the shipped chrome renders every element
+  in one continuous row with no second row/gap — the pill treatment
+  landed, the two-row composition/density did not, and is open for a
+  future task. The inspector panel keeps the L5 T05 open/close/Esc
+  behavior and existing config-form wiring; only its container styling
+  changed. PRESERVE items 3 and 4 (agent-configure floating chrome, agent
+  editor two-column layout) were screenshot-verified to still render
+  correctly, since T08 touches a shared chrome primitive.
+- **Per-node stats source/pipeline (T06/T07).** T06 re-investigated L5 T01
+  finding 6 (per-node run-count/p95/status previously recorded as NO-DATA)
+  and found a real source one layer deeper than the frontend trace
+  assembly: every workflow action already emits `actionName`/`actionIndex`/
+  `branch`/`status` on the event bus
+  (`services/workflow-service/src/temporal/workflows.ts:617-635`), which
+  lands in tracking-ingester-service's `tracking.tracked_events` table,
+  indexed by `correlation_id`. T07 wired this as two new small,
+  read-only, already-indexed endpoints (RECOMMENDATION (b), human-signed):
+  workflow-service resolves `definitionId -> correlation_id[]`
+  (`executions.postgres.repository.ts`/`.mongo.repository.ts`), and
+  tracking-ingester-service exposes `GET /tracking/node-stats`
+  (`build-node-stats-query.ts`, `handle-node-stats-request.ts`) that groups
+  `tracking.tracked_events` by `(action_name, branch)` for the resolved
+  correlation ids and returns `{runs, p95Ms, okRatio}` per node — the join
+  key is the definition JSON's stable `action.name`
+  (`flow-deserializer.ts:166`), not the builder's regenerated node `key`.
+  Both hops are proxied through api-gateway; admin-console's
+  `WorkflowApiService` fetches once per builder load (never per-node,
+  never blocking canvas render), maps the response to per-node view models
+  (`map-node-stats-to-view-models.ts`), and the node card's stats row
+  (`workflow-node-card.component.ts`) renders a loading skeleton while
+  pending and degrades to fully HIDDEN (not zeros) on error or on a node
+  with no matching stats row.
+  **Deploy requirement:** this pipeline only produces real numbers once
+  all three backend services — `tracking-ingester-service` (the new
+  `/node-stats` HTTP route), `workflow-service` (the new correlation-id
+  resolver), and `api-gateway` (the proxy path) — are deployed, alongside
+  `admin-console` itself. As of the T09 audit the dev cluster still runs
+  pre-T07 revisions of all three (`tracking-ingester-service` has no
+  Knative-exposed HTTP surface at all, only the pre-existing
+  `tracking-ingester-worker` NATS consumer), so `GET /tracking/node-stats`
+  404s and every node card's stats row renders hidden — the correct
+  degraded state per T07's spec, not a bug. See `cowork/INDEX.md`, "Change:
+  console redesign builder v2" for the deploy follow-up.

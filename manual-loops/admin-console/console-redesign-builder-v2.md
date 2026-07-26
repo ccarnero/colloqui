@@ -945,7 +945,162 @@ cd services/admin-console && pnpm exec ng test --watch=false
 grep -n "console-redesign-builder-v2" cowork/INDEX.md && ls manual-loops/admin-console/audit/builder-v2/after
 ```
 
----
+**T09 audit (recorded 2026-07-25):**
+
+App served locally exactly as in T01
+(`cd services/admin-console && pnpm exec ng serve --port 4298 --no-open`,
+same sandbox-override note as T01 — `EPERM` on `listen ::1:4298` inside the
+default command sandbox).
+
+Exact working G6 command line used for the after-capture:
+
+```
+cd services/admin-console && \
+  BASE_URL=http://localhost:4298 \
+  ADMIN_EMAIL=yclawd@demo.io \
+  ADMIN_PASSWORD=admin123 \
+  ADMIN_TENANT=acme \
+  TARGET_PATHS=/workflows,/workflows/7DXJQ18-pcbk56XCMtdRt/builder,/workflows/_rTwN3aKCLFPVS6eSWZdO/builder,/ai/agents/b3ea57af-5d62-4797-a7ba-9216d42f0ab8/configure \
+  OUT_DIR=manual-loops/admin-console/audit/builder-v2/after \
+  node scripts/visual-audit.mjs
+```
+
+Login succeeded, all four routes captured, no route skipped. The zero-run
+workflow (`mcp-connections-demo`, id `_rTwN3aKCLFPVS6eSWZdO`, 1 node,
+`workflow_definitions`/`workflow_executions` queried directly against
+`tenant_acme` on `postgres-shared-1` in `support-services-dev` to confirm
+`exec_count = 0`) and the agent (`crm-support-agent`, id
+`b3ea57af-5d62-4797-a7ba-9216d42f0ab8`, same tenant DB) were both picked
+from the live dev-cluster data, not fabricated ids.
+
+Captured files (after):
+- `manual-loops/admin-console/audit/builder-v2/after/workflows.png`
+- `manual-loops/admin-console/audit/builder-v2/after/workflows-7DXJQ18-pcbk56XCMtdRt-builder.png`
+  (reference workflow, same id as T01–T08)
+- `manual-loops/admin-console/audit/builder-v2/after/workflows-_rTwN3aKCLFPVS6eSWZdO-builder.png`
+  (zero-run workflow, evidences the hidden-stats degraded state)
+- `manual-loops/admin-console/audit/builder-v2/after/ai-agents-b3ea57af-5d62-4797-a7ba-9216d42f0ab8-configure.png`
+  (PRESERVE items 3/4 evidence)
+- `manual-loops/admin-console/audit/builder-v2/after/audit.json`
+
+All four PNGs were opened with the Read tool, alongside
+`manual-loops/admin-console/design/11-builder.png` (mock) and the T01
+baseline `manual-loops/admin-console/audit/builder-v2/before/workflows-7DXJQ18-pcbk56XCMtdRt-builder.png`.
+Per-region comparison, reference workflow (`crm-support-telegram`) after
+vs. mock vs. before:
+
+1. **Canvas field** — MATCH. The after-capture shows the mock's dot-grid
+   texture on a flat dark field (T01 finding 5, FIX T04); the before-capture
+   was flat solid dark with no texture. Re-Read at capture resolution: on
+   the zero-run workflow's near-empty canvas
+   (`workflows-_rTwN3aKCLFPVS6eSWZdO-builder.png`) the dots are low-contrast
+   and easy to miss at a glance — the canvas reads close to flat black in
+   the corners — but they are present and countable on close inspection
+   across the visible field, most clearly in the mid-right and lower-left
+   regions away from the single node card. "Unmistakable" overstated it;
+   the honest read is faint-but-present, structurally matching the mock's
+   dot-grid rather than the before-capture's fully flat field.
+2. **Node card** — MATCH. Filled/tinted icon chip (T01 finding 2, FIX T03),
+   denser mono/title type ramp (T01 finding 3, FIX T02), tighter
+   padding/proportions (T01 finding 4, FIX T03) all present and legible
+   card-for-card against `11-builder.png`'s `Qualify Lead`/`Intent Router`
+   cards — square tinted chip, bold title, right-aligned type badge, mono
+   config-summary line.
+3. **Ports** — MATCH. Small ringed dots on the top/bottom card edges,
+   tinted by node type (purple on `supportAgent`, orange on `vipRoute`),
+   per PRESERVE item 1's vertical orientation carried through T03/T04 —
+   unchanged from T04 onward and still correct in this capture.
+4. **Edges + labels** — MATCH. Dashed curved connectors with waypoint dots
+   at mock density (T01 finding 6, FIX T04 — before-capture had visibly
+   denser/larger dots) and the dark mono label chips render correctly:
+   `results.buildAgentContext.tier eq "vip"` on the true branch and
+   `default` on the false branch, sourced from the existing branch-condition
+   plumbing (T01 finding 6 note on `IWorkflowConnection`-adjacent label
+   plumbing).
+5. **Palette rail** — MATCH against the mock's *visual language* (icon
+   tiles, uppercase mono group labels: `CHANNELS`, `LOGIC`, `INTEGRATIONS`,
+   `AI`, `FLOW CONTROL`) while correctly keeping the **left-rail placement**
+   per PRESERVE item 2, not the mock's bottom-center dock — T01 finding 7
+   was FIX(T05) for the styling only, and the binding-contract override
+   (PRESERVE wins on placement, mock wins on visual language) is honored.
+6. **Floating chrome** — PARTIAL. Corrected on review (Reviewer B):
+   individual elements are present and correctly styled as translucent
+   floating pills — back arrow + `workflows /` + workflow name, `saved ·
+   2s` pill, the node-count/validity pill, `Run now` / `Pause` / `Run
+   test` / `Save`, the `Editor / Runs / Settings` segmented control, and a
+   zoom control (`− 100% + ⤢`) at the bottom-left — a real improvement
+   over the before-capture's one solid full-width toolbar bar (T01 finding
+   8, FIX T08). But the mock's chrome is composed as **two separate
+   floating rows with the canvas/dot-grid visibly showing through the gap
+   between them** — row 1: back/breadcrumb/name + `ACTIVE` badge, `saved ·
+   12s`, and the segmented control; row 2, positioned lower and
+   independently: `valid · 5 nodes`, `Run test`, `Publish`. The
+   after-capture renders every element in **one single continuous row**
+   (back/breadcrumb/name → `saved · 2s` → segmented control → node pill →
+   `Run now`/`Pause`/`Run Test`/`Save`) with no second row and no canvas
+   gap. Two-row composition/density is NOT achieved — remaining work for a
+   future task, not itself a FIX/DATA-GAP/NEW-CAPABILITY citation, just an
+   unclosed layout delta.
+
+   The `11 nodes` pill (plain node count, not `valid · N nodes`) is
+   correctly NOT a regression: `workflow-builder.component.ts`'s
+   `isWorkflowValid`/node-count-pill template (around line 314, "Validity
+   pill (SPEC T08 ...)") runs the same existing `validateWorkflow()`
+   live off the current flow and only prefixes `valid ·` when it actually
+   passes — the reference workflow's live validation currently fails
+   (rendered with the pill's warning/`is-invalid` tone in this capture),
+   so showing plain `11 nodes` is the honest, non-fabricated state, not a
+   withheld feature. (Correction: the T09 draft previously mis-cited "T01
+   finding 10" for this — finding 10 is the unrelated Variables Reference
+   bar; the actual justification is T08's live-validation pill change,
+   not a T01 finding.)
+7. **Inspector** — not capturable in this pass: none of the three builder
+   captures has a node selected (the reference capture matches T01's
+   fit-to-view framing with no node clicked), so the floating inspector
+   panel never opens in these screenshots. T08's unit tests (chrome
+   open/close/Esc behavior) are the evidence of record for the inspector's
+   container styling per the T08 task text; no visual regression is implied
+   by its absence here. Recorded as **PARTIAL** for this capture pass only
+   (not re-opened as a new task) — a follow-up capture with a node selected
+   would close this out, out of scope for T09 to re-run G6.
+8. **Stats footer** — EXCLUDED (deploy-pending, not a design gap). Neither
+   the reference workflow nor the zero-run workflow shows a footer row in
+   this capture: the browser console logged `Failed to load resource: the
+   server responded with a status of 404` for `GET /tracking/node-stats`
+   (`workflow-api.service.ts:297`) during both builder navigations. `kubectl
+   get pods -n platform-services-dev` confirms why — `api-gateway-00040`
+   (10 days old) and `workflow-service-api-00079` (~29h old) both predate
+   the T07 commit (`b0eb2e2e`, today), and there is no `tracking-ingester`
+   Knative service at all, only the pre-existing `tracking-ingester-worker`
+   NATS consumer deployment — tracking-ingester-service's HTTP router
+   (`src/main.ts`, carrying the new `/node-stats` route) has never been
+   deployed. `workflow-node-card.component.ts:86` (`@if (stats().state !==
+   'hidden')`) degrades the whole row to hidden on fetch failure exactly as
+   T07 specified — no zeros, no fabricated numbers, structurally correct
+   handling of a real 404, not a bug. This is the T06/T07 DATA-GAP now
+   RESOLVED at the code level (per the RECOMMENDATION (b) pipeline, wired in
+   `b0eb2e2e`) but still EXCLUDED at the capture level pending the T07
+   backend deploy (`tracking-ingester-service`, `workflow-service`,
+   `api-gateway`, `admin-console`) — see the `cowork/INDEX.md` entry.
+
+PRESERVE list confirmation:
+
+1. **Vertical flow orientation** — SURVIVED. `workflows-7DXJQ18-pcbk56XCMtdRt-builder.png`
+   (after) still reads top → bottom with ports on the top/bottom card
+   edges, unchanged since T03.
+2. **Node palette on a left rail** — SURVIVED. Same screenshot: the
+   restyled rail (T05) is still docked left, per region 5 above.
+3. **Agent-configure floating chrome** — SURVIVED, proven by
+   `ai-agents-b3ea57af-5d62-4797-a7ba-9216d42f0ab8-configure.png`: the
+   `Saved` pill, `Configure`/`Overview`/`Settings` tabs, `Published` badge,
+   and `Cancel / Reset / Unpublish / Save` action group render as the same
+   floating panel chrome shipped before this loop touched the builder's
+   own floating-chrome primitive in T08 — no shared-primitive regression.
+4. **Agent editor two-column layout** — SURVIVED, same screenshot: the left
+   configuration column (`General`/`Instructions`/`Skills`/`Tools`/...) and
+   the right `Quick Test` chat column are both present and unchanged.
+
+
 
 - [x] T01 screenshot-loop bootstrap + before baseline
 - [x] T02 design tokens + type ramp
@@ -955,7 +1110,7 @@ grep -n "console-redesign-builder-v2" cowork/INDEX.md && ls manual-loops/admin-c
 - [x] T06 per-node stats investigation (no code)
 - [x] T07 wire real per-node stats
 - [x] T08 floating chrome + inspector
-- [ ] T09 final audit + docs + index
+- [x] T09 final audit + docs + index
 
 ## Out of scope (explicit)
 

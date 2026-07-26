@@ -1038,6 +1038,93 @@ approval):
   `VERDICT` cell can distinguish a failed send from
   `published-unconfirmed`.
 
+## Change: console redesign builder v2 (console-redesign-builder-v2)
+
+Manual-loop change (not SDD) re-skinning the workflow builder
+(`/workflows/:id/builder`) onto `design/builder-v2-reference/` while
+PRESERVE-locking vertical flow orientation (item 1) and the left palette
+rail (item 2) against the mock's own left→right/bottom-dock layout — per
+the binding contract, PRESERVE wins on orientation/placement, the mock wins
+on everything else. Full task queue, gates, findings, and human decisions:
+`manual-loops/admin-console/console-redesign-builder-v2.md`. Engram topic:
+`admin-console/redesign-builder-v2`.
+
+**Audit pointers** — before/after screenshots + DOM-marker JSON, captured
+with the promoted Playwright harness (`services/admin-console/scripts/visual-audit.mjs`):
+
+- Before: `manual-loops/admin-console/audit/builder-v2/before/` (T01), the
+  reference workflow `crm-support-telegram` (id `7DXJQ18-pcbk56XCMtdRt`, 11
+  nodes incl. a branch/conditional — chosen and recorded in T01 so every
+  task in the loop screenshots the same graph).
+- After: `manual-loops/admin-console/audit/builder-v2/after/` (T09), four
+  routes: `/workflows`, the same reference workflow's builder, a zero-run
+  workflow's builder (`mcp-connections-demo`, id
+  `_rTwN3aKCLFPVS6eSWZdO` — evidences the hidden-stats degraded state), and
+  `/ai/agents/b3ea57af-5d62-4797-a7ba-9216d42f0ab8/configure` (PRESERVE
+  items 3/4 evidence). Both workflow and agent ids were picked from live
+  `tenant_acme` data (queried directly against `postgres-shared-1` in
+  `support-services-dev`), not fabricated.
+
+**Findings resolved** (T01 findings list, full per-item detail in the
+SPEC's T01/T09 sections):
+
+- **T01 items 2–7** — icon-chip fill/tint, type ramp/weight, card
+  padding/proportions, canvas dot-grid, edge waypoint-marker density, and
+  palette rail visual language (kept left per PRESERVE item 2) — all
+  landed across T02–T05 and re-confirmed MATCH in the T09 audit.
+- **T01 item 8 (floating chrome)** — PARTIAL, not fully resolved. T08
+  replaced the before-capture's solid full-width toolbar with translucent
+  floating pills for every element (back/breadcrumb/name, `saved · Ns`,
+  node-count/validity pill, action buttons, segmented control, zoom
+  control) — a real improvement. But the T09 audit found the mock's chrome
+  is composed as **two separate floating rows** with the canvas/dot-grid
+  visible through the gap between them, while the after-capture renders
+  every element in **one single continuous row**. Two-row
+  composition/density remains an open layout delta for a future task.
+- **T01 item 1 / T06 / T07 (stats DATA-GAP)** — RESOLVED at the code level.
+  T06 re-investigated L5 T01 finding 6 and found a real source one layer
+  past the frontend trace assembly: `tracking.tracked_events` already
+  carries `actionName`/`actionIndex`/`branch`/`status` per action per run,
+  indexed by `correlation_id`, joinable to the builder's stable
+  `action.name`. T07 (human-signed, RECOMMENDATION (b)) wired two new
+  read-only endpoints — workflow-service resolves
+  `definitionId -> correlation_id[]`; tracking-ingester-service exposes
+  `GET /tracking/node-stats` grouping by `(action_name, branch)` — proxied
+  through api-gateway, fetched once per builder load by admin-console, and
+  rendered with a loading skeleton / hidden-on-error footer row (never
+  fabricated numbers).
+
+**Findings deferred:**
+
+- **`Publish` action (NEW-CAPABILITY, T01 finding 9).** No publish API
+  exists; per this loop's Human boundaries section and the standing
+  polish-loop precedent (decision 3), stays a finding only, not built.
+- **`Runs` segmented-control badge (DATA-GAP, T08 follow-up on T01 finding
+  8).** The mock's `Runs 1,842` segment has no backing "total runs for this
+  definition, all-time" aggregate anywhere the builder can read —
+  `getWorkflowsSummary`'s `topByExecutionCountLast7d` only covers the top 5
+  workflows over a 7-day window, and T07's node-stats join is per-node, not
+  per-definition. The segment renders `Runs` with no number; same standing
+  precedent as the per-node stats gap before T07.
+- **"Variables Reference" affordance bar (T01 finding 10, out-of-scope
+  note).** No equivalent in the `11-builder.png` crop and not itself
+  styled in mock terms; not an action item for this loop, flagged only so
+  a future header-region task doesn't silently drop it.
+
+**T07 backend deploy requirement (open, blocks real numbers from
+appearing):** the per-node stats pipeline is implemented and committed
+(`b0eb2e2e`) but the dev cluster still runs pre-T07 revisions of all three
+backend services it depends on — confirmed via `kubectl get pods -n
+platform-services-dev` during the T09 audit: `api-gateway-00040` (10 days
+old) and `workflow-service-api-00079` (~29h old) both predate the T07
+commit, and there is no Knative-exposed `tracking-ingester-service` HTTP
+surface at all (only the pre-existing `tracking-ingester-worker` NATS
+consumer). Until `tracking-ingester-service`, `workflow-service`,
+`api-gateway`, and `admin-console` are redeployed with the T07 changes,
+`GET /tracking/node-stats` 404s and every node card's stats footer row
+renders hidden (the correct degraded state, not a bug) — captured live in
+the T09 after-audit screenshots.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.
