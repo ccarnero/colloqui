@@ -67,7 +67,8 @@ describe("WorkflowExecutionsComponent", () => {
               snapshot: { params: { id: "def-1" } },
             },
             params: of({}),
-            snapshot: { params: {} },
+            queryParams: of({}),
+            snapshot: { params: {}, queryParams: {} },
           },
         },
       ],
@@ -105,5 +106,63 @@ describe("WorkflowExecutionsComponent", () => {
     expect(navigate).toHaveBeenCalledWith(expect.anything(), {
       queryParams: { definitionId: "def-1" },
     });
+  });
+});
+
+/**
+ * Shape-scoped inspector correction: this list has no per-run step data of
+ * its own, so a `?node=` deep-link (set by the builder inspector's "View
+ * in Runs" link) is forwarded onward to the most recent run's detail page
+ * with the SAME node name, so `WorkflowRunDetailComponent` can highlight
+ * the matching step.
+ */
+describe("WorkflowExecutionsComponent — deep-link forwarding", () => {
+  let navigate: ReturnType<typeof vi.fn>;
+  let listExecutions: ReturnType<typeof vi.fn>;
+
+  async function createFixture(
+    queryParams: Record<string, string>
+  ): Promise<ComponentFixture<WorkflowExecutionsComponent>> {
+    navigate = vi.fn();
+    listExecutions = vi.fn().mockReturnValue(of(page));
+
+    await TestBed.configureTestingModule({
+      imports: [WorkflowExecutionsComponent],
+      providers: [
+        { provide: WorkflowApiService, useValue: { listExecutions } },
+        { provide: Router, useValue: { navigate } },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            parent: {
+              params: of({ id: "def-1" }),
+              snapshot: { params: { id: "def-1" } },
+            },
+            params: of({}),
+            queryParams: of(queryParams),
+            snapshot: { params: {}, queryParams },
+          },
+        },
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(WorkflowExecutionsComponent);
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  it("forwards to the most recent run's detail page with the node param when ?node= is present", async () => {
+    await createFixture({ node: "vipRoute" });
+
+    expect(navigate).toHaveBeenCalledWith(
+      ["/workflows", "def-1", "runs", "exec-1"],
+      { queryParams: { node: "vipRoute" }, replaceUrl: true }
+    );
+  });
+
+  it("does not navigate away from the list when the node param is absent", async () => {
+    await createFixture({});
+
+    expect(navigate).not.toHaveBeenCalled();
   });
 });

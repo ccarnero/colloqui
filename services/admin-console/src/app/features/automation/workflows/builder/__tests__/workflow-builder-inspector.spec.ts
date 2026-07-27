@@ -231,25 +231,21 @@ describe("WorkflowBuilderComponent — floating inspector (T05)", () => {
   });
 
   /**
-   * SPEC T08 — the inspector's container gained a Config/Output/Runs tab
-   * row (ported from builder-v2-reference/node-card.html section 3) and a
-   * footer node id alongside Remove. This asserts the new container
-   * pieces render without touching the open/close/Esc behavior asserted
-   * above (which stays green, unmodified, in the same suite).
+   * SPEC T08 — the inspector's container gained a footer node id alongside
+   * Remove. Shape-scoped inspector correction: the Config/Output/Runs tab
+   * row this test used to assert was REMOVED (workflow-level run/output
+   * UI no longer lives inside a shape panel); the config content now
+   * renders directly, with no tab state at all.
    */
-  it("renders the Config/Output/Runs tab row with Config active, and the node id in the footer (T08)", () => {
+  it("renders the config content directly (no tab row) and the node id in the footer (T08, shape-scoped correction)", () => {
     const key = addJsFunctionNode();
     fixture.componentInstance.selectNode(key);
     fixture.detectChanges();
 
     const el = fixture.nativeElement as HTMLElement;
-    const tabs = Array.from(el.querySelectorAll(".config-tab")).map((t) =>
-      t.textContent?.trim()
-    );
-    expect(tabs).toEqual(["Config", "Output", "Runs"]);
-    expect(el.querySelector(".config-tab--active")?.textContent?.trim()).toBe(
-      "Config"
-    );
+    expect(el.querySelector(".config-tabs")).toBeNull();
+    expect(el.querySelector(".config-tab")).toBeNull();
+    expect(el.querySelector(".config-body input")).toBeTruthy();
 
     const nodeId = el.querySelector('[data-testid="inspector-node-id"]');
     expect(nodeId?.textContent?.trim()).toBe(key);
@@ -281,12 +277,14 @@ describe("WorkflowBuilderComponent — floating inspector (T05)", () => {
   });
 
   /**
-   * IF-editor round-2 task: Output/Runs tabs go from inert (SPEC T08) to
-   * real, data-backed panels. These assert the exact request shapes and
-   * the loading/ready/error/empty/failure render states — never a blank
-   * panel, never a fabricated number.
+   * Shape-scoped inspector correction — replaces the removed Output/Runs
+   * tabs with a single, read-only activity strip sourced from the
+   * ALREADY-FETCHED `nodeStatsByName` input (zero new requests) plus a
+   * "View in Runs" deep-link. Workflow-level run/output UI (run selector,
+   * output viewer, run lists) no longer renders inside a shape panel at
+   * all — see `manual-loops/admin-console/design/proposals/if-editor-shape-scoped.html`.
    */
-  describe("Output tab", () => {
+  describe("Activity strip", () => {
     function selectNodeWithWorkflowId(): string {
       const key = addJsFunctionNode();
       fixture.componentInstance.flow.update((f) => ({ ...f, key: "wf-1" }));
@@ -295,304 +293,75 @@ describe("WorkflowBuilderComponent — floating inspector (T05)", () => {
       return key;
     }
 
-    function clickOutputTab(): void {
-      const el = fixture.nativeElement as HTMLElement;
-      const tabs = Array.from(el.querySelectorAll(".config-tab"));
-      const outputTab = tabs.find((t) => t.textContent?.trim() === "Output");
-      (outputTab as HTMLButtonElement).click();
-      fixture.detectChanges();
-    }
-
-    it("shows a loading skeleton before the runs list resolves", () => {
+    it("renders from the already-fetched nodeStatsByName signal, with zero extra requests", () => {
       selectNodeWithWorkflowId();
-      clickOutputTab();
-
-      const http = TestBed.inject(HttpTestingController);
-      const req = http.expectOne(
-        (r) =>
-          r.url === "/api/workflows/wf-1/executions" &&
-          r.params.get("page") === "1" &&
-          r.params.get("pageSize") === "10" &&
-          r.params.get("sort") === "desc"
-      );
-      expect(req.request.method).toBe("GET");
-
-      const el = fixture.nativeElement as HTMLElement;
-      expect(
-        el.querySelector('[data-testid="output-tab"] .tab-skeleton')
-      ).toBeTruthy();
-    });
-
-    it("defaults to the most recent completed run and renders its result for this node", () => {
-      selectNodeWithWorkflowId();
-      clickOutputTab();
-
-      const http = TestBed.inject(HttpTestingController);
-      const listReq = http.expectOne(
-        (r) => r.url === "/api/workflows/wf-1/executions"
-      );
-      listReq.flush({
-        items: [
-          {
-            id: "exec-running",
-            definitionId: "wf-1",
-            tenantId: "t1",
-            temporalWorkflowId: "tw",
-            temporalRunId: "tr",
-            request: {},
-            status: "running",
-            createdAt: "2026-07-27T10:05:00.000Z",
-            updatedAt: "2026-07-27T10:05:00.000Z",
-          },
-          {
-            id: "exec-1",
-            definitionId: "wf-1",
-            tenantId: "t1",
-            temporalWorkflowId: "tw",
-            temporalRunId: "tr",
-            request: {},
-            status: "completed",
-            createdAt: "2026-07-27T10:00:00.000Z",
-            updatedAt: "2026-07-27T10:00:00.000Z",
-          },
-        ],
-        total: 2,
-        page: 1,
-        pageSize: 10,
-      });
-      fixture.detectChanges();
-
-      const detailReq = http.expectOne(
-        (r) => r.url === "/api/workflows/wf-1/executions/exec-1"
-      );
-      detailReq.flush({
-        executionId: "exec-1",
-        definitionId: "wf-1",
-        temporalWorkflowId: "tw",
-        status: "completed",
-        result: { results: { "JS Function": { ok: true, value: 42 } } },
-        createdAt: "2026-07-27T10:00:00.000Z",
-      });
-      fixture.detectChanges();
-
-      const el = fixture.nativeElement as HTMLElement;
-      const result = el.querySelector('[data-testid="output-result"]');
-      expect(result?.textContent).toContain('"ok": true');
-      expect(result?.textContent).toContain('"value": 42');
-
-      const select = el.querySelector<HTMLSelectElement>(
-        '[data-testid="output-tab"] mat-select'
-      );
-      expect(select).toBeTruthy();
-    });
-
-    it("shows an honest empty state when the selected run has no result for this node", () => {
-      selectNodeWithWorkflowId();
-      clickOutputTab();
-
-      const http = TestBed.inject(HttpTestingController);
-      http
-        .expectOne((r) => r.url === "/api/workflows/wf-1/executions")
-        .flush({
-          items: [
-            {
-              id: "exec-1",
-              definitionId: "wf-1",
-              tenantId: "t1",
-              temporalWorkflowId: "tw",
-              temporalRunId: "tr",
-              request: {},
-              status: "completed",
-              createdAt: "2026-07-27T10:00:00.000Z",
-              updatedAt: "2026-07-27T10:00:00.000Z",
-            },
-          ],
-          total: 1,
-          page: 1,
-          pageSize: 10,
-        });
-      fixture.detectChanges();
-
-      http
-        .expectOne((r) => r.url === "/api/workflows/wf-1/executions/exec-1")
-        .flush({
-          executionId: "exec-1",
-          definitionId: "wf-1",
-          temporalWorkflowId: "tw",
-          status: "completed",
-          result: { results: { OtherNode: "irrelevant" } },
-          createdAt: "2026-07-27T10:00:00.000Z",
-        });
-      fixture.detectChanges();
-
-      const el = fixture.nativeElement as HTMLElement;
-      expect(
-        el.querySelector('[data-testid="output-empty"]')?.textContent
-      ).toContain("This node has no recorded output for this run");
-    });
-
-    it("shows failure info only when failure.activityName matches this node", () => {
-      selectNodeWithWorkflowId();
-      clickOutputTab();
-
-      const http = TestBed.inject(HttpTestingController);
-      http
-        .expectOne((r) => r.url === "/api/workflows/wf-1/executions")
-        .flush({
-          items: [
-            {
-              id: "exec-1",
-              definitionId: "wf-1",
-              tenantId: "t1",
-              temporalWorkflowId: "tw",
-              temporalRunId: "tr",
-              request: {},
-              status: "failed",
-              createdAt: "2026-07-27T10:00:00.000Z",
-              updatedAt: "2026-07-27T10:00:00.000Z",
-            },
-          ],
-          total: 1,
-          page: 1,
-          pageSize: 10,
-        });
-      fixture.detectChanges();
-
-      http
-        .expectOne((r) => r.url === "/api/workflows/wf-1/executions/exec-1")
-        .flush({
-          executionId: "exec-1",
-          definitionId: "wf-1",
-          temporalWorkflowId: "tw",
-          status: "failed",
-          result: { results: {} },
-          failure: {
-            message: "boom",
-            type: "ActivityFailure",
-            activityName: "JS Function",
-          },
-          createdAt: "2026-07-27T10:00:00.000Z",
-        });
-      fixture.detectChanges();
-
-      const el = fixture.nativeElement as HTMLElement;
-      const failure = el.querySelector('[data-testid="output-failure"]');
-      expect(failure?.textContent).toContain("ActivityFailure");
-      expect(failure?.textContent).toContain("boom");
-    });
-
-    it("shows an error message (never a blank panel) when the runs list fetch fails", () => {
-      selectNodeWithWorkflowId();
-      clickOutputTab();
-
-      const http = TestBed.inject(HttpTestingController);
-      http
-        .expectOne((r) => r.url === "/api/workflows/wf-1/executions")
-        .flush("boom", { status: 500, statusText: "Server Error" });
-      fixture.detectChanges();
-
-      const el = fixture.nativeElement as HTMLElement;
-      expect(
-        el.querySelector('[data-testid="output-tab"] .tab-error')
-      ).toBeTruthy();
-    });
-  });
-
-  describe("Runs tab", () => {
-    function selectNodeWithWorkflowId(): string {
-      const key = addJsFunctionNode();
-      fixture.componentInstance.flow.update((f) => ({ ...f, key: "wf-1" }));
-      fixture.componentInstance.selectNode(key);
-      fixture.detectChanges();
-      return key;
-    }
-
-    function clickRunsTab(): void {
-      const el = fixture.nativeElement as HTMLElement;
-      const tabs = Array.from(el.querySelectorAll(".config-tab"));
-      const runsTab = tabs.find((t) => t.textContent?.trim() === "Runs");
-      (runsTab as HTMLButtonElement).click();
-      fixture.detectChanges();
-    }
-
-    it("renders the summary strip from the already-fetched nodeStatsByName signal, with zero extra requests for the summary itself", () => {
-      const key = selectNodeWithWorkflowId();
       fixture.componentInstance.nodeStatsByName.set({
         "JS Function": {
           state: "ready",
-          primaryLabel: "1,842 runs",
-          secondaryLabel: "p95: 620ms",
+          primaryLabel: "23 runs",
+          secondaryLabel: "p95: 395ms",
           status: "ok",
         },
       });
       fixture.detectChanges();
 
-      clickRunsTab();
-
       const el = fixture.nativeElement as HTMLElement;
-      const summary = el.querySelector('[data-testid="runs-summary"]');
-      expect(summary?.textContent).toContain("1,842 runs");
-      expect(summary?.textContent).toContain("p95: 620ms");
+      const strip = el.querySelector('[data-testid="activity-strip"]');
+      expect(strip?.textContent).toContain("23 runs");
+      expect(strip?.textContent).toContain("p95: 395ms");
+      expect(strip?.textContent).toContain("ok");
 
-      // The ONLY request this tab issues is the recent-runs list — the
-      // summary strip reuses nodeStatsByName without a fetch of its own.
+      // Never a fetch of its own — reuses the input the node-card footer
+      // already populated. Asserts no leftover Output/Runs-tab-era request
+      // (executions list, execution detail, node-runs) went out, without
+      // asserting on this component's OTHER, unrelated setup requests
+      // (channel accounts, adapters, agents…).
       const http = TestBed.inject(HttpTestingController);
-      http.expectOne((r) => r.url === "/api/workflows/wf-1/correlation-ids");
-      void key;
+      const removedTabRequests = http
+        .match(() => true)
+        .filter(
+          (r) =>
+            r.request.url.includes("/executions") ||
+            r.request.url.includes("/node-runs")
+        );
+      expect(removedTabRequests).toHaveLength(0);
     });
 
-    it("renders recent-runs rows from the node-runs fetch, scoped by definition and action name", () => {
+    it("is hidden entirely when there is no stats row for this node (never renders fabricated zeros)", () => {
       selectNodeWithWorkflowId();
-      clickRunsTab();
-
-      const http = TestBed.inject(HttpTestingController);
-      http
-        .expectOne((r) => r.url === "/api/workflows/wf-1/correlation-ids")
-        .flush({ correlationIds: ["corr-1", "corr-2"] });
+      fixture.componentInstance.nodeStatsByName.set({});
       fixture.detectChanges();
 
-      const runsReq = http.expectOne(
-        (r) =>
-          r.url === "/api/tracking/node-runs" &&
-          r.params.get("correlationIds") === "corr-1,corr-2" &&
-          r.params.get("actionName") === "JS Function"
-      );
-      runsReq.flush({
-        tenant: "acme",
-        actionName: "JS Function",
-        correlationIdCount: 2,
-        rowCount: 1,
-        rows: [
-          {
-            correlation_id: "corr-1",
-            occurred_at: "2026-07-27T10:00:00.000Z",
-            duration_ms: 395,
-            step_status: "ok",
-          },
-        ],
+      const el = fixture.nativeElement as HTMLElement;
+      expect(el.querySelector('[data-testid="activity-strip"]')).toBeNull();
+    });
+
+    it("'View in Runs' navigates to the executions tab with a ?node= query param naming the action", () => {
+      selectNodeWithWorkflowId();
+      fixture.componentInstance.nodeStatsByName.set({
+        "JS Function": {
+          state: "ready",
+          primaryLabel: "23 runs",
+          status: "ok",
+        },
       });
       fixture.detectChanges();
 
+      const router = TestBed.inject(Router);
+      const navigateSpy = vi.spyOn(router, "navigate");
+
       const el = fixture.nativeElement as HTMLElement;
-      const rows = el.querySelectorAll('[data-testid="runs-row"]');
-      expect(rows.length).toBe(1);
-      expect(rows[0]?.textContent).toContain("395ms");
-    });
-
-    it("shows the honest 'No runs in the last 7 days' empty state", () => {
-      selectNodeWithWorkflowId();
-      clickRunsTab();
-
-      const http = TestBed.inject(HttpTestingController);
-      http
-        .expectOne((r) => r.url === "/api/workflows/wf-1/correlation-ids")
-        .flush({ correlationIds: [] });
+      const link = el.querySelector<HTMLButtonElement>(
+        '[data-testid="activity-view-in-runs"]'
+      );
+      expect(link).toBeTruthy();
+      link!.click();
       fixture.detectChanges();
 
-      const el = fixture.nativeElement as HTMLElement;
-      expect(
-        el.querySelector('[data-testid="runs-tab"] .tab-empty')?.textContent
-      ).toContain("No runs in the last 7 days");
+      expect(navigateSpy).toHaveBeenCalledWith(
+        ["/workflows", "wf-1", "executions"],
+        { queryParams: { node: "JS Function" } }
+      );
     });
   });
 

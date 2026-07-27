@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Shape-scoped inspector — correction</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0a; --panel: #0f0f0f; --hover: #1a1a1a;
+    --line: #1f1f1f; --line2: #161616; --line3: #2e2e2e;
+    --t1: #ededed; --t2: #a1a1a1; --t3: #7a7a7a;
+    --accent: #1A66FF; --accent-soft: rgba(26,102,255,0.14); --link: #6d9bff;
+    --green: #50e3a4; --green-dim: rgba(80,227,164,0.1);
+    --red: #f5455c; --yellow: #f5a623; --yellow-dim: rgba(245,166,35,0.1);
+    --mono: 'Geist Mono', ui-monospace, monospace;
+  }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: 'Geist', system-ui, sans-serif; font-size: 13px; line-height: 1.5;
+    background: var(--bg); color: var(--t1);
+    background-image: radial-gradient(circle, #1f1f1f 1px, transparent 1px);
+    background-size: 24px 24px; padding: 40px; box-sizing: border-box;
+  }
+  .material-icons { font-size: 16px; }
+  .stage { display: flex; gap: 56px; justify-content: center; align-items: flex-start; }
+  .column { display: flex; flex-direction: column; gap: 14px; max-width: 360px; }
+  .col-title { font-family: var(--mono); font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--t3); }
+  .col-title b { color: var(--t1); font-weight: 600; }
+
+  .inspector { width: 340px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); overflow: hidden; }
+  .insp-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .icon-chip { width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; background: var(--yellow-dim); color: var(--yellow); flex: none; }
+  .icon-chip .material-icons { font-size: 15px; }
+  .insp-title { font-weight: 600; font-size: 13px; flex: 1; }
+  .type-badge { font-family: var(--mono); font-size: 9px; letter-spacing: 0.6px; color: var(--yellow); border: 1px solid var(--yellow); border-radius: 4px; padding: 1px 6px; }
+  .insp-close { color: var(--t3); }
+
+  /* the ONE new element: shape activity strip (read-only, links out) */
+  .activity-strip {
+    display: flex; align-items: center; gap: 8px; padding: 8px 14px;
+    border-bottom: 1px solid var(--line2); background: var(--line2);
+    font-family: var(--mono); font-size: 10px; color: var(--t2);
+  }
+  .activity-strip .dot { color: var(--green); }
+  .activity-strip .go-runs { margin-left: auto; color: var(--link); font-family: 'Geist', sans-serif; font-size: 11px; display: flex; align-items: center; gap: 3px; }
+  .activity-strip .go-runs .material-icons { font-size: 12px; }
+
+  .insp-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .field { border: 1px solid var(--line3); border-radius: 6px; padding: 8px 10px; position: relative; }
+  .field-label { position: absolute; top: -7px; left: 8px; background: var(--panel); padding: 0 4px; font-size: 10px; color: var(--t3); }
+  .field-value { font-size: 13px; }
+  .section-label { font-family: var(--mono); font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--t3); }
+
+  .branch-card { border: 1px solid rgba(245,166,35,0.35); border-radius: 10px; background: var(--line2); overflow: hidden; }
+  .branch-card.grey { border-color: var(--line); }
+  .bc-head { display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px; }
+  .bc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--yellow); flex: none; }
+  .bc-dot.g { background: var(--t3); }
+  .bc-label { font-weight: 600; font-size: 12.5px; flex: 1; }
+  .bc-x { color: var(--t3); font-size: 13px; }
+  .sentence { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 0 11px 9px; }
+  .sw { font-size: 12px; color: var(--t3); }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line3); border-radius: 6px; background: var(--panel); padding: 4px 8px; font-size: 12px; }
+  .pill.mono { font-family: var(--mono); font-size: 11px; }
+  .pill .path-root { color: var(--t3); }
+  .pill .material-icons { font-size: 13px; color: var(--t3); }
+  .expr-row { padding: 0 11px 9px; }
+  .expr-chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10.5px; color: var(--t2); background: var(--bg); border: 1px solid var(--line3); border-radius: 5px; padding: 3px 8px; }
+  .expr-chip .eq { color: var(--yellow); }
+  .bc-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--line); padding: 7px 11px; background: var(--panel); }
+  .route { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--t2); }
+  .route .material-icons { font-size: 13px; color: var(--t3); }
+  .route .target { color: var(--t1); font-weight: 500; }
+  .evidence { font-family: var(--mono); font-size: 9.5px; color: var(--t3); }
+  .evidence b { color: var(--green); font-weight: 500; }
+  .ghost-btn { border: 1px solid var(--line3); border-radius: 8px; padding: 8px; text-align: center; font-size: 12.5px; display: flex; gap: 6px; align-items: center; justify-content: center; }
+  .ghost-btn .material-icons { font-size: 14px; color: var(--accent); }
+  .insp-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .node-id { font-family: var(--mono); font-size: 9.5px; color: var(--t3); }
+  .remove-btn { font-size: 12px; color: var(--red); border: 1px solid var(--red); border-radius: 6px; padding: 4px 10px; display: flex; gap: 5px; align-items: center; background: transparent; }
+  .remove-btn .material-icons { font-size: 13px; }
+
+  .notes { display: flex; flex-direction: column; gap: 12px; width: 340px; }
+  .note { display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; color: var(--t2); }
+  .note .material-icons { font-size: 15px; margin-top: 1px; }
+  .note.keep .material-icons { color: var(--green); }
+  .note.cut .material-icons { color: var(--red); }
+  .note.move .material-icons { color: var(--link); }
+  .note b { color: var(--t1); }
+  .note code { font-family: var(--mono); font-size: 10.5px; }
+
+  /* mini wireframe of the top-level Runs view */
+  .runsview { width: 480px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); overflow: hidden; }
+  .rv-head { display: flex; gap: 2px; padding: 10px 14px; border-bottom: 1px solid var(--line); align-items: center; }
+  .seg { display: flex; border: 1px solid var(--line3); border-radius: 7px; overflow: hidden; }
+  .seg span { padding: 4px 12px; font-size: 12px; color: var(--t3); }
+  .seg span.on { background: var(--accent); color: #fff; }
+  .rv-body { display: flex; }
+  .rv-list { width: 180px; border-right: 1px solid var(--line); padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+  .rv-run { padding: 6px 8px; border-radius: 6px; font-family: var(--mono); font-size: 10px; color: var(--t2); display: flex; justify-content: space-between; }
+  .rv-run.on { background: var(--accent-soft); color: var(--t1); }
+  .rv-run .ok { color: var(--green); }
+  .rv-steps { flex: 1; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .rv-step { display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--line2); }
+  .rv-step .material-icons { font-size: 12px; color: var(--green); }
+  .rv-step .nm { flex: 1; font-weight: 500; }
+  .rv-step .ms { font-family: var(--mono); font-size: 9.5px; color: var(--t3); }
+  .rv-step.hl { border-color: rgba(245,166,35,0.4); background: var(--yellow-dim); }
+  .rv-out { margin-top: 4px; background: var(--bg); border: 1px solid var(--line2); border-radius: 6px; padding: 8px 10px; font-family: var(--mono); font-size: 10px; color: var(--t2); white-space: pre; }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- Corrected inspector -->
+  <div class="column">
+    <div class="col-title">Inspector — <b>shape-scoped only, no tabs</b></div>
+    <div class="inspector">
+      <div class="insp-header">
+        <div class="icon-chip"><span class="material-icons">alt_route</span></div>
+        <div class="insp-title">vipRoute</div>
+        <div class="type-badge">IF</div>
+        <span class="material-icons insp-close">close</span>
+      </div>
+      <div class="activity-strip">
+        <span>23 runs</span><span>·</span><span>p95: 395ms</span><span>·</span><span class="dot">●</span><span>ok</span>
+        <a class="go-runs">View in Runs<span class="material-icons">north_east</span></a>
+      </div>
+      <div class="insp-body">
+        <div class="field"><div class="field-label">Name</div><div class="field-value">vipRoute</div></div>
+        <div class="section-label">Branches · evaluated top to bottom, first match wins</div>
+        <div class="branch-card">
+          <div class="bc-head"><div class="bc-dot"></div><div class="bc-label">VIP escalation</div><span class="material-icons bc-x">close</span></div>
+          <div class="sentence">
+            <span class="sw">If</span>
+            <span class="pill mono"><span class="path-root">results.buildAgentContext.</span>tier<span class="material-icons">unfold_more</span></span>
+            <span class="pill">equals<span class="material-icons">arrow_drop_down</span></span>
+            <span class="pill mono">"vip"</span>
+          </div>
+          <div class="expr-row"><span class="expr-chip">results.buildAgentContext.tier <span class="eq">eq</span> "vip"</span></div>
+          <div class="bc-foot">
+            <div class="route"><span class="material-icons">south</span><span class="target">buildEscalationReply</span></div>
+            <span class="evidence">matched <b>11</b>/23 · 48%</span>
+          </div>
+        </div>
+        <div class="branch-card grey">
+          <div class="bc-head"><div class="bc-dot g"></div><div class="bc-label" style="color:var(--t2)">Otherwise <span style="font-weight:400;color:var(--t3)">· default</span></div></div>
+          <div class="bc-foot">
+            <div class="route"><span class="material-icons">south</span><span class="target">replyStandard</span></div>
+            <span class="evidence">matched <b>12</b>/23 · 52%</span>
+          </div>
+        </div>
+        <div class="ghost-btn"><span class="material-icons">add</span> Add branch</div>
+      </div>
+      <div class="insp-footer">
+        <span class="node-id">node-1785169277580-7</span>
+        <button class="remove-btn"><span class="material-icons">delete</span>Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Where runs/output live -->
+  <div class="column" style="max-width:500px">
+    <div class="col-title">Top-level <b>Runs</b> view — node activity lives here</div>
+    <div class="runsview">
+      <div class="rv-head">
+        <div class="seg"><span>Editor</span><span class="on">Runs</span><span>Settings</span></div>
+      </div>
+      <div class="rv-body">
+        <div class="rv-list">
+          <div class="rv-run on"><span>12:55 PM</span><span class="ok">ok</span></div>
+          <div class="rv-run"><span>12:51 PM</span><span class="ok">ok</span></div>
+          <div class="rv-run"><span>12:51 PM</span><span class="ok">ok</span></div>
+          <div class="rv-run"><span>12:40 PM</span><span class="ok">ok</span></div>
+          <div class="rv-run"><span>12:38 PM</span><span class="ok">ok</span></div>
+        </div>
+        <div class="rv-steps">
+          <div class="rv-step"><span class="material-icons">check_circle</span><span class="nm">normalizeContact</span><span class="ms">83ms</span></div>
+          <div class="rv-step"><span class="material-icons">check_circle</span><span class="nm">scoreContact</span><span class="ms">3652ms</span></div>
+          <div class="rv-step hl">
+            <span class="material-icons">check_circle</span><span class="nm">vipRoute <span style="font-family:var(--mono);font-size:9px;color:var(--t3)">← deep-link lands here</span></span><span class="ms">395ms</span>
+          </div>
+          <div class="rv-out">branchTaken: "default"
+evaluated:  tier = "standard"</div>
+          <div class="rv-step"><span class="material-icons">check_circle</span><span class="nm">replyStandard</span><span class="ms">68ms</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <div class="note keep"><span class="material-icons">check</span><span><b>Stays in the inspector</b> (all shape-scoped): sentence editor, expression chip, route target, per-branch <code>matched n/23</code> evidence, and a one-line read-only <b>activity strip</b> (same numbers as the card footer).</span></div>
+      <div class="note cut"><span class="material-icons">close</span><span><b>Removed:</b> the Config/Output/Runs tab bar, the workflow-run selector, the output viewer, and the per-node run list — no workflow-level UI inside a shape panel. (Also kills the layout bug that stacked the config form under tab content.)</span></div>
+      <div class="note move"><span class="material-icons">north_east</span><span><b>Moved, not lost:</b> "View in Runs" deep-links to the top-level Runs view with this run's step for <b>this node</b> highlighted — runs, outputs and step detail live in ONE place, where they always were. The <code>/node-runs</code> backend stays (it feeds the strip + card footers).</span></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

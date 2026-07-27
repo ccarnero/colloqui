@@ -218,6 +218,23 @@ export class WorkflowExecutionsComponent implements OnInit {
   );
   private readonly id = computed<string>(() => this.parentParams()["id"] ?? "");
 
+  private readonly queryParams = toSignal(this.route.queryParams, {
+    initialValue: this.route.snapshot.queryParams,
+  });
+  /**
+   * Deep-link node query param (shape-scoped inspector correction) — set
+   * by the builder inspector's "View in Runs" link
+   * (`workflow-builder.component.ts`'s `onViewInRuns`). This list has no
+   * per-run step data of its own to highlight, so it only forwards the
+   * param onward — see `forwardDeepLinkIfNeeded`.
+   */
+  readonly deepLinkNodeName = computed<string | null>(() => {
+    const raw = this.queryParams()["node"];
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  });
+  /** Guards `forwardDeepLinkIfNeeded` so the auto-navigation fires once. */
+  private forwardedDeepLink = false;
+
   readonly rows = signal<IWorkflowExecutionRow[]>([]);
   readonly total = signal(0);
   readonly loading = signal(true);
@@ -259,9 +276,36 @@ export class WorkflowExecutionsComponent implements OnInit {
           this.rows.set(resp.items);
           this.total.set(resp.total);
           this.loading.set(false);
+          this.forwardDeepLinkIfNeeded(id);
         },
         error: () => this.loading.set(false),
       });
+  }
+
+  /**
+   * Shape-scoped inspector correction: when the URL carries `?node=` (set
+   * by the builder inspector's "View in Runs" link), forwards straight to
+   * the most recent run's detail page with the SAME node name so
+   * `WorkflowRunDetailComponent` can highlight the matching step — this
+   * list renders run rows, not per-run steps, so there is nothing to
+   * highlight here. Fires at most once (`forwardedDeepLink` guard); a
+   * no-op when the param is absent or there are no runs to open, so the
+   * list's own behavior is otherwise unchanged.
+   */
+  private forwardDeepLinkIfNeeded(definitionId: string): void {
+    const nodeName = this.deepLinkNodeName();
+    if (!nodeName || this.forwardedDeepLink) {
+      return;
+    }
+    const latest = this.rows()[0];
+    if (!latest) {
+      return;
+    }
+    this.forwardedDeepLink = true;
+    void this.router.navigate(["/workflows", definitionId, "runs", latest.id], {
+      queryParams: { node: nodeName },
+      replaceUrl: true,
+    });
   }
 
   protected onStatusFilter(ev: Event): void {

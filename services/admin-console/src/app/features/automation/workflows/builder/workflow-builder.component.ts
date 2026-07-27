@@ -449,12 +449,12 @@ function pruneConflictingConnections(
                 [nodeStatsBranchRows]="nodeStatsBranchRows()"
                 [nodeStatsOwnRunsByName]="nodeStatsOwnRunsByName()"
                 [nodeStatsFetchState]="nodeStatsFetchState()"
-                [workflowId]="flow().key"
                 [nodeStatsByName]="nodeStatsByName()"
                 (close)="onInspectorCloseButton()"
                 (remove)="removeNode($event)"
                 (configChange)="onNodeConfigChange($event)"
                 (nameChange)="onNodeNameChange($event)"
+                (viewInRuns)="onViewInRuns($event)"
               />
             </div>
           }
@@ -1705,6 +1705,25 @@ export class WorkflowBuilderComponent implements OnInit, OnDestroy {
       tab,
     });
     void this.router.navigate(["/workflows", id, tab]);
+  }
+
+  /**
+   * Inspector "View in Runs" deep-link (shape-scoped inspector
+   * correction): reuses `goToTab`'s SAME `/workflows/:id/executions`
+   * navigation, adding `?node=<actionName>` so the executions/run-detail
+   * feature can highlight the step matching this shape once a run's step
+   * list renders (see `workflow-executions.component.ts` and
+   * `workflow-run-detail.component.ts`). No new view — same target route
+   * as the "Runs" segmented-control tab.
+   */
+  protected onViewInRuns(actionName: string): void {
+    console.debug("[WorkflowBuilderComponent] view in runs deep-link", {
+      id: this.flow().key,
+      actionName,
+    });
+    void this.router.navigate(["/workflows", this.flow().key, "executions"], {
+      queryParams: { node: actionName },
+    });
   }
 
   /**

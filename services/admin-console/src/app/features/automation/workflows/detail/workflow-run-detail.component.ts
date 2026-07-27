@@ -2,6 +2,8 @@ import {
   ChangeDetectionStrategy,
   Component,
   computed,
+  ElementRef,
+  effect,
   inject,
   type OnInit,
   signal,
@@ -97,6 +99,8 @@ interface IStep {
               class="step"
               [class]="'step-' + s.kind"
               [class.selected]="selectedIndex() === i"
+              [class.step-highlight]="s.name === deepLinkNodeName()"
+              [attr.data-testid]="s.name === deepLinkNodeName() ? 'step-highlighted' : null"
               (click)="select(i)"
             >
               <span class="step-name">{{ s.name }}</span>
@@ -256,6 +260,14 @@ interface IStep {
     .step.selected {
       background: var(--accent-dim, rgba(26, 102, 255, 0.06));
     }
+    /* Deep-link highlight (shape-scoped inspector correction) — the step
+     * a builder inspector's "View in Runs" link pointed at. Distinct from
+     * .selected (click state) so both can be visible at once; kept
+     * subtle per the mock's ".rv-step.hl" (yellow border/tint). */
+    .step.step-highlight {
+      border-left-color: var(--yellow, #f5a623);
+      background: var(--yellow-dim, rgba(245, 166, 35, 0.08));
+    }
     .step-name {
       flex: 1;
       font-size: 12px;
@@ -300,6 +312,7 @@ export class WorkflowRunDetailComponent implements OnInit {
   private readonly api = inject(WorkflowApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly elementRef = inject(ElementRef<HTMLElement>);
 
   private readonly parentParams = toSignal(
     this.route.parent?.params ?? this.route.params,
@@ -308,11 +321,25 @@ export class WorkflowRunDetailComponent implements OnInit {
   private readonly ownParams = toSignal(this.route.params, {
     initialValue: this.route.snapshot.params,
   });
+  private readonly queryParams = toSignal(this.route.queryParams, {
+    initialValue: this.route.snapshot.queryParams,
+  });
 
   readonly definitionId = computed<string>(
     () => this.parentParams()["id"] ?? ""
   );
   readonly runId = computed<string>(() => this.ownParams()["runId"] ?? "");
+  /**
+   * Deep-link node query param (shape-scoped inspector correction) — set
+   * by the builder inspector's "View in Runs" link
+   * (`workflow-builder.component.ts`'s `onViewInRuns`), possibly forwarded
+   * through `WorkflowExecutionsComponent`. `null` (absent) leaves the step
+   * list's rendering entirely unchanged — no highlight, no scroll.
+   */
+  readonly deepLinkNodeName = computed<string | null>(() => {
+    const raw = this.queryParams()["node"];
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  });
 
   readonly detail = signal<IWorkflowExecutionDetail | null>(null);
   readonly loading = signal(true);
@@ -390,6 +417,29 @@ export class WorkflowRunDetailComponent implements OnInit {
       ? `${base}/namespaces/${ns}/workflows/${wf}/${run}`
       : `${base}/namespaces/${ns}/workflows/${wf}`;
   });
+
+  constructor() {
+    // Deep-link scroll (shape-scoped inspector correction): once the step
+    // list renders AND a `?node=` param names a step in it, scrolls the
+    // highlighted `.step-highlight` button into view. `queueMicrotask`
+    // waits for the `@for` block driven by `steps()`/`deepLinkNodeName()`
+    // to flush into the DOM before querying it. No-op whenever the param
+    // is absent (`deepLinkNodeName()` null) or names no step in this run.
+    effect(() => {
+      const nodeName = this.deepLinkNodeName();
+      const stepNames = this.steps().map((s) => s.name);
+      if (!nodeName || !stepNames.includes(nodeName)) {
+        return;
+      }
+      queueMicrotask(() => {
+        const el =
+          this.elementRef.nativeElement.querySelector(".step-highlight");
+        // Test-environment guard: jsdom (this app's spec runner) does not
+        // implement scrollIntoView — a real browser always has it.
+        el?.scrollIntoView?.({ block: "nearest" });
+      });
+    });
+  }
 
   ngOnInit(): void {
     const def = this.definitionId();
