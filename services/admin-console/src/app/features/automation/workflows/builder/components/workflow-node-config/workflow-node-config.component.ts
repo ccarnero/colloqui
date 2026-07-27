@@ -1,3 +1,4 @@
+import { DatePipe } from "@angular/common";
 import {
   ChangeDetectionStrategy,
   Component,
@@ -43,6 +44,7 @@ import {
   resolveConditionalBranchTarget,
 } from "../../../domain/resolve-conditional-branch-target";
 import { splitVariablePath } from "../../../domain/split-variable-path";
+import { stringifyPayload } from "../../../domain/stringify-payload";
 import {
   type ConditionComparator,
   EWorkflowNodeType,
@@ -55,15 +57,24 @@ import {
   SOURCE_CHANNEL_TEMPLATE,
   SOURCE_PROVIDER_TEMPLATE,
 } from "../../../domain/workflow-node-defaults";
+import {
+  type INodeRunRow,
+  type IWorkflowExecutionDetail,
+  type IWorkflowExecutionRow,
+  WorkflowApiService,
+} from "../../../services/workflow-api.service";
 import type { IVariableGroup } from "../template-autocomplete/template-autocomplete.component";
 import { TemplateAutocompleteComponent } from "../template-autocomplete/template-autocomplete.component";
 import { nodeTypeColorToken } from "../workflow-node/node-type-color";
+import { nodeTypeShortLabel } from "../workflow-node/node-type-short-label";
 import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
+import type { IWorkflowNodeStats } from "../workflow-node/workflow-node-stats.types";
 
 @Component({
   selector: "app-workflow-node-config",
   changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    DatePipe,
     FormsModule,
     MatFormFieldModule,
     MatInputModule,
@@ -80,6 +91,11 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
             <mat-icon>{{ n.icon }}</mat-icon>
           </span>
           <span class="config-title">{{ n.name }}</span>
+          <!-- Type badge (IF-editor round-2 task), ported verbatim from
+               if-editor-proposal.html's ".type-badge" — reuses the SAME
+               short label (node-type-short-label.ts) the node card's own
+               type badge already shows, so header and card always agree. -->
+          <span class="config-type-badge">{{ nodeTypeShortLabel(n.type) }}</span>
           <button
             class="config-close-btn"
             type="button"
@@ -90,25 +106,105 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
           </button>
         </div>
 
-        <!-- Tab row (SPEC T08), ported verbatim from
-             builder-v2-reference/node-card.html section 3's inspector
-             markup: Config / Output / Runs. Only Config has real content
-             in the reference AND in this builder — the EXISTING
-             WorkflowNodeConfigComponent form fields below are exactly the
-             Config tab's content, unchanged. Output/Runs render as
-             visually-present but inert tabs (no click handler, no
-             fabricated content), same as the reference's static preview —
-             a real per-node "Output"/"Runs" tab needs data this component
-             has no source for today (the same per-node execution data gap
-             T06/T07 investigated for the card footer), so they stay
-             non-interactive rather than showing empty/fake panels. -->
+        <!-- Tab row (IF-editor round-2 task — replaces the SPEC T08 inert
+             row): Config / Output / Runs are now REAL, keyboard-navigable
+             tabs (native buttons, tab/enter/space work for free). Config
+             keeps its existing form content unchanged (hidden via [hidden]
+             rather than removed from the DOM, so the huge existing
+             @switch(n.type) block below is never restructured); Output and
+             Runs render their own panels declared separately below. -->
         <div class="config-tabs" role="tablist">
-          <span class="config-tab config-tab--active" role="tab" aria-selected="true">Config</span>
-          <span class="config-tab config-tab--disabled" role="tab" aria-selected="false" aria-disabled="true">Output</span>
-          <span class="config-tab config-tab--disabled" role="tab" aria-selected="false" aria-disabled="true">Runs</span>
+          <button type="button" class="config-tab" [class.config-tab--active]="activeTab() === 'config'" role="tab" [attr.aria-selected]="activeTab() === 'config'" (click)="selectTab('config')">Config</button>
+          <button type="button" class="config-tab" [class.config-tab--active]="activeTab() === 'output'" role="tab" [attr.aria-selected]="activeTab() === 'output'" (click)="selectTab('output')">Output</button>
+          <button type="button" class="config-tab" [class.config-tab--active]="activeTab() === 'runs'" role="tab" [attr.aria-selected]="activeTab() === 'runs'" (click)="selectTab('runs')">Runs</button>
         </div>
 
-        <div class="config-body">
+        <!-- Output tab (IF-editor round-2 task): fetches the run list on
+             first open (WorkflowApiService.listExecutions), defaults to
+             the most recent completed run, then fetches that run's detail
+             (getExecutionDetail) and renders result.results[node.name] —
+             or failure info when failure.activityName === node.name — or
+             an honest empty state. Self-contained @if block, independent
+             of the existing Config @switch below. -->
+        @if (activeTab() === 'output') {
+          <div class="config-body output-tab" data-testid="output-tab">
+            @if (outputRunsState() === 'loading') {
+              <div class="tab-skeleton" aria-hidden="true">Loading runs…</div>
+            } @else if (outputRunsState() === 'error') {
+              <div class="tab-error">Could not load runs for this workflow.</div>
+            } @else if (outputRuns().length === 0) {
+              <div class="tab-empty">This workflow has no recorded runs yet.</div>
+            } @else {
+              <mat-form-field appearance="outline" class="config-field output-run-select">
+                <mat-label>Run</mat-label>
+                <mat-select [ngModel]="selectedRunId()" (ngModelChange)="selectRun($event)" aria-label="Select run">
+                  @for (run of outputRuns(); track run.id) {
+                    <mat-option [value]="run.id">{{ run.createdAt | date: 'short' }} · {{ run.status }}</mat-option>
+                  }
+                </mat-select>
+              </mat-form-field>
+
+              @if (outputDetailState() === 'loading') {
+                <div class="tab-skeleton" aria-hidden="true">Loading output…</div>
+              } @else if (outputDetailState() === 'error') {
+                <div class="tab-error">Could not load this run's output.</div>
+              } @else if (outputFailureForNode(); as failure) {
+                <div class="output-failure" data-testid="output-failure">
+                  <div class="output-failure-label">{{ failure.type }}</div>
+                  <pre class="output-json">{{ failure.message }}</pre>
+                </div>
+              } @else if (outputResultForNode(); as result) {
+                <pre class="output-json" data-testid="output-result">{{ result }}</pre>
+              } @else if (outputDetailState() === 'ready') {
+                <div class="tab-empty" data-testid="output-empty">This node has no recorded output for this run.</div>
+              }
+            }
+          </div>
+        }
+
+        <!-- Runs tab (IF-editor round-2 task): summary strip from the
+             ALREADY-FETCHED per-node footer stats (nodeStatsByName input
+             — zero new requests), plus a real recent-runs list fetched
+             once from tracking-ingester-service's new /node-runs route
+             via WorkflowApiService.getNodeRunsForNode. -->
+        @if (activeTab() === 'runs') {
+          <div class="config-body runs-tab" data-testid="runs-tab">
+            <div class="runs-summary" data-testid="runs-summary">
+              @if (selectedNodeStats(); as stats) {
+                <span class="runs-summary-primary">{{ stats.primaryLabel }}</span>
+                @if (stats.secondaryLabel) {
+                  <span class="runs-summary-secondary">{{ stats.secondaryLabel }}</span>
+                }
+                @if (stats.status; as status) {
+                  <span class="runs-summary-dot" [class]="'dot-' + status"></span>
+                  <span class="runs-summary-status">{{ status }}</span>
+                }
+              } @else {
+                <span class="runs-summary-empty">No aggregate stats for this node yet.</span>
+              }
+            </div>
+
+            @if (nodeRunsState() === 'loading') {
+              <div class="tab-skeleton" aria-hidden="true">Loading runs…</div>
+            } @else if (nodeRunsState() === 'error') {
+              <div class="tab-error">Could not load recent runs for this node.</div>
+            } @else if (nodeRunsRows().length === 0) {
+              <div class="tab-empty">No runs in the last 7 days.</div>
+            } @else {
+              <div class="runs-list">
+                @for (run of nodeRunsRows(); track run.correlation_id + run.occurred_at) {
+                  <div class="runs-row" data-testid="runs-row">
+                    <span class="runs-row-dot" [class.dot-ok]="run.step_status === 'ok'" [class.dot-error]="run.step_status !== 'ok'"></span>
+                    <span class="runs-row-time">{{ run.occurred_at | date: 'short' }}</span>
+                    <span class="runs-row-duration">{{ formatDurationMs(run.duration_ms) }}</span>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+
+        <div class="config-body" [hidden]="activeTab() !== 'config'">
           <mat-form-field appearance="outline" class="config-field">
             <mat-label>Name</mat-label>
             <input
@@ -679,7 +775,13 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
                 </div>
 
                 @for (branch of getConditionalBranches(n); track $index) {
-                  <div class="branch-card">
+                  <!-- Active-branch accent border (IF-editor round-2 task),
+                       ported verbatim from if-editor-proposal.html's
+                       ".branch-card.active-branch" — every conditional
+                       (non-default) branch card gets it, matching the
+                       mock's single-condition example; the "Otherwise"
+                       default-branch card below deliberately does NOT. -->
+                  <div class="branch-card bc-active">
                     <div class="bc-head">
                       <span class="bc-dot"></span>
                       <input
@@ -718,18 +820,29 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
                         <mat-icon>unfold_more</mat-icon>
                       </button>
 
-                      <mat-form-field appearance="outline" class="bc-comparator-field">
-                        <mat-select
+                      <!-- Comparator pill (IF-editor round-2 task): a
+                           native <select appearance:none> styled as the
+                           SAME ".pill" if-editor-proposal.html uses for
+                           the variable/value pills, per the round-2 brief
+                           ("the comparator can be a styled select with
+                           appearance:none") — replaces the tall bordered
+                           mat-form-field/mat-select that read nothing like
+                           the mock's slim inline pill. Native <select>
+                           keeps full keyboard/focus accessibility for
+                           free. -->
+                      <span class="pill bc-comparator-pill">
+                        <select
+                          class="bc-comparator-select"
                           [ngModel]="branch.condition.comparator"
                           (ngModelChange)="updateConditionalBranchCondition($index, 'comparator', $event)"
-                          panelClass="bc-comparator-panel"
                           aria-label="Comparator"
                         >
                           @for (opt of comparatorOptions; track opt.value) {
-                            <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+                            <option [value]="opt.value">{{ opt.label }}</option>
                           }
-                        </mat-select>
-                      </mat-form-field>
+                        </select>
+                        <mat-icon>arrow_drop_down</mat-icon>
+                      </span>
 
                       <span class="pill mono-pill bc-value-pill">
                         <span class="bc-quote">"</span>
@@ -940,6 +1053,19 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
       height: 15px;
       color: var(--rd-text-2);
     }
+    /* Type badge (IF-editor round-2 task), ported verbatim from
+     * if-editor-proposal.html's ".type-badge" (mono, yellow, 1px yellow
+     * border, 4px radius, 9px/0.6px letter-spacing). */
+    .config-type-badge {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-3xs);
+      letter-spacing: 0.6px;
+      color: var(--rd-yellow);
+      border: 1px solid var(--rd-yellow);
+      border-radius: var(--rd-radius-4);
+      padding: 1px 6px;
+      flex-shrink: 0;
+    }
     .config-close-btn {
       width: 26px;
       height: 26px;
@@ -967,24 +1093,28 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
       padding: 0 var(--rd-space-8);
       gap: var(--rd-space-1);
     }
+    /* Config/Output/Runs tabs (IF-editor round-2 task — replaces the SPEC
+     * T08 inert span row with real, clickable, keyboard-navigable
+     * buttons; same visual rule (accent-underline on the active tab)
+     * ported from if-editor-proposal.html's ".insp-tab"/".insp-tab.active"). */
     .config-tab {
       padding: var(--rd-space-4) var(--rd-space-5);
       font-size: var(--rd-text-size-sm);
       color: var(--rd-text-3);
       margin-bottom: -1px;
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      font-family: inherit;
+      cursor: pointer;
+    }
+    .config-tab:hover {
+      color: var(--rd-text-2);
     }
     .config-tab--active {
       font-weight: 500;
       color: var(--rd-text-1);
-      border-bottom: 2px solid var(--rd-text-1);
-    }
-    /* Output/Runs tabs (SPEC T08): visually present, per the reference,
-       but inert — no click handler, no per-node output/run data source
-       exists to back a real tab switch today (same data gap as T06/T07's
-       per-node stats). Not a disabled button (nothing to disable, no
-       action wired) — a plain non-interactive label, cursor:default. */
-    .config-tab--disabled {
-      cursor: default;
+      border-bottom: 2px solid var(--rd-accent);
     }
     .config-title {
       flex: 1;
@@ -1000,6 +1130,111 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
     }
     .config-field {
       width: 100%;
+    }
+    /* Output/Runs tab shared states (IF-editor round-2 task) — the SAME
+     * three-state discipline every fetch in this component already
+     * follows: loading skeleton, honest error message, honest empty
+     * state — never a blank panel, never a fabricated number. */
+    .tab-skeleton,
+    .tab-error,
+    .tab-empty {
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-3);
+      padding: var(--rd-space-5) 0;
+    }
+    .tab-error {
+      color: var(--rd-red);
+    }
+    .output-run-select {
+      width: 100%;
+    }
+    .output-json {
+      margin: 0;
+      padding: var(--rd-space-5);
+      background: var(--rd-bg);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-5);
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-2xs);
+      color: var(--rd-text-1);
+      white-space: pre-wrap;
+      word-break: break-word;
+      overflow-x: auto;
+    }
+    .output-failure-label {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-2xs);
+      color: var(--rd-red);
+      margin-bottom: var(--rd-space-2);
+    }
+    .runs-summary {
+      display: flex;
+      align-items: center;
+      gap: var(--rd-space-4);
+      padding-bottom: var(--rd-space-4);
+      border-bottom: 1px solid var(--rd-line);
+      margin-bottom: var(--rd-space-2);
+    }
+    .runs-summary-primary {
+      font-weight: 600;
+      font-size: var(--rd-text-size-sm);
+      color: var(--rd-text-1);
+    }
+    .runs-summary-secondary {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-3);
+    }
+    .runs-summary-empty {
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-3);
+    }
+    .runs-summary-status {
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-2);
+      text-transform: capitalize;
+    }
+    .runs-summary-dot,
+    .runs-row-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--rd-text-3);
+    }
+    .dot-ok {
+      background: var(--rd-green);
+    }
+    .dot-warning {
+      background: var(--rd-yellow);
+    }
+    .dot-error {
+      background: var(--rd-red);
+    }
+    .runs-list {
+      display: flex;
+      flex-direction: column;
+      gap: var(--rd-space-2);
+    }
+    .runs-row {
+      display: flex;
+      align-items: center;
+      gap: var(--rd-space-4);
+      padding: var(--rd-space-3) var(--rd-space-4);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-5);
+      background: var(--rd-panel);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-2);
+    }
+    .runs-row-time {
+      flex: 1;
+      color: var(--rd-text-1);
+    }
+    .runs-row-duration {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-2xs);
+      color: var(--rd-text-3);
     }
     .config-hint {
       font-size: 12px;
@@ -1086,6 +1321,13 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
       overflow: hidden;
       display: flex;
       flex-direction: column;
+    }
+    /* Active-branch accent border (IF-editor round-2 task), ported from
+     * if-editor-proposal.html's ".branch-card.active-branch" —
+     * color-mix keeps this token-derived (var(--rd-yellow) at the mock's
+     * 35% alpha) instead of a hard-coded rgba literal. */
+    .branch-card.bc-active {
+      border-color: color-mix(in srgb, var(--rd-yellow) 35%, transparent);
     }
     .bc-head {
       display: flex;
@@ -1207,8 +1449,36 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
     .bc-var-placeholder {
       color: var(--rd-text-2);
     }
-    .bc-comparator-field {
-      width: 116px;
+    /* Comparator pill (IF-editor round-2 task): a native <select> styled
+     * to look like the SAME ".pill" the variable/value pills use, per
+     * if-editor-proposal.html's ".sentence .pill" rule — replaces the
+     * tall bordered mat-form-field/mat-select. appearance:none strips the
+     * browser chrome; the trailing mat-icon supplies the mock's
+     * arrow_drop_down affordance. */
+    .bc-comparator-pill {
+      cursor: pointer;
+    }
+    .bc-comparator-select {
+      appearance: none;
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--rd-text-1);
+      font-family: inherit;
+      font-size: inherit;
+      padding: 0;
+      cursor: pointer;
+    }
+    .bc-comparator-select option {
+      background: var(--rd-panel);
+      color: var(--rd-text-1);
+    }
+    .bc-comparator-pill mat-icon {
+      font-size: 13px;
+      width: 13px;
+      height: 13px;
+      color: var(--rd-text-3);
+      flex-shrink: 0;
     }
     .bc-value-pill {
       gap: 0;
@@ -1216,6 +1486,19 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
     .bc-quote {
       color: var(--rd-text-3);
     }
+    /* Sizes to its OWN RENDERED CONTENT (IF-editor round-2 task, dual-review
+     * fix — the earlier [attr.size] attempt was rejected: HTML size is an
+     * average-character-width heuristic and never collapses to the exact
+     * rendered pixel width, so "vip" still left a visible gap before the
+     * closing quote). field-sizing: content makes the UA lay the input
+     * out exactly like a span containing the same text — the same "hug the
+     * text" behavior the read-only expr-chip two rows below gets for free
+     * from being a plain inline element. min-width covers the empty/
+     * placeholder state; max-width guards against a very long value
+     * pushing the sentence row out of the panel. No manual width
+     * measurement (mirror span) is needed — every browser in this app's
+     * target matrix (evergreen Chromium-based, per the existing browserslist
+     * baseline) ships field-sizing. */
     .bc-value-input {
       background: transparent;
       border: none;
@@ -1223,7 +1506,9 @@ import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
       color: var(--rd-text-1);
       font-family: var(--rd-font-mono);
       font-size: var(--rd-text-size-xs);
-      width: 64px;
+      field-sizing: content;
+      min-width: 8px;
+      max-width: 140px;
       padding: 0;
     }
 
@@ -1436,6 +1721,23 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly nodeStatsFetchState = input<"idle" | "loading" | "ready" | "error">(
     "idle"
   );
+  /**
+   * The workflow definition id (IF-editor round-2 task, Output tab) — the
+   * SAME value the builder already passes to `app-workflow-test-panel` as
+   * `[workflowId]="flow().key"`, needed to fetch executions/execution
+   * detail for this panel's Output tab.
+   */
+  readonly workflowId = input<string>("");
+  /**
+   * Per-node footer stats (IF-editor round-2 task, Runs tab summary strip)
+   * — the SAME merged signal the builder already computes for the
+   * node-card footer (T07, `mapNodeStatsToViewModels()` keyed by
+   * `action_name`). Reused verbatim: zero new requests for the summary
+   * strip.
+   */
+  readonly nodeStatsByName = input<
+    Readonly<Record<string, IWorkflowNodeStats>>
+  >({});
   readonly close = output<void>();
   readonly remove = output<string>();
   readonly configChange = output<{
@@ -1537,6 +1839,86 @@ export class WorkflowNodeConfigComponent implements OnInit {
     findAmbiguousBranchEvidenceKeys(this.workflowNodes(), this.connections())
   );
 
+  private readonly api = inject(WorkflowApiService);
+
+  /** Which inspector tab is active (IF-editor round-2 task). Resets to
+   * "config" whenever the selected node changes. */
+  readonly activeTab = signal<"config" | "output" | "runs">("config");
+
+  // ---- Output tab state ----
+  readonly outputRunsState = signal<"idle" | "loading" | "ready" | "error">(
+    "idle"
+  );
+  readonly outputRuns = signal<IWorkflowExecutionRow[]>([]);
+  readonly selectedRunId = signal<string | null>(null);
+  readonly outputDetailState = signal<"idle" | "loading" | "ready" | "error">(
+    "idle"
+  );
+  readonly outputDetail = signal<IWorkflowExecutionDetail | null>(null);
+  /** Cache of already-fetched execution details, keyed by executionId — the
+   * SAME caching discipline `getExecutionDetail`'s doc comment requires
+   * (Temporal `describe + result` round trip per id). */
+  private readonly outputDetailCache = new Map<
+    string,
+    IWorkflowExecutionDetail
+  >();
+
+  /** `result.results[node.name]`, pretty-printed via the SHARED
+   * `stringifyPayload` (lifted from workflow-test-panel.component.ts's
+   * extractSteps) — `null` when the current run has no recorded result
+   * for this node. */
+  readonly outputResultForNode = computed<string | null>(() => {
+    const n = this.node();
+    const detail = this.outputDetail();
+    if (!n || !detail) {
+      return null;
+    }
+    const results = (detail.result?.results ?? {}) as Record<string, unknown>;
+    if (!(n.name in results)) {
+      return null;
+    }
+    return stringifyPayload(results[n.name]);
+  });
+
+  /** The run's `failure` info, only when it names THIS node
+   * (`failure.activityName === node.name`) — never shown for a failure
+   * that belongs to a different action in the same run. */
+  readonly outputFailureForNode = computed<{
+    type: string;
+    message: string;
+  } | null>(() => {
+    const n = this.node();
+    const detail = this.outputDetail();
+    const failure = detail?.failure;
+    if (!n || !failure || failure.activityName !== n.name) {
+      return null;
+    }
+    return {
+      type: failure.type,
+      message: failure.cause ?? failure.message,
+    };
+  });
+
+  // ---- Runs tab state ----
+  readonly nodeRunsState = signal<"idle" | "loading" | "ready" | "error">(
+    "idle"
+  );
+  readonly nodeRunsRows = signal<INodeRunRow[]>([]);
+  /** action_name whose runs are currently loaded/loading, to avoid a
+   * redundant refetch when the user re-opens the Runs tab for the SAME
+   * node (same guard pattern as `lastMcpToolsServerId`). */
+  private lastNodeRunsActionName: string | null = null;
+
+  /** The already-fetched per-node footer stats for the selected node
+   * (Runs tab summary strip — zero new requests). */
+  readonly selectedNodeStats = computed<IWorkflowNodeStats | null>(() => {
+    const n = this.node();
+    if (!n) {
+      return null;
+    }
+    return this.nodeStatsByName()[n.name] ?? null;
+  });
+
   constructor() {
     effect(() => {
       const n = this.node();
@@ -1580,6 +1962,25 @@ export class WorkflowNodeConfigComponent implements OnInit {
       this.node();
       this.openBranchPickerIndex.set(null);
       this.branchPickerQuery.set("");
+    });
+
+    // Resets ALL Output/Runs tab state when the selected node changes
+    // (IF-editor round-2 task) — a stale run selection or a previous
+    // node's runs list must never linger onto the newly-selected node.
+    // Always lands back on the Config tab, matching L5 T05's existing
+    // "opens on node select" contract.
+    effect(() => {
+      this.node();
+      this.activeTab.set("config");
+      this.outputRunsState.set("idle");
+      this.outputRuns.set([]);
+      this.selectedRunId.set(null);
+      this.outputDetailState.set("idle");
+      this.outputDetail.set(null);
+      this.outputDetailCache.clear();
+      this.nodeRunsState.set("idle");
+      this.nodeRunsRows.set([]);
+      this.lastNodeRunsActionName = null;
     });
   }
 
@@ -1685,6 +2086,129 @@ export class WorkflowNodeConfigComponent implements OnInit {
       this.updateConfig("method", endpoint.method);
       this.updateConfig("url", endpoint.path);
     }
+  }
+
+  /** Bound to the label(); exposed on the instance so the template can
+   * call it (IF-editor round-2 task, header type badge). */
+  protected readonly nodeTypeShortLabel = nodeTypeShortLabel;
+
+  /**
+   * Switches the active inspector tab (IF-editor round-2 task) and lazily
+   * triggers each tab's ONE data fetch the first time it is opened for the
+   * current node — never on every click, never on Config.
+   */
+  selectTab(tab: "config" | "output" | "runs"): void {
+    this.activeTab.set(tab);
+    if (tab === "output") {
+      this.ensureOutputRunsLoaded();
+    } else if (tab === "runs") {
+      this.ensureNodeRunsLoaded();
+    }
+  }
+
+  /**
+   * Output tab, hop 1: fetches the most recent runs for this workflow
+   * (WorkflowApiService.listExecutions, page 1/10/desc) — only once per
+   * node selection (`outputRunsState() !== 'idle'` guards a re-click).
+   * Defaults the run selector to the most recent COMPLETED run when one
+   * exists, otherwise the most recent run of any status.
+   */
+  private ensureOutputRunsLoaded(): void {
+    const workflowId = this.workflowId();
+    if (!workflowId || this.outputRunsState() !== "idle") {
+      return;
+    }
+    this.outputRunsState.set("loading");
+    this.api
+      .listExecutions(workflowId, { page: 1, pageSize: 10, sort: "desc" })
+      .subscribe({
+        next: (page) => {
+          this.outputRuns.set(page.items);
+          this.outputRunsState.set("ready");
+          const defaultRun =
+            page.items.find((r) => r.status?.toLowerCase() === "completed") ??
+            page.items[0];
+          if (defaultRun) {
+            this.selectRun(defaultRun.id);
+          }
+        },
+        error: () => {
+          this.outputRunsState.set("error");
+        },
+      });
+  }
+
+  /**
+   * Output tab, hop 2: fetches (or reuses a cached) execution detail for
+   * the given run id, per `getExecutionDetail`'s own caching contract.
+   */
+  selectRun(runId: string | null): void {
+    this.selectedRunId.set(runId);
+    if (!runId) {
+      this.outputDetailState.set("idle");
+      this.outputDetail.set(null);
+      return;
+    }
+    const cached = this.outputDetailCache.get(runId);
+    if (cached) {
+      this.outputDetail.set(cached);
+      this.outputDetailState.set("ready");
+      return;
+    }
+    const workflowId = this.workflowId();
+    if (!workflowId) {
+      return;
+    }
+    this.outputDetailState.set("loading");
+    this.api.getExecutionDetail(workflowId, runId).subscribe({
+      next: (detail) => {
+        this.outputDetailCache.set(runId, detail);
+        this.outputDetail.set(detail);
+        this.outputDetailState.set("ready");
+      },
+      error: () => {
+        this.outputDetailState.set("error");
+      },
+    });
+  }
+
+  /**
+   * Runs tab: fetches this node's recent-runs list from the new
+   * `WorkflowApiService.getNodeRunsForNode` (tracking-ingester-service's
+   * ungrouped `/node-runs`) — once per (node, action name), guarded by
+   * `lastNodeRunsActionName` the same way `lastMcpToolsServerId` guards
+   * the MCP tools fetch.
+   */
+  private ensureNodeRunsLoaded(): void {
+    const n = this.node();
+    const workflowId = this.workflowId();
+    if (!n || !workflowId) {
+      return;
+    }
+    if (this.lastNodeRunsActionName === n.name) {
+      return;
+    }
+    this.lastNodeRunsActionName = n.name;
+    this.nodeRunsState.set("loading");
+    this.api.getNodeRunsForNode(workflowId, n.name).subscribe({
+      next: (rows) => {
+        this.nodeRunsRows.set(rows);
+        this.nodeRunsState.set("ready");
+      },
+      error: () => {
+        this.nodeRunsState.set("error");
+      },
+    });
+  }
+
+  /** Pretty-prints a run row's duration; `null` (no paired completion
+   * row, or a malformed value) renders as an explicit dash, never "0ms"
+   * presented as a fact. */
+  formatDurationMs(ms: number | null): string {
+    if (ms === null) {
+      return "—";
+    }
+    return `${Math.round(ms)}ms`;
   }
 
   updateConfig(field: string, value: unknown): void {

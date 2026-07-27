@@ -449,6 +449,8 @@ function pruneConflictingConnections(
                 [nodeStatsBranchRows]="nodeStatsBranchRows()"
                 [nodeStatsOwnRunsByName]="nodeStatsOwnRunsByName()"
                 [nodeStatsFetchState]="nodeStatsFetchState()"
+                [workflowId]="flow().key"
+                [nodeStatsByName]="nodeStatsByName()"
                 (close)="onInspectorCloseButton()"
                 (remove)="removeNode($event)"
                 (configChange)="onNodeConfigChange($event)"

@@ -2,20 +2,21 @@ import {
   ChangeDetectionStrategy,
   Component,
   EventEmitter,
-  inject,
   Input,
+  inject,
   OnChanges,
   Output,
-  signal,
   SimpleChanges,
+  signal,
 } from "@angular/core";
 import { FormsModule } from "@angular/forms";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatInputModule } from "@angular/material/input";
 import { firstValueFrom } from "rxjs";
+import { stringifyPayload } from "../../../domain/stringify-payload";
 import {
-  WorkflowApiService,
   type IWorkflowExecutionDetail,
+  WorkflowApiService,
 } from "../../../services/workflow-api.service";
 
 interface ITestStep {
@@ -356,14 +357,16 @@ export class WorkflowTestPanelComponent implements OnChanges {
     try {
       const request: Record<string, string> = {};
       for (const [key, value] of Object.entries(this.requestValues())) {
-        if (value.trim()) request[key] = value.trim();
+        if (value.trim()) {
+          request[key] = value.trim();
+        }
       }
 
       const result = await firstValueFrom(
         this.api.execute(this.workflowId, {
           agentTimeoutSec: 900,
           request,
-        }),
+        })
       );
       this.executionId.set(result.executionId);
       this.runId.set(result.runId);
@@ -399,9 +402,7 @@ export class WorkflowTestPanelComponent implements OnChanges {
 
   toggleStep(index: number): void {
     this.steps.update((list) =>
-      list.map((s, i) =>
-        i === index ? { ...s, expanded: !s.expanded } : s,
-      ),
+      list.map((s, i) => (i === index ? { ...s, expanded: !s.expanded } : s))
     );
   }
 
@@ -409,28 +410,29 @@ export class WorkflowTestPanelComponent implements OnChanges {
 
   private startPolling(executionId: string): void {
     this.pollTimer = setInterval(() => {
-      this.api
-        .getExecutionDetail(this.workflowId, executionId)
-        .subscribe({
-          next: (detail) => {
-            this.detail.set(detail);
-            this.extractSteps(detail);
-            const normalizedStatus = detail.status?.toLowerCase();
-            if (normalizedStatus === "completed" || normalizedStatus === "failed") {
-              this.status.set(
-                normalizedStatus === "completed" ? "completed" : "failed",
-              );
-              this.stopPolling();
-              this.stopElapsedTimer();
-              this.elapsed.update(() =>
-                this.formatElapsed(Date.now() - this.startedAt),
-              );
-            }
-          },
-          error: () => {
-            // Silently retry on next poll tick
-          },
-        });
+      this.api.getExecutionDetail(this.workflowId, executionId).subscribe({
+        next: (detail) => {
+          this.detail.set(detail);
+          this.extractSteps(detail);
+          const normalizedStatus = detail.status?.toLowerCase();
+          if (
+            normalizedStatus === "completed" ||
+            normalizedStatus === "failed"
+          ) {
+            this.status.set(
+              normalizedStatus === "completed" ? "completed" : "failed"
+            );
+            this.stopPolling();
+            this.stopElapsedTimer();
+            this.elapsed.update(() =>
+              this.formatElapsed(Date.now() - this.startedAt)
+            );
+          }
+        },
+        error: () => {
+          // Silently retry on next poll tick
+        },
+      });
     }, 2000);
   }
 
@@ -518,21 +520,8 @@ export class WorkflowTestPanelComponent implements OnChanges {
     const normalizedStatus = detail.status?.toLowerCase();
     if (normalizedStatus === "completed" || normalizedStatus === "failed") {
       this.status.set(
-        normalizedStatus === "completed" ? "completed" : "failed",
+        normalizedStatus === "completed" ? "completed" : "failed"
       );
     }
-  }
-}
-
-/**
- * Pretty-prints arbitrary payload values.
- */
-function stringifyPayload(v: unknown): string | null {
-  if (v === null || v === undefined) return null;
-  if (typeof v === "string") return v;
-  try {
-    return JSON.stringify(v, null, 2);
-  } catch {
-    return String(v);
   }
 }

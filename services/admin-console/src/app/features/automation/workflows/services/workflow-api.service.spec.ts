@@ -177,4 +177,67 @@ describe("WorkflowApiService", () => {
       httpMock.verify();
     });
   });
+
+  describe("getNodeRunsForNode", () => {
+    it("resolves correlation ids then fetches the node-runs list scoped by actionName (both hops)", async () => {
+      const promise = firstValueFrom(
+        service.getNodeRunsForNode("wf-1", "vipRoute")
+      );
+
+      const correlationReq = httpMock.expectOne(
+        `${environment.apiUrl}/workflows/wf-1/correlation-ids`
+      );
+      expect(correlationReq.request.method).toBe("GET");
+      correlationReq.flush({ correlationIds: ["corr-1", "corr-2"] });
+
+      const nodeRunsReq = httpMock.expectOne(
+        (req) => req.url === `${environment.apiUrl}/tracking/node-runs`
+      );
+      expect(nodeRunsReq.request.method).toBe("GET");
+      expect(nodeRunsReq.request.params.get("correlationIds")).toBe(
+        "corr-1,corr-2"
+      );
+      expect(nodeRunsReq.request.params.get("actionName")).toBe("vipRoute");
+      nodeRunsReq.flush({
+        tenant: "acme",
+        actionName: "vipRoute",
+        correlationIdCount: 2,
+        rowCount: 1,
+        rows: [
+          {
+            correlation_id: "corr-1",
+            occurred_at: "2026-07-27T10:00:00.000Z",
+            duration_ms: 395,
+            step_status: "ok",
+          },
+        ],
+      });
+
+      const rows = await promise;
+      expect(rows).toEqual([
+        {
+          correlation_id: "corr-1",
+          occurred_at: "2026-07-27T10:00:00.000Z",
+          duration_ms: 395,
+          step_status: "ok",
+        },
+      ]);
+      httpMock.verify();
+    });
+
+    it("short-circuits to [] without a second HTTP call when correlationIds is empty (zero-runs workflow)", async () => {
+      const promise = firstValueFrom(
+        service.getNodeRunsForNode("wf-empty", "vipRoute")
+      );
+
+      const correlationReq = httpMock.expectOne(
+        `${environment.apiUrl}/workflows/wf-empty/correlation-ids`
+      );
+      correlationReq.flush({ correlationIds: [] });
+
+      const rows = await promise;
+      expect(rows).toEqual([]);
+      httpMock.verify();
+    });
+  });
 });

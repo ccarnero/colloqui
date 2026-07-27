@@ -140,6 +140,31 @@ interface INodeStatsResponse {
   rows: INodeStatsRow[];
 }
 
+/**
+ * One individual (started, completed) run pairing for a single action,
+ * wire-faithful to tracking-ingester-service's `NodeRunRow`
+ * (`build-node-runs-query.ts`). Backs the builder inspector's Runs tab.
+ */
+export interface INodeRunRow {
+  correlation_id: string;
+  occurred_at: string;
+  duration_ms: number | null;
+  step_status: string | null;
+}
+
+/**
+ * Response shape of `GET /tracking/node-runs` — second hop of the
+ * IF-editor round-2 Runs-tab fetch, wire-faithful to
+ * tracking-ingester-service's `NodeRunsResponse` (`to-node-runs-response.ts`).
+ */
+interface INodeRunsResponse {
+  tenant: string;
+  actionName: string;
+  correlationIdCount: number;
+  rowCount: number;
+  rows: INodeRunRow[];
+}
+
 interface ICreateWorkflowPayload {
   name: string;
   application: string;
@@ -295,6 +320,44 @@ export class WorkflowApiService {
           return this.http
             .get<INodeStatsResponse>(
               `${environment.apiUrl}/tracking/node-stats`,
+              {
+                params,
+              }
+            )
+            .pipe(map((res2) => res2.rows));
+        })
+      );
+  }
+
+  /**
+   * IF-editor round-2 task of manual-loops/admin-console: the builder
+   * inspector's Runs tab list. Chains the SAME `correlationIds` hop as
+   * `getNodeStatsForDefinition` (`GET /workflows/:id/correlation-ids`,
+   * 7d-windowed) then, only if that list is non-empty, calls
+   * tracking-ingester-service's ungrouped `GET /tracking/node-runs`
+   * (proxied by api-gateway) scoped to a single `actionName`. A
+   * definition with no runs in the window short-circuits to `[]` WITHOUT
+   * a second HTTP call, same discipline as the node-stats fetch.
+   */
+  getNodeRunsForNode(
+    definitionId: string,
+    actionName: string
+  ): Observable<INodeRunRow[]> {
+    return this.http
+      .get<ICorrelationIdsResponse>(
+        `${this.base}/${definitionId}/correlation-ids`
+      )
+      .pipe(
+        switchMap((res) => {
+          if (res.correlationIds.length === 0) {
+            return of<INodeRunRow[]>([]);
+          }
+          const params = new HttpParams()
+            .set("correlationIds", res.correlationIds.join(","))
+            .set("actionName", actionName);
+          return this.http
+            .get<INodeRunsResponse>(
+              `${environment.apiUrl}/tracking/node-runs`,
               {
                 params,
               }

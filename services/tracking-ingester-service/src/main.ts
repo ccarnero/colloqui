@@ -51,6 +51,7 @@ import {
 import { emitOtelSpans } from "./lib/emit-otel-spans.js";
 import { handleChainRequest } from "./lib/handle-chain-request.js";
 import { handleEventsRequest } from "./lib/handle-events-request.js";
+import { handleNodeRunsRequest } from "./lib/handle-node-runs-request.js";
 import { handleNodeStatsRequest } from "./lib/handle-node-stats-request.js";
 import { handlePayloadRequest } from "./lib/handle-payload-request.js";
 import { handleRunRequest } from "./lib/handle-run-request.js";
@@ -79,6 +80,10 @@ import {
   normalizeEventsRow,
   type RawEventRow,
 } from "./lib/normalize-events-row.js";
+import {
+  normalizeNodeRunsRow,
+  type RawNodeRunRow,
+} from "./lib/normalize-node-runs-row.js";
 import {
   normalizeNodeStatsRow,
   type RawNodeStatsRow,
@@ -471,6 +476,36 @@ async function bootstrap(): Promise<void> {
                 ...query.params,
               ]);
               return rows.map(normalizeNodeStatsRow);
+            },
+            log: line,
+          }
+        ).then((result) =>
+          Response.json(result.body, { status: result.status })
+        );
+      }
+
+      // IF-editor round-2 task of manual-loops/admin-console: per-node
+      // RECENT RUNS list backing the builder inspector's Runs tab.
+      // Ungrouped sibling of /node-stats above — same correlationIds hop
+      // resolved by the caller first, plus a required actionName filter.
+      if (request.method === "GET" && url.pathname === "/node-runs") {
+        const tenant = request.headers.get("x-yoizen-tenant");
+        const searchParams = url.searchParams;
+        line(
+          `GET /node-runs — tenant=${tenant ?? "MISSING"} correlationIds=${searchParams.get("correlationIds") ? "present" : "MISSING"} actionName=${searchParams.get("actionName") ?? "MISSING"}`
+        );
+        return handleNodeRunsRequest(
+          tenant,
+          {
+            correlationIds: searchParams.get("correlationIds"),
+            actionName: searchParams.get("actionName"),
+          },
+          {
+            queryNodeRuns: async (query) => {
+              const rows = await sql.unsafe<RawNodeRunRow[]>(query.text, [
+                ...query.params,
+              ]);
+              return rows.map(normalizeNodeRunsRow);
             },
             log: line,
           }

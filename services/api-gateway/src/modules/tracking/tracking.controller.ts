@@ -138,4 +138,25 @@ export class TrackingController {
       query,
     });
   }
+
+  /**
+   * IF-editor round-2 task of manual-loops/admin-console: proxies the
+   * ingester's `GET /node-runs?correlationIds=a,b,c&actionName=...` (the
+   * ungrouped sibling of `/node-stats` backing the builder inspector's
+   * Runs tab). Query params are forwarded verbatim, same pass-through
+   * shape as `getNodeStats` — the ingester itself validates both
+   * `correlationIds` and `actionName`.
+   */
+  @Get("node-runs")
+  async getNodeRuns(
+    @Req() req: ITenantScopedRequest,
+    @Query() query: Record<string, string>
+  ): Promise<object> {
+    return this.proxy.proxy({
+      method: "GET",
+      path: "/node-runs",
+      tenantId: req[REQUEST_TENANT_KEY],
+      query,
+    });
+  }
 }

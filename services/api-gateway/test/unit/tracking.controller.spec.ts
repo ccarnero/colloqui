@@ -218,4 +218,32 @@ describe("TrackingController", () => {
     expect(permissions).toBeUndefined();
     expect(scopes).toBeUndefined();
   });
+
+  // IF-editor round-2 task of manual-loops/admin-console.
+  it("getNodeRuns delegates to proxy with tenant, path and the raw query object", async () => {
+    const result = await controller.getNodeRuns(req as never, {
+      correlationIds: "corr-1,corr-2",
+      actionName: "vipRoute",
+    });
+    expect(proxy).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/node-runs",
+      tenantId: "t1",
+      query: { correlationIds: "corr-1,corr-2", actionName: "vipRoute" },
+    });
+    expect(result).toEqual({ correlationId: "corr-1", events: [] });
+  });
+
+  it("getNodeRuns carries no permission guard (unauthenticated-scope, same as getNodeStats)", () => {
+    const permissions = Reflect.getMetadata(
+      PERMISSIONS_KEY,
+      TrackingController.prototype.getNodeRuns
+    );
+    const scopes = Reflect.getMetadata(
+      SCOPES_KEY,
+      TrackingController.prototype.getNodeRuns
+    );
+    expect(permissions).toBeUndefined();
+    expect(scopes).toBeUndefined();
+  });
 });

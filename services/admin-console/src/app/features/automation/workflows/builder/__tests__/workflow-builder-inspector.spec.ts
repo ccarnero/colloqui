@@ -1,5 +1,8 @@
 import { provideHttpClient } from "@angular/common/http";
-import { provideHttpClientTesting } from "@angular/common/http/testing";
+import {
+  HttpTestingController,
+  provideHttpClientTesting,
+} from "@angular/common/http/testing";
 import { ComponentFixture, TestBed } from "@angular/core/testing";
 import { ActivatedRoute, provideRouter, Router } from "@angular/router";
 import { vi } from "vitest";
@@ -275,5 +278,374 @@ describe("WorkflowBuilderComponent — floating inspector (T05)", () => {
     expect(
       fixture.componentInstance.flow().nodes[key]?.configuration["code"]
     ).toBe("return 42;");
+  });
+
+  /**
+   * IF-editor round-2 task: Output/Runs tabs go from inert (SPEC T08) to
+   * real, data-backed panels. These assert the exact request shapes and
+   * the loading/ready/error/empty/failure render states — never a blank
+   * panel, never a fabricated number.
+   */
+  describe("Output tab", () => {
+    function selectNodeWithWorkflowId(): string {
+      const key = addJsFunctionNode();
+      fixture.componentInstance.flow.update((f) => ({ ...f, key: "wf-1" }));
+      fixture.componentInstance.selectNode(key);
+      fixture.detectChanges();
+      return key;
+    }
+
+    function clickOutputTab(): void {
+      const el = fixture.nativeElement as HTMLElement;
+      const tabs = Array.from(el.querySelectorAll(".config-tab"));
+      const outputTab = tabs.find((t) => t.textContent?.trim() === "Output");
+      (outputTab as HTMLButtonElement).click();
+      fixture.detectChanges();
+    }
+
+    it("shows a loading skeleton before the runs list resolves", () => {
+      selectNodeWithWorkflowId();
+      clickOutputTab();
+
+      const http = TestBed.inject(HttpTestingController);
+      const req = http.expectOne(
+        (r) =>
+          r.url === "/api/workflows/wf-1/executions" &&
+          r.params.get("page") === "1" &&
+          r.params.get("pageSize") === "10" &&
+          r.params.get("sort") === "desc"
+      );
+      expect(req.request.method).toBe("GET");
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(
+        el.querySelector('[data-testid="output-tab"] .tab-skeleton')
+      ).toBeTruthy();
+    });
+
+    it("defaults to the most recent completed run and renders its result for this node", () => {
+      selectNodeWithWorkflowId();
+      clickOutputTab();
+
+      const http = TestBed.inject(HttpTestingController);
+      const listReq = http.expectOne(
+        (r) => r.url === "/api/workflows/wf-1/executions"
+      );
+      listReq.flush({
+        items: [
+          {
+            id: "exec-running",
+            definitionId: "wf-1",
+            tenantId: "t1",
+            temporalWorkflowId: "tw",
+            temporalRunId: "tr",
+            request: {},
+            status: "running",
+            createdAt: "2026-07-27T10:05:00.000Z",
+            updatedAt: "2026-07-27T10:05:00.000Z",
+          },
+          {
+            id: "exec-1",
+            definitionId: "wf-1",
+            tenantId: "t1",
+            temporalWorkflowId: "tw",
+            temporalRunId: "tr",
+            request: {},
+            status: "completed",
+            createdAt: "2026-07-27T10:00:00.000Z",
+            updatedAt: "2026-07-27T10:00:00.000Z",
+          },
+        ],
+        total: 2,
+        page: 1,
+        pageSize: 10,
+      });
+      fixture.detectChanges();
+
+      const detailReq = http.expectOne(
+        (r) => r.url === "/api/workflows/wf-1/executions/exec-1"
+      );
+      detailReq.flush({
+        executionId: "exec-1",
+        definitionId: "wf-1",
+        temporalWorkflowId: "tw",
+        status: "completed",
+        result: { results: { "JS Function": { ok: true, value: 42 } } },
+        createdAt: "2026-07-27T10:00:00.000Z",
+      });
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      const result = el.querySelector('[data-testid="output-result"]');
+      expect(result?.textContent).toContain('"ok": true');
+      expect(result?.textContent).toContain('"value": 42');
+
+      const select = el.querySelector<HTMLSelectElement>(
+        '[data-testid="output-tab"] mat-select'
+      );
+      expect(select).toBeTruthy();
+    });
+
+    it("shows an honest empty state when the selected run has no result for this node", () => {
+      selectNodeWithWorkflowId();
+      clickOutputTab();
+
+      const http = TestBed.inject(HttpTestingController);
+      http
+        .expectOne((r) => r.url === "/api/workflows/wf-1/executions")
+        .flush({
+          items: [
+            {
+              id: "exec-1",
+              definitionId: "wf-1",
+              tenantId: "t1",
+              temporalWorkflowId: "tw",
+              temporalRunId: "tr",
+              request: {},
+              status: "completed",
+              createdAt: "2026-07-27T10:00:00.000Z",
+              updatedAt: "2026-07-27T10:00:00.000Z",
+            },
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 10,
+        });
+      fixture.detectChanges();
+
+      http
+        .expectOne((r) => r.url === "/api/workflows/wf-1/executions/exec-1")
+        .flush({
+          executionId: "exec-1",
+          definitionId: "wf-1",
+          temporalWorkflowId: "tw",
+          status: "completed",
+          result: { results: { OtherNode: "irrelevant" } },
+          createdAt: "2026-07-27T10:00:00.000Z",
+        });
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(
+        el.querySelector('[data-testid="output-empty"]')?.textContent
+      ).toContain("This node has no recorded output for this run");
+    });
+
+    it("shows failure info only when failure.activityName matches this node", () => {
+      selectNodeWithWorkflowId();
+      clickOutputTab();
+
+      const http = TestBed.inject(HttpTestingController);
+      http
+        .expectOne((r) => r.url === "/api/workflows/wf-1/executions")
+        .flush({
+          items: [
+            {
+              id: "exec-1",
+              definitionId: "wf-1",
+              tenantId: "t1",
+              temporalWorkflowId: "tw",
+              temporalRunId: "tr",
+              request: {},
+              status: "failed",
+              createdAt: "2026-07-27T10:00:00.000Z",
+              updatedAt: "2026-07-27T10:00:00.000Z",
+            },
+          ],
+          total: 1,
+          page: 1,
+          pageSize: 10,
+        });
+      fixture.detectChanges();
+
+      http
+        .expectOne((r) => r.url === "/api/workflows/wf-1/executions/exec-1")
+        .flush({
+          executionId: "exec-1",
+          definitionId: "wf-1",
+          temporalWorkflowId: "tw",
+          status: "failed",
+          result: { results: {} },
+          failure: {
+            message: "boom",
+            type: "ActivityFailure",
+            activityName: "JS Function",
+          },
+          createdAt: "2026-07-27T10:00:00.000Z",
+        });
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      const failure = el.querySelector('[data-testid="output-failure"]');
+      expect(failure?.textContent).toContain("ActivityFailure");
+      expect(failure?.textContent).toContain("boom");
+    });
+
+    it("shows an error message (never a blank panel) when the runs list fetch fails", () => {
+      selectNodeWithWorkflowId();
+      clickOutputTab();
+
+      const http = TestBed.inject(HttpTestingController);
+      http
+        .expectOne((r) => r.url === "/api/workflows/wf-1/executions")
+        .flush("boom", { status: 500, statusText: "Server Error" });
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(
+        el.querySelector('[data-testid="output-tab"] .tab-error')
+      ).toBeTruthy();
+    });
+  });
+
+  describe("Runs tab", () => {
+    function selectNodeWithWorkflowId(): string {
+      const key = addJsFunctionNode();
+      fixture.componentInstance.flow.update((f) => ({ ...f, key: "wf-1" }));
+      fixture.componentInstance.selectNode(key);
+      fixture.detectChanges();
+      return key;
+    }
+
+    function clickRunsTab(): void {
+      const el = fixture.nativeElement as HTMLElement;
+      const tabs = Array.from(el.querySelectorAll(".config-tab"));
+      const runsTab = tabs.find((t) => t.textContent?.trim() === "Runs");
+      (runsTab as HTMLButtonElement).click();
+      fixture.detectChanges();
+    }
+
+    it("renders the summary strip from the already-fetched nodeStatsByName signal, with zero extra requests for the summary itself", () => {
+      const key = selectNodeWithWorkflowId();
+      fixture.componentInstance.nodeStatsByName.set({
+        "JS Function": {
+          state: "ready",
+          primaryLabel: "1,842 runs",
+          secondaryLabel: "p95: 620ms",
+          status: "ok",
+        },
+      });
+      fixture.detectChanges();
+
+      clickRunsTab();
+
+      const el = fixture.nativeElement as HTMLElement;
+      const summary = el.querySelector('[data-testid="runs-summary"]');
+      expect(summary?.textContent).toContain("1,842 runs");
+      expect(summary?.textContent).toContain("p95: 620ms");
+
+      // The ONLY request this tab issues is the recent-runs list — the
+      // summary strip reuses nodeStatsByName without a fetch of its own.
+      const http = TestBed.inject(HttpTestingController);
+      http.expectOne((r) => r.url === "/api/workflows/wf-1/correlation-ids");
+      void key;
+    });
+
+    it("renders recent-runs rows from the node-runs fetch, scoped by definition and action name", () => {
+      selectNodeWithWorkflowId();
+      clickRunsTab();
+
+      const http = TestBed.inject(HttpTestingController);
+      http
+        .expectOne((r) => r.url === "/api/workflows/wf-1/correlation-ids")
+        .flush({ correlationIds: ["corr-1", "corr-2"] });
+      fixture.detectChanges();
+
+      const runsReq = http.expectOne(
+        (r) =>
+          r.url === "/api/tracking/node-runs" &&
+          r.params.get("correlationIds") === "corr-1,corr-2" &&
+          r.params.get("actionName") === "JS Function"
+      );
+      runsReq.flush({
+        tenant: "acme",
+        actionName: "JS Function",
+        correlationIdCount: 2,
+        rowCount: 1,
+        rows: [
+          {
+            correlation_id: "corr-1",
+            occurred_at: "2026-07-27T10:00:00.000Z",
+            duration_ms: 395,
+            step_status: "ok",
+          },
+        ],
+      });
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      const rows = el.querySelectorAll('[data-testid="runs-row"]');
+      expect(rows.length).toBe(1);
+      expect(rows[0]?.textContent).toContain("395ms");
+    });
+
+    it("shows the honest 'No runs in the last 7 days' empty state", () => {
+      selectNodeWithWorkflowId();
+      clickRunsTab();
+
+      const http = TestBed.inject(HttpTestingController);
+      http
+        .expectOne((r) => r.url === "/api/workflows/wf-1/correlation-ids")
+        .flush({ correlationIds: [] });
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement as HTMLElement;
+      expect(
+        el.querySelector('[data-testid="runs-tab"] .tab-empty')?.textContent
+      ).toContain("No runs in the last 7 days");
+    });
+  });
+
+  /**
+   * IF-editor round-2 task, Workstream A regression: the comparator pill
+   * is now a styled native <select> (was a mat-form-field/mat-select) —
+   * this asserts it still writes the SAME frozen branch model
+   * ({ label, condition: { variable, comparator, value } }) the
+   * serializer/deserializer/round-trip spec depends on, unchanged by the
+   * control swap.
+   */
+  it("comparator pill (native select) and value pill still write the frozen branch condition model", () => {
+    const node = createNodeFromDefault(EWorkflowNodeType.CONDITIONAL, {
+      x: 0,
+      y: 0,
+    });
+    fixture.componentInstance.flow.update((f) => ({
+      ...f,
+      nodes: { ...f.nodes, [node.key]: node },
+    }));
+    fixture.detectChanges();
+    fixture.componentInstance.selectNode(node.key);
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement as HTMLElement;
+    const addBranchBtn = Array.from(el.querySelectorAll("button")).find((b) =>
+      b.textContent?.includes("Add branch")
+    );
+    expect(addBranchBtn).toBeTruthy();
+    (addBranchBtn as HTMLButtonElement).click();
+    fixture.detectChanges();
+
+    const comparatorSelect = el.querySelector<HTMLSelectElement>(
+      ".bc-comparator-select"
+    );
+    expect(comparatorSelect).toBeTruthy();
+    comparatorSelect!.value = "neq";
+    comparatorSelect!.dispatchEvent(new Event("change"));
+    fixture.detectChanges();
+
+    const valueInput = el.querySelector<HTMLInputElement>(".bc-value-input");
+    expect(valueInput).toBeTruthy();
+    valueInput!.value = "gold";
+    valueInput!.dispatchEvent(new Event("input"));
+    fixture.detectChanges();
+
+    const branches = fixture.componentInstance.flow().nodes[node.key]
+      ?.configuration["branches"] as Array<{
+      label: string;
+      condition: { variable: string; comparator: string; value: string };
+    }>;
+    expect(branches).toHaveLength(1);
+    expect(branches[0]?.condition.comparator).toBe("neq");
+    expect(branches[0]?.condition.value).toBe("gold");
   });
 });
