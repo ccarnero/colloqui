@@ -42,6 +42,8 @@ import {
   type IBranchRouteTarget,
   resolveConditionalBranchTarget,
 } from "../../../domain/resolve-conditional-branch-target";
+import { resolveEndpointDisplay } from "../../../domain/resolve-endpoint-display";
+import { resolveIdSelectDisplay } from "../../../domain/resolve-id-select-display";
 import { splitVariablePath } from "../../../domain/split-variable-path";
 import {
   type ConditionComparator,
@@ -242,6 +244,21 @@ import type { IWorkflowNodeStats } from "../workflow-node/workflow-node-stats.ty
                       onOutboundAccountChange($event)
                     "
                   >
+                    @if (outboundAccountDisplay(n.configuration['accountId']); as acd) {
+                      <mat-select-trigger
+                        [class.select-trigger-unavailable]="acd.unavailable"
+                      >
+                        {{ acd.text }}{{ acd.unavailable ? " (unavailable)" : "" }}
+                      </mat-select-trigger>
+                    }
+                    @if (outboundAccountDisplay(n.configuration['accountId']); as acd2) {
+                      <mat-option
+                        [value]="n.configuration['accountId']"
+                        class="cfg-fallback-option"
+                      >
+                        {{ acd2.text }}
+                      </mat-option>
+                    }
                     <mat-option [value]="SOURCE_ACCOUNT">
                       Same as incoming message
                     </mat-option>
@@ -452,6 +469,32 @@ import type { IWorkflowNodeStats } from "../workflow-node/workflow-node-stats.ty
                   [ngModel]="n.configuration['adapterId']"
                   (ngModelChange)="onAdapterChange($event)"
                 >
+                  <!-- Root-fix internals note (both @if blocks below): a
+                       single-root @if is required for mat-select-trigger's
+                       content projection to work at all (Angular
+                       NG8011/controlFlowPreventingContentProjection — a
+                       multi-root @if silently drops the projection). The
+                       second @if renders a HIDDEN fallback mat-option:
+                       mat-select's own "empty" state (which gates whether
+                       mat-select-trigger's content shows at all, in place
+                       of Material's placeholder) requires a REAL matching
+                       mat-option — a custom trigger alone does not
+                       override that. -->
+                  @if (adapterDisplay(n.configuration['adapterId']); as ad) {
+                    <mat-select-trigger
+                      [class.select-trigger-unavailable]="ad.unavailable"
+                    >
+                      {{ ad.text }}{{ ad.unavailable ? " (unavailable)" : "" }}
+                    </mat-select-trigger>
+                  }
+                  @if (adapterDisplay(n.configuration['adapterId']); as ad2) {
+                    <mat-option
+                      [value]="n.configuration['adapterId']"
+                      class="cfg-fallback-option"
+                    >
+                      {{ ad2.text }}
+                    </mat-option>
+                  }
                   <mat-option [value]="''">None (custom URL)</mat-option>
                   @for (a of adapters(); track a.id) {
                     <mat-option [value]="a.id">
@@ -470,7 +513,37 @@ import type { IWorkflowNodeStats } from "../workflow-node/workflow-node-stats.ty
                   <mat-select
                     [ngModel]="n.configuration['endpointId']"
                     (ngModelChange)="onEndpointChange($event)"
+                    data-testid="endpoint-select"
+                    [canSelectNullableOptions]="true"
                   >
+                    @if (
+                      endpointDisplay(
+                        n.configuration['adapterId'],
+                        n.configuration['endpointId']
+                      );
+                      as ep
+                    ) {
+                      <mat-select-trigger
+                        data-testid="endpoint-select-trigger"
+                        [class.select-trigger-unavailable]="ep.unavailable"
+                      >
+                        <span class="mono">{{ ep.text }}</span>{{ ep.unavailable ? " (unavailable)" : "" }}
+                      </mat-select-trigger>
+                    }
+                    @if (
+                      endpointDisplay(
+                        n.configuration['adapterId'],
+                        n.configuration['endpointId']
+                      );
+                      as ep2
+                    ) {
+                      <mat-option
+                        [value]="n.configuration['endpointId']"
+                        class="cfg-fallback-option"
+                      >
+                        {{ ep2.text }}
+                      </mat-option>
+                    }
                     <mat-option [value]="''">Select an endpoint</mat-option>
                     @for (
                       ep of endpointsForAdapter(
@@ -519,6 +592,21 @@ import type { IWorkflowNodeStats } from "../workflow-node/workflow-node-stats.ty
                   [ngModel]="n.configuration['serverId']"
                   (ngModelChange)="onMcpServerChange($event)"
                 >
+                  @if (mcpServerDisplay(n.configuration['serverId']); as sd) {
+                    <mat-select-trigger
+                      [class.select-trigger-unavailable]="sd.unavailable"
+                    >
+                      {{ sd.text }}{{ sd.unavailable ? " (unavailable)" : "" }}
+                    </mat-select-trigger>
+                  }
+                  @if (mcpServerDisplay(n.configuration['serverId']); as sd2) {
+                    <mat-option
+                      [value]="n.configuration['serverId']"
+                      class="cfg-fallback-option"
+                    >
+                      {{ sd2.text }}
+                    </mat-option>
+                  }
                   <mat-option [value]="''">Select a server</mat-option>
                   @for (s of mcpServers(); track s.id) {
                     <mat-option [value]="s.id">
@@ -539,6 +627,21 @@ import type { IWorkflowNodeStats } from "../workflow-node/workflow-node-stats.ty
                     (ngModelChange)="updateConfig('toolName', $event)"
                     [disabled]="mcpToolsLoading()"
                   >
+                    @if (mcpToolDisplay(n.configuration['toolName']); as td) {
+                      <mat-select-trigger
+                        [class.select-trigger-unavailable]="td.unavailable"
+                      >
+                        {{ td.text }}{{ td.unavailable ? " (unavailable)" : "" }}
+                      </mat-select-trigger>
+                    }
+                    @if (mcpToolDisplay(n.configuration['toolName']); as td2) {
+                      <mat-option
+                        [value]="n.configuration['toolName']"
+                        class="cfg-fallback-option"
+                      >
+                        {{ td2.text }}
+                      </mat-option>
+                    }
                     <mat-option [value]="''">Select a tool</mat-option>
                     @for (t of mcpTools(); track t.name) {
                       <mat-option [value]="t.name">
@@ -564,6 +667,21 @@ import type { IWorkflowNodeStats } from "../workflow-node/workflow-node-stats.ty
                   [ngModel]="n.configuration['serviceId']"
                   (ngModelChange)="updateConfig('serviceId', $event)"
                 >
+                  @if (serviceDisplay(n.configuration['serviceId']); as svcd) {
+                    <mat-select-trigger
+                      [class.select-trigger-unavailable]="svcd.unavailable"
+                    >
+                      {{ svcd.text }}{{ svcd.unavailable ? " (unavailable)" : "" }}
+                    </mat-select-trigger>
+                  }
+                  @if (serviceDisplay(n.configuration['serviceId']); as svcd2) {
+                    <mat-option
+                      [value]="n.configuration['serviceId']"
+                      class="cfg-fallback-option"
+                    >
+                      {{ svcd2.text }}
+                    </mat-option>
+                  }
                   @for (
                     svc of registryService.services();
                     track svc.id
@@ -635,6 +753,21 @@ import type { IWorkflowNodeStats } from "../workflow-node/workflow-node-stats.ty
                   [ngModel]="n.configuration['agentId']"
                   (ngModelChange)="updateConfig('agentId', $event)"
                 >
+                  @if (agentDisplay(n.configuration['agentId']); as agd) {
+                    <mat-select-trigger
+                      [class.select-trigger-unavailable]="agd.unavailable"
+                    >
+                      {{ agd.text }}{{ agd.unavailable ? " (unavailable)" : "" }}
+                    </mat-select-trigger>
+                  }
+                  @if (agentDisplay(n.configuration['agentId']); as agd2) {
+                    <mat-option
+                      [value]="n.configuration['agentId']"
+                      class="cfg-fallback-option"
+                    >
+                      {{ agd2.text }}
+                    </mat-option>
+                  }
                   <mat-option [value]="''">Select an agent</mat-option>
                   @for (ag of aiAgents(); track ag.id) {
                     <mat-option [value]="ag.id">
@@ -1519,6 +1652,29 @@ import type { IWorkflowNodeStats } from "../workflow-node/workflow-node-stats.ty
     .evidence-skeleton {
       opacity: 0.5;
     }
+    /* Root fix (retention-endpoint loop, HTTP connector Endpoint select
+     * and the other async-option selects audited alongside it):
+     * mat-select-trigger text for a value that IS configured but doesn't
+     * match a currently-rendered mat-option — either the async options
+     * list hasn't loaded yet (rendered plain) or the reference is
+     * confirmed stale (rendered with this tint, per
+     * resolveIdSelectDisplay's unavailable flag). Reuses the same
+     * --rd-yellow warning tone as .step-highlight/.bc-active above, never
+     * a hard-coded color. */
+    .select-trigger-unavailable {
+      color: var(--rd-yellow);
+    }
+    .mono {
+      font-family: var(--rd-font-mono);
+    }
+    /* Never shown in the open panel — exists purely so mat-select's
+     * internal "empty" check (which requires a REAL matching mat-option,
+     * a custom trigger alone does not override it) finds a match, letting
+     * the mat-select-trigger above actually render. See the inline
+     * comments next to each usage. */
+    .cfg-fallback-option {
+      display: none;
+    }
   `,
 })
 export class WorkflowNodeConfigComponent implements OnInit {
@@ -1604,6 +1760,16 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly adapters = signal<IAdapterDto[]>([]);
   readonly aiAgents = signal<IAgent[]>([]);
   readonly mcpServers = signal<IMcpServer[]>([]);
+  // Fix (retention-endpoint loop): "has this async option list settled
+  // (success OR error) at least once" — distinct from the list itself
+  // being non-empty. Feeds resolveIdSelectDisplay's optionsLoaded so a
+  // configured-but-not-yet-loaded value never gets wrongly marked
+  // "unavailable" during the async fetch window (only a genuinely stale
+  // reference, confirmed after load, gets that mark).
+  readonly channelAccountsLoaded = signal(false);
+  readonly adaptersLoaded = signal(false);
+  readonly aiAgentsLoaded = signal(false);
+  readonly mcpServersLoaded = signal(false);
   /** Tools of the currently-selected MCP server (fetched live per §2.4). */
   readonly mcpTools = signal<IMcpServerTool[]>([]);
   readonly mcpToolsLoading = signal(false);
@@ -1748,19 +1914,39 @@ export class WorkflowNodeConfigComponent implements OnInit {
 
   ngOnInit(): void {
     this.channelAdmin.listAccounts().subscribe({
-      next: (accounts) => this.channelAccounts.set(accounts),
+      next: (accounts) => {
+        this.channelAccounts.set(accounts);
+        this.channelAccountsLoaded.set(true);
+      },
+      error: () => this.channelAccountsLoaded.set(true),
     });
     this.adapterService.list().subscribe({
-      next: (list) => this.adapters.set(list),
+      next: (list) => {
+        this.adapters.set(list);
+        this.adaptersLoaded.set(true);
+      },
+      error: () => this.adaptersLoaded.set(true),
     });
     this.registryService.loadServices();
     this.agentAdmin.listAgents({ status: "published", limit: 100 }).subscribe({
-      next: (res) => this.aiAgents.set(res.agents),
-      error: () => this.aiAgents.set([]),
+      next: (res) => {
+        this.aiAgents.set(res.agents);
+        this.aiAgentsLoaded.set(true);
+      },
+      error: () => {
+        this.aiAgents.set([]);
+        this.aiAgentsLoaded.set(true);
+      },
     });
     this.agentAdmin.listMcpServers().subscribe({
-      next: (list) => this.mcpServers.set(list),
-      error: () => this.mcpServers.set([]),
+      next: (list) => {
+        this.mcpServers.set(list);
+        this.mcpServersLoaded.set(true);
+      },
+      error: () => {
+        this.mcpServers.set([]);
+        this.mcpServersLoaded.set(true);
+      },
     });
   }
 
@@ -1806,6 +1992,96 @@ export class WorkflowNodeConfigComponent implements OnInit {
     }
     const adapter = this.adapters().find((a) => a.id === adapterId);
     return adapter?.endpoints ?? [];
+  }
+
+  // Root fix for the "Endpoint select shows its placeholder even though an
+  // endpoint IS configured" bug (same family as splitVariablePath's IF
+  // variable pill fix). configuration.method / configuration.url are
+  // copied verbatim from the selected endpoint by onEndpointChange below —
+  // the SAME fields summarizeHttpCall (summarize-node-config.ts) reads for
+  // the canvas card's method+path summary line — so they are available as
+  // a fallback text completely independent of whether adapters() has
+  // finished loading or still contains this endpoint id. Bound via
+  // mat-select-trigger so the closed control renders this instead of
+  // relying on Material's option-matching.
+  protected endpointDisplay(adapterId: unknown, endpointId: unknown) {
+    return resolveEndpointDisplay({
+      endpointId,
+      method: this.node()?.configuration["method"],
+      url: this.node()?.configuration["url"],
+      endpoints: this.endpointsForAdapter(adapterId),
+      endpointsLoaded: this.adaptersLoaded(),
+    });
+  }
+
+  // Same audit/fix as endpointDisplay applied to the Adapter select itself
+  // — a removed/renamed adapter must not blank over a configured
+  // adapterId.
+  protected adapterDisplay(adapterId: unknown) {
+    return resolveIdSelectDisplay({
+      value: adapterId,
+      options: this.adapters().map((a) => ({ id: a.id, label: a.name })),
+      optionsLoaded: this.adaptersLoaded(),
+    });
+  }
+
+  // Same audit/fix as endpointDisplay applied to the MCP Server select.
+  protected mcpServerDisplay(serverId: unknown) {
+    return resolveIdSelectDisplay({
+      value: serverId,
+      options: this.mcpServers().map((s) => ({ id: s.id, label: s.name })),
+      optionsLoaded: this.mcpServersLoaded(),
+    });
+  }
+
+  // Same audit/fix as endpointDisplay applied to the MCP Tool select
+  // ("loaded" = the live per-server tools fetch has settled).
+  protected mcpToolDisplay(toolName: unknown) {
+    return resolveIdSelectDisplay({
+      value: toolName,
+      options: this.mcpTools().map((t) => ({ id: t.name, label: t.name })),
+      optionsLoaded: !this.mcpToolsLoading(),
+    });
+  }
+
+  // Same audit/fix as endpointDisplay applied to the registered-Service
+  // select.
+  protected serviceDisplay(serviceId: unknown) {
+    return resolveIdSelectDisplay({
+      value: serviceId,
+      options: this.registryService
+        .services()
+        .map((s) => ({ id: s.id, label: s.name })),
+      optionsLoaded: !this.registryService.loading(),
+    });
+  }
+
+  // Same audit/fix as endpointDisplay applied to the AI Agent select.
+  protected agentDisplay(agentId: unknown) {
+    return resolveIdSelectDisplay({
+      value: agentId,
+      options: this.aiAgents().map((a) => ({ id: a.id, label: a.name })),
+      optionsLoaded: this.aiAgentsLoaded(),
+    });
+  }
+
+  // Same audit/fix as endpointDisplay applied to the outbound Channel
+  // Account select. The SOURCE_ACCOUNT sentinel is a static,
+  // always-available option (not part of the async list) so it is added
+  // to the option set explicitly rather than falling into the
+  // async-mismatch path.
+  protected outboundAccountDisplay(accountId: unknown) {
+    return resolveIdSelectDisplay({
+      value: accountId,
+      options: [
+        { id: this.SOURCE_ACCOUNT, label: "Same as incoming message" },
+        ...this.outboundAccounts().map((a) => ({
+          id: a.id,
+          label: [a.name, " (", a.channel, ")"].join(""),
+        })),
+      ],
+      optionsLoaded: this.channelAccountsLoaded(),
+    });
   }
 
   /**

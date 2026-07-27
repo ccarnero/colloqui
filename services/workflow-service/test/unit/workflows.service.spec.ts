@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { ConflictException, NotFoundException } from "@nestjs/common";
+import {
+  ConflictException,
+  GoneException,
+  NotFoundException,
+} from "@nestjs/common";
 import { Test } from "@nestjs/testing";
+import { WorkflowNotFoundError as TemporalWorkflowNotFoundError } from "@temporalio/common";
 import type { WorkflowAction } from "@yoizen/shared";
 import { WorkflowStatus } from "@yoizen/shared";
 import { EXECUTIONS_REPOSITORY } from "../../src/modules/workflows/executions.repository.interface";
@@ -465,6 +470,77 @@ describe("WorkflowsService", () => {
     await expect(
       service.getExecutionStatus("wrong-def", "ex-1", "t1")
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  // Fix 1 (retention-expired runs): Temporal's handle.describe() throws
+  // WorkflowNotFoundError once a run has aged out of retention — mapped to
+  // GoneException/RUN_HISTORY_EXPIRED instead of surfacing as a raw 500.
+  it("getExecutionStatus maps a Temporal WorkflowNotFoundError from describe() to a 410 RUN_HISTORY_EXPIRED GoneException", async () => {
+    const mockHandle = {
+      describe: mock(() =>
+        Promise.reject(
+          new TemporalWorkflowNotFoundError(
+            "workflow not found for ID: acme:crm-support-telegram:sha256:abc",
+            "tw-1",
+            undefined
+          )
+        )
+      ),
+      result: mock(() => Promise.resolve({ ok: true })),
+      terminate: mock(() => Promise.resolve()),
+    };
+    mockTemporal.workflow.getHandle.mockReturnValueOnce(mockHandle);
+
+    let caught: unknown;
+    try {
+      await service.getExecutionStatus("def-1", "ex-1", "t1");
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(GoneException);
+    const response = (caught as GoneException).getResponse() as Record<
+      string,
+      unknown
+    >;
+    expect(response.statusCode).toBe(410);
+    expect(response.code).toBe("RUN_HISTORY_EXPIRED");
+    expect(response.executionId).toBe("ex-1");
+    expect(response.temporalWorkflowId).toBe("tw-1");
+  });
+
+  it("getExecutionStatus maps a Temporal WorkflowNotFoundError from result() to a 410 RUN_HISTORY_EXPIRED GoneException", async () => {
+    const mockHandle = {
+      describe: mock(() => Promise.resolve({ status: { name: "COMPLETED" } })),
+      result: mock(() =>
+        Promise.reject(
+          new TemporalWorkflowNotFoundError(
+            "workflow not found for ID: acme:crm-support-telegram:sha256:abc",
+            "tw-1",
+            undefined
+          )
+        )
+      ),
+      terminate: mock(() => Promise.resolve()),
+    };
+    mockTemporal.workflow.getHandle.mockReturnValueOnce(mockHandle);
+
+    await expect(
+      service.getExecutionStatus("def-1", "ex-1", "t1")
+    ).rejects.toBeInstanceOf(GoneException);
+  });
+
+  it("getExecutionStatus rethrows non-WorkflowNotFoundError describe() failures unchanged", async () => {
+    const mockHandle = {
+      describe: mock(() => Promise.reject(new Error("boom"))),
+      result: mock(() => Promise.resolve({ ok: true })),
+      terminate: mock(() => Promise.resolve()),
+    };
+    mockTemporal.workflow.getHandle.mockReturnValueOnce(mockHandle);
+
+    await expect(
+      service.getExecutionStatus("def-1", "ex-1", "t1")
+    ).rejects.toThrow("boom");
   });
 
   // T07 of manual-loops/admin-console/console-redesign-builder-v2.md — first

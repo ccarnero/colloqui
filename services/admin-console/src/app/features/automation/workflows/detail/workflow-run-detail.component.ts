@@ -1,3 +1,4 @@
+import { HttpErrorResponse } from "@angular/common/http";
 import {
   ChangeDetectionStrategy,
   Component,
@@ -136,7 +137,16 @@ interface IStep {
         }
       }
 
-      @if (!loading() && !detail() && error()) {
+      @if (!loading() && !detail() && runHistoryExpired()) {
+        <div class="empty-state retained-expired" data-testid="run-history-expired">
+          <p class="retained-title">This run's output is no longer retained</p>
+          <p class="retained-sub">
+            Run history expires after the retention window.
+          </p>
+        </div>
+      }
+
+      @if (!loading() && !detail() && !runHistoryExpired() && error()) {
         <p class="empty err-msg">Failed to load this run: {{ error() }}</p>
       }
     </div>
@@ -306,6 +316,33 @@ interface IStep {
     }
     .code.err { color: var(--red, #ef4444); }
     .empty { font-size: 12px; color: var(--text3); padding: 12px; text-align: center; }
+    /* Honest neutral state for a retention-expired run — deliberately NOT
+     * styled like .err-msg/.err-panel (calm, not red): Temporal purges
+     * workflow history after its retention window, which is expected
+     * behavior, not a failure. See getExecutionStatus's RUN_HISTORY_EXPIRED
+     * mapping in workflow-service. */
+    .empty-state.retained-expired {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 32px 16px;
+      text-align: center;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius, 6px);
+    }
+    .retained-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+      margin: 0;
+    }
+    .retained-sub {
+      font-size: 11px;
+      color: var(--text3);
+      margin: 0;
+    }
   `,
 })
 export class WorkflowRunDetailComponent implements OnInit {
@@ -344,6 +381,14 @@ export class WorkflowRunDetailComponent implements OnInit {
   readonly detail = signal<IWorkflowExecutionDetail | null>(null);
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
+  /**
+   * Set when `getExecutionDetail` fails with 410 + `code:
+   * "RUN_HISTORY_EXPIRED"` (workflow-service's `getExecutionStatus` mapping
+   * for Temporal runs that have aged out of its retention window). Renders
+   * an honest, calm empty-state instead of the generic red error — the run
+   * genuinely exists, only its Temporal-side output no longer does.
+   */
+  readonly runHistoryExpired = signal(false);
   readonly selectedIndex = signal(0);
 
   readonly steps = computed<IStep[]>(() => {
@@ -453,7 +498,21 @@ export class WorkflowRunDetailComponent implements OnInit {
         this.detail.set(d);
         this.loading.set(false);
       },
-      error: (err) => {
+      error: (err: HttpErrorResponse) => {
+        // Backend mapping: workflow-service's getExecutionStatus throws
+        // GoneException({code: "RUN_HISTORY_EXPIRED"}) for runs whose
+        // Temporal history has aged past retention. Distinguish that from
+        // every other error so the template can render the calm empty
+        // state instead of "Failed to load this run: …".
+        if (
+          err?.status === 410 &&
+          (err.error as { code?: string } | null)?.code ===
+            "RUN_HISTORY_EXPIRED"
+        ) {
+          this.runHistoryExpired.set(true);
+          this.loading.set(false);
+          return;
+        }
         this.error.set(String(err?.message ?? err));
         this.loading.set(false);
       },

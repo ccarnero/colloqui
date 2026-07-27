@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  GoneException,
   Inject,
   Injectable,
   NotFoundException,
@@ -12,6 +13,7 @@ import {
 import {
   ActivityFailure,
   TemporalFailure,
+  WorkflowNotFoundError as TemporalWorkflowNotFoundError,
   WorkflowIdConflictPolicy,
   WorkflowIdReusePolicy,
 } from "@temporalio/common";
@@ -62,6 +64,26 @@ export interface IWorkflowDisabledConflict {
   message: string;
   workflowId: string;
   tenantId: string;
+}
+
+/**
+ * 410 response body when {@link WorkflowsService.getExecutionStatus} cannot
+ * read Temporal execution state because the run has aged out of Temporal's
+ * retention window (`WorkflowNotFoundError` from `@temporalio/common`). The
+ * `workflow_executions` row still exists in our own Postgres — only the
+ * Temporal-side history is gone — so this is a distinct, machine-readable
+ * case from "execution not found" (404), same shape convention as
+ * {@link IWorkflowDisabledConflict}. Admin-console pattern-matches on `code`
+ * to render an honest "output no longer retained" state instead of a
+ * generic error.
+ */
+export interface IRunHistoryExpiredError {
+  statusCode: 410;
+  error: "Gone";
+  code: "RUN_HISTORY_EXPIRED";
+  message: string;
+  executionId: string;
+  temporalWorkflowId: string;
 }
 
 /** Execution row exposed over HTTP (camelCase). */
@@ -766,9 +788,19 @@ export class WorkflowsService {
   /**
    * Resolves execution status from Temporal and syncs the DB when the status changes.
    *
+   * Temporal purges workflow history after its configured retention window;
+   * `handle.describe()`/`handle.result()` throw `WorkflowNotFoundError`
+   * (`@temporalio/common`) once a run has aged out even though our own
+   * `workflow_executions` row still exists. That case is mapped to a typed
+   * 410 body ({@link IRunHistoryExpiredError}) instead of surfacing as a raw
+   * 500 — same pattern as {@link IWorkflowDisabledConflict}'s 409 mapping
+   * above.
+   *
    * @param definitionId - Expected parent definition id (validated against the row).
    * @param executionId - Execution row id.
    * @param tenantId - Tenant scope.
+   * @throws {GoneException} With `code: "RUN_HISTORY_EXPIRED"` when Temporal
+   *   no longer retains this run's history.
    */
   async getExecutionStatus(
     definitionId: string,
@@ -789,8 +821,14 @@ export class WorkflowsService {
     const handle = this.temporal.workflow.getHandle(
       execution.temporal_workflow_id
     );
-    const describe = await handle.describe();
-    const currentStatus = describe.status.name;
+
+    let currentStatus: string;
+    try {
+      const describe = await handle.describe();
+      currentStatus = describe.status.name;
+    } catch (err) {
+      throw this.toRunHistoryExpiredOrRethrow(err, execution);
+    }
 
     if (currentStatus !== execution.status) {
       await this.executions.updateExecutionStatus(
@@ -804,11 +842,18 @@ export class WorkflowsService {
     let failure: IWorkflowFailureInfo | undefined;
 
     if (currentStatus === "COMPLETED") {
-      result = await handle.result();
+      try {
+        result = await handle.result();
+      } catch (err) {
+        throw this.toRunHistoryExpiredOrRethrow(err, execution);
+      }
     } else if (currentStatus === "FAILED") {
       try {
         await handle.result();
       } catch (err) {
+        if (err instanceof TemporalWorkflowNotFoundError) {
+          throw this.toRunHistoryExpiredOrRethrow(err, execution);
+        }
         if (err instanceof WorkflowFailedError) {
           failure = this.extractFailureInfo(err);
         } else {
@@ -852,6 +897,34 @@ export class WorkflowsService {
     }
 
     return augmentActionsWithSlug(actions, slugMap);
+  }
+
+  /**
+   * Maps a Temporal `WorkflowNotFoundError` (history expired past retention)
+   * to a {@link GoneException} carrying {@link IRunHistoryExpiredError}. Any
+   * other error is rethrown unchanged so callers keep their existing
+   * error-mapping behavior for genuinely unexpected failures.
+   */
+  private toRunHistoryExpiredOrRethrow(
+    err: unknown,
+    execution: IWorkflowExecutionRow
+  ): Error {
+    if (!(err instanceof TemporalWorkflowNotFoundError)) {
+      return err instanceof Error ? err : new Error(String(err));
+    }
+    this.logger.warn(
+      `Execution history no longer retained by Temporal for execution ${execution.id} ` +
+        `(workflow ${execution.temporal_workflow_id}): ${err.message}`
+    );
+    const body: IRunHistoryExpiredError = {
+      statusCode: 410,
+      error: "Gone",
+      code: "RUN_HISTORY_EXPIRED",
+      message: `Execution history for '${execution.id}' is no longer retained by Temporal`,
+      executionId: execution.id,
+      temporalWorkflowId: execution.temporal_workflow_id,
+    };
+    return new GoneException(body);
   }
 
   private extractFailureInfo(err: WorkflowFailedError): IWorkflowFailureInfo {
