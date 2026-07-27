@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>IF editor proposal — condition clarity</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+<style>
+  /* Tokens verbatim from Rediseño Terminal.dc.html (builder-v2-reference/tokens.css) */
+  :root {
+    --bg: #0a0a0a; --panel: #0f0f0f; --hover: #1a1a1a;
+    --line: #1f1f1f; --line2: #161616; --line3: #2e2e2e;
+    --t1: #ededed; --t2: #a1a1a1; --t3: #7a7a7a;
+    --accent: #1A66FF; --accent-soft: rgba(26,102,255,0.14); --link: #6d9bff;
+    --green: #50e3a4; --green-dim: rgba(80,227,164,0.1);
+    --red: #f5455c; --red-dim: rgba(245,69,92,0.1);
+    --yellow: #f5a623; --yellow-dim: rgba(245,166,35,0.1);
+    --purple: #bf7af0;
+    --mono: 'Geist Mono', ui-monospace, monospace;
+  }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: 'Geist', system-ui, sans-serif; font-size: 13px; line-height: 1.5;
+    background: var(--bg); color: var(--t1);
+    background-image: radial-gradient(circle, #1f1f1f 1px, transparent 1px);
+    background-size: 24px 24px;
+    padding: 40px; box-sizing: border-box;
+  }
+  .material-icons { font-size: 16px; }
+  .stage { display: flex; gap: 48px; align-items: flex-start; justify-content: center; }
+  .column { display: flex; flex-direction: column; gap: 14px; }
+  .col-title { font-family: var(--mono); font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--t3); }
+  .col-title b { color: var(--t1); font-weight: 600; }
+
+  /* ── Inspector shell (both panels) — surface per canvas inspector treatment ── */
+  .inspector {
+    width: 340px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 12px; box-shadow: 0 16px 48px rgba(0,0,0,0.5); overflow: hidden;
+  }
+  .insp-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .icon-chip {
+    width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center;
+    background: var(--yellow-dim); color: var(--yellow); flex: none;
+  }
+  .icon-chip .material-icons { font-size: 15px; }
+  .insp-title { font-weight: 600; font-size: 13px; flex: 1; }
+  .type-badge {
+    font-family: var(--mono); font-size: 9px; letter-spacing: 0.6px; color: var(--yellow);
+    border: 1px solid var(--yellow); border-radius: 4px; padding: 1px 6px;
+  }
+  .insp-close { color: var(--t3); }
+  .insp-tabs { display: flex; gap: 2px; padding: 8px 14px 0; border-bottom: 1px solid var(--line2); }
+  .insp-tab { padding: 6px 10px; font-size: 12px; color: var(--t3); border-bottom: 2px solid transparent; }
+  .insp-tab.active { color: var(--t1); border-bottom-color: var(--accent); }
+  .insp-body { padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+  .insp-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-top: 1px solid var(--line); }
+  .node-id { font-family: var(--mono); font-size: 9.5px; color: var(--t3); }
+  .remove-btn { font-size: 12px; color: var(--red); border: 1px solid var(--red); border-radius: 6px; padding: 4px 10px; display: flex; gap: 5px; align-items: center; background: transparent; }
+  .remove-btn .material-icons { font-size: 13px; }
+
+  /* ── CURRENT panel widgets (faithful reproduction) ── */
+  .field { border: 1px solid var(--line3); border-radius: 6px; padding: 8px 10px; position: relative; }
+  .field-label { position: absolute; top: -7px; left: 8px; background: var(--panel); padding: 0 4px; font-size: 10px; color: var(--t3); }
+  .field-value { font-size: 13px; color: var(--t1); display: flex; justify-content: space-between; align-items: center; }
+  .field-value.placeholder { color: var(--t2); }
+  .hint { font-size: 11px; color: var(--t3); margin: 4px 2px 0; }
+  .branch-box { border: 1px solid var(--line); border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 14px; }
+  .branch-box-head { display: flex; justify-content: space-between; align-items: center; }
+  .branch-box-title { font-weight: 600; font-size: 12px; }
+  .ghost-btn { border: 1px solid var(--line3); border-radius: 8px; padding: 8px; text-align: center; color: var(--t1); font-size: 12.5px; display:flex; gap:6px; align-items:center; justify-content:center; }
+  .ghost-btn .material-icons { font-size: 14px; color: var(--accent); }
+
+  /* ── PROPOSED panel widgets ── */
+  .section-label { font-family: var(--mono); font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--t3); margin-top: 2px; }
+  .branch-card { border: 1px solid var(--line); border-radius: 10px; background: var(--line2); overflow: hidden; }
+  .branch-card.active-branch { border-color: rgba(245,166,35,0.35); }
+  .bc-head { display: flex; align-items: center; gap: 8px; padding: 9px 11px 7px; }
+  .bc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--yellow); flex: none; }
+  .bc-dot.grey { background: var(--t3); }
+  .bc-label { font-weight: 600; font-size: 12.5px; flex: 1; }
+  .bc-label .edit-ic { font-size: 11px; color: var(--t3); margin-left: 5px; vertical-align: 1px; }
+  .bc-x { color: var(--t3); font-size: 13px; }
+  .sentence { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 0 11px 9px; }
+  .sw { font-size: 12px; color: var(--t3); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line3); border-radius: 6px;
+    background: var(--panel); padding: 4px 8px; font-size: 12px; color: var(--t1); max-width: 100%;
+  }
+  .pill .material-icons { font-size: 13px; color: var(--t3); }
+  .pill.mono-pill { font-family: var(--mono); font-size: 11px; }
+  .pill .path-root { color: var(--t3); }
+  .expr-row { padding: 0 11px 9px; }
+  .expr-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 10.5px; color: var(--t2);
+    background: var(--bg); border: 1px solid var(--line3); border-radius: 5px; padding: 3px 8px;
+  }
+  .expr-chip .eq { color: var(--yellow); }
+  .expr-chip .material-icons { font-size: 12px; color: var(--t3); }
+  .bc-foot {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    border-top: 1px solid var(--line); padding: 7px 11px; background: var(--panel);
+  }
+  .route { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--t2); min-width: 0; }
+  .route .material-icons { font-size: 13px; color: var(--t3); }
+  .route .target { color: var(--t1); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .route .mini-chip { width: 16px; height: 16px; border-radius: 4px; display: flex; align-items: center; justify-content: center; flex: none; }
+  .route .mini-chip .material-icons { font-size: 10px; }
+  .evidence { font-family: var(--mono); font-size: 9.5px; color: var(--t3); white-space: nowrap; }
+  .evidence b { color: var(--green); font-weight: 500; }
+
+  /* variable picker (open state) */
+  .picker {
+    border: 1px solid var(--line3); border-radius: 8px; background: var(--panel);
+    box-shadow: 0 12px 32px rgba(0,0,0,0.55); overflow: hidden; margin: 0 11px 10px;
+  }
+  .picker-search { display: flex; gap: 7px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); color: var(--t3); }
+  .picker-search input { background: none; border: none; outline: none; color: var(--t1); font-family: var(--mono); font-size: 11px; width: 100%; }
+  .picker-group { font-family: var(--mono); font-size: 8.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--t3); padding: 7px 10px 3px; }
+  .picker-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 5px 10px; font-family: var(--mono); font-size: 11px; color: var(--t1); }
+  .picker-item .sample { color: var(--t3); font-size: 9.5px; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .picker-item.sel { background: var(--accent-soft); }
+  .picker-item.sel .sample { color: var(--link); }
+
+  /* callouts */
+  .callout { position: absolute; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+  .notes { width: 300px; display: flex; flex-direction: column; gap: 10px; }
+  .note { display: flex; gap: 10px; align-items: flex-start; }
+  .note .n { width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex: none; margin-top: 1px; }
+  .note p { margin: 0; font-size: 12px; color: var(--t2); }
+  .note p b { color: var(--t1); font-weight: 600; }
+  .note p code { font-family: var(--mono); font-size: 10.5px; color: var(--t2); }
+  .pain { display: flex; gap: 8px; align-items: flex-start; font-size: 12px; color: var(--t2); }
+  .pain .material-icons { font-size: 14px; color: var(--red); margin-top: 2px; }
+  .rel { position: relative; }
+</style>
+</head>
+<body>
+<div class="stage">
+
+  <!-- ─────────────── CURRENT ─────────────── -->
+  <div class="column">
+    <div class="col-title">Current — <b>what is being evaluated?</b></div>
+    <div class="inspector">
+      <div class="insp-header">
+        <div class="icon-chip"><span class="material-icons">alt_route</span></div>
+        <div class="insp-title">vipRoute</div>
+        <span class="material-icons insp-close">close</span>
+      </div>
+      <div class="insp-tabs">
+        <div class="insp-tab active">Config</div><div class="insp-tab">Output</div><div class="insp-tab">Runs</div>
+      </div>
+      <div class="insp-body">
+        <div class="field"><div class="field-label">Name</div><div class="field-value">vipRoute</div></div>
+        <div class="branch-box">
+          <div class="branch-box-head"><span class="branch-box-title">Branch 1</span><span class="material-icons" style="font-size:14px;color:var(--t3)">close</span></div>
+          <div class="field"><div class="field-label">Label</div><div class="field-value">VIP escalation</div></div>
+          <div>
+            <div class="field"><div class="field-value placeholder">Variable <span class="material-icons" style="font-size:16px">arrow_drop_down</span></div></div>
+            <div class="hint">Choose a variable to evaluate</div>
+          </div>
+          <div class="field"><div class="field-label">Comparator</div><div class="field-value">Equals <span class="material-icons" style="font-size:16px">arrow_drop_down</span></div></div>
+          <div>
+            <div class="field"><div class="field-label">Value</div><div class="field-value">vip</div></div>
+            <div class="hint">Compare against this value. Use {{X}} for dynamic values.</div>
+          </div>
+        </div>
+        <div class="ghost-btn"><span class="material-icons">add</span> Add branch</div>
+      </div>
+    </div>
+    <div class="notes" style="width:340px">
+      <div class="pain"><span class="material-icons">close</span><span>The variable select shows its <b>placeholder even though a variable is set</b> — the one thing the node evaluates is invisible.</span></div>
+      <div class="pain"><span class="material-icons">close</span><span>Label, variable, comparator and value read as four unrelated form fields — never as the condition they compose.</span></div>
+      <div class="pain"><span class="material-icons">close</span><span>No link to the canvas: which edge is this branch? Where does it route? Did it ever match?</span></div>
+    </div>
+  </div>
+
+  <!-- ─────────────── PROPOSED ─────────────── -->
+  <div class="column rel">
+    <div class="col-title">Proposed — <b>the editor reads as the sentence it evaluates</b></div>
+    <div class="inspector rel">
+      <div class="insp-header">
+        <div class="icon-chip"><span class="material-icons">alt_route</span></div>
+        <div class="insp-title">vipRoute</div>
+        <div class="type-badge">IF</div>
+        <span class="material-icons insp-close">close</span>
+      </div>
+      <div class="insp-tabs">
+        <div class="insp-tab active">Config</div><div class="insp-tab">Output</div><div class="insp-tab">Runs</div>
+      </div>
+      <div class="insp-body">
+        <div class="field"><div class="field-label">Name</div><div class="field-value">vipRoute</div></div>
+        <div class="section-label">Branches · evaluated top to bottom, first match wins</div>
+
+        <!-- Branch 1 -->
+        <div class="branch-card active-branch rel">
+          <div class="callout" style="top:40px;left:-30px">1</div>
+          <div class="callout" style="top:88px;right:-30px;left:auto">2</div>
+          <div class="bc-head">
+            <div class="bc-dot"></div>
+            <div class="bc-label">VIP escalation<span class="material-icons edit-ic">edit</span></div>
+            <span class="material-icons bc-x">close</span>
+          </div>
+          <div class="sentence">
+            <span class="sw">If</span>
+            <span class="pill mono-pill"><span class="path-root">results.buildAgentContext.</span>tier<span class="material-icons">unfold_more</span></span>
+            <span class="pill">equals<span class="material-icons">arrow_drop_down</span></span>
+            <span class="pill mono-pill">"vip"</span>
+          </div>
+          <div class="expr-row">
+            <span class="expr-chip"><span class="material-icons">commit</span>results.buildAgentContext.tier <span class="eq">eq</span> "vip"</span>
+          </div>
+          <div class="bc-foot rel">
+            <div class="callout" style="bottom:4px;left:-30px;top:auto">3</div>
+            <div class="callout" style="bottom:4px;right:-30px;top:auto">4</div>
+            <div class="route">
+              <span class="material-icons">south</span>
+              <div class="mini-chip" style="background:var(--accent-soft);color:var(--link)"><span class="material-icons">code</span></div>
+              <span class="target">buildEscalationReply</span>
+            </div>
+            <span class="evidence">matched <b>11</b>/23 · 48%</span>
+          </div>
+        </div>
+
+        <!-- Default branch -->
+        <div class="branch-card rel">
+          <div class="callout" style="top:12px;left:-30px">5</div>
+          <div class="bc-head">
+            <div class="bc-dot grey"></div>
+            <div class="bc-label" style="color:var(--t2)">Otherwise <span style="font-weight:400;color:var(--t3)">· default</span></div>
+          </div>
+          <div class="bc-foot">
+            <div class="route">
+              <span class="material-icons">south</span>
+              <div class="mini-chip" style="background:var(--green-dim);color:var(--green)"><span class="material-icons">swap_horiz</span></div>
+              <span class="target">replyStandard</span>
+            </div>
+            <span class="evidence">matched <b>12</b>/23 · 52%</span>
+          </div>
+        </div>
+
+        <div class="ghost-btn"><span class="material-icons">add</span> Add branch</div>
+      </div>
+      <div class="insp-footer">
+        <span class="node-id">node-1785165243028-23</span>
+        <button class="remove-btn"><span class="material-icons">delete</span>Remove</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─────────────── PICKER + NOTES ─────────────── -->
+  <div class="column">
+    <div class="col-title">Variable picker — <b>open state</b></div>
+    <div class="inspector" style="width:300px">
+      <div class="insp-body" style="padding:10px">
+        <div class="sentence" style="padding:0 0 8px">
+          <span class="sw">If</span>
+          <span class="pill mono-pill" style="border-color:var(--accent)"><span class="path-root">results.buildAgentContext.</span>tier<span class="material-icons">unfold_more</span></span>
+        </div>
+        <div class="picker rel">
+          <div class="callout" style="top:44px;left:-30px">6</div>
+          <div class="picker-search"><span class="material-icons">search</span><input value="tier"></div>
+          <div class="picker-group">results · previous steps</div>
+          <div class="picker-item sel">results.buildAgentContext.tier<span class="sample">"vip" in last run</span></div>
+          <div class="picker-item">results.scoreContact.score<span class="sample">87</span></div>
+          <div class="picker-item">results.supportAgent.reply<span class="sample">"Hola! Gracias…"</span></div>
+          <div class="picker-group">trigger · channel payload</div>
+          <div class="picker-item">trigger.message.text<span class="sample">"necesito ayuda"</span></div>
+          <div class="picker-item">trigger.contact.id<span class="sample">"tg-99182"</span></div>
+          <div class="picker-group">vars · workflow variables</div>
+          <div class="picker-item">vars.escalationQueue<span class="sample">"support-vip"</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="notes">
+      <div class="note"><div class="n">1</div><p><b>Sentence form.</b> Label, variable, comparator and value compose one readable clause: <i>If tier equals "vip"</i>.</p></div>
+      <div class="note"><div class="n">2</div><p><b>Expression chip = edge label.</b> The exact chip rendered on the canvas edge (<code>tier eq "vip"</code>) appears in the editor — editor and canvas can be matched at a glance.</p></div>
+      <div class="note"><div class="n">3</div><p><b>Route target.</b> Each branch shows the node it routes to, with its type chip — no more guessing which output goes where.</p></div>
+      <div class="note"><div class="n">4</div><p><b>Run evidence.</b> "matched 11 of 23 runs" comes from the per-branch aggregate already shipped in T07 (<code>payload_branch</code>) — zero new backend.</p></div>
+      <div class="note"><div class="n">5</div><p><b>Default is a branch card too</b> — same anatomy, so the fallback path is as visible as the conditions.</p></div>
+      <div class="note"><div class="n">6</div><p><b>Picker shows real paths + last-run samples</b>, grouped by source and fed by the same Variables Reference data. Fixes the placeholder bug: the selected path always renders in the pill.</p></div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

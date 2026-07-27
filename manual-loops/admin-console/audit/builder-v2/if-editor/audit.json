@@ -1,0 +1,26 @@
+[
+  {
+    "path": "/workflows",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 4,
+      "app-sparkline": 0,
+      "app-inventory-table": 1,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 1,
+      "app-usage-chart": 0
+    }
+  },
+  {
+    "path": "/workflows/7DXJQ18-pcbk56XCMtdRt/builder",
+    "dataTheme": "dark",
+    "counts": {
+      "app-kpi-card": 0,
+      "app-sparkline": 0,
+      "app-inventory-table": 0,
+      "app-activity-feed": 0,
+      "app-needs-attention-panel": 0,
+      "app-usage-chart": 0
+    }
+  }
+]

@@ -25,7 +25,12 @@ import {
 import { WorkflowRunActionsService } from "../detail/workflow-run-actions.service";
 import { deserializeFlow } from "../domain/flow-deserializer";
 import { serializeFlow } from "../domain/flow-serializer";
-import { mapNodeStatsToViewModels } from "../domain/map-node-stats-to-view-models";
+import {
+  type INodeStatsBranchRow,
+  mapNodeStatsOwnRunsByName,
+  mapNodeStatsToBranchRows,
+  mapNodeStatsToViewModels,
+} from "../domain/map-node-stats-to-view-models";
 import type { ValidationError } from "../domain/validation/validation.types";
 import { validateWorkflow } from "../domain/validation/workflow.validator";
 import {
@@ -440,6 +445,10 @@ function pruneConflictingConnections(
                 [triggerAccountIds]="triggerAccountIds()"
                 [workflowNodes]="nodes()"
                 [variableGroups]="variableGroups()"
+                [connections]="connections()"
+                [nodeStatsBranchRows]="nodeStatsBranchRows()"
+                [nodeStatsOwnRunsByName]="nodeStatsOwnRunsByName()"
+                [nodeStatsFetchState]="nodeStatsFetchState()"
                 (close)="onInspectorCloseButton()"
                 (remove)="removeNode($event)"
                 (configChange)="onNodeConfigChange($event)"
@@ -935,6 +944,27 @@ export class WorkflowBuilderComponent implements OnInit, OnDestroy {
   readonly nodeStatsByName = signal<
     Readonly<Record<string, IWorkflowNodeStats>>
   >({});
+  /**
+   * UNMERGED per-`(action_name, branch)` rows from the SAME `/node-stats`
+   * fetch above (SPEC console-redesign-builder-v2 IF-editor task) — exposed
+   * to the conditional branch config panel for per-branch run evidence
+   * ("matched 11/23 · 48%"), without touching `nodeStatsByName`'s merged
+   * node-card behavior at all. See `map-node-stats-to-view-models.ts`
+   * `mapNodeStatsToBranchRows()`.
+   */
+  readonly nodeStatsBranchRows = signal<readonly INodeStatsBranchRow[]>([]);
+  /**
+   * Each action's own unbranched run total, keyed by action_name (SPEC
+   * console-redesign-builder-v2 IF-editor task attempt 2, dual-review
+   * objection 1 fix). Passed to the conditional branch config panel as the
+   * per-branch evidence DENOMINATOR — the conditional node's own row,
+   * rename-proof since it is keyed only by action_name, not by any
+   * branch's current label. See map-node-stats-to-view-models.ts
+   * mapNodeStatsOwnRunsByName().
+   */
+  readonly nodeStatsOwnRunsByName = signal<Readonly<Record<string, number>>>(
+    {}
+  );
 
   /**
    * Floating chrome save-state indicator (SPEC T08 — reference's
@@ -1235,12 +1265,27 @@ export class WorkflowBuilderComponent implements OnInit, OnDestroy {
         next: (rows) => {
           const byName = mapNodeStatsToViewModels(rows);
           this.nodeStatsByName.set(byName);
+          const branchRows = mapNodeStatsToBranchRows(rows);
+          this.nodeStatsBranchRows.set(branchRows);
+          const ownRunsByName = mapNodeStatsOwnRunsByName(rows);
+          this.nodeStatsOwnRunsByName.set(ownRunsByName);
           this.nodeStatsFetchState.set("ready");
           console.debug("[WorkflowBuilderComponent] node stats loaded (T07)", {
             workflowId: id,
             rowCount: rows.length,
             nodeCount: Object.keys(byName).length,
           });
+          console.debug(
+            "[WorkflowBuilderComponent] per-branch node stats rows exposed to config panel (IF-editor task)",
+            { workflowId: id, branchRowCount: branchRows.length }
+          );
+          console.debug(
+            "[WorkflowBuilderComponent] per-node own-run totals exposed to config panel (IF-editor task attempt 2, rename-staleness fix)",
+            {
+              workflowId: id,
+              ownRunNodeCount: Object.keys(ownRunsByName).length,
+            }
+          );
         },
         error: (error) => {
           this.nodeStatsFetchState.set("error");

@@ -116,8 +116,14 @@ interface ChainResult {
  * verbatim from the branch's own real condition rule, never fabricated.
  * Returns undefined when the condition is missing/malformed so the edge
  * simply renders unlabeled instead of showing a broken string.
+ *
+ * Exported (SPEC console-redesign-builder-v2 IF-editor task) so the
+ * conditional branch config panel can compute the SAME expression text this
+ * module already stamps onto `IWorkflowConnection.label` for the canvas edge
+ * — one formatting rule, shared, never duplicated (see
+ * `workflow-node-config.component.ts`'s `exprChipFor()`).
  */
-function conditionEdgeLabel(
+export function conditionEdgeLabel(
   condition: Record<string, unknown> | undefined
 ): string | undefined {
   const variable = condition?.["variable"];

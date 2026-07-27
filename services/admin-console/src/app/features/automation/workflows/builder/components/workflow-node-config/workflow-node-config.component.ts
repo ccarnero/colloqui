@@ -29,10 +29,25 @@ import {
   type IAdapterEndpointDto,
 } from "../../../../../../core/services/http-adapter.service";
 import { RegistryService } from "../../../../../../core/services/registry.service";
+import { filterVariableGroups } from "../../../domain/filter-variable-groups";
+import { findAmbiguousBranchEvidenceKeys } from "../../../domain/find-ambiguous-branch-evidence-keys";
+import { conditionEdgeLabel } from "../../../domain/flow-deserializer";
+import { getConditionalBranches as getConditionalBranchesShared } from "../../../domain/get-conditional-branches";
+import type { INodeStatsBranchRow } from "../../../domain/map-node-stats-to-view-models";
+import {
+  type IBranchEvidence,
+  resolveBranchEvidence,
+} from "../../../domain/resolve-branch-evidence";
+import {
+  type IBranchRouteTarget,
+  resolveConditionalBranchTarget,
+} from "../../../domain/resolve-conditional-branch-target";
+import { splitVariablePath } from "../../../domain/split-variable-path";
 import {
   type ConditionComparator,
   EWorkflowNodeType,
   type IConditionalBranchConfig,
+  type IWorkflowConnection,
   type IWorkflowNode,
 } from "../../../domain/workflow-node.types";
 import {
@@ -42,6 +57,8 @@ import {
 } from "../../../domain/workflow-node-defaults";
 import type { IVariableGroup } from "../template-autocomplete/template-autocomplete.component";
 import { TemplateAutocompleteComponent } from "../template-autocomplete/template-autocomplete.component";
+import { nodeTypeColorToken } from "../workflow-node/node-type-color";
+import { nodeTypeTintToken } from "../workflow-node/node-type-tint";
 
 @Component({
   selector: "app-workflow-node-config",
@@ -635,67 +652,204 @@ import { TemplateAutocompleteComponent } from "../template-autocomplete/template
             }
 
             @case (types.CONDITIONAL) {
+              <!--
+                Sentence-form conditional branches (SPEC
+                console-redesign-builder-v2 IF-editor task, proposal ideas
+                1-6): each branch renders as a card reading "If <variable>
+                <comparator> <value>", with the same expression chip styling
+                the canvas edge label uses, a route-target row derived from
+                flow state, and per-branch run evidence joined from
+                unmerged /node-stats rows. The persisted branch model
+                {label, condition:{variable, comparator, value}} and its
+                serializer/deserializer/validation are UNCHANGED — only this
+                block's presentation differs from the pre-existing four
+                stacked mat-form-fields.
+
+                Attempt 2 (dual-review fixes): the default-branch card is
+                now DISPLAY ONLY (objection 3) — it renders when
+                hasDefaultBranch(n) is true and renders nothing otherwise;
+                there is no "Add default branch" affordance here, since the
+                canvas-level mechanism (connecting another output) is the
+                one real way to create a default path, and the previous
+                button's add path never serialized (dead end).
+              -->
               <div class="conditional-branches">
+                <div class="cb-section-label">
+                  Branches · evaluated top to bottom, first match wins
+                </div>
+
                 @for (branch of getConditionalBranches(n); track $index) {
-                  <div class="conditional-branch">
-                    <div class="branch-header">
-                      <span class="branch-label">Branch {{ $index + 1 }}</span>
+                  <div class="branch-card">
+                    <div class="bc-head">
+                      <span class="bc-dot"></span>
+                      <input
+                        class="bc-label-input"
+                        [ngModel]="branch.label"
+                        (ngModelChange)="updateConditionalBranchLabel($index, $event)"
+                        placeholder="Branch label"
+                        aria-label="Branch label"
+                      />
+                      <mat-icon class="bc-edit-ic">edit</mat-icon>
                       <button
                         mat-icon-button
                         type="button"
-                        class="branch-remove-btn"
+                        class="bc-x"
                         (click)="removeConditionalBranch($index)"
+                        aria-label="Remove branch"
                       >
                         <mat-icon>close</mat-icon>
                       </button>
                     </div>
-                    <mat-form-field appearance="outline" class="config-field">
-                      <mat-label>Label</mat-label>
-                      <input
-                        matInput
-                        [ngModel]="branch.label"
-                        (ngModelChange)="updateConditionalBranchLabel($index, $event)"
-                        placeholder="e.g. Approved"
-                      />
-                    </mat-form-field>
-                    <mat-form-field appearance="outline" class="config-field">
-                      <mat-label>Variable</mat-label>
-                      <mat-select
-                        [ngModel]="branch.condition.variable"
-                        (ngModelChange)="updateConditionalBranchCondition($index, 'variable', $event)"
+
+                    <div class="bc-sentence">
+                      <span class="bc-sw">If</span>
+
+                      <button
+                        type="button"
+                        class="bc-var-pill"
+                        [class.bc-var-pill--open]="openBranchPickerIndex() === $index"
+                        (click)="toggleVariablePicker($index)"
                       >
-                        <mat-option value="">-- Select variable --</mat-option>
-                        @for (group of variableGroups(); track group.namespace) {
-                          <mat-optgroup [label]="group.namespace">
-                            @for (v of group.variables; track v.path) {
-                              <mat-option [value]="v.path">{{ v.path }}</mat-option>
-                            }
-                          </mat-optgroup>
+                        @if (branch.condition.variable) {
+                          <span class="path-root">{{ splitPath(branch.condition.variable).root }}</span>{{ splitPath(branch.condition.variable).leaf }}
+                        } @else {
+                          <span class="bc-var-placeholder">Select variable</span>
                         }
-                      </mat-select>
-                      <mat-hint>Choose a variable to evaluate</mat-hint>
-                    </mat-form-field>
-                    <mat-form-field appearance="outline" class="config-field">
-                      <mat-label>Comparator</mat-label>
-                      <mat-select
-                        [ngModel]="branch.condition.comparator"
-                        (ngModelChange)="updateConditionalBranchCondition($index, 'comparator', $event)"
+                        <mat-icon>unfold_more</mat-icon>
+                      </button>
+
+                      <mat-form-field appearance="outline" class="bc-comparator-field">
+                        <mat-select
+                          [ngModel]="branch.condition.comparator"
+                          (ngModelChange)="updateConditionalBranchCondition($index, 'comparator', $event)"
+                          panelClass="bc-comparator-panel"
+                          aria-label="Comparator"
+                        >
+                          @for (opt of comparatorOptions; track opt.value) {
+                            <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
+                          }
+                        </mat-select>
+                      </mat-form-field>
+
+                      <span class="pill mono-pill bc-value-pill">
+                        <span class="bc-quote">"</span>
+                        <input
+                          class="bc-value-input"
+                          [ngModel]="branch.condition.value"
+                          (ngModelChange)="updateConditionalBranchCondition($index, 'value', $event)"
+                          placeholder="value"
+                          aria-label="Comparison value"
+                        />
+                        <span class="bc-quote">"</span>
+                      </span>
+                    </div>
+
+                    @if (openBranchPickerIndex() === $index) {
+                      <div class="picker" data-testid="branch-variable-picker">
+                        <div class="picker-search">
+                          <mat-icon>search</mat-icon>
+                          <input
+                            [ngModel]="branchPickerQuery()"
+                            (ngModelChange)="branchPickerQuery.set($event)"
+                            placeholder="Search variables…"
+                            autocomplete="off"
+                            aria-label="Search variables"
+                          />
+                        </div>
+                        @for (group of filteredVariableGroups(); track group.namespace) {
+                          <div class="picker-group">{{ group.icon }} {{ group.namespace }}</div>
+                          @for (v of group.variables; track v.path) {
+                            <button
+                              type="button"
+                              class="picker-item"
+                              [class.sel]="v.path === branch.condition.variable"
+                              (click)="selectBranchVariable($index, v.path)"
+                            >
+                              <span class="picker-item-path">
+                                <span class="path-root">{{ splitPath(v.path).root }}</span>{{ splitPath(v.path).leaf }}
+                              </span>
+                            </button>
+                          }
+                        }
+                        @if (filteredVariableGroups().length === 0) {
+                          <div class="picker-empty">No variables match.</div>
+                        }
+                      </div>
+                    }
+
+                    @if (exprChipFor(branch); as exprText) {
+                      <div class="expr-row">
+                        <span class="expr-chip">
+                          <mat-icon>commit</mat-icon>
+                          {{ exprText }}
+                        </span>
+                      </div>
+                    }
+
+                    <div class="bc-foot">
+                      @if (routeTargetForBranch(n, exprChipFor(branch)); as rt) {
+                        <div class="route">
+                          <mat-icon>south</mat-icon>
+                          <span
+                            class="mini-chip"
+                            [style.background]="nodeTypeTint(rt.node.type)"
+                            [style.color]="nodeTypeColor(rt.node.type)"
+                          >
+                            <mat-icon>{{ rt.node.icon }}</mat-icon>
+                          </span>
+                          <span class="target">{{ rt.node.name }}</span>
+                        </div>
+                      } @else {
+                        <span></span>
+                      }
+                      @if (nodeStatsFetchState() === 'loading') {
+                        <span class="evidence evidence-skeleton" aria-hidden="true">···</span>
+                      } @else if (branchEvidenceFor(n, branch.label, routeTargetForBranch(n, exprChipFor(branch))?.node?.name); as ev) {
+                        <span class="evidence">matched <b>{{ ev.matched }}</b>/{{ ev.total }} · {{ ev.percent }}%</span>
+                      }
+                    </div>
+                  </div>
+                }
+
+                @if (hasDefaultBranch(n)) {
+                  <div class="branch-card" data-testid="default-branch-card">
+                    <div class="bc-head">
+                      <span class="bc-dot bc-dot--grey"></span>
+                      <span class="bc-label-default">
+                        Otherwise <span class="bc-label-default-sub">· default</span>
+                      </span>
+                      <button
+                        mat-icon-button
+                        type="button"
+                        class="bc-x"
+                        (click)="toggleDefaultBranch(n)"
+                        aria-label="Remove default branch"
                       >
-                        @for (opt of comparatorOptions; track opt.value) {
-                          <mat-option [value]="opt.value">{{ opt.label }}</mat-option>
-                        }
-                      </mat-select>
-                    </mat-form-field>
-                    <mat-form-field appearance="outline" class="config-field">
-                      <mat-label>Value</mat-label>
-                      <input
-                        matInput
-                        [ngModel]="branch.condition.value"
-                        (ngModelChange)="updateConditionalBranchCondition($index, 'value', $event)"
-                        placeholder="e.g. approved"
-                      />
-                      <mat-hint>Compare against this value. Use {{ '{{' }}X{{ '}}' }} for dynamic values.</mat-hint>
-                    </mat-form-field>
+                        <mat-icon>close</mat-icon>
+                      </button>
+                    </div>
+                    <div class="bc-foot">
+                      @if (defaultRouteTargetFor(n); as rt) {
+                        <div class="route">
+                          <mat-icon>south</mat-icon>
+                          <span
+                            class="mini-chip"
+                            [style.background]="nodeTypeTint(rt.node.type)"
+                            [style.color]="nodeTypeColor(rt.node.type)"
+                          >
+                            <mat-icon>{{ rt.node.icon }}</mat-icon>
+                          </span>
+                          <span class="target">{{ rt.node.name }}</span>
+                        </div>
+                      } @else {
+                        <span></span>
+                      }
+                      @if (nodeStatsFetchState() === 'loading') {
+                        <span class="evidence evidence-skeleton" aria-hidden="true">···</span>
+                      } @else if (branchEvidenceFor(n, 'default', defaultRouteTargetFor(n)?.node?.name); as ev) {
+                        <span class="evidence">matched <b>{{ ev.matched }}</b>/{{ ev.total }} · {{ ev.percent }}%</span>
+                      }
+                    </div>
                   </div>
                 }
 
@@ -707,23 +861,6 @@ import { TemplateAutocompleteComponent } from "../template-autocomplete/template
                   <mat-icon>add</mat-icon>
                   Add branch
                 </button>
-
-                <div class="default-section">
-                  <button
-                    mat-stroked-button
-                    type="button"
-                    (click)="toggleDefaultBranch(n)"
-                  >
-                    <mat-icon>{{ hasDefaultBranch(n) ? 'check_box' : 'check_box_outline_blank' }}</mat-icon>
-                    Default fallback
-                  </button>
-                  @if (hasDefaultBranch(n)) {
-                    <p class="config-hint" style="margin-top: 6px;">
-                      Connect another output from this node for the
-                      fallback path when no condition matches.
-                    </p>
-                  }
-                </div>
               </div>
             }
           }
@@ -844,7 +981,7 @@ import { TemplateAutocompleteComponent } from "../template-autocomplete/template
     /* Output/Runs tabs (SPEC T08): visually present, per the reference,
        but inert — no click handler, no per-node output/run data source
        exists to back a real tab switch today (same data gap as T06/T07's
-       per-node stats). Not a disabled <button> (nothing to disable, no
+       per-node stats). Not a disabled button (nothing to disable, no
        action wired) — a plain non-interactive label, cursor:default. */
     .config-tab--disabled {
       cursor: default;
@@ -921,42 +1058,331 @@ import { TemplateAutocompleteComponent } from "../template-autocomplete/template
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 12px;
     }
+
+    /*
+     * Sentence-form conditional branch cards (SPEC console-redesign-builder-v2
+     * IF-editor task), ported from the if-editor-proposal.html mock's
+     * branch-card / bc-* / sentence / pill / expr-chip / route / evidence /
+     * picker / picker-* rules, mapped onto the existing builder-scoped
+     * --rd-* tokens (SPEC T02) — values copied, never invented.
+     */
     .conditional-branches {
       display: flex;
       flex-direction: column;
-      gap: 8px;
+      gap: var(--rd-space-6);
     }
-    .conditional-branch {
+    .cb-section-label {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-3xs);
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--rd-text-3);
+      margin-top: var(--rd-space-1);
+    }
+    .branch-card {
+      border: 1px solid var(--rd-line);
+      border-radius: var(--rd-radius-9);
+      background: var(--rd-line-2);
+      overflow: hidden;
       display: flex;
       flex-direction: column;
-      gap: 4px;
-      padding: 8px;
-      border: 1px solid var(--border-subtle);
-      border-radius: var(--radius, 6px);
-      background: var(--bg);
     }
-    .branch-header {
+    .bc-head {
+      display: flex;
+      align-items: center;
+      gap: var(--rd-space-4);
+      padding: var(--rd-space-5) var(--rd-space-6) var(--rd-space-3);
+    }
+    .bc-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--rd-yellow);
+      flex-shrink: 0;
+    }
+    .bc-dot--grey {
+      background: var(--rd-text-3);
+    }
+    .bc-label-input {
+      flex: 1;
+      min-width: 0;
+      font-weight: 600;
+      font-size: var(--rd-text-size-sm);
+      color: var(--rd-text-1);
+      background: transparent;
+      border: none;
+      outline: none;
+      font-family: inherit;
+      padding: 0;
+    }
+    .bc-label-input::placeholder {
+      color: var(--rd-text-3);
+      font-weight: 400;
+    }
+    .bc-edit-ic {
+      font-size: 11px !important;
+      width: 11px !important;
+      height: 11px !important;
+      color: var(--rd-text-3);
+      flex-shrink: 0;
+    }
+    .bc-x {
+      width: 22px !important;
+      height: 22px !important;
+      line-height: 22px !important;
+      color: var(--rd-text-3);
+      flex-shrink: 0;
+    }
+    .bc-x mat-icon {
+      font-size: 14px;
+      width: 14px;
+      height: 14px;
+    }
+    .bc-label-default {
+      flex: 1;
+      font-weight: 500;
+      font-size: var(--rd-text-size-sm);
+      color: var(--rd-text-2);
+    }
+    .bc-label-default-sub {
+      font-weight: 400;
+      color: var(--rd-text-3);
+    }
+
+    .bc-sentence {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: var(--rd-space-3);
+      padding: 0 var(--rd-space-6) var(--rd-space-5);
+    }
+    .bc-sw {
+      font-size: var(--rd-text-size-sm);
+      color: var(--rd-text-3);
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--rd-space-3);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-5);
+      background: var(--rd-panel);
+      padding: var(--rd-space-2) var(--rd-space-4);
+      font-size: var(--rd-text-size-sm);
+      color: var(--rd-text-1);
+      max-width: 100%;
+    }
+    .mono-pill {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs);
+    }
+    .bc-var-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--rd-space-3);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-5);
+      background: var(--rd-panel);
+      padding: var(--rd-space-2) var(--rd-space-4);
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-1);
+      cursor: pointer;
+      max-width: 100%;
+      overflow: hidden;
+    }
+    .bc-var-pill--open {
+      border-color: var(--rd-accent);
+    }
+    .bc-var-pill mat-icon {
+      font-size: 13px;
+      width: 13px;
+      height: 13px;
+      color: var(--rd-text-3);
+      flex-shrink: 0;
+    }
+    .path-root {
+      color: var(--rd-text-3);
+    }
+    .bc-var-placeholder {
+      color: var(--rd-text-2);
+    }
+    .bc-comparator-field {
+      width: 116px;
+    }
+    .bc-value-pill {
+      gap: 0;
+    }
+    .bc-quote {
+      color: var(--rd-text-3);
+    }
+    .bc-value-input {
+      background: transparent;
+      border: none;
+      outline: none;
+      color: var(--rd-text-1);
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs);
+      width: 64px;
+      padding: 0;
+    }
+
+    .picker {
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-7);
+      background: var(--rd-panel);
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+      overflow: hidden;
+      margin: 0 var(--rd-space-6) var(--rd-space-5);
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .picker-search {
+      display: flex;
+      gap: var(--rd-space-3);
+      align-items: center;
+      padding: var(--rd-space-4) var(--rd-space-5);
+      border-bottom: 1px solid var(--rd-line);
+      color: var(--rd-text-3);
+      position: sticky;
+      top: 0;
+      background: var(--rd-panel);
+    }
+    .picker-search mat-icon {
+      font-size: 15px;
+      width: 15px;
+      height: 15px;
+    }
+    .picker-search input {
+      background: none;
+      border: none;
+      outline: none;
+      color: var(--rd-text-1);
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs);
+      width: 100%;
+    }
+    .picker-group {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-3xs);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--rd-text-3);
+      padding: var(--rd-space-4) var(--rd-space-5) var(--rd-space-2);
+    }
+    .picker-item {
+      display: flex;
+      width: 100%;
+      justify-content: space-between;
+      align-items: center;
+      gap: var(--rd-space-5);
+      padding: var(--rd-space-3) var(--rd-space-5);
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-1);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      text-align: left;
+    }
+    .picker-item:hover {
+      background: var(--rd-hover);
+    }
+    .picker-item.sel {
+      background: var(--rd-accent-soft);
+    }
+    .picker-item-path {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .picker-empty {
+      padding: var(--rd-space-5);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-3);
+    }
+
+    .expr-row {
+      padding: 0 var(--rd-space-6) var(--rd-space-5);
+    }
+    .expr-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--rd-space-3);
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-2xs);
+      color: var(--rd-text-2);
+      background: var(--rd-bg);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-4);
+      padding: var(--rd-space-2) var(--rd-space-4);
+    }
+    .expr-chip mat-icon {
+      font-size: 12px;
+      width: 12px;
+      height: 12px;
+      color: var(--rd-text-3);
+    }
+
+    .bc-foot {
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: var(--rd-space-4);
+      border-top: 1px solid var(--rd-line);
+      padding: var(--rd-space-3) var(--rd-space-6);
+      background: var(--rd-panel);
     }
-    .branch-label {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text2);
+    .route {
+      display: flex;
+      align-items: center;
+      gap: var(--rd-space-3);
+      font-size: var(--rd-text-size-xs);
+      color: var(--rd-text-2);
+      min-width: 0;
     }
-    .branch-remove-btn {
-      width: 28px !important;
-      height: 28px !important;
-      line-height: 28px !important;
+    .route mat-icon {
+      font-size: 13px;
+      width: 13px;
+      height: 13px;
+      color: var(--rd-text-3);
+      flex-shrink: 0;
     }
-    .branch-remove-btn mat-icon {
-      font-size: 16px;
+    .route .target {
+      color: var(--rd-text-1);
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .mini-chip {
       width: 16px;
       height: 16px;
+      border-radius: var(--rd-radius-3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
     }
-    .default-section {
-      margin-top: 4px;
+    .mini-chip mat-icon {
+      font-size: 10px;
+      width: 10px;
+      height: 10px;
+      color: inherit;
+    }
+    .evidence {
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-3xs);
+      color: var(--rd-text-3);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .evidence b {
+      color: var(--rd-green);
+      font-weight: 500;
+    }
+    .evidence-skeleton {
+      opacity: 0.5;
     }
   `,
 })
@@ -974,7 +1400,9 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly triggerAccountIds = input<string[]>([]);
   /**
    * All workflow nodes (as a flat array) — used by template-autocomplete
-   * to offer step results as variable suggestions.
+   * to offer step results as variable suggestions, AND by the branch
+   * evidence ambiguity resolver (attempt 2), which needs visibility into
+   * every conditional node in the flow, not just the selected one.
    */
   readonly workflowNodes = input<IWorkflowNode[]>([]);
   /**
@@ -982,6 +1410,32 @@ export class WorkflowNodeConfigComponent implements OnInit {
    * branch variable dropdown.
    */
   readonly variableGroups = input<IVariableGroup[]>([]);
+  /**
+   * Current flow connections (SPEC console-redesign-builder-v2 IF-editor
+   * task, idea 3): used to resolve each conditional branch's route target
+   * node by matching the connection whose label equals the branch's own
+   * expression text — see resolve-conditional-branch-target.ts.
+   */
+  readonly connections = input<IWorkflowConnection[]>([]);
+  /**
+   * UNMERGED per-(action_name, branch) /node-stats rows (SPEC idea 4), from
+   * map-node-stats-to-view-models.ts mapNodeStatsToBranchRows(). Never
+   * touches the merged node-card footer behavior.
+   */
+  readonly nodeStatsBranchRows = input<readonly INodeStatsBranchRow[]>([]);
+  /**
+   * Each action's own unbranched /node-stats run total, keyed by
+   * action_name (map-node-stats-to-view-models.ts
+   * mapNodeStatsOwnRunsByName()). Used as the per-branch evidence
+   * DENOMINATOR — the conditional node's OWN row, not a sum of sibling
+   * branch rows keyed by their current labels (rename-staleness fix,
+   * attempt 2 dual-review objection 1).
+   */
+  readonly nodeStatsOwnRunsByName = input<Readonly<Record<string, number>>>({});
+  /** Same fetch-state machine as the builder's node-card footer (T07). */
+  readonly nodeStatsFetchState = input<"idle" | "loading" | "ready" | "error">(
+    "idle"
+  );
   readonly close = output<void>();
   readonly remove = output<string>();
   readonly configChange = output<{
@@ -1006,7 +1460,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
   private lastMcpToolsServerId: string | null = null;
 
   /**
-   * Channel accounts allowed in the outbound `channelSend` dropdown.
+   * Channel accounts allowed in the outbound channelSend dropdown.
    * Filtered by the trigger's accountIds so the user can only pick
    * accounts the workflow is actually listening on. Falls back to
    * the full list when the trigger hasn't picked any (transient
@@ -1044,6 +1498,45 @@ export class WorkflowNodeConfigComponent implements OnInit {
   readonly serviceCallBodyError = signal<string | null>(null);
   private lastServiceCallSyncKey: string | null = null;
 
+  /**
+   * Which conditional branch's variable picker is open (index into
+   * getConditionalBranches(n)), or null when closed (SPEC idea 6). Only
+   * one picker is ever open at a time, mirroring a standard dropdown.
+   */
+  readonly openBranchPickerIndex = signal<number | null>(null);
+  /** Search text for the currently-open variable picker. */
+  readonly branchPickerQuery = signal<string>("");
+
+  /** Bound pure formatters, kept unit-testable in isolation (same pattern
+   * as workflow-builder.component.ts's resolveEdgeLabel/
+   * resolveEdgeVisualState bindings). */
+  protected readonly splitPath = splitVariablePath;
+  protected readonly nodeTypeTint = nodeTypeTintToken;
+  protected readonly nodeTypeColor = nodeTypeColorToken;
+
+  readonly nodesByKey = computed<Record<string, IWorkflowNode>>(() => {
+    const map: Record<string, IWorkflowNode> = {};
+    for (const n of this.workflowNodes()) {
+      map[n.key] = n;
+    }
+    return map;
+  });
+
+  /**
+   * (targetActionName, branchLabel) keys that MORE THAN ONE conditional
+   * node in the current flow routes to (attempt 2, dual-review objection
+   * 2): /node-stats groups strictly by (action_name, branch) with no
+   * conditional-node discriminator, so two different IF nodes that both
+   * route a same-labeled branch (e.g. both have a "default" falling
+   * through to replyStandard) would otherwise present ONE merged number as
+   * each node's own evidence. Any branch whose key is in this set hides
+   * its evidence entirely rather than showing an ambiguous, possibly
+   * wrongly-attributed number.
+   */
+  readonly ambiguousEvidenceKeys = computed<ReadonlySet<string>>(() =>
+    findAmbiguousBranchEvidenceKeys(this.workflowNodes(), this.connections())
+  );
+
   constructor() {
     effect(() => {
       const n = this.node();
@@ -1079,6 +1572,14 @@ export class WorkflowNodeConfigComponent implements OnInit {
       if (this.lastMcpToolsServerId !== serverId) {
         this.loadMcpTools(serverId);
       }
+    });
+
+    // Closes any open branch picker when the selected node changes, so a
+    // stale open picker from a previous node's branch index never lingers.
+    effect(() => {
+      this.node();
+      this.openBranchPickerIndex.set(null);
+      this.branchPickerQuery.set("");
     });
   }
 
@@ -1147,8 +1648,8 @@ export class WorkflowNodeConfigComponent implements OnInit {
   /**
    * Switches between adapter mode and URL ad-hoc mode.
    *
-   * When an adapter is selected we clear `method`/`url` and reset
-   * `endpointId` so the user must pick an endpoint explicitly. When
+   * When an adapter is selected we clear method/url and reset
+   * endpointId so the user must pick an endpoint explicitly. When
    * the user goes back to "None" we clear adapter-related fields so
    * the payload doesn't carry stale references.
    */
@@ -1164,7 +1665,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
   }
 
   /**
-   * Auto-fills `method`/`url` from the selected endpoint so the
+   * Auto-fills method/url from the selected endpoint so the
    * serialized payload remains valid for the backend (which still
    * requires both fields as strings).
    */
@@ -1225,7 +1726,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
 
   /**
    * Switches between "reply to sender" (uses the inbound
-   * message's `from` field at runtime) and a custom number.
+   * message's from field at runtime) and a custom number.
    */
   onRecipientModeChange(mode: string): void {
     this.updateConfig("recipientMode", mode);
@@ -1237,8 +1738,8 @@ export class WorkflowNodeConfigComponent implements OnInit {
   }
 
   /**
-   * When user picks an outbound account, auto-populate `channel` and
-   * `provider`. For "Same as incoming message" these come from the inbound
+   * When user picks an outbound account, auto-populate channel and
+   * provider. For "Same as incoming message" these come from the inbound
    * message at runtime (request templates) so the reply rides the source
    * account; otherwise they're taken from the selected account object.
    */
@@ -1280,11 +1781,11 @@ export class WorkflowNodeConfigComponent implements OnInit {
     { value: "notExists", label: "Not exists" },
   ];
 
+  /** Delegates to the shared pure reader (domain/get-conditional-branches.ts)
+   * so the template, the config panel, and the ambiguity resolver all read
+   * a node's branches array the exact same way. */
   getConditionalBranches(node: IWorkflowNode): IConditionalBranchConfig[] {
-    const branches = node.configuration["branches"];
-    return Array.isArray(branches)
-      ? (branches as IConditionalBranchConfig[])
-      : [];
+    return getConditionalBranchesShared(node);
   }
 
   addConditionalBranch(): void {
@@ -1354,12 +1855,156 @@ export class WorkflowNodeConfigComponent implements OnInit {
     return !!node.configuration["default"];
   }
 
+  /**
+   * Removes an existing default branch (still called from the default
+   * branch card's close button). Attempt 2 (dual-review objection 3):
+   * this method no longer has a UI-reachable "add" path — the config
+   * panel's default card is display-only (renders when hasDefaultBranch(n)
+   * is true, nothing otherwise); creating a default branch happens on the
+   * canvas by connecting another output from this node, the same
+   * mechanism that already existed before this task.
+   */
   toggleDefaultBranch(node: IWorkflowNode): void {
     if (this.hasDefaultBranch(node)) {
+      console.debug(
+        "[WorkflowNodeConfigComponent] default branch removed (IF-editor task)",
+        { nodeKey: node.key }
+      );
       this.updateConfig("default", undefined);
-    } else {
-      this.updateConfig("default", { targetKey: "" });
     }
+  }
+
+  /**
+   * Opens/closes the variable picker for a given branch index (SPEC idea 6).
+   * Clicking the pill for an already-open branch closes it; clicking a
+   * different branch's pill switches the open picker to that branch and
+   * resets the search text.
+   */
+  toggleVariablePicker(index: number): void {
+    if (this.openBranchPickerIndex() === index) {
+      this.closeVariablePicker();
+      return;
+    }
+    console.debug(
+      "[WorkflowNodeConfigComponent] variable picker opened (IF-editor task)",
+      { branchIndex: index }
+    );
+    this.openBranchPickerIndex.set(index);
+    this.branchPickerQuery.set("");
+  }
+
+  closeVariablePicker(): void {
+    this.openBranchPickerIndex.set(null);
+    this.branchPickerQuery.set("");
+  }
+
+  /**
+   * Commits a picked variable path onto the branch's condition (frozen
+   * IConditionRule.variable field, unchanged shape) and closes the
+   * picker. Verbose log records both the picked path and the branch
+   * index, to make future placeholder-bug regressions traceable.
+   */
+  selectBranchVariable(index: number, path: string): void {
+    console.debug(
+      "[WorkflowNodeConfigComponent] branch variable selected (IF-editor task, placeholder-bug fix)",
+      { branchIndex: index, path }
+    );
+    this.updateConditionalBranchCondition(index, "variable", path);
+    this.closeVariablePicker();
+  }
+
+  filteredVariableGroups(): IVariableGroup[] {
+    return [
+      ...filterVariableGroups(this.variableGroups(), this.branchPickerQuery()),
+    ];
+  }
+
+  /**
+   * The branch condition's expression chip text (SPEC idea 2), reusing
+   * flow-deserializer.ts's conditionEdgeLabel() — the SAME formatting rule
+   * the canvas edge label is built from — so editor and canvas always
+   * agree. Returns undefined (no chip) when the condition is genuinely
+   * empty: conditionEdgeLabel itself only guards against a non-string/
+   * undefined variable, not an empty string, so the emptiness check
+   * happens here first.
+   */
+  exprChipFor(branch: IConditionalBranchConfig): string | undefined {
+    if (!branch.condition.variable || !branch.condition.comparator) {
+      return undefined;
+    }
+    return conditionEdgeLabel(
+      branch.condition as unknown as Record<string, unknown>
+    );
+  }
+
+  /**
+   * Resolves a conditional branch's route target node (SPEC idea 3) by
+   * matching the flow connection whose label equals this branch's own
+   * expression text.
+   */
+  routeTargetForBranch(
+    node: IWorkflowNode,
+    expectedLabel: string | undefined
+  ): IBranchRouteTarget | null {
+    return resolveConditionalBranchTarget(
+      node.key,
+      expectedLabel,
+      this.connections(),
+      this.nodesByKey()
+    );
+  }
+
+  /** Same resolution for the default branch's literal "default" label. */
+  defaultRouteTargetFor(node: IWorkflowNode): IBranchRouteTarget | null {
+    return resolveConditionalBranchTarget(
+      node.key,
+      "default",
+      this.connections(),
+      this.nodesByKey()
+    );
+  }
+
+  /**
+   * Per-branch run evidence (SPEC idea 4, revised attempt 2). The
+   * numerator joins the unmerged /node-stats branch rows by
+   * (action_name, branch) for this branch's own route target + label. The
+   * DENOMINATOR is the conditional node's OWN /node-stats row
+   * (nodeStatsOwnRunsByName()[node.name]) — rename-proof, since it is
+   * keyed only by the node's action_name, not by any branch's current
+   * label (attempt 2 dual-review objection 1: summing sibling branch rows
+   * keyed by CURRENT labels let a rename silently reassign a branch's
+   * historical runs out of its siblings' totals, inflating their
+   * percentages).
+   *
+   * Before joining, checks ambiguousEvidenceKeys() (objection 2): when
+   * more than one conditional node in the flow routes a same-labeled
+   * branch to the same target action, /node-stats' (action_name, branch)
+   * grouping cannot tell them apart, so evidence is suppressed for EVERY
+   * node sharing that key rather than presenting a possibly
+   * cross-attributed number as fact.
+   *
+   * Returns null (hidden) while the fetch hasn't resolved, when this
+   * branch has no route target yet, when the key is ambiguous, or when
+   * there is no real data for either the numerator or the node's own
+   * total — never a fabricated/zero/adjusted count.
+   */
+  branchEvidenceFor(
+    node: IWorkflowNode,
+    branchLabel: string,
+    targetActionName: string | undefined
+  ): IBranchEvidence | null {
+    if (!targetActionName || this.nodeStatsFetchState() !== "ready") {
+      return null;
+    }
+    const key = `${targetActionName}::${branchLabel}`;
+    if (this.ambiguousEvidenceKeys().has(key)) {
+      return null;
+    }
+    const nodeTotalRuns = this.nodeStatsOwnRunsByName()[node.name] ?? null;
+    return resolveBranchEvidence(this.nodeStatsBranchRows(), nodeTotalRuns, {
+      branchLabel,
+      targetActionName,
+    });
   }
 
   private formatServiceCallData(data: unknown): string {
@@ -1381,7 +2026,7 @@ export class WorkflowNodeConfigComponent implements OnInit {
   }
 
   /**
-   * Parses and persists `data` on blur; empty input clears the body.
+   * Parses and persists data on blur; empty input clears the body.
    */
   onServiceCallBodyBlur(): void {
     const n = this.node();

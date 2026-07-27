@@ -1,5 +1,7 @@
 import {
   type INodeStatsRow,
+  mapNodeStatsOwnRunsByName,
+  mapNodeStatsToBranchRows,
   mapNodeStatsToViewModels,
 } from "../map-node-stats-to-view-models";
 
@@ -95,5 +97,113 @@ describe("mapNodeStatsToViewModels", () => {
     ];
     const result = mapNodeStatsToViewModels(rows);
     expect(result["Some other node"]).toBeUndefined();
+  });
+});
+
+describe("mapNodeStatsToBranchRows", () => {
+  it("exposes the unmerged per-branch rows (mock's 11/23 buildEscalationReply, 12/23 replyStandard)", () => {
+    const rows: INodeStatsRow[] = [
+      {
+        action_name: "buildEscalationReply",
+        branch: "VIP escalation",
+        runs: 11,
+        p95_ms: 80,
+        ok_ratio: 1,
+      },
+      {
+        action_name: "replyStandard",
+        branch: "default",
+        runs: 12,
+        p95_ms: 40,
+        ok_ratio: 1,
+      },
+    ];
+    expect(mapNodeStatsToBranchRows(rows)).toEqual([
+      {
+        actionName: "buildEscalationReply",
+        branch: "VIP escalation",
+        runs: 11,
+      },
+      { actionName: "replyStandard", branch: "default", runs: 12 },
+    ]);
+  });
+
+  it("drops rows without a branch dimension (linear, non-branched actions)", () => {
+    const rows: INodeStatsRow[] = [
+      {
+        action_name: "Fetch user",
+        branch: null,
+        runs: 5,
+        p95_ms: 10,
+        ok_ratio: 1,
+      },
+    ];
+    expect(mapNodeStatsToBranchRows(rows)).toEqual([]);
+  });
+
+  it("drops zero-run rows", () => {
+    const rows: INodeStatsRow[] = [
+      { action_name: "x", branch: "a", runs: 0, p95_ms: null, ok_ratio: null },
+    ];
+    expect(mapNodeStatsToBranchRows(rows)).toEqual([]);
+  });
+});
+
+describe("mapNodeStatsOwnRunsByName", () => {
+  it("sums an action's own unbranched row(s), matching the mock's vipRoute 23 runs", () => {
+    const rows: INodeStatsRow[] = [
+      {
+        action_name: "vipRoute",
+        branch: null,
+        runs: 23,
+        p95_ms: 395,
+        ok_ratio: 1,
+      },
+      {
+        action_name: "buildEscalationReply",
+        branch: "VIP escalation",
+        runs: 11,
+        p95_ms: 80,
+        ok_ratio: 1,
+      },
+    ];
+    expect(mapNodeStatsOwnRunsByName(rows)).toEqual({ vipRoute: 23 });
+  });
+
+  it("ignores branch-dimension rows entirely (they are not the node's own row)", () => {
+    const rows: INodeStatsRow[] = [
+      {
+        action_name: "buildEscalationReply",
+        branch: "VIP escalation",
+        runs: 11,
+        p95_ms: 80,
+        ok_ratio: 1,
+      },
+    ];
+    expect(mapNodeStatsOwnRunsByName(rows)).toEqual({});
+  });
+
+  it("is unaffected by a branch rename (rename-staleness fix, IF-editor attempt 2): only the unbranched own-row entry matters", () => {
+    const before: INodeStatsRow[] = [
+      {
+        action_name: "vipRoute",
+        branch: null,
+        runs: 23,
+        p95_ms: 395,
+        ok_ratio: 1,
+      },
+    ];
+    const afterRename: INodeStatsRow[] = [
+      {
+        action_name: "vipRoute",
+        branch: null,
+        runs: 23,
+        p95_ms: 395,
+        ok_ratio: 1,
+      },
+    ];
+    expect(mapNodeStatsOwnRunsByName(before)).toEqual(
+      mapNodeStatsOwnRunsByName(afterRename)
+    );
   });
 });

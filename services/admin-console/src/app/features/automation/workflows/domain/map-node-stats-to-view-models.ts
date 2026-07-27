@@ -80,3 +80,67 @@ export function mapNodeStatsToViewModels(
   }
   return result;
 }
+
+/**
+ * One UNMERGED `(action_name, branch)` aggregate row, ready for the
+ * conditional-branch config panel's per-branch run evidence (IF-editor SPEC
+ * task). `mapNodeStatsToViewModels` above deliberately MERGES every row that
+ * shares an `action_name` across branches (documented "join-crux verdict")
+ * so the node-card footer keeps behaving exactly as T07 shipped it — this
+ * accessor exposes the SAME `/node-stats` rows one level less aggregated,
+ * without touching that merged behavior at all.
+ */
+export interface INodeStatsBranchRow {
+  readonly actionName: string;
+  readonly branch: string;
+  readonly runs: number;
+}
+
+/**
+ * Filters/reshapes raw `/node-stats` rows into the branch-keyed rows the
+ * conditional branch config panel joins against (by target action name +
+ * branch label — see `resolve-branch-evidence.ts`). Drops rows with no
+ * branch dimension (linear, non-branched actions) or zero runs — those
+ * carry no per-branch evidence to show.
+ */
+export function mapNodeStatsToBranchRows(
+  rows: readonly INodeStatsRow[]
+): readonly INodeStatsBranchRow[] {
+  const branchRows: INodeStatsBranchRow[] = [];
+  for (const row of rows) {
+    if (!row.action_name || !row.branch || row.runs <= 0) {
+      continue;
+    }
+    branchRows.push({
+      actionName: row.action_name,
+      branch: row.branch,
+      runs: row.runs,
+    });
+  }
+  return branchRows;
+}
+
+/**
+ * Total runs of each action's OWN unbranched /node-stats row (branch is
+ * null), keyed by action_name. Used as the per-branch run-evidence
+ * DENOMINATOR (see resolve-branch-evidence.ts) for a conditional node's own
+ * execution count ("how many times this conditional ran"), instead of
+ * summing sibling branch rows keyed by their current labels — the
+ * rename-staleness fix (IF-editor task attempt 2, dual-review objection 1).
+ * A conditional node emits its own action_started/completed pair with
+ * branch === null whenever it is not itself nested inside another branch
+ * (services/workflow-service/src/temporal/workflows.ts), so this map's
+ * entry for the conditional's own action_name is that count.
+ */
+export function mapNodeStatsOwnRunsByName(
+  rows: readonly INodeStatsRow[]
+): Readonly<Record<string, number>> {
+  const result: Record<string, number> = {};
+  for (const row of rows) {
+    if (!row.action_name || row.branch || row.runs <= 0) {
+      continue;
+    }
+    result[row.action_name] = (result[row.action_name] ?? 0) + row.runs;
+  }
+  return result;
+}
