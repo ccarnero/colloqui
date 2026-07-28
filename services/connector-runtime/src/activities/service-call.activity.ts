@@ -1,32 +1,35 @@
 import { ApplicationFailure } from "@temporalio/activity";
-import { tracedFetch, PinoLoggerService } from "@yoizen/observability";
-import { TENANT_HEADER, computeBreakerKey } from "@yoizen/shared";
+import { PinoLoggerService, tracedFetch } from "@yoizen/observability";
 import type {
   EventCausalContext,
   ResolvedAdapterRequest,
   ServiceCallArgs,
 } from "@yoizen/shared";
+import { computeBreakerKey, TENANT_HEADER } from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../config";
 import {
   getAdapterClient,
   getHttpResponseCache,
 } from "./_shared/adapter-client.provider";
 import { getHttpBreaker, HTTP_BREAKER_COOLDOWN_MS } from "./_shared/breaker";
+import { publishEndpointCallEvent } from "./_shared/event-publisher";
+import {
+  createBypassHttpResponseCacheDecision,
+  resolveHttpResponseCachePolicy,
+} from "./_shared/http-cache/cache-policy";
+import { cachedFetch } from "./_shared/http-cache/cached-fetch";
 import {
   applyJsonBody,
   buildResult,
   httpCallWithRetry,
   type IHttpCallResult,
 } from "./_shared/http-call-with-retry";
-import { cachedFetch } from "./_shared/http-cache/cached-fetch";
-import {
-  createBypassHttpResponseCacheDecision,
-  resolveHttpResponseCachePolicy,
-} from "./_shared/http-cache/cache-policy";
 import {
   HttpResponseCacheReason,
   serviceCallResolutionSourceTotal,
 } from "./_shared/metrics";
+import { redactHeaders } from "./_shared/redact-headers";
+import { truncateBody } from "./_shared/truncate-body";
 
 type IServiceCallResult = IHttpCallResult;
 
@@ -53,11 +56,13 @@ const logger = new PinoLoggerService("service-call.activity");
 export async function executeServiceCall(
   args: ServiceCallArgs,
   tenantId: string,
-  // Accepted for Temporal positional-signature parity with `executeEndpointCall`/
-  // `executeMcpCall`; unused here because `serviceCall` emits no
-  // `endpoint_call_completed` event to thread causal context into.
-  _causal?: EventCausalContext,
-  executionId?: string,
+  // Causal context from the calling workflow's `serviceCall` action (when
+  // present), mirroring `mcp-call.activity.ts`'s `causal` param. Threaded
+  // into the published `connector.endpoint_call.completed.v1` event so it
+  // joins the run's correlation chain instead of becoming a causal orphan
+  // (manual-loops/connectors/connection-call-inspector.md T01).
+  causal?: EventCausalContext,
+  executionId?: string
 ): Promise<IServiceCallResult> {
   if (executionId) {
     logger.log(`serviceCall executionId=${executionId} tenant=${tenantId}`);
@@ -88,7 +93,7 @@ export async function executeServiceCall(
   }
 
   try {
-    const result = await executeServiceCallInner(args, tenantId);
+    const result = await executeServiceCallInner(args, tenantId, causal);
     breaker.recordSuccess(key);
     return result;
   } catch (err) {
@@ -100,6 +105,7 @@ export async function executeServiceCall(
 async function executeServiceCallInner(
   args: ServiceCallArgs,
   tenantId: string,
+  causal?: EventCausalContext
 ): Promise<IServiceCallResult> {
   const client = getAdapterClient();
   // The adapter mirror in `adapter-service` (table `http_adapters`,
@@ -121,9 +127,9 @@ async function executeServiceCallInner(
         args,
         mirror.id,
         mirrorKey,
-        args.endpointId,
+        args.endpointId
       );
-      const result = await performRequest(resolved, args, tenantId);
+      const result = await performRequest(resolved, args, tenantId, causal);
       serviceCallResolutionSourceTotal.add(1, {
         source: "mirror",
         result: "ok",
@@ -139,10 +145,10 @@ async function executeServiceCallInner(
   }
 
   logger.log(
-    `service-call mirror miss: falling back to registry for '${args.serviceId}' tenant=${tenantId}`,
+    `service-call mirror miss: falling back to registry for '${args.serviceId}' tenant=${tenantId}`
   );
   try {
-    const result = await resolveAndCallViaRegistry(args, tenantId);
+    const result = await resolveAndCallViaRegistry(args, tenantId, causal);
     serviceCallResolutionSourceTotal.add(1, {
       source: "registry",
       result: "ok",
@@ -162,7 +168,7 @@ async function resolveViaMirror(
   args: ServiceCallArgs,
   adapterId: string,
   mirrorKey: string,
-  endpointId: string | undefined,
+  endpointId: string | undefined
 ): Promise<ResolvedAdapterRequest> {
   const client = getAdapterClient();
   if (endpointId) {
@@ -172,17 +178,13 @@ async function resolveViaMirror(
   // that succeeded in `findInternalByServiceId` so the SWR cache lookup
   // inside `resolveForInternalService` hits the same Redis entry rather
   // than triggering a second adapter-service round trip.
-  const resolved = await client.resolveForInternalService(
-    tenantId,
-    mirrorKey,
-    {
-      path: args.path,
-      method: args.method,
-    },
-  );
+  const resolved = await client.resolveForInternalService(tenantId, mirrorKey, {
+    path: args.path,
+    method: args.method,
+  });
   if (!resolved) {
     throw new Error(
-      `Adapter mirror for service '${args.serviceId}' disappeared mid-call`,
+      `Adapter mirror for service '${args.serviceId}' disappeared mid-call`
     );
   }
   return resolved;
@@ -192,6 +194,7 @@ async function performRequest(
   resolved: ResolvedAdapterRequest,
   args: ServiceCallArgs,
   tenantId: string,
+  causal?: EventCausalContext
 ): Promise<IServiceCallResult> {
   const headers: Record<string, string> = {
     ...resolved.headers,
@@ -209,7 +212,8 @@ async function performRequest(
     body,
   });
 
-  return httpCallWithRetry({
+  const startedAt = Date.now();
+  const result = await httpCallWithRetry({
     url: resolved.url,
     method: resolved.method,
     headers,
@@ -222,11 +226,30 @@ async function performRequest(
       store: getHttpResponseCache(),
     },
   });
+
+  // `httpCallWithRetry` throws only on transport-level failures (network
+  // error or a 5xx that exhausted retries) — any response it returns,
+  // including 4xx, is a COMPLETED call, so we emit unconditionally here
+  // (same semantics as `execute-with-adapter-endpoint.ts:109-126`).
+  emitServiceCallEvent({
+    tenantId,
+    args,
+    causal,
+    method: resolved.method,
+    url: resolved.url,
+    headers,
+    body,
+    result,
+    durationMs: Date.now() - startedAt,
+  });
+
+  return result;
 }
 
 async function resolveAndCallViaRegistry(
   args: ServiceCallArgs,
   tenantId: string,
+  causal?: EventCausalContext
 ): Promise<IServiceCallResult> {
   const baseUrl = await resolveServiceUrl(args.serviceId, tenantId);
   const url = `${baseUrl}${args.path}`;
@@ -238,8 +261,10 @@ async function resolveAndCallViaRegistry(
   const body = applyJsonBody(args.data, headers);
   const decision = createBypassHttpResponseCacheDecision(
     args.method,
-    HttpResponseCacheReason.UNSUPPORTED_TARGET,
+    HttpResponseCacheReason.UNSUPPORTED_TARGET
   );
+
+  const startedAt = Date.now();
   const res = await cachedFetch(
     url,
     {
@@ -252,15 +277,90 @@ async function resolveAndCallViaRegistry(
       decision,
       cache: getHttpResponseCache(),
       fetchFn: tracedFetch,
-    },
+    }
   );
 
-  return buildResult(res);
+  const result = await buildResult(res);
+
+  emitServiceCallEvent({
+    tenantId,
+    args,
+    causal,
+    method: args.method,
+    url,
+    headers,
+    body,
+    result,
+    durationMs: Date.now() - startedAt,
+  });
+
+  return result;
+}
+
+/**
+ * Publishes `connector.endpoint_call.completed.v1` for a completed platform
+ * service call (`manual-loops/connectors/connection-call-inspector.md` T01).
+ * Reuses `_shared/event-publisher.ts`'s `publishEndpointCallEvent` — the
+ * SAME fire-and-forget sink `endpoint-call.activity.ts` uses — instead of a
+ * dedicated publisher, so redaction, truncation, causal threading, and the
+ * `DepthExceededError` fallback all come for free.
+ *
+ * Resource is `service/<serviceName>` (decision 7 of the SPEC), NOT the
+ * sink's default `adapter/${adapterId}` derivation — `evt.resource`
+ * overrides it. `adapterId` on the payload carries the resolved
+ * service/slug identifier for observability parity with the `endpointCall`
+ * shape; it is not a real `http_adapters` row id for the registry-fallback
+ * branch (no adapter involved there).
+ */
+function emitServiceCallEvent(params: {
+  tenantId: string;
+  args: ServiceCallArgs;
+  causal?: EventCausalContext;
+  method: string;
+  url: string;
+  headers: Record<string, string>;
+  body: string | undefined;
+  result: IServiceCallResult;
+  durationMs: number;
+}): void {
+  const {
+    tenantId,
+    args,
+    causal,
+    method,
+    url,
+    headers,
+    body,
+    result,
+    durationMs,
+  } = params;
+  const serviceName = args.serviceSlug ?? args.serviceId;
+
+  publishEndpointCallEvent({
+    tenantId,
+    adapterId: serviceName,
+    endpointId: args.endpointId ?? null,
+    method,
+    resolvedUrl: url,
+    status: result.status,
+    durationMs,
+    cacheResult: result.cacheResult ?? null,
+    requestHeaders: redactHeaders(headers),
+    requestBody: truncateBody(body),
+    responseHeaders: redactHeaders(result.headers),
+    responseBody: truncateBody(result.data),
+    resource: `service/${serviceName}`,
+    causal,
+  });
+
+  logger.log(
+    `serviceCall event published tenant=${tenantId} service=${args.serviceId} status=${result.status} durationMs=${durationMs}`
+  );
 }
 
 async function resolveServiceUrl(
   serviceId: string,
-  tenantId: string,
+  tenantId: string
 ): Promise<string> {
   const registryUrl = `${workflowHttpWorkerConfig.registryServiceUrl}/services/${serviceId}`;
 
@@ -272,7 +372,7 @@ async function resolveServiceUrl(
 
   if (!res.ok) {
     throw new Error(
-      `Registry lookup failed for service '${serviceId}': HTTP ${res.status}`,
+      `Registry lookup failed for service '${serviceId}': HTTP ${res.status}`
     );
   }
 
@@ -280,7 +380,7 @@ async function resolveServiceUrl(
 
   if (!svc.knativeName || !svc.namespace) {
     throw new Error(
-      `Service '${serviceId}' has no Knative deployment (missing knativeName/namespace)`,
+      `Service '${serviceId}' has no Knative deployment (missing knativeName/namespace)`
     );
   }
 

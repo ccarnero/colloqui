@@ -111,13 +111,19 @@ async function emit(evt: IEndpointCallEventPayload): Promise<void> {
     version: "v1",
   });
 
-  // Standalone (non-workflow) callers set `invocationId` (HTTP facade, T02)
-  // so the audit event is addressable by invocation even though it starts a
-  // root correlation (no `causal` to join) — SPEC.md T02 constraint. Workflow
-  // calls (Temporal activity) never set it and keep the pre-T02 resource shape.
-  const resource = evt.invocationId
-    ? `invocation/${evt.invocationId}`
-    : `adapter/${evt.adapterId}`;
+  // Explicit `resource` override (connection-call-inspector.md T01/T02) wins
+  // over the invocation/adapter derivation below — non-adapter callers
+  // (serviceCall's `service/<name>`, the raw branch's `raw/<host>`) don't fit
+  // either shape. Standalone (non-workflow) callers set `invocationId` (HTTP
+  // facade, T02 of connector-invoke-api.md) so the audit event is addressable
+  // by invocation even though it starts a root correlation (no `causal` to
+  // join). Workflow calls (Temporal activity) set neither and keep the
+  // pre-T02 `adapter/${adapterId}` resource shape.
+  const resource =
+    evt.resource ??
+    (evt.invocationId
+      ? `invocation/${evt.invocationId}`
+      : `adapter/${evt.adapterId}`);
 
   const baseOptions = {
     type: "connector.endpoint_call.completed.v1",

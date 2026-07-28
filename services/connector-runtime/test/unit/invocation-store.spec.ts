@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { setActiveRedisInstance } from "../helpers/fake-adapter-redis";
+import { setActiveTracedFetch } from "../helpers/fake-traced-fetch";
 
 // In-memory fake Redis with real TTL-expiry semantics (ms-based, tests use
 // short TTLs + tiny sleeps) so the T05 "TTL expiry" acceptance criterion is
@@ -28,40 +30,28 @@ const fakeRedisInstance = {
     }
     return entry.value;
   }),
+  setex: mock(() => Promise.resolve("OK")),
+  del: mock((..._keys: string[]) => Promise.resolve(0)),
+  script: mock(() => Promise.resolve("sha-fake")),
+  evalsha: mock(() => Promise.resolve(["allow", "closed", ""])),
+  eval: mock(() => Promise.resolve(["allow", "closed", ""])),
+  options: {},
+  status: "ready",
 };
 
-mock.module("ioredis", () => ({
-  default: class Redis {
-    constructor() {
-      return fakeRedisInstance;
-    }
-  },
-}));
-
-mock.module("@yoizen/observability", () => ({
-  tracedFetch: () => Promise.resolve(new Response("{}", { status: 200 })),
-  getMeter: () => ({
-    createCounter: () => ({ add() {} }),
-    createHistogram: () => ({ record() {} }),
-  }),
-  startNatsProducerSpan: () => ({ span: { end() {} } }),
-  startNatsConsumerSpan: () => ({ span: { end() {} } }),
-  injectTraceContext: () => {},
-  activeOrRandomTraceId: () => "trace-1",
-  logWithEnvelope: () => {},
-  createCircuitBreakerMetrics: () => ({
-    recordDecision() {},
-    recordTransition() {},
-    recordL1Hit() {},
-    recordRedisError() {},
-    recordDecideDuration() {},
-  }),
-  PinoLoggerService: class FakeLogger {
-    log() {}
-    warn() {}
-    error() {}
-  },
-}));
+// `ioredis` and `tracedFetch` are routed through the SHARED doubles
+// (`test/helpers/fake-adapter-redis`, `test/helpers/fake-traced-fetch`)
+// instead of private `mock.module(...)` calls here — see those helpers' doc
+// comments: both `getRedis()`-style singletons construct exactly ONE client
+// for the whole process, so a private mock here would silently lose the
+// binding race against other spec files that also exercise
+// `getAdapterClient()` (confirmed empirically: this file's private mocks
+// were winning the race and breaking `endpoint-call-core.spec.ts`'s adapter
+// cache assertions).
+setActiveRedisInstance(fakeRedisInstance);
+setActiveTracedFetch(() =>
+  Promise.resolve(new Response("{}", { status: 200 }))
+);
 
 const { parkInvocationResult, getInvocationRecord } = await import(
   "../../src/activities/_shared/invocation-store"
@@ -69,6 +59,10 @@ const { parkInvocationResult, getInvocationRecord } = await import(
 
 describe("invocation-store (Redis-backed)", () => {
   beforeEach(() => {
+    setActiveRedisInstance(fakeRedisInstance);
+    setActiveTracedFetch(() =>
+      Promise.resolve(new Response("{}", { status: 200 }))
+    );
     store.clear();
   });
 

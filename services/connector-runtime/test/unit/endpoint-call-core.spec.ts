@@ -4,6 +4,11 @@ import type {
   ICachedHttpResponseEntry,
   IHttpResponseCache,
 } from "../../src/activities/_shared/http-cache/http-response-cache";
+import { setActiveRedisInstance } from "../helpers/fake-adapter-redis";
+import {
+  setActiveTracedFetch,
+  type TracedFetchImpl,
+} from "../helpers/fake-traced-fetch";
 
 // Mirrors `endpoint-call.activity.spec.ts`'s mocking pattern so the pure
 // core lib is exercised through the same real breaker/cache/adapter-client
@@ -72,53 +77,31 @@ const mockRedisInstance = {
   status: "ready",
 };
 
-mock.module("ioredis", () => {
-  return {
-    default: class Redis {
-      constructor() {
-        return mockRedisInstance;
-      }
-    },
-  };
-});
+// `ioredis` is routed through the SHARED double (`test/helpers/fake-adapter-redis`)
+// instead of a private `mock.module(...)` here — see that helper's doc
+// comment: `adapter-client.provider.ts`'s `getRedis()` constructs exactly ONE
+// `Redis` instance for the whole process, so a private mock here would
+// silently lose the binding race against other spec files that also exercise
+// `getAdapterClient()` (confirmed empirically against
+// `service-call.activity.spec.ts`).
+setActiveRedisInstance(mockRedisInstance);
 
-let tracedFetchMock: ReturnType<typeof mock>;
-
-mock.module("@yoizen/observability", () => {
-  tracedFetchMock = mock(() =>
-    Promise.resolve(
-      new Response(JSON.stringify({ result: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
-    )
-  );
-  class FakeLogger {
-    log() {}
-    warn() {}
-    error() {}
-  }
-  return {
-    tracedFetch: tracedFetchMock,
-    PinoLoggerService: FakeLogger,
-    getMeter: () => ({
-      createCounter: () => ({ add() {} }),
-      createHistogram: () => ({ record() {} }),
-    }),
-    startNatsProducerSpan: () => ({ span: { end() {} } }),
-    startNatsConsumerSpan: () => ({ span: { end() {} } }),
-    injectTraceContext: () => {},
-    activeOrRandomTraceId: () => "trace-1",
-    logWithEnvelope: () => {},
-    createCircuitBreakerMetrics: () => ({
-      recordDecision() {},
-      recordTransition() {},
-      recordL1Hit() {},
-      recordRedisError() {},
-      recordDecideDuration() {},
-    }),
-  };
-});
+// `tracedFetch` is routed through the SHARED `"@yoizen/observability"` double
+// (`test/helpers/fake-traced-fetch`) instead of a private `mock.module(...)`
+// here — see that helper's doc comment: `adapter-client.provider.ts`'s
+// `getAdapterClient()` singleton captures `tracedFetch` at module-eval time,
+// only ONCE across the whole `bun test` process, so a private mock here would
+// silently lose the binding race against other spec files that also exercise
+// `getAdapterClient()` (e.g. `service-call.activity.spec.ts`).
+const tracedFetchMock: ReturnType<typeof mock> = mock(() =>
+  Promise.resolve(
+    new Response(JSON.stringify({ result: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })
+  )
+);
+setActiveTracedFetch(tracedFetchMock as unknown as TracedFetchImpl);
 
 const { executeEndpointCallCore } = await import(
   "../../src/lib/endpoint-call-core"
@@ -129,6 +112,11 @@ const { resolveHttpResponseCachePolicy } = await import(
 
 describe("executeEndpointCallCore", () => {
   beforeEach(() => {
+    // Re-assert on every test, not just once at module-eval time: another
+    // spec file's `beforeEach` may have re-pointed the SHARED active-fetch
+    // cell (`fake-traced-fetch.ts`) at its own mock in between test runs.
+    setActiveTracedFetch(tracedFetchMock as unknown as TracedFetchImpl);
+    setActiveRedisInstance(mockRedisInstance);
     redisStore.clear();
     tracedFetchMock.mockReset();
     tracedFetchMock.mockImplementation(() =>
@@ -228,9 +216,17 @@ describe("executeEndpointCallCore", () => {
       Promise.resolve(["deny", "open", "cooldown"])
     );
 
+    // Distinct tenant+url from `endpoint-call.activity.spec.ts`'s own
+    // CIRCUIT_OPEN fixture: `getHttpBreaker()` is a process-wide singleton
+    // whose L1 deny-cache is keyed by tenant+url — sharing the same fixture
+    // string across spec files means whichever test runs SECOND gets an L1
+    // cache HIT (skipping its own `evalsha` call entirely) and leaves this
+    // `mockImplementationOnce` unconsumed, leaking into the NEXT test that
+    // calls `evalsha` (confirmed empirically:
+    // `manual-loops/connectors/connection-call-inspector.md` T01).
     const result = await executeEndpointCallCore(
-      { method: "GET", url: "https://cb-target.example.com/x" },
-      "t-cb"
+      { method: "GET", url: "https://cb-target-core.example.com/x" },
+      "t-cb-core"
     );
 
     expect(result.ok).toBe(false);

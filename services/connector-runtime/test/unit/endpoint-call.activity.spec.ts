@@ -1,6 +1,11 @@
 import "reflect-metadata";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { setActiveRedisInstance } from "../helpers/fake-adapter-redis";
 import { setActivePublishSpy } from "../helpers/fake-nats-jetstream";
+import {
+  setActiveTracedFetch,
+  type TracedFetchImpl,
+} from "../helpers/fake-traced-fetch";
 
 const fakeAdapterConfig = {
   id: "adp-1",
@@ -58,53 +63,31 @@ const mockRedisInstance = {
   status: "ready",
 };
 
-mock.module("ioredis", () => {
-  return {
-    default: class Redis {
-      constructor() {
-        return mockRedisInstance;
-      }
-    },
-  };
-});
+// `ioredis` is routed through the SHARED double (`test/helpers/fake-adapter-redis`)
+// instead of a private `mock.module(...)` here — see that helper's doc
+// comment: `adapter-client.provider.ts`'s `getRedis()` constructs exactly ONE
+// `Redis` instance for the whole process, so a private mock here would
+// silently lose the binding race against other spec files that also exercise
+// `getAdapterClient()` (confirmed empirically against
+// `service-call.activity.spec.ts`).
+setActiveRedisInstance(mockRedisInstance);
 
-let tracedFetchMock: ReturnType<typeof mock>;
-
-mock.module("@yoizen/observability", () => {
-  tracedFetchMock = mock(() =>
-    Promise.resolve(
-      new Response(JSON.stringify({ result: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      })
-    )
-  );
-  class FakeLogger {
-    log() {}
-    warn() {}
-    error() {}
-  }
-  return {
-    tracedFetch: tracedFetchMock,
-    PinoLoggerService: FakeLogger,
-    getMeter: () => ({
-      createCounter: () => ({ add() {} }),
-      createHistogram: () => ({ record() {} }),
-    }),
-    startNatsProducerSpan: () => ({ span: { end() {} } }),
-    startNatsConsumerSpan: () => ({ span: { end() {} } }),
-    injectTraceContext: () => {},
-    activeOrRandomTraceId: () => "trace-1",
-    logWithEnvelope: () => {},
-    createCircuitBreakerMetrics: () => ({
-      recordDecision() {},
-      recordTransition() {},
-      recordL1Hit() {},
-      recordRedisError() {},
-      recordDecideDuration() {},
-    }),
-  };
-});
+// `tracedFetch` is routed through the SHARED `"@yoizen/observability"` double
+// (`test/helpers/fake-traced-fetch`) instead of a private `mock.module(...)`
+// here — see that file's doc comment: `adapter-client.provider.ts`'s
+// `getAdapterClient()` singleton captures `tracedFetch` at module-eval time,
+// only ONCE across the whole `bun test` process, so a private mock here would
+// silently lose the binding race against other spec files that also exercise
+// `getAdapterClient()` (e.g. `service-call.activity.spec.ts`).
+const tracedFetchMock: ReturnType<typeof mock> = mock(() =>
+  Promise.resolve(
+    new Response(JSON.stringify({ result: true }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })
+  )
+);
+setActiveTracedFetch(tracedFetchMock as unknown as TracedFetchImpl);
 
 // `endpoint-call.activity.ts` imports the REAL `publishEndpointCallEvent`
 // (`./_shared/event-publisher`) and calls it (fire-and-forget) after every
@@ -133,6 +116,11 @@ const { executeEndpointCall } = await import(
 
 describe("executeEndpointCall", () => {
   beforeEach(() => {
+    // Re-assert on every test, not just once at module-eval time: another
+    // spec file's `beforeEach` may have re-pointed the SHARED active-fetch
+    // cell (`fake-traced-fetch.ts`) at its own mock in between test runs.
+    setActiveTracedFetch(tracedFetchMock as unknown as TracedFetchImpl);
+    setActiveRedisInstance(mockRedisInstance);
     tracedFetchMock.mockReset();
     tracedFetchMock.mockImplementation(() =>
       Promise.resolve(

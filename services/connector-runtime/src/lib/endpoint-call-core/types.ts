@@ -48,6 +48,16 @@ export interface IEndpointCallEventPayload {
    */
   readonly invocationId?: string;
   /**
+   * Explicit envelope `resource` override. Set by callers that don't fit the
+   * `invocation/${invocationId}` / `adapter/${adapterId}` shapes the sink
+   * defaults to — e.g. `service-call.activity.ts`'s `service/<serviceName>`
+   * (`manual-loops/connectors/connection-call-inspector.md` T01, decision 7)
+   * and the raw no-adapter HTTP branch's `raw/<host>` (T02). When present,
+   * `event-publisher.ts`'s `emit()` uses it verbatim instead of deriving a
+   * resource from `invocationId`/`adapterId`.
+   */
+  readonly resource?: string;
+  /**
    * Causal context from the workflow's `endpointCall`/`serviceCall` action,
    * mirroring `mcp-call.activity.ts`'s `causal` threading (metering-foundation.md
    * G5). When present, the published envelope's `correlation_id`/`causation_id`/
