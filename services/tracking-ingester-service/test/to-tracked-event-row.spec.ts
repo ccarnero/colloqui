@@ -443,6 +443,110 @@ describe("toTrackedEventRow — T01 payload_status assignment", () => {
 });
 
 // ---------------------------------------------------------------------------
+// T05 of connection-call-inspector.md — the new mcp_call_completed
+// (rule 24) / llm_call_completed (rule 25) kinds ride the SAME
+// payload_status lifecycle as every other kind: "inline" when
+// data.payload is present. This mapper does not special-case them —
+// these tests guard that the generic rule stays true for the new families.
+// ---------------------------------------------------------------------------
+describe("toTrackedEventRow — T05 new kinds classify and get payload_status 'inline'", () => {
+  function baseEnvelope(
+    overrides: Record<string, unknown>
+  ): Record<string, unknown> {
+    return {
+      specversion: "1.0",
+      id: "evt-t05-1",
+      source: "//test/t05",
+      resource: "test/resource",
+      time: "2026-07-28T00:00:00.000Z",
+      traceid: "33333333-3333-3333-3333-333333333333",
+      causation_id: null,
+      correlation_id: "corr-t05-1",
+      tenant: "acme",
+      accountid: "acme",
+      idempotencykey: "idem-t05-1",
+      transport: { method: "stream", protocol: "internal", depth: 0 },
+      ...overrides,
+    };
+  }
+
+  it("mcp_call_completed classifies as rule 24 with payload_status 'inline'", () => {
+    const subject =
+      "evt.acme.connector-runtime.platform.mcp.system.mcp_call_completed.v1";
+    const envelope = baseEnvelope({
+      type: "connector.mcp_call.completed.v1",
+      resource: "mcp/mcp-server-1",
+      producer: "connector-runtime",
+      domain: "platform",
+      channel: "mcp",
+      provider: "system",
+      data: {
+        received_at: "2026-07-28T00:00:00.000Z",
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 100,
+        payload_checksum: "chk",
+        payload: {
+          serverName: "server-1",
+          mcpServerId: "mcp-server-1",
+          toolName: "search",
+          success: true,
+          durationMs: 12,
+        },
+      },
+    });
+    const result = toTrackedEventRow(subject, envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.rule).toBe(24);
+    expect(result.value.tech).toBe("connector");
+    expect(result.value.business_fn).toBe("connector-invocation");
+    expect(result.value.payload_status).toBe("inline");
+  });
+
+  it("llm_call_completed classifies as rule 25 with payload_status 'inline'", () => {
+    const subject =
+      "evt.acme.agent-ai-service.platform.llm.system.llm_call_completed.v1";
+    const envelope = baseEnvelope({
+      type: "ai.llm_call.completed.v1",
+      resource: "execution/exec-1",
+      producer: "agent-ai-service",
+      domain: "platform",
+      channel: "llm",
+      provider: "system",
+      data: {
+        received_at: "2026-07-28T00:00:00.000Z",
+        payload_inline: true,
+        payload_ref: null,
+        payload_bytes: 100,
+        payload_checksum: "chk",
+        payload: {
+          model: "gpt-4o-mini",
+          provider: "openai",
+          prompt: "hi",
+          completion: "hello",
+          inputTokens: 1,
+          outputTokens: 1,
+          costUsd: 0.0001,
+          durationMs: 10,
+        },
+      },
+    });
+    const result = toTrackedEventRow(subject, envelope);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.value.rule).toBe(25);
+    expect(result.value.tech).toBe("platform");
+    expect(result.value.business_fn).toBe("llm-invocation");
+    expect(result.value.payload_status).toBe("inline");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T01 (payload-capture) — non-envelope rows (buildNonEnvelopeRow, T07) never
 // carry a payload: payload_status must be "none".
 // ---------------------------------------------------------------------------

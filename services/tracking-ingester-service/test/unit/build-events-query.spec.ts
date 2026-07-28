@@ -127,6 +127,54 @@ describe("buildEventsQuery", () => {
     ]);
   });
 
+  // T05 of connection-call-inspector.md: serviceCall/raw/mcp reuse the
+  // generic envelope->>'resource' verbatim match, unlike the special-cased
+  // `agent/<agentId>` shape below.
+  it.each([
+    "service/hosted-crm",
+    "raw/api.example.com",
+    "mcp/mcp-server-1",
+  ])("filters generically on envelope->>'resource' for the new resource prefix %s", (resourceValue) => {
+    const { text, params } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.endpoint_call.completed.v1",
+      resource: resourceValue,
+      from: null,
+      limit: 50,
+    });
+    expect(text).toContain("envelope->>'resource' = $3");
+    expect(params).toEqual([
+      "tenant-a",
+      "connector.endpoint_call.completed.v1",
+      resourceValue,
+      50,
+    ]);
+  });
+
+  // T05 addendum: `agent/<agentId>` is the ONE resource shape that does NOT
+  // match `envelope->>'resource'` verbatim — see build-events-query.ts's
+  // header note (agent-execution events carry `resource: "execution/<id>"`,
+  // not an agent-prefixed shape).
+  it("filters on the payload agentId (COALESCE with the requested-kind's nested shape) for resource=agent/<id>", () => {
+    const { text, params } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "io.yoizen.platform.runtime.execution_completed.v1",
+      resource: "agent/agent-123",
+      from: null,
+      limit: 50,
+    });
+    expect(text).not.toContain("envelope->>'resource'");
+    expect(text).toContain(
+      "COALESCE(envelope->'data'->'payload'->>'agentId', envelope->'data'->'payload'->'input'->>'agentId') = $3"
+    );
+    expect(params).toEqual([
+      "tenant-a",
+      "io.yoizen.platform.runtime.execution_completed.v1",
+      "agent-123",
+      50,
+    ]);
+  });
+
   it("combines resource and from with correctly ordered positional params", () => {
     const { text, params } = buildEventsQuery({
       tenant: "tenant-a",

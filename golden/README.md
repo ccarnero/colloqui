@@ -23,7 +23,10 @@ recorded in `DRIFT.md`.
   addendum below) + 3 synthetic events (seq 1327-1329, added by
   `manual-loops/declarative-provisioning.md` T05 to cover the
   `secret_written`/`secret_resolved`/`secret_access_denied` secrets-audit
-  kinds, landed WITH the emitter — see addendum below), 90 total. Each file
+  kinds, landed WITH the emitter — see addendum below) + 2 synthetic events
+  (seq 1330-1331, added by `manual-loops/connectors/connection-call-inspector.md`
+  T05 to cover the `mcp_call_completed`/`llm_call_completed` kinds, landed
+  WITH the T03/T04 emitters — see addendum below), 92 total. Each file
   is a wrapper object: `{ stream, seq, received, subject, headers, envelope
   }`. File name encodes provenance: `<STREAM>-seq<N>.json`.
 - `labeled.tsv` — pre-labels produced by applying the classification rules in
@@ -45,9 +48,12 @@ recorded in `DRIFT.md`.
   2 synthetic connector-invoke-api T04 events (seq 1320–1321, see addendum below) +
   5 synthetic declarative-provisioning T04 events (seq 1322–1326, see addendum
   below) + 3 synthetic declarative-provisioning T05 events (seq 1327–1329, see
-  addendum below).
+  addendum below) + 2 synthetic connection-call-inspector T05 events (seq
+  1330–1331, see addendum below).
 - **`GATEWAY_AUDIT`** — 2 events.
-- 13 correlation chains, all formally closed by `correlation_id` + `causation_id`:
+- 13 correlation chains, all formally closed by `correlation_id` + `causation_id`,
+  plus 2 standalone connection-call-inspector roots (seq 1330, seq 1331, each a
+  single-event chain — see addendum below):
   4 conversation chains (1 Telegram, 3 HTTP) and 2 memory approve/reject cycles
   (test-provenance memories created via the admin API for fix-4 validation), plus
   2 synthetic workflow-step-events chains (seq 1312–1315, 1316–1319), plus 1
@@ -79,6 +85,29 @@ These labels were generated mechanically from the `TAXONOMY.md` rule table.
 **`labeled.tsv` becomes the classifier's golden truth ONLY after user correction.**
 All 82 rows carry HIGH confidence; rows with a non-empty `notes` column are the ones
 most likely to need a human decision.
+
+## Addendum (2026-07-28) — connection-call-inspector T05 synthetic rows
+
+`manual-loops/connectors/connection-call-inspector.md` T05 lands the two new
+classification rules (rule 24 for `mcp_call_completed`, rule 25 for
+`llm_call_completed`), the matching `TAXONOMY.md` entries, AND the golden
+rows together in the same task — the T03/T04 emitters already landed
+(`event-publisher.ts`'s `emitMcpCall`, `llm-call-event-publisher.service.ts`),
+so, like the declarative-provisioning T04/T05 addenda above, this is golden
+rule 3 with the emitter shipping ahead of (not after) the classifier. 2 rows
+(seq 1330-1331) were added by hand, each a standalone root (no upstream
+causal chain — correlation_id = own id, causation null, depth 0): seq1330 is
+a successful MCP tool call (`search_docs`, resource `mcp/mcp-repo-support-bot`)
+classifying as rule 24 `connector`/`connector-invocation` — REUSED from rule
+11, not a new `business_fn`, because decision 1 groups `mcpCall` alongside
+`endpointCall` as one of "every connector invocation type"; seq1331 is a
+standalone (non-chat-execution) job-executor LLM call (`gpt-4o-mini`,
+resource `execution/job-execution-seq1331`) classifying as rule 25
+`platform`/`llm-invocation` — a NEW `business_fn`, distinct from rule 6's
+`agent-execution` (a full chat execution) and rule 11/24's
+`connector-invocation` (a connector-runtime call), because it represents a
+standalone LLM invocation outside any agent chat execution. See
+`TAXONOMY.md` §4 rules 24/25 design notes.
 
 ## Addendum (2026-07-14) — declarative-provisioning T04 synthetic rows
 

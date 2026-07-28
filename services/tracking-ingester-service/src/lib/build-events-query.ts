@@ -30,7 +30,28 @@
 //     non-connector families (mcp/agent/hosted-service, explicitly flagged as a
 //     future consumer in the SPEC's "Out of scope" section) whose `resource` shape
 //     is not `adapter/<id>`, so matching the envelope field verbatim is the only
-//     choice that stays correct for all of them.
+//     choice that stays correct for all of them. This verbatim match already
+//     covers the T01/T02/T03 additions (`service/<name>`, `raw/<host>`,
+//     `mcp/<mcpServerId>` — `manual-loops/connectors/connection-call-inspector.md`
+//     T05, decision 7) with NO code change, since those are ordinary
+//     `envelope.resource` values set at publish time, same as `adapter/<id>`.
+//   - EXCEPTION — `resource=agent/<agentId>` (T05, needed by T10's "Recent
+//     executions" panel): agent-execution events (TAXONOMY.md §4 rule 6,
+//     `evt.*.ai-agent-gateway.automation.platform.internal.execution_*.v1`)
+//     do NOT carry an `agent/<agentId>`-shaped `envelope.resource` — the
+//     emitter (out of scope for this ingester-only task) sets
+//     `resource: "execution/<executionId>"` (verified against
+//     `golden/raw/INGRESS-ACME-seq1245.json` / `-seq1251.json`), addressable
+//     by execution, not by agent. Rather than block T10 on an emitter change
+//     outside this task's touched-service list, `agent/<agentId>` is handled
+//     as a query-level alias: it filters on the `agentId` field ALREADY
+//     present in every `execution_started`/`execution_completed` payload
+//     (`envelope.data.payload.agentId`; `execution_requested` nests it one
+//     level deeper at `payload.input.agentId`, hence the `COALESCE`) instead
+//     of `envelope->>'resource'`. No schema/column change (the SPEC's
+//     "click-through columns gain nothing unless the query plan needs it"
+//     guardrail) — a functional index covers the lookup instead
+//     (`tracked-events.sql`, T05 addendum).
 //
 // Tenant scoping is a STRICT `tenant = $1` (no `OR tenant IS NULL`), same
 // rationale as `build-run-root-query.ts`: `connector.endpoint_call.completed.v1`
@@ -44,7 +65,13 @@ import type { TrackedEventRow } from "./to-tracked-event-row.js";
 export interface EventsQueryParams {
   readonly tenant: string;
   readonly type: string;
-  /** `envelope->>'resource'` filter, e.g. `"adapter/<id>"`. Optional. */
+  /**
+   * `envelope->>'resource'` filter, e.g. `"adapter/<id>"`, `"service/<name>"`,
+   * `"raw/<host>"`, `"mcp/<mcpServerId>"`. Optional. The single exception is
+   * `"agent/<agentId>"` (T05 addendum, see the header note above), which is
+   * NOT matched against `envelope->>'resource'` — it filters on the
+   * agent-execution payload's `agentId` field instead.
+   */
   readonly resource: string | null;
   /** Inclusive lower bound on `occurred_at`, ISO-8601. Optional. */
   readonly from: string | null;
@@ -132,6 +159,13 @@ const EVENTS_COLUMNS = [
 ] as const;
 
 /**
+ * `resource=agent/<agentId>` query-value prefix (T05 addendum, see the header
+ * note above) — the ONE `resource` shape that does NOT filter on
+ * `envelope->>'resource'` verbatim.
+ */
+const AGENT_RESOURCE_PREFIX = "agent/";
+
+/**
  * Builds the parametrized SQL that fetches `tracking.tracked_events` rows
  * scoped to `tenant`, filtered by `envelope->>'type'` (required), optionally
  * `envelope->>'resource'` and a lower `occurred_at` bound, ordered
@@ -144,8 +178,21 @@ export function buildEventsQuery(params: EventsQueryParams): EventsQuery {
   const values: (string | number)[] = [params.tenant, params.type];
 
   if (params.resource !== null) {
-    values.push(params.resource);
-    conditions.push(`envelope->>'resource' = $${values.length}`);
+    if (params.resource.startsWith(AGENT_RESOURCE_PREFIX)) {
+      // T05 addendum: filter on the agent-execution payload's `agentId`
+      // field, not `envelope->>'resource'` (see the header note above for
+      // why). `execution_started`/`execution_completed` carry `agentId` at
+      // the payload top level; `execution_requested` nests it under
+      // `input.agentId` — COALESCE covers both without a schema change.
+      const agentId = params.resource.slice(AGENT_RESOURCE_PREFIX.length);
+      values.push(agentId);
+      conditions.push(
+        `COALESCE(envelope->'data'->'payload'->>'agentId', envelope->'data'->'payload'->'input'->>'agentId') = $${values.length}`
+      );
+    } else {
+      values.push(params.resource);
+      conditions.push(`envelope->>'resource' = $${values.length}`);
+    }
   }
 
   if (params.from !== null) {

@@ -35,6 +35,7 @@ export type BusinessFn =
   | "agent-memory"
   | "agent-runtime-streaming"
   | "connector-invocation"
+  | "llm-invocation"
   | "workflow-execution"
   | "runtime-presence"
   | "registry-sync"
@@ -327,6 +328,58 @@ export function classify(
     // Rule 11 — connector-runtime endpoint invocation. TAXONOMY.md §4 rule 11.
     if (subject.includes(".connector-runtime.platform.endpoint.")) {
       return ok(classified("connector", "connector-invocation", 11));
+    }
+
+    // Rule 24 — connector-runtime MCP tool-call audit trail
+    // (`manual-loops/connectors/connection-call-inspector.md` T03/T05,
+    // decision 7). SAME producer (`connector-runtime`) as rule 11's
+    // `endpoint_call_completed`, but a DIFFERENT subject family — channel
+    // token `mcp`, not `endpoint` — so rule 11's `.platform.endpoint.`
+    // substring check never matches it; a dedicated rule is required or this
+    // family falls through to rule 17 `unknown` (channel `mcp` is not in
+    // CHANNEL_WHITELIST). `business_fn: connector-invocation` is REUSED
+    // (not split into a new value, unlike rule 23's secrets-audit split from
+    // rule 22): decision 1 of the SPEC explicitly groups `mcpCall` alongside
+    // `endpointCall` as one of "every connector invocation type" on the same
+    // connection-detail surface, so the same business concern applies.
+    // `tech: connector` for the same reason — MCP servers are one of the
+    // connector kinds enumerated in decision 1 ("HTTP connector, MCP server,
+    // agent, hosted service"). TAXONOMY.md §4 rule 24.
+    if (
+      producer === "connector-runtime" &&
+      domain === "platform" &&
+      channel === "mcp" &&
+      provider === "system" &&
+      kind === "mcp_call_completed"
+    ) {
+      return ok(classified("connector", "connector-invocation", 24));
+    }
+
+    // Rule 25 — agent-ai-service standalone LLM call audit trail
+    // (`manual-loops/connectors/connection-call-inspector.md` T04/T05,
+    // decision 7). Producer `agent-ai-service`, domain `platform`, channel
+    // `llm`, provider `system`, kind `llm_call_completed` — publishes ONLY
+    // for LLM calls made OUTSIDE chat executions (the job-executor `llm_call`
+    // action, `llm-action.service.ts`); chat executions already carry their
+    // payload in rule 6's `execution_completed` and are explicitly excluded
+    // by the emitter, so there is no double-classification risk. A NEW
+    // `business_fn: llm-invocation` value (not reused from rule 6's
+    // `agent-execution` or rule 11/24's `connector-invocation`): this is a
+    // producer-intent decision (TAXONOMY.md §3 Q1) — the event represents a
+    // standalone LLM invocation, a distinct business concern from a full
+    // agent chat execution and from a connector-runtime HTTP/tool call, even
+    // though `tech: platform` matches rule 6/19/20's "platform-to-platform"
+    // convention (channel token `llm` is not the literal `platform`
+    // placeholder, but the event is still internal platform traffic, not an
+    // external HTTP adapter call). TAXONOMY.md §4 rule 25.
+    if (
+      producer === "agent-ai-service" &&
+      domain === "platform" &&
+      channel === "llm" &&
+      provider === "system" &&
+      kind === "llm_call_completed"
+    ) {
+      return ok(classified("platform", "llm-invocation", 25));
     }
 
     // Rule 19 — workflow-service execution lifecycle. Matches the canonical

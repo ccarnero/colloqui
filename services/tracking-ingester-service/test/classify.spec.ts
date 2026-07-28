@@ -169,6 +169,65 @@ describe("classify — TAXONOMY.md §4 rules 1-20", () => {
     });
   });
 
+  // T05 of connection-call-inspector.md: `endpoint_call_completed` is now
+  // ALSO published by serviceCall (resource `service/<name>`) and the raw
+  // no-adapter branch (resource `raw/<host>`) — same subject family, same
+  // rule. `classify` only reads the subject, never `envelope.resource`, so
+  // the new resource prefixes classify identically to the pre-existing
+  // `adapter/<id>` shape; this test guards that invariant explicitly.
+  it("rule 11 — endpoint_call_completed classifies the same regardless of resource prefix (serviceCall/raw)", () => {
+    const c = value(
+      "evt.acme.connector-runtime.platform.endpoint.system.endpoint_call_completed.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "connector",
+      businessFn: "connector-invocation",
+      rule: 11,
+    });
+  });
+
+  it("rule 24 — connector-runtime mcp_call_completed -> connector/connector-invocation", () => {
+    const c = value(
+      "evt.acme.connector-runtime.platform.mcp.system.mcp_call_completed.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "connector",
+      businessFn: "connector-invocation",
+      rule: 24,
+    });
+    expect(c.unknown).toBe(false);
+  });
+
+  it("rule 24 — near-miss: endpoint channel does not match the mcp rule", () => {
+    const c = value(
+      "evt.acme.connector-runtime.platform.endpoint.system.mcp_call_completed.v1"
+    );
+    expect(c.rule).not.toBe(24);
+  });
+
+  it("rule 25 — agent-ai-service llm_call_completed -> platform/llm-invocation", () => {
+    const c = value(
+      "evt.acme.agent-ai-service.platform.llm.system.llm_call_completed.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "llm-invocation",
+      rule: 25,
+    });
+    expect(c.unknown).toBe(false);
+  });
+
+  it("rule 25 — near-miss: wrong kind on the same family falls through to rule 17", () => {
+    const c = value(
+      "evt.acme.agent-ai-service.platform.llm.system.some_other_kind.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "unknown",
+      businessFn: "unknown",
+      rule: 17,
+    });
+  });
+
   it("rule 12 — runtime-stream ephemeral streaming", () => {
     for (const kind of ["token", "tool_call", "tool_result", "cancel"]) {
       const c = value(`rt.acme.exec.019f48b3.${kind}`);

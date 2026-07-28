@@ -171,3 +171,25 @@ CREATE INDEX IF NOT EXISTS idx_tracked_events_payload_scrub_scan
 -- sequential scan. New index, does not repurpose any existing one.
 CREATE INDEX IF NOT EXISTS idx_tracked_events_tenant_type_occurred_at
   ON tracking.tracked_events (tenant, (envelope->>'type'), occurred_at DESC);
+
+-- T05 (connection-call-inspector) `GET /events?...&resource=agent/<agentId>`
+-- alias (see `build-events-query.ts`'s header note): agent-execution events
+-- do not carry an `agent/<agentId>`-shaped `envelope.resource` (the emitter
+-- sets `resource: "execution/<executionId>"`), so T10's "Recent executions"
+-- panel filters on the payload's `agentId` field instead. No new column
+-- (the SPEC's "click-through columns gain nothing unless the query plan
+-- needs it" guardrail) — a functional index on the EXACT expression the
+-- query filters on. Postgres only matches a functional index when the
+-- predicate is syntactically identical to the indexed expression, so this
+-- indexes the SAME `COALESCE(...)` tree `build-events-query.ts` emits
+-- (top-level `agentId` for `execution_started`/`execution_completed`,
+-- falling back to the nested `input.agentId` shape `execution_requested`
+-- uses), keeping the lookup index-only instead of a per-tenant sequential
+-- scan. New index, never repurposes an existing one.
+CREATE INDEX IF NOT EXISTS idx_tracked_events_payload_agent_id
+  ON tracking.tracked_events (
+    (COALESCE(
+      envelope -> 'data' -> 'payload' ->> 'agentId',
+      envelope -> 'data' -> 'payload' -> 'input' ->> 'agentId'
+    ))
+  );

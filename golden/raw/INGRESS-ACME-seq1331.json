@@ -1,0 +1,48 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1331,
+  "received": "2026-07-28 00:00:05.000000000",
+  "subject": "evt.acme.agent-ai-service.platform.llm.system.llm_call_completed.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "llm-call-seq1331",
+    "X-Correlation-Id": "a2b3c4d5-e6f7-4081-9293-a4b5c6d7e8f9"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "a2b3c4d5-e6f7-4081-9293-a4b5c6d7e8f9",
+    "source": "//agent-ai-service/llm-call",
+    "type": "ai.llm_call.completed.v1",
+    "resource": "execution/job-execution-seq1331",
+    "time": "2026-07-28T00:00:05.000Z",
+    "traceid": "a2b3c4d5e6f7081929a3a4b5c6d7e8f9",
+    "causation_id": null,
+    "correlation_id": "a2b3c4d5-e6f7-4081-9293-a4b5c6d7e8f9",
+    "tenant": "acme",
+    "producer": "agent-ai-service",
+    "domain": "platform",
+    "channel": "llm",
+    "provider": "system",
+    "accountid": "acme",
+    "idempotencykey": "sha256:llm-call-seq1331",
+    "transport": { "method": "stream", "protocol": "internal", "depth": 0 },
+    "data": {
+      "received_at": "2026-07-28T00:00:05.000Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 260,
+      "payload_checksum": "sha256:llm-call-seq1331",
+      "payload": {
+        "model": "gpt-4o-mini",
+        "provider": "openai",
+        "prompt": "Summarize the weekly usage report.",
+        "completion": "Usage is up 12% week over week.",
+        "inputTokens": 128,
+        "outputTokens": 24,
+        "cachedInputTokens": 0,
+        "costUsd": 0.000312,
+        "durationMs": 940
+      }
+    }
+  }
+}

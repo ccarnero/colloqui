@@ -1,0 +1,46 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1330,
+  "received": "2026-07-28 00:00:00.000000000",
+  "subject": "evt.acme.connector-runtime.platform.mcp.system.mcp_call_completed.v1",
+  "headers": {
+    "x-yoizen-tenant": "acme",
+    "Nats-Msg-Id": "mcp-call-seq1330",
+    "X-Correlation-Id": "f1a2b3c4-d5e6-4f70-8081-92a3b4c5d6e7"
+  },
+  "envelope": {
+    "specversion": "1.0",
+    "id": "f1a2b3c4-d5e6-4f70-8081-92a3b4c5d6e7",
+    "source": "//connector-runtime/mcp-call",
+    "type": "connector.mcp_call.completed.v1",
+    "resource": "mcp/mcp-repo-support-bot",
+    "time": "2026-07-28T00:00:00.000Z",
+    "traceid": "f1a2b3c4d5e6f70880919293a4b5c6d7",
+    "causation_id": null,
+    "correlation_id": "f1a2b3c4-d5e6-4f70-8081-92a3b4c5d6e7",
+    "tenant": "acme",
+    "producer": "connector-runtime",
+    "domain": "platform",
+    "channel": "mcp",
+    "provider": "system",
+    "accountid": "acme",
+    "idempotencykey": "sha256:mcp-call-seq1330",
+    "transport": { "method": "stream", "protocol": "internal", "depth": 0 },
+    "data": {
+      "received_at": "2026-07-28T00:00:00.000Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 210,
+      "payload_checksum": "sha256:mcp-call-seq1330",
+      "payload": {
+        "serverName": "repo-support-bot",
+        "mcpServerId": "mcp-repo-support-bot",
+        "toolName": "search_docs",
+        "success": true,
+        "durationMs": 184,
+        "arguments": "{\"query\":\"how to reset password\"}",
+        "result": "{\"matches\":3}"
+      }
+    }
+  }
+}
