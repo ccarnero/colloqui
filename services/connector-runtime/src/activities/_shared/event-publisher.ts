@@ -3,6 +3,7 @@ import {
   buildEventEnvelope,
   buildSubject,
   DepthExceededError,
+  type EventCausalContext,
   TENANT_HEADER,
 } from "@yoizen/shared";
 import {
@@ -183,5 +184,125 @@ async function emit(evt: IEndpointCallEventPayload): Promise<void> {
     envelope,
     "connector.endpoint_call.publish",
     `published endpoint_call event adapter=${evt.adapterId} status=${evt.status}`
+  );
+}
+
+/**
+ * Payload shape for `connector.mcp_call.completed.v1`
+ * (`manual-loops/connectors/connection-call-inspector.md` T03). This is
+ * ADDITIVE to `reportMcpUsageEvent` (`@yoizen/shared`'s HTTP call to
+ * agent-admin-service, unchanged) — the bus event carries the tool call's
+ * `arguments`/`result` content that the aggregate usage summary never did.
+ */
+export interface IMcpCallEventPayload {
+  tenantId: string;
+  mcpServerId: string;
+  serverName: string;
+  toolName: string;
+  success: boolean;
+  durationMs: number;
+  error?: string;
+  /** Tool call arguments, already through `truncate-body.ts` (8KB). */
+  arguments?: string;
+  /** Tool result content, already through `truncate-body.ts` (8KB). */
+  result?: string;
+  causal?: EventCausalContext;
+}
+
+/**
+ * Fire-and-forget: publishes an `mcp_call_completed` event to NATS
+ * JetStream. Failures are logged as warnings and never propagate to the
+ * caller — same fire-and-forget contract as `publishEndpointCallEvent`.
+ *
+ * Resource is `mcp/<mcpServerId>` (decision 7 of
+ * connection-call-inspector.md). Reuses this module's `buildEventEnvelope`/
+ * `buildSubject`/`DepthExceededError`/JetStream plumbing instead of a new
+ * publisher module, per T03.
+ */
+export const publishMcpCallEvent = (evt: IMcpCallEventPayload): void => {
+  void emitMcpCall(evt).catch((err) =>
+    logger.warn(
+      `mcp_call event publish failed: ${err instanceof Error ? err.message : String(err)}`
+    )
+  );
+};
+
+async function emitMcpCall(evt: IMcpCallEventPayload): Promise<void> {
+  const payload: Record<string, unknown> = {
+    serverName: evt.serverName,
+    mcpServerId: evt.mcpServerId,
+    toolName: evt.toolName,
+    success: evt.success,
+    durationMs: evt.durationMs,
+    ...(evt.error !== undefined && { error: evt.error }),
+    ...(evt.arguments !== undefined && { arguments: evt.arguments }),
+    ...(evt.result !== undefined && { result: evt.result }),
+  };
+
+  const subject = buildSubject({
+    tenant: evt.tenantId,
+    producer: "connector-runtime",
+    domain: "platform",
+    channel: "mcp",
+    provider: "system",
+    kind: "mcp_call_completed",
+    version: "v1",
+  });
+
+  const baseOptions = {
+    type: "connector.mcp_call.completed.v1",
+    source: "//connector-runtime/mcp-call",
+    resource: `mcp/${evt.mcpServerId}`,
+    tenant: evt.tenantId,
+    producer: "connector-runtime",
+    domain: "platform",
+    channel: "mcp",
+    provider: "system",
+    accountid: evt.tenantId,
+    payload,
+  } as const;
+
+  let envelope;
+  try {
+    // Causal threading: join the run's correlation chain when the calling
+    // activity carried one (`mcp-call.activity.ts`'s `outcome.causal`,
+    // same pattern as `emit` above).
+    envelope = buildEventEnvelope(
+      evt.causal
+        ? {
+            ...baseOptions,
+            correlationId: evt.causal.correlation_id,
+            causationId: evt.causal.causation_id,
+            depth: evt.causal.depth + 1,
+          }
+        : baseOptions
+    );
+  } catch (err) {
+    if (err instanceof DepthExceededError) {
+      // Never let causal threading break the fire-and-forget publish path:
+      // fall back to a root event (no correlation/causation inherited) and
+      // warn so the depth cap breach is visible in logs.
+      logger.warn(
+        `mcp_call event depth exceeded for tenant=${evt.tenantId} server=${evt.mcpServerId}, publishing as root event: ${err.message}`
+      );
+      envelope = buildEventEnvelope(baseOptions);
+    } else {
+      throw err;
+    }
+  }
+
+  const hdrs = natsHeaders();
+  hdrs.set(TENANT_HEADER, evt.tenantId);
+
+  const jsClient = await getJetStream();
+  await jsClient.publish(subject, encoder.encode(JSON.stringify(envelope)), {
+    headers: hdrs,
+  });
+
+  logWithEnvelope(
+    logger,
+    envelope,
+    "connector.mcp_call.publish",
+    `published mcp_call event server=${evt.mcpServerId} tool=${evt.toolName} success=${evt.success}`
   );
 }

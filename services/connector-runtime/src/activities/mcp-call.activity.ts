@@ -10,6 +10,8 @@ import {
 } from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../config";
 import { getHttpBreaker, HTTP_BREAKER_COOLDOWN_MS } from "./_shared/breaker";
+import { publishMcpCallEvent } from "./_shared/event-publisher";
+import { truncateBody } from "./_shared/truncate-body";
 
 const logger = new PinoLoggerService("mcp-call.activity");
 
@@ -193,11 +195,20 @@ export async function executeMcpCall(
 
     const durationMs = Date.now() - start;
     const isError = callResult?.isError === true;
+    const resultContent = callResult?.content ?? callResult ?? null;
     reportMcpUsage(server, tenantId, args.toolName, {
       success: !isError,
       durationMs,
       causal,
       executionId,
+    });
+    // Additive bus event (connection-call-inspector.md T03) — tool args +
+    // result content, on top of the scalar-only `reportMcpUsage` above.
+    emitMcpCallEvent(server, tenantId, args.toolName, args.params, {
+      success: !isError,
+      durationMs,
+      result: resultContent,
+      causal,
     });
 
     // A reachable server that returns a tool-level error (`isError`) is
@@ -208,7 +219,7 @@ export async function executeMcpCall(
 
     return {
       toolName: args.toolName,
-      result: callResult?.content ?? callResult ?? null,
+      result: resultContent,
       isError,
       durationMs,
     };
@@ -221,6 +232,14 @@ export async function executeMcpCall(
       error: message,
       causal,
       executionId,
+    });
+    // Additive bus event — failed tool calls are the interesting ones
+    // (T03): emit on failure too, with the error message and no result.
+    emitMcpCallEvent(server, tenantId, args.toolName, args.params, {
+      success: false,
+      durationMs,
+      error: message,
+      causal,
     });
     breaker.recordFailure(key);
     throw error;
@@ -291,6 +310,43 @@ function reportMcpUsage(
     correlationId: outcome.causal?.correlation_id,
     causationId: outcome.causal?.causation_id,
     executionId: outcome.executionId,
+  });
+}
+
+/**
+ * Publishes `connector.mcp_call.completed.v1` to the bus
+ * (`manual-loops/connectors/connection-call-inspector.md` T03), ADDITIVE to
+ * `reportMcpUsage` above — `reportMcpUsageEvent` → agent-admin-service keeps
+ * feeding the aggregate usage summary UNCHANGED (decision 3); this is the
+ * new per-call capture path that carries the tool's `arguments`/`result`
+ * content `reportMcpUsage` never did. Both args and result go through
+ * `truncate-body.ts` (8KB) — redaction/truncation parity for the new
+ * emission path (SPEC constraint).
+ */
+function emitMcpCallEvent(
+  server: IMcpServerConfig,
+  tenantId: string,
+  toolName: string,
+  toolArgs: Record<string, unknown> | undefined,
+  outcome: {
+    success: boolean;
+    durationMs: number;
+    result?: unknown;
+    error?: string;
+    causal?: EventCausalContext;
+  }
+): void {
+  publishMcpCallEvent({
+    tenantId,
+    mcpServerId: server.id,
+    serverName: server.name,
+    toolName,
+    success: outcome.success,
+    durationMs: outcome.durationMs,
+    ...(outcome.error !== undefined && { error: outcome.error }),
+    arguments: truncateBody(toolArgs ?? {}),
+    result: truncateBody(outcome.result),
+    causal: outcome.causal,
   });
 }
 
