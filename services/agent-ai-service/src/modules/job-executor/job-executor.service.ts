@@ -1,16 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { NatsConnection } from "nats";
 import { PinoLoggerService } from "@yoizen/observability";
 import {
   buildEventEnvelope,
   deriveEnvelope,
   type EventEnvelope,
 } from "@yoizen/shared";
+import type { NatsConnection } from "nats";
+import { NATS_CONNECTION } from "../../providers/nats.provider";
+import { AgentTaskService } from "./actions/agent-task.service";
+import { FunctionActionService } from "./actions/function-action.service";
 import { LlmActionService } from "./actions/llm-action.service";
 import { WebhookActionService } from "./actions/webhook-action.service";
-import { FunctionActionService } from "./actions/function-action.service";
-import { AgentTaskService } from "./actions/agent-task.service";
-import { NATS_CONNECTION } from "../../providers/nats.provider";
 
 export interface JobTriggerPayload {
   readonly jobId: string;
@@ -42,20 +42,20 @@ export class JobExecutorService {
   async executeJob(
     tenantId: string,
     payload: JobTriggerPayload,
-    envelope?: EventEnvelope,
+    envelope?: EventEnvelope
   ): Promise<JobExecutionResult> {
     const executionId = payload.executionId ?? crypto.randomUUID();
     const { jobId } = payload;
 
     this.logger.log(
-      `[job-executor] Starting: tenant='${tenantId}' job='${jobId}' execution='${executionId}'`,
+      `[job-executor] Starting: tenant='${tenantId}' job='${jobId}' execution='${executionId}'`
     );
 
     await this.publishStatus(
       tenantId,
       "execution_started",
       { executionId, jobId, tenantId, status: "started" },
-      envelope,
+      envelope
     );
 
     try {
@@ -64,8 +64,7 @@ export class JobExecutorService {
       const actionConfig =
         (jobConfig.action_config as Record<string, unknown>) ?? {};
       const agentId = String(jobConfig.agent_id ?? jobId);
-      const variables =
-        (jobConfig.variables as Record<string, unknown>) ?? {};
+      const variables = (jobConfig.variables as Record<string, unknown>) ?? {};
 
       let result: Record<string, unknown>;
 
@@ -78,6 +77,7 @@ export class JobExecutorService {
               actionConfig,
               variables,
               executionId,
+              envelope
             )),
           };
           break;
@@ -86,7 +86,7 @@ export class JobExecutorService {
             ...(await this.webhookAction.execute(
               tenantId,
               actionConfig,
-              jobConfig,
+              jobConfig
             )),
           };
           break;
@@ -94,7 +94,7 @@ export class JobExecutorService {
           result = {
             ...(await this.functionAction.execute(
               String(actionConfig.function ?? ""),
-              (actionConfig.parameters as Record<string, unknown>) ?? {},
+              (actionConfig.parameters as Record<string, unknown>) ?? {}
             )),
           };
           break;
@@ -110,7 +110,7 @@ export class JobExecutorService {
             executionId,
             jobId,
             jobConfig,
-            envelope,
+            envelope
           );
         default:
           throw new Error(`Unknown action type: '${actionType}'`);
@@ -126,11 +126,11 @@ export class JobExecutorService {
           status: "completed",
           result,
         },
-        envelope,
+        envelope
       );
 
       this.logger.log(
-        `[job-executor] Completed: execution='${executionId}' job='${jobId}'`,
+        `[job-executor] Completed: execution='${executionId}' job='${jobId}'`
       );
 
       return {
@@ -154,11 +154,11 @@ export class JobExecutorService {
           status: "failed",
           error: errorMessage,
         },
-        envelope,
+        envelope
       );
 
       this.logger.error(
-        `[job-executor] Failed: execution='${executionId}' job='${jobId}': ${errorMessage}`,
+        `[job-executor] Failed: execution='${executionId}' job='${jobId}': ${errorMessage}`
       );
 
       return {
@@ -173,14 +173,14 @@ export class JobExecutorService {
 
   async handleObservation(
     tenantId: string,
-    payload: Record<string, unknown>,
+    payload: Record<string, unknown>
   ): Promise<void> {
     const eventName = String(payload.event_name ?? "");
     const eventPayload =
       (payload.event_payload as Record<string, unknown>) ?? {};
 
     this.logger.log(
-      `[job-executor] Observation event: tenant='${tenantId}' event='${eventName}'`,
+      `[job-executor] Observation event: tenant='${tenantId}' event='${eventName}'`
     );
 
     const triggerPayload: JobTriggerPayload = {
@@ -195,7 +195,7 @@ export class JobExecutorService {
 
     if (!triggerPayload.jobId) {
       this.logger.warn(
-        `[job-executor] Observation missing job_id for tenant '${tenantId}'`,
+        `[job-executor] Observation missing job_id for tenant '${tenantId}'`
       );
       return;
     }
@@ -209,11 +209,15 @@ export class JobExecutorService {
     executionId: string,
     jobId: string,
     jobConfig: Record<string, unknown>,
-    envelope?: EventEnvelope,
+    envelope?: EventEnvelope
   ): Promise<JobExecutionResult> {
     const actionConfig =
       (jobConfig.action_config as Record<string, unknown>) ?? {};
-    const result = await this.agentTask.execute(tenantId, agentId, actionConfig);
+    const result = await this.agentTask.execute(
+      tenantId,
+      agentId,
+      actionConfig
+    );
 
     await this.publishStatus(
       tenantId,
@@ -226,11 +230,11 @@ export class JobExecutorService {
         result: result.result,
         error: result.error,
       },
-      envelope,
+      envelope
     );
 
     this.logger.log(
-      `[job-executor] Agent task ${result.success ? "completed" : "failed"}: execution='${executionId}' job='${jobId}'`,
+      `[job-executor] Agent task ${result.success ? "completed" : "failed"}: execution='${executionId}' job='${jobId}'`
     );
 
     return {
@@ -247,7 +251,7 @@ export class JobExecutorService {
     tenantId: string,
     kind: string,
     data: Record<string, unknown>,
-    incoming?: EventEnvelope,
+    incoming?: EventEnvelope
   ): Promise<void> {
     try {
       const event = incoming
@@ -274,9 +278,7 @@ export class JobExecutorService {
       const subject = `evt.${tenantId}.ai-agent-gateway.automation.platform.internal.${kind}.v1`;
       this.nc.publish(subject, JSON.stringify(event));
     } catch (pubError) {
-      this.logger.warn(
-        `[job-executor] Failed to publish ${kind}: ${pubError}`,
-      );
+      this.logger.warn(`[job-executor] Failed to publish ${kind}: ${pubError}`);
     }
   }
 }
