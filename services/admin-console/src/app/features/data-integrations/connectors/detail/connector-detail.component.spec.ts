@@ -230,6 +230,104 @@ describe("ConnectorDetailComponent", () => {
     expect(text).not.toContain("Response");
   });
 
+  // T08 — clicking a "Recent calls" row opens the shared call inspector
+  // (call-inspector.component.ts, T07) for that call.
+  it("clicking a call row opens the inspector with that row's event", async () => {
+    await setup(
+      of(makeAdapter({ defaultCache: undefined, endpoints: [] })),
+      true,
+      of([
+        {
+          adapterId: "adp-1",
+          endpointId: "ep-1",
+          method: "GET",
+          resolvedUrl: "https://api.example.com/data",
+          status: 200,
+          durationMs: 20,
+          cacheResult: "hit",
+          timestamp: "2026-06-01T12:00:00.000Z",
+          correlationId: "corr-42",
+          eventId: "evt-42",
+        },
+      ])
+    );
+
+    const host = fixture.nativeElement as HTMLElement;
+    const row = host.querySelector<HTMLElement>(".call-row");
+    expect(row).toBeTruthy();
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.inspectorRow()).toEqual({
+      eventId: "evt-42",
+      correlationId: "corr-42",
+      kind: "endpoint_call_completed",
+      scalars: {
+        method: "GET",
+        status: 200,
+        durationMs: 20,
+        resolvedUrl: "https://api.example.com/data",
+        cacheResult: "hit",
+      },
+    });
+    expect(host.querySelector("app-call-inspector")).toBeTruthy();
+  });
+
+  it("does not open the inspector for a row without eventId/correlationId", async () => {
+    await setup(
+      of(makeAdapter({ defaultCache: undefined, endpoints: [] })),
+      true,
+      of([
+        {
+          adapterId: "adp-1",
+          endpointId: "ep-1",
+          method: "GET",
+          resolvedUrl: "https://api.example.com/data",
+          status: 200,
+          durationMs: 20,
+          cacheResult: "hit",
+          timestamp: "2026-06-01T12:00:00.000Z",
+        },
+      ])
+    );
+
+    const host = fixture.nativeElement as HTMLElement;
+    const row = host.querySelector<HTMLElement>(".call-row");
+    row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.inspectorRow()).toBeNull();
+    expect(host.querySelector("app-call-inspector")).toBeFalsy();
+  });
+
+  it("the View trace link still navigates and does not close/reopen the inspector on click", async () => {
+    await setup(
+      of(makeAdapter({ defaultCache: undefined, endpoints: [] })),
+      true,
+      of([
+        {
+          adapterId: "adp-1",
+          endpointId: "ep-1",
+          method: "GET",
+          resolvedUrl: "https://api.example.com/data",
+          status: 200,
+          durationMs: 20,
+          cacheResult: "hit",
+          timestamp: "2026-06-01T12:00:00.000Z",
+          correlationId: "corr-42",
+          eventId: "evt-42",
+        },
+      ])
+    );
+
+    const host = fixture.nativeElement as HTMLElement;
+    const trace = host.querySelector<HTMLAnchorElement>(
+      "a.trace-link[href='/processes/trace/corr-42']"
+    );
+    expect(trace).toBeTruthy();
+    expect(trace?.getAttribute("href")).toBe("/processes/trace/corr-42");
+  });
+
   // T03 — health mapping (decision 3, orchestrator ruling 2026-07-22):
   // HTTP connectors map status === "enabled" -> ok, else error.
   it("health() is ok when status is enabled", async () => {

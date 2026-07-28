@@ -32,6 +32,10 @@ import type {
   IHttpAdapterDialogResult,
 } from "../../../../shared/models/http-adapter.model";
 import { UtcDatePipe } from "../../../../shared/pipes/utc-date.pipe";
+import {
+  CallInspectorComponent,
+  type ICallInspectorRow,
+} from "../../../connections/call-inspector/call-inspector.component";
 import { adapterDtoToHttpAdapter } from "./adapter-dto-to-http-adapter";
 import { buildAdapterEndpointOperations } from "./build-adapter-endpoint-operations";
 import { buildAdapterUpdatePayload } from "./build-adapter-update-payload";
@@ -50,6 +54,7 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
     PageHeaderComponent,
     StatusBadgeComponent,
     UtcDatePipe,
+    CallInspectorComponent,
   ],
   template: `
     <div class="ws-breadcrumb">
@@ -190,40 +195,47 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
           } @else if (recentCalls().length === 0) {
             <p class="no-calls">No calls in the last 7 days.</p>
           } @else {
-            <!-- T09: the audit-era REQUEST/RESPONSE (and cache-key/TTL)
-                 expand sections were removed — since T04 the scalar row is
-                 sourced from tracking.tracked_events, which never carries
-                 payload bodies (payload viewing stays in the trace console,
-                 by SPEC decision). Only the scalar row + View-trace link
-                 remain as the payload path. -->
-            <div class="call-list">
-              @for (c of recentCalls(); track $index) {
-                <div class="call-row">
-                  <span class="call-ts">{{ c.timestamp | utcDate: "medium" }}</span>
-                  <span class="call-method">{{ c.method }}</span>
-                  <span class="call-status" [class]="statusClass(c.status)">{{ c.status }}</span>
-                  <span class="call-dur">{{ c.durationMs }}ms</span>
-                  <span class="call-url" [title]="c.resolvedUrl">{{ shortUrl(c.resolvedUrl) }}</span>
-                  @if (c.cacheResult) {
-                    <span
-                      class="call-cache"
-                      [class.cache-hit]="c.cacheResult === 'hit'"
-                      [class.cache-miss]="c.cacheResult === 'miss'"
-                      [class.cache-bypass]="c.cacheResult === 'bypass'"
-                    >
-                      {{ c.cacheResult }}
-                    </span>
-                  }
-                  @if (c.correlationId) {
-                    <a
-                      [routerLink]="['/processes/trace', c.correlationId]"
-                      class="trace-link"
-                    >
-                      <mat-icon>open_in_new</mat-icon>
-                      View trace
-                    </a>
-                  }
-                </div>
+            <div class="call-body">
+              <div class="call-list">
+                @for (c of recentCalls(); track $index) {
+                  <div
+                    class="call-row"
+                    role="button"
+                    tabindex="0"
+                    [class.call-row--selected]="selectedCall() === c"
+                    (click)="openInspector(c)"
+                    (keydown.enter)="openInspector(c)"
+                  >
+                    <span class="call-ts">{{ c.timestamp | utcDate: "medium" }}</span>
+                    <span class="call-method">{{ c.method }}</span>
+                    <span class="call-status" [class]="statusClass(c.status)">{{ c.status }}</span>
+                    <span class="call-dur">{{ c.durationMs }}ms</span>
+                    <span class="call-url" [title]="c.resolvedUrl">{{ shortUrl(c.resolvedUrl) }}</span>
+                    @if (c.cacheResult) {
+                      <span
+                        class="call-cache"
+                        [class.cache-hit]="c.cacheResult === 'hit'"
+                        [class.cache-miss]="c.cacheResult === 'miss'"
+                        [class.cache-bypass]="c.cacheResult === 'bypass'"
+                      >
+                        {{ c.cacheResult }}
+                      </span>
+                    }
+                    @if (c.correlationId) {
+                      <a
+                        [routerLink]="['/processes/trace', c.correlationId]"
+                        class="trace-link"
+                        (click)="$event.stopPropagation()"
+                      >
+                        <mat-icon>open_in_new</mat-icon>
+                        View trace
+                      </a>
+                    }
+                  </div>
+                }
+              </div>
+              @if (inspectorRow(); as row) {
+                <app-call-inspector [row]="row" (close)="closeInspector()" />
               }
             </div>
           }
@@ -432,7 +444,14 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
       font-size: var(--rd-text-size-base, 13px);
       margin: 0;
     }
+    .call-body {
+      display: flex;
+      gap: var(--rd-space-8, 16px);
+      align-items: flex-start;
+    }
     .call-list {
+      flex: 1 1 auto;
+      min-width: 0;
       display: flex;
       flex-direction: column;
       gap: var(--rd-space-2, 4px);
@@ -452,7 +471,8 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
       outline: none;
     }
     .call-row:hover,
-    .call-row:focus-visible {
+    .call-row:focus-visible,
+    .call-row--selected {
       background: var(--rd-hover);
       color: var(--rd-text-1);
     }
@@ -532,6 +552,35 @@ export class ConnectorDetailComponent implements OnInit {
   readonly saveError = signal<string | null>(null);
   readonly recentCalls = signal<IConnectorCall[]>([]);
   readonly callsLoading = signal(false);
+
+  /** The currently-selected "Recent calls" row (T08) — feeds the docked
+   * `app-call-inspector` panel (T07). `null` means the inspector is
+   * closed. */
+  readonly selectedCall = signal<IConnectorCall | null>(null);
+
+  /** Projects `selectedCall()` into the inspector's row contract, per
+   * SPEC.md T07 ("event_id + correlation_id + kind + scalars"). HTTP
+   * connector calls only carry `endpoint_call_completed` events, so `kind`
+   * is hardcoded. `scalars` mirrors the columns already visible in the
+   * scalar-only feed row — no new fields, no payload. */
+  readonly inspectorRow = computed<ICallInspectorRow | null>(() => {
+    const c = this.selectedCall();
+    if (!c || !c.eventId || !c.correlationId) {
+      return null;
+    }
+    return {
+      eventId: c.eventId,
+      correlationId: c.correlationId,
+      kind: "endpoint_call_completed",
+      scalars: {
+        method: c.method,
+        status: c.status,
+        durationMs: c.durationMs,
+        resolvedUrl: c.resolvedUrl,
+        cacheResult: c.cacheResult,
+      },
+    };
+  });
 
   readonly canViewCalls = computed(() =>
     this.auth.hasPermission(DIAGNOSTICS_PERMISSION)
@@ -757,6 +806,32 @@ export class ConnectorDetailComponent implements OnInit {
             },
           });
       });
+  }
+
+  /** Opens the docked call inspector for the clicked row (T08). Rows
+   * without an `eventId`/`correlationId` can't be resolved to a tracking
+   * event, so the click is a no-op — mirroring the inspector's own
+   * "never a partial state" contract (`call-inspector.component.ts`). */
+  openInspector(call: IConnectorCall): void {
+    if (!call.eventId || !call.correlationId) {
+      console.debug(
+        "[ConnectorDetailComponent] inspector open skipped — call row has no eventId/correlationId",
+        { adapterId: call.adapterId, timestamp: call.timestamp }
+      );
+      return;
+    }
+    console.debug("[ConnectorDetailComponent] opening call inspector", {
+      eventId: call.eventId,
+      correlationId: call.correlationId,
+    });
+    this.selectedCall.set(call);
+  }
+
+  /** Consumer side of the inspector's `close` output contract
+   * (`call-inspector.component.ts`'s `onClose()`). */
+  closeInspector(): void {
+    console.debug("[ConnectorDetailComponent] closing call inspector");
+    this.selectedCall.set(null);
   }
 
   protected shortUrl(url: string): string {

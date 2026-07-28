@@ -473,7 +473,7 @@ grep -n "mcp_call\|llm_call" SCHEMAS.md
 - [x] T05 ingester classification + resource filters
 - [x] T06 type-aware /events projections
 - [x] T07 shared docked call inspector
-- [ ] T08 HTTP connector detail wiring
+- [x] T08 HTTP connector detail wiring
 - [ ] T09 MCP detail migration + inspector
 - [ ] T10 agent detail recent executions
 - [ ] T11 hosted services detail page
