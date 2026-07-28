@@ -34,6 +34,15 @@ const EVENT: EventRow = {
   payload_http_status: 200,
   payload_duration_ms: 50,
   payload_cache_result: "hit",
+  payload_tool_name: null,
+  payload_success: null,
+  payload_error: null,
+  payload_model: null,
+  payload_provider: null,
+  payload_input_tokens: null,
+  payload_output_tokens: null,
+  payload_cost_usd: null,
+  payload_state: null,
 };
 
 describe("handleEventsRequest", () => {

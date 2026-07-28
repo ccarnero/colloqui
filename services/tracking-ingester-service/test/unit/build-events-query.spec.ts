@@ -175,6 +175,94 @@ describe("buildEventsQuery", () => {
     ]);
   });
 
+  // T06 of manual-loops/connectors/connection-call-inspector.md: type-aware
+  // scalar projections for MCP calls, LLM calls, and agent-execution
+  // lifecycle. The column list is static (always the full known superset —
+  // see the header/EventRow docs) so these columns appear regardless of
+  // which `type` was requested; the assertions below just confirm the new
+  // columns exist and bodies stay excluded.
+  it("projects MCP call scalars (toolName, success, error) without arguments/result", () => {
+    const { text } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.mcp_call.completed.v1",
+      resource: null,
+      from: null,
+      limit: 50,
+    });
+    const columnsBlock = text.slice(
+      text.indexOf("SELECT") + "SELECT".length,
+      text.indexOf("FROM")
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'toolName' AS payload_tool_name"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'success' AS payload_success"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'error' AS payload_error"
+    );
+    expect(columnsBlock).not.toContain("arguments");
+    expect(columnsBlock).not.toContain("'result'");
+  });
+
+  it("projects LLM call scalars (model, provider, tokens, cost) without prompt/completion", () => {
+    const { text } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "ai.llm_call.completed.v1",
+      resource: null,
+      from: null,
+      limit: 50,
+    });
+    const columnsBlock = text.slice(
+      text.indexOf("SELECT") + "SELECT".length,
+      text.indexOf("FROM")
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'model' AS payload_model"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'provider' AS payload_provider"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'inputTokens' AS payload_input_tokens"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'outputTokens' AS payload_output_tokens"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'costUsd' AS payload_cost_usd"
+    );
+    expect(columnsBlock).not.toContain("prompt");
+    expect(columnsBlock).not.toContain("completion");
+  });
+
+  it("projects agent-execution lifecycle scalars (state, model, costUsd)", () => {
+    const { text } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "io.yoizen.platform.runtime.execution_completed.v1",
+      resource: null,
+      from: null,
+      limit: 50,
+    });
+    const columnsBlock = text.slice(
+      text.indexOf("SELECT") + "SELECT".length,
+      text.indexOf("FROM")
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'state' AS payload_state"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'model' AS payload_model"
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'costUsd' AS payload_cost_usd"
+    );
+    expect(columnsBlock).not.toContain("response");
+    expect(columnsBlock).not.toContain("toolCalls");
+    expect(columnsBlock).not.toContain("toolResults");
+  });
+
   it("combines resource and from with correctly ordered positional params", () => {
     const { text, params } = buildEventsQuery({
       tenant: "tenant-a",

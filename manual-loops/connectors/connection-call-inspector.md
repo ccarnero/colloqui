@@ -471,7 +471,7 @@ grep -n "mcp_call\|llm_call" SCHEMAS.md
 - [x] T03 mcpCall args+result emission
 - [x] T04 standalone LLM emission
 - [x] T05 ingester classification + resource filters
-- [ ] T06 type-aware /events projections
+- [x] T06 type-aware /events projections
 - [ ] T07 shared docked call inspector
 - [ ] T08 HTTP connector detail wiring
 - [ ] T09 MCP detail migration + inspector

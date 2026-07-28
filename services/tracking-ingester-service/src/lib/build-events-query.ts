@@ -85,8 +85,20 @@ export interface EventsQuery {
 }
 
 /** Row shape returned by the query built here — a projection of
- * `TrackedEventRow` (envelope excluded) plus the five payload scalars the
- * connector "Recent calls" view needs. */
+ * `TrackedEventRow` (envelope excluded) plus the payload scalars each of the
+ * supported event kinds needs. T06 of
+ * `manual-loops/connectors/connection-call-inspector.md`: the projection is
+ * STATIC (always the full superset of known scalar columns, same as the
+ * original five HTTP-only columns below) rather than branching SQL on
+ * `params.type` — a single `/events` call is already scoped to exactly one
+ * `envelope->>'type'` value via the WHERE clause, so a row for e.g.
+ * `connector.mcp_call.completed.v1` simply yields `null` for the
+ * HTTP/LLM/agent-only columns (their JSON paths don't exist in that
+ * payload) — same "empty jsonb path -> null" behavior Postgres already gives
+ * the five original columns for non-HTTP kinds. This keeps the query text
+ * fully static (no per-type conditional SQL to test) while still excluding
+ * request/response bodies, `arguments`/`result`, and `prompt`/`completion`
+ * from every list projection. */
 export type EventRow = Pick<
   TrackedEventRow,
   | "event_id"
@@ -122,10 +134,38 @@ export type EventRow = Pick<
    * unrelated `TrackedEventRow.payload_status` lifecycle column (`"inline" |
    * "resolved" | ...`) — the two have nothing to do with each other. */
   payload_http_status: number | null;
-  /** `data.payload.durationMs` — call duration in milliseconds. */
+  /** `data.payload.durationMs` — call duration in milliseconds. Shared
+   * across `connector.endpoint_call.completed.v1`,
+   * `connector.mcp_call.completed.v1`, `ai.llm_call.completed.v1`, and
+   * (when present) `io.yoizen.platform.runtime.execution_completed.v1` — all
+   * four kinds carry this field at the same payload top level. */
   payload_duration_ms: number | null;
-  /** `data.payload.cacheResult` — `"hit" | "miss" | "bypass" | null`. */
+  /** `data.payload.cacheResult` — `"hit" | "miss" | "bypass" | null`. HTTP
+   * connector calls only. */
   payload_cache_result: string | null;
+  /** `data.payload.toolName` — `connector.mcp_call.completed.v1` only. */
+  payload_tool_name: string | null;
+  /** `data.payload.success` — `connector.mcp_call.completed.v1` only. */
+  payload_success: boolean | null;
+  /** `data.payload.error` — error MESSAGE only (never a full error object),
+   * `connector.mcp_call.completed.v1` only. */
+  payload_error: string | null;
+  /** `data.payload.model` — `ai.llm_call.completed.v1` and
+   * `io.yoizen.platform.runtime.execution_completed.v1`. */
+  payload_model: string | null;
+  /** `data.payload.provider` — `ai.llm_call.completed.v1` only. */
+  payload_provider: string | null;
+  /** `data.payload.inputTokens` — `ai.llm_call.completed.v1` only. */
+  payload_input_tokens: number | null;
+  /** `data.payload.outputTokens` — `ai.llm_call.completed.v1` only. */
+  payload_output_tokens: number | null;
+  /** `data.payload.costUsd` — `ai.llm_call.completed.v1` and
+   * `io.yoizen.platform.runtime.execution_completed.v1`. */
+  payload_cost_usd: number | null;
+  /** `data.payload.state` —
+   * `io.yoizen.platform.runtime.execution_completed.v1` only (e.g.
+   * `"completed" | "failed"`). */
+  payload_state: string | null;
 };
 
 const EVENTS_COLUMNS = [
@@ -151,11 +191,28 @@ const EVENTS_COLUMNS = [
   "connector_id",
   "cache_status",
   "(compliance <> 'none') AS has_envelope",
+  // HTTP connector calls (`connector.endpoint_call.completed.v1`).
   "envelope->'data'->'payload'->>'method' AS payload_method",
   "envelope->'data'->'payload'->>'resolvedUrl' AS payload_resolved_url",
   "envelope->'data'->'payload'->>'status' AS payload_http_status",
   "envelope->'data'->'payload'->>'durationMs' AS payload_duration_ms",
   "envelope->'data'->'payload'->>'cacheResult' AS payload_cache_result",
+  // MCP tool calls (`connector.mcp_call.completed.v1`, T06). Bodies
+  // (`arguments`/`result`) are deliberately NEVER projected here.
+  "envelope->'data'->'payload'->>'toolName' AS payload_tool_name",
+  "envelope->'data'->'payload'->>'success' AS payload_success",
+  "envelope->'data'->'payload'->>'error' AS payload_error",
+  // Standalone LLM calls (`ai.llm_call.completed.v1`, T06) and agent-execution
+  // lifecycle (`io.yoizen.platform.runtime.execution_completed.v1`, T06)
+  // share `model`/`costUsd`. `prompt`/`completion`/`response` bodies are
+  // deliberately NEVER projected here.
+  "envelope->'data'->'payload'->>'model' AS payload_model",
+  "envelope->'data'->'payload'->>'provider' AS payload_provider",
+  "envelope->'data'->'payload'->>'inputTokens' AS payload_input_tokens",
+  "envelope->'data'->'payload'->>'outputTokens' AS payload_output_tokens",
+  "envelope->'data'->'payload'->>'costUsd' AS payload_cost_usd",
+  // Agent-execution lifecycle only.
+  "envelope->'data'->'payload'->>'state' AS payload_state",
 ] as const;
 
 /**

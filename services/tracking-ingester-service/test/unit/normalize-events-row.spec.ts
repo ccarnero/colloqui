@@ -34,6 +34,15 @@ const BASE: EventRow = {
   payload_http_status: 200,
   payload_duration_ms: 50,
   payload_cache_result: "hit",
+  payload_tool_name: null,
+  payload_success: null,
+  payload_error: null,
+  payload_model: null,
+  payload_provider: null,
+  payload_input_tokens: null,
+  payload_output_tokens: null,
+  payload_cost_usd: null,
+  payload_state: null,
 };
 
 describe("normalizeEventsRow", () => {
@@ -104,5 +113,80 @@ describe("normalizeEventsRow", () => {
       "https://api.example.com/data"
     );
     expect(normalized.payload_cache_result).toBe("hit");
+  });
+
+  // T06 of manual-loops/connectors/connection-call-inspector.md — MCP call
+  // scalars (`connector.mcp_call.completed.v1`).
+  it("converts payload_success from jsonb boolean text to a real boolean", () => {
+    const raw: RawEventRow = { ...BASE, payload_success: "true" };
+    expect(normalizeEventsRow(raw).payload_success).toBe(true);
+    const rawFalse: RawEventRow = { ...BASE, payload_success: "false" };
+    expect(normalizeEventsRow(rawFalse).payload_success).toBe(false);
+  });
+
+  it("degrades a non-boolean payload_success to null instead of misreporting success", () => {
+    const raw: RawEventRow = { ...BASE, payload_success: "maybe" };
+    expect(normalizeEventsRow(raw).payload_success).toBeNull();
+  });
+
+  it("normalizes null payload_success to null", () => {
+    const raw: RawEventRow = { ...BASE, payload_success: null };
+    expect(normalizeEventsRow(raw).payload_success).toBeNull();
+  });
+
+  it("preserves payload_tool_name and payload_error verbatim for MCP calls", () => {
+    const raw: RawEventRow = {
+      ...BASE,
+      payload_tool_name: "search_docs",
+      payload_error: "timeout after 30s",
+    };
+    const normalized = normalizeEventsRow(raw);
+    expect(normalized.payload_tool_name).toBe("search_docs");
+    expect(normalized.payload_error).toBe("timeout after 30s");
+  });
+
+  // T06 — standalone LLM call scalars (`ai.llm_call.completed.v1`).
+  it("converts payload_input_tokens/payload_output_tokens/payload_cost_usd from text to numbers", () => {
+    const raw: RawEventRow = {
+      ...BASE,
+      payload_input_tokens: "120",
+      payload_output_tokens: "45",
+      payload_cost_usd: "0.0023",
+    };
+    const normalized = normalizeEventsRow(raw);
+    expect(normalized.payload_input_tokens).toBe(120);
+    expect(normalized.payload_output_tokens).toBe(45);
+    expect(normalized.payload_cost_usd).toBe(0.0023);
+  });
+
+  it("normalizes null token/cost payload fields to null", () => {
+    const raw: RawEventRow = {
+      ...BASE,
+      payload_input_tokens: null,
+      payload_output_tokens: null,
+      payload_cost_usd: null,
+    };
+    const normalized = normalizeEventsRow(raw);
+    expect(normalized.payload_input_tokens).toBeNull();
+    expect(normalized.payload_output_tokens).toBeNull();
+    expect(normalized.payload_cost_usd).toBeNull();
+  });
+
+  it("preserves payload_model and payload_provider verbatim", () => {
+    const raw: RawEventRow = {
+      ...BASE,
+      payload_model: "gpt-4o",
+      payload_provider: "openai",
+    };
+    const normalized = normalizeEventsRow(raw);
+    expect(normalized.payload_model).toBe("gpt-4o");
+    expect(normalized.payload_provider).toBe("openai");
+  });
+
+  // T06 — agent-execution lifecycle scalar
+  // (`io.yoizen.platform.runtime.execution_completed.v1`).
+  it("preserves payload_state verbatim", () => {
+    const raw: RawEventRow = { ...BASE, payload_state: "completed" };
+    expect(normalizeEventsRow(raw).payload_state).toBe("completed");
   });
 });
