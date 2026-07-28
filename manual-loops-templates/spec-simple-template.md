@@ -10,6 +10,14 @@ Simple style, based on manual-loops/workflow-toggle.md and trace-console.md
 (the origin of the canonical gate prose). Use for small, self-contained loops:
 no cross-SPEC dependencies, no prior-art section, no gate overrides.
 For anything bigger use spec-canonical-template.md.
+
+CONTEXT CONTRACT (what the engine actually passes to the agents):
+- implementer gets ONLY: the task body + its Accept block + the Constraints
+  section (+ previous-attempt failures on retries).
+- reviewers get ONLY: the diff + the task text + the Constraints section.
+Everything the implementer must know (precedent citations, binding decisions,
+DO NOTs) must therefore live INSIDE the task body or in Constraints. Goal,
+User decisions and Out of scope address the human and the orchestrator.
 -->
 
 ## Goal
@@ -39,6 +47,10 @@ cd services/<svc> && bunx tsc -p tsconfig.json --noEmit
 # G5b — COMMIT GATE (once per task, built image)
 ./dev-mode.sh <svc> off && ./rebuild-redeploy.sh <svc> dev && ./scripts/e2e-<feature>.sh
 ```
+
+Gate ids follow the shared convention: G1/G2 = primary service tests/typecheck,
+G3/G4 = other touched services (absent in a single-service loop — do not
+renumber), G5a/G5b = cluster e2e.
 
 PRECONDITION: `./scripts/validate-dev-mode.sh --with-e2e` must be green once
 before T01; if it fails, skip G5a and rely solely on G5b.

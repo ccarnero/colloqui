@@ -49,8 +49,8 @@ Esto es lo que el comando hace con tu SPEC, tarea por tarea:
 3. GATES       Corre los Gates del SPEC en orden, verbatim, y después el
                bloque Accept de la tarea. Primer fallo = intento fallido.
 4. REVIEW      Dos reviewers EN PARALELO, cada uno ve solo el diff + el
-               texto de la tarea. Uno rechaza → nuevo intento con las
-               objeciones.
+               texto de la tarea + las Constraints. Uno rechaza → nuevo
+               intento con las objeciones.
 5. COMMIT      Gates verdes + 2× APPROVED → marca el checkbox, commitea
                SPEC + código juntos, mensaje convencional.
 6. NEXT        Repite con el siguiente checkbox.
@@ -69,7 +69,7 @@ agentes por NOMBRE, y esos nombres se resuelven contra los archivos de
 | Agente | Archivo | Puede | No puede |
 |:---|:---|:---|:---|
 | `implementer` | `.claude/agents/implementer.md` | Leer y escribir código, correr comandos (Read/Edit/Write/Grep/Glob/Bash) | Commitear, tocar el SPEC, arrancar otra tarea |
-| `reviewer` ×2 | `.claude/agents/reviewer.md` | Leer el diff y verificarlo contra el repo (solo lectura + codegraph) | Editar nada — solo devuelve APPROVED/REJECTED con objeciones |
+| `reviewer` ×2 | `.claude/agents/reviewer.md` | Leer el diff + las Constraints y verificar contra el repo (solo lectura + codegraph) | Editar nada — solo devuelve APPROVED/REJECTED con objeciones |
 
 El frontmatter también fija el modelo (implementer corre con un modelo más
 potente) y la lista exacta de tools. Regla de oro: si querés cambiar CÓMO se
@@ -81,15 +81,31 @@ si querés cambiar QUÉ se construye y cómo se valida, se edita el SPEC.
 | Sección del SPEC | La consume | Cuándo |
 |:---|:---|:---|
 | Preámbulo (`> Task queue for...`) | Humanos y el orquestador | Al abrir el SPEC: dependencias, origen, topic de Engram |
-| `## Goal` | Humanos + implementer | Contexto: el resultado observable, SIN detalle de implementación |
-| `## User decisions` | Todos | Decisiones YA tomadas por el humano. El loop no las rediscute ni reinterpreta. Si una tarea las contradice, se frena y pregunta |
-| `## Prior art` (solo canónico) | Implementer | Código existente que se REUSA. Reescribirlo = rechazo del reviewer |
-| `## Constraints` | Implementer | Viaja **entera con cada tarea**, en cada intento |
+| `## Goal` | Humanos + orquestador | Contexto: el resultado observable, SIN detalle de implementación |
+| `## User decisions` | Humano + orquestador | Decisiones YA tomadas. El loop no las rediscute. Si una tarea depende de una, citala por número EN esa tarea — el implementer no ve esta sección |
+| `## Prior art` (solo canónico) | El autor del SPEC | Registro del código que se REUSA. El motor no la reenvía: repetí cada cita dentro de la tarea que la usa |
+| `## Constraints` | Implementer + reviewers | Viaja **entera con cada tarea** — en cada intento y en cada review. Las marcadas "automatic reviewer rejection" son ejecutables |
 | `## Gates` | Orquestador | Se ejecuta verbatim **en cada intento**, en orden |
 | `## Task queue` (`### T01...`) | Orquestador → implementer | De a UNA tarea; el resto del queue no se mira |
 | Checkboxes (`- [ ] T01...`) | Orquestador | La fuente de verdad de qué está hecho y qué sigue |
-| `## Out of scope` | Implementer + reviewers | Lo que NO se toca, con motivo — evita "mejoras" espontáneas |
+| `## Out of scope` | Humano + orquestador | Lo que NO se toca, con motivo. El motor no la reenvía: las exclusiones que una tarea podría violar se repiten como DO NOT en esa tarea |
 | `## Human boundaries` | Orquestador | Dónde el loop se detiene y espera tu OK explícito |
+
+### El contrato de contexto (la regla nº 1 al escribir tareas)
+
+El motor NO reenvía el SPEC entero a los agentes:
+
+- El **implementer** recibe SOLO: el cuerpo de la tarea + su bloque Accept +
+  la sección Constraints (y, en reintentos, los errores del intento anterior).
+- Los **reviewers** reciben SOLO: el diff + el texto de la tarea + las
+  Constraints.
+
+Consecuencia: todo lo que el implementer tiene que saber vive DENTRO de la
+tarea o en Constraints. Por eso los SPECs reales repiten las citas de prior
+art en el cuerpo de cada tarea (ej.: workflow-toggle T03 cita
+`workflows.service.ts:284-388` en su propio texto). Goal, User decisions,
+Prior art y Out of scope son contexto de coordinación para vos y el
+orquestador — no input de los agentes.
 
 ## Cómo llenar cada parte (con criterio)
 
@@ -104,7 +120,9 @@ agrega la fecha y se anota — no se borra la historia.
 
 **Prior art** — con paths y líneas (`workflows.service.ts:284-388`). El
 objetivo es que el implementer copie el patrón existente en vez de inventar
-uno nuevo. Cuanto más precisa la cita, menos inventa.
+uno nuevo. Cuanto más precisa la cita, menos inventa. OJO: el motor no le
+pasa esta sección al implementer — repetí la cita dentro de la tarea que la
+usa (así lo hacen todos los SPECs reales).
 
 **Constraints** — reglas que aplican a TODAS las tareas. Las tres primeras
 del template (no debilitar tests, logging verboso, scripts idempotentes)
@@ -121,6 +139,10 @@ El sufijo "(from T0N onward)" significa que ese gate recién aplica cuando
 esa tarea existe — un gate que valida algo que T04 crea no puede correr en
 T01.
 
+La numeración es una convención compartida entre todos los SPECs: G1/G2 =
+servicio principal, G3/G4 = otros servicios tocados, G5a/G5b = e2e de
+cluster. Por eso un SPEC chico salta de G2 a G5a — no falta nada.
+
 **Task queue** — cada tarea debe poder implementarse leyendo SOLO su
 sección + Constraints. Incluí: scope concreto (paths, firmas), DO/DO NOT
 explícitos, casos de test requeridos, y su bloque **Accept** (la prueba
@@ -132,7 +154,9 @@ se registran en el progreso del SPEC).
 commitear; no los toques a mano.
 
 **Out of scope** — tan importante como el Goal. Cada exclusión con su
-motivo en una línea. Es la defensa contra el scope creep de la IA.
+motivo en una línea. Es la defensa contra el scope creep de la IA — pero el
+implementer no la ve: si una exclusión es violable desde una tarea puntual,
+repetila como DO NOT explícito en esa tarea.
 
 **Human boundaries** — mínimo siempre: el humano aprueba el SPEC antes de
 la primera corrida, y el humano ejecuta el primer `--apply` de cualquier
@@ -165,3 +189,6 @@ El SPEC es un documento **vivo**: crece mientras el loop corre.
 5. Accept vacío o genérico → el Accept es la prueba específica de la
    tarea, no una repetición de G1/G2.
 6. Renumerar tareas al editar → rompés las referencias históricas.
+7. Poner contexto crítico solo en Goal/User decisions/Prior art → el
+   implementer nunca lo ve. Todo lo que la tarea necesita va EN la tarea
+   o en Constraints.

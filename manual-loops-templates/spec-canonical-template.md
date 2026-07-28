@@ -12,6 +12,15 @@ Canonical style, reverse-engineered from manual-loops/connector-invoke-api.md
 Use this template when the loop has cross-SPEC dependencies, prior art to
 protect, or needs to override inherited gate rules. For small self-contained
 loops use spec-simple-template.md instead.
+
+CONTEXT CONTRACT (what the engine actually passes to the agents):
+- implementer gets ONLY: the task body + its Accept block + the Constraints
+  section (+ previous-attempt failures on retries).
+- reviewers get ONLY: the diff + the task text + the Constraints section.
+Everything the implementer must know (precedent citations, binding decisions,
+DO NOTs) must therefore live INSIDE the task body or in Constraints. Goal,
+User decisions, Prior art and Out of scope address the human and the
+orchestrator.
 -->
 
 ## Goal
@@ -26,6 +35,9 @@ No implementation detail — that belongs in the tasks.>
 2. <...>
 
 ## Prior art (validated <YYYY-MM-DD> — REUSE, do not duplicate)
+
+The engine does not forward this section — it is the author-facing registry.
+Repeat each citation inside the body of the task that uses it.
 
 - `<path/file.ts:123-145>` — <what exists and must be reused instead of rewritten>
 - `<path/other.ts:42>` — <...>
@@ -54,9 +66,16 @@ cd services/<other> && bun test
 ./dev-mode.sh <svc> off && ./rebuild-redeploy.sh <svc> dev && ./scripts/e2e-<feature>.sh
 ```
 
-Gate rules: identical to `manual-loops/trace-console.md`<, plus explicit
-overrides for THIS queue: <e.g. "no baseline/precondition e2e — the previous
-attempt's green run IS the baseline; supersedes the inherited rule">>.
+Gate rules (self-contained — the engine runs THIS file verbatim; never
+inherit rules by reference to another SPEC):
+
+- ALL existing unit AND integration tests must pass — in every touched
+  service, every task. Weakening, skipping, or deleting an existing test is
+  an automatic reviewer rejection.
+- G5b runs for every task; a diff touching `packages/shared` redeploys every
+  dependent service. The cluster must never drift from the branch.
+- <Overrides for THIS queue, e.g. "no baseline/precondition e2e — the
+  previous attempt's green run IS the baseline; supersedes the rule above">.
 
 PRECONDITION: `./scripts/validate-dev-mode.sh --with-e2e` must be green once
 before T01; if it fails, skip G5a and rely solely on G5b.
@@ -109,6 +128,8 @@ grep -n "<expected string>" services/<svc>/README.md cowork/INDEX.md
 ```
 
 ---
+
+## Progress
 
 - [ ] T01 <label>
 - [ ] T02 <label>

@@ -45,8 +45,9 @@ fix code yourself. All code work goes through the `implementer` and `reviewer` a
    - Honor any PRECONDITION rules in the SPEC's Gates section before task 1.
 
 4. **Dual review.** Capture `git diff` (plus `git diff --stat`) and launch TWO `reviewer`
-   agents IN PARALLEL (single message, two Agent calls), each receiving the same diff and
-   the task text. Reviewers see only the diff — do not pass extra context.
+   agents IN PARALLEL (single message, two Agent calls), each receiving the same diff,
+   the task text, and the SPEC's Constraints section. Nothing else — reviewers judge
+   the diff against the task and the constraints, not against the whole SPEC.
 
 5. **Objections.** If either reviewer returns REJECTED, send the objections (verbatim,
    both reviewers merged) back to the `implementer` as a new attempt; then re-run gates
