@@ -467,7 +467,7 @@ grep -n "mcp_call\|llm_call" SCHEMAS.md
 ## Progress
 
 - [x] T01 serviceCall emission
-- [ ] T02 raw no-adapter emission
+- [x] T02 raw no-adapter emission
 - [ ] T03 mcpCall args+result emission
 - [ ] T04 standalone LLM emission
 - [ ] T05 ingester classification + resource filters

@@ -106,7 +106,14 @@ export async function executeEndpointCallCore(
             httpResponseCache,
             invocationId
           )
-        : await executeRaw(args, tenantId, httpResponseCache);
+        : await executeRaw(
+            args,
+            tenantId,
+            httpResponseCache,
+            causal,
+            publish,
+            invocationId
+          );
 
   if (result.ok) {
     breaker.recordSuccess(key);
