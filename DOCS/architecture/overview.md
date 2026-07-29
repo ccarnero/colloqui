@@ -81,6 +81,7 @@ flowchart LR
 | `channel-service` | Platform | Channel ingress/egress orchestration (WhatsApp, Instagram, Telegram, generic HTTP), normalized message events |
 | `audit-service` | Platform | Durable event audit persistence to tenant PostgreSQL |
 | `usage-aggregator-service` | Platform | Cross-stream usage aggregation for tenant analytics |
+| `tracking-ingester-service` | Platform | Durable event tracking: consumes every bus event into `tracking.tracked_events` (taxonomy classification, causal chains, payload lifecycle) and serves the trace/chain/run read APIs |
 | `workflow-service-api` | Platform | Workflow management API and Temporal client entry |
 | `workflow-service-worker` | Platform | Temporal worker and NATS trigger bridge |
 | `connector-runtime` | Platform | High-concurrency activity worker for `endpointCall` and `serviceCall` |

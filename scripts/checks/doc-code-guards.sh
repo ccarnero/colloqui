@@ -121,6 +121,7 @@ k6c_autoscaling() {
       "Usage Aggregator (API)") echo "usage-aggregator-api" ;;
       "Proxy Service") echo "proxy-service" ;;
       "Admin Console") echo "admin-console" ;;
+      "Provisioning Service") echo "provisioning-service" ;;
       *) echo "" ;;
     esac
   }
@@ -299,6 +300,10 @@ k7_ack_wait_census() {
         echo "Postgres channel-audit insert, fast" ;;
       "services/audit-service/src/modules/execution-audit/execution-audit.service.ts")
         echo "Postgres/Mongo execution-audit insert (metering foundation G1), fast" ;;
+      "services/tracking-ingester-service/src/main.ts")
+        echo "batched Postgres insert + claim-check resolve bounded at 2s, fast (DLQ-disabled by design)" ;;
+      "services/tracking-ingester-service/src/lib/consume-events.ts")
+        echo "doc-comment mention only — the real registration lives in main.ts" ;;
       *) echo "" ;;
     esac
   }
@@ -324,6 +329,9 @@ k7_ack_wait_census() {
     "services/audit-service/src/modules/channel-audit/channel-audit.service.ts"
     "services/audit-service/src/modules/execution-audit/execution-audit.service.ts"
     "services/tenant-service/src/modules/provisioning/tenant-provision-consumer.service.ts"
+    "services/tracking-ingester-service/src/main.ts"
+    "services/tracking-ingester-service/src/lib/consume-events.ts"
+    "services/connector-runtime/src/invoke-consumer-main.ts"
   )
 
   # 1) Discover every actual registration site under services/ (excluding
