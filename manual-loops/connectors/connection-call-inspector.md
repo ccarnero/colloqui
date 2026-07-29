@@ -477,7 +477,7 @@ grep -n "mcp_call\|llm_call" SCHEMAS.md
 - [x] T09 MCP detail migration + inspector
 - [x] T10 agent detail recent executions
 - [x] T11 hosted services detail page
-- [ ] T12 cluster e2e serviceCall round-trip
+- [x] T12 cluster e2e serviceCall round-trip
 - [ ] T13 docs + index
 
 ## Out of scope (explicit)

@@ -152,6 +152,29 @@ fi
 #      "orphaned" (no other tracked_events row shares their correlation_id)
 #      vs those that have siblings — evidence-at-volume for the correlation
 #      fix, per T06.
+#  15. (T12, manual-loops/connectors/connection-call-inspector.md) Stage 3
+#      now also provisions a THIRD action on '${WORKFLOW_NAME}' — a
+#      `serviceCall` hitting the pre-existing 'sample-echo' hosted service
+#      (T01's documented gap: serviceCall previously emitted NO
+#      endpoint_call_completed event, and this suite never exercised it).
+#      After the happy-path run, the same direct SQL query pattern as
+#      stage 13 asserts the resulting `endpoint_call_completed` row, with
+#      resource `service/sample-echo`, shares the happy-path run's
+#      correlation_id.
+#  16. GET /api/tracking/events?type=connector.endpoint_call.completed.v1
+#      &resource=service/sample-echo&limit=20 via the gateway (mirrors
+#      stage 14 for the serviceCall resource prefix) and assert the
+#      response contains an event whose correlation_id matches the
+#      happy-path run, capturing its event_id.
+#  17. GET /api/tracking/chains/:correlationId/events/:eventId/payload for
+#      the serviceCall event from stage 16, as the admin user, and assert
+#      HTTP 200 with the payload containing the happy-path nonce — the
+#      'probeService' action's `args.data.nonce` embeds
+#      `{{request.text}}` so the captured requestBody round-trips it.
+#      MCP and standalone-LLM emission paths (T03/T04 of the same SPEC) are
+#      NOT covered by this e2e: no MCP server or standalone-LLM job fixture
+#      exists in the dev cluster today, so those two paths stay covered by
+#      service-level unit tests only (out of scope for T12 to add).
 #
 # Exit code 0 = full chain verified; 1 = any stage failed. The workflow is
 # always left ENABLED on exit (trap), even on failure — moot for a future
@@ -205,6 +228,21 @@ AGENT_WORKFLOW_NAME_PREFIX="e2e-http-agentflow"
 # endpointCall activity (T02 finding: previously NO endpoint_call event was
 # ever produced by this script).
 ENDPOINT_ADAPTER_ID="${E2E_ENDPOINT_ADAPTER_ID:-a2dcbf77-7b4f-4a7b-b8ac-3e48c6496f0d}"
+# T12 (manual-loops/connectors/connection-call-inspector.md): the 'sample-echo'
+# hosted service — a harmless echo service, already registered in the dev
+# cluster's registry-service (live-verified via GET /api/registry/services:
+# id=8272b109-e5c5-47d8-b533-bce1d8610495, name='sample-echo') — used by
+# stage 3's 'probeService' serviceCall action so the e2e suite finally
+# exercises the serviceCall activity's per-call capture (T01's documented
+# gap: serviceCall previously emitted NO endpoint_call_completed event at
+# all, and this suite never exercised serviceCall). Same raw-string
+# convention as ENDPOINT_ADAPTER_ID above: sample-echo is NOT manifest
+# created by this script, so `args.serviceId` stays a plain string, never a
+# `{ serviceRef: ... }` ref-object (see the header comment's
+# substitute-symbolic-refs.ts walker note — a raw string at that allowlisted
+# key passes through byte-identical, same as `probeEndpoint.args.adapterId`).
+SERVICE_CALL_SERVICE_ID="${E2E_SERVICE_CALL_SERVICE_ID:-8272b109-e5c5-47d8-b533-bce1d8610495}"
+SERVICE_CALL_SERVICE_SLUG="${E2E_SERVICE_CALL_SERVICE_SLUG:-sample-echo}"
 # Namespace/pod for the direct SQL assertions in stages 13/14 — same
 # Postgres instance the tracking-ingester-service writes tracking.tracked_events
 # to. There is no ingester-side SQL helper endpoint, so this queries Postgres
@@ -310,6 +348,10 @@ CHAIN_BODY=""
 # re-enabled; the EXIT trap uses this to guarantee the workflow is never
 # left disabled, regardless of which stage fails.
 WORKFLOW_DISABLED=0
+# T12: event_id of the happy-path serviceCall's endpoint_call_completed
+# event, captured by stage_verify_service_call_events_gateway (stage 16) and
+# consumed by stage_verify_service_call_payload (stage 17).
+SERVICE_CALL_EVENT_ID=""
 
 cleanup_e2e_resources() {
   # T08 (manual-loops/connector-trace-linking.md): best-effort end-of-run
@@ -481,6 +523,13 @@ e2e_manifest_body() {
   # because this adapter is NOT manifest-created (see header comment for the
   # substitute-symbolic-refs.ts walker evidence that a raw string at this
   # allowlisted key passes through untouched).
+  #
+  # `probeService.args.serviceId` (T12) is likewise the RAW pre-existing
+  # 'sample-echo' hosted service id (E2E_SERVICE_CALL_SERVICE_ID) for the
+  # same reason — never a `{ serviceRef: ... }` ref-object. `data.nonce`
+  # embeds `{{request.text}}` (the webhook nonce) so the serviceCall's
+  # captured requestBody carries a value stage_verify_service_call_payload
+  # can assert on.
   cat <<JSON
 {
   "apiVersion": "yoizen.io/v1",
@@ -519,6 +568,17 @@ e2e_manifest_body() {
                 "adapterId": "${ENDPOINT_ADAPTER_ID}",
                 "method": "GET",
                 "url": "/api/v2/pokemon/ditto"
+              }
+            },
+            {
+              "name": "probeService",
+              "activity": "serviceCall",
+              "args": {
+                "serviceId": "${SERVICE_CALL_SERVICE_ID}",
+                "serviceSlug": "${SERVICE_CALL_SERVICE_SLUG}",
+                "method": "POST",
+                "path": "/anything",
+                "data": { "nonce": "{{request.text}}" }
               }
             }
           ],
@@ -718,13 +778,14 @@ stage_wait_execution_completed() {
   #
   # Stage 5b: waits for the '${WORKFLOW_NAME}' execution matching <nonce> to
   # reach a terminal COMPLETED status. Necessary because '${WORKFLOW_NAME}'
-  # now has TWO actions (T06): stage_verify_execution returns the moment the
-  # FIRST action's console.log appears, but the slower second action (the
-  # endpointCall probe over the network) may still be running. Without this
-  # wait, stage 6's disable+terminate can kill the happy-path execution
-  # mid-flight, so it never records result.causal.correlation_id (stage 9
-  # then fails) and never emits its endpoint_call_completed event (stages
-  # 13/14). Polling the executions list by nonce reuses stage 9's lookup.
+  # now has THREE actions (T06, T12): stage_verify_execution returns the
+  # moment the FIRST action's console.log appears, but the slower second and
+  # third actions (the endpointCall and serviceCall probes over the network)
+  # may still be running. Without this wait, stage 6's disable+terminate can
+  # kill the happy-path execution mid-flight, so it never records
+  # result.causal.correlation_id (stage 9 then fails) and never emits its
+  # endpoint_call_completed events (stages 13/14, 15/16/17). Polling the
+  # executions list by nonce reuses stage 9's lookup.
   local nonce="$1"
   log "Stage 5b: wait for '${WORKFLOW_NAME}' execution (nonce ${nonce}) to reach COMPLETED (timeout ${POLL_TIMEOUT_S}s)"
   local deadline=$(( $(date +%s) + POLL_TIMEOUT_S ))
@@ -1270,6 +1331,122 @@ stage_verify_endpoint_events_gateway() {
   return 1
 }
 
+stage_verify_service_call_correlation() {
+  # Stage 15 (T12, manual-loops/connectors/connection-call-inspector.md):
+  # asserts stage 3's 'probeService' serviceCall action produced an
+  # endpoint_call_completed row in tracking.tracked_events with resource
+  # 'service/<slug>' sharing the happy-path run's correlation_id — proves
+  # connector-runtime's serviceCall path (T01's documented gap) inherits the
+  # workflow's causal correlation live, mirroring stage 13's endpointCall
+  # assertion. Polled like the other async assertions (event is written
+  # asynchronously by the ingester off a NATS subject).
+  log "Stage 15: assert endpoint_call_completed (resource service/${SERVICE_CALL_SERVICE_SLUG}) row shares correlation_id ${CORRELATION_ID} (timeout ${CHAIN_TIMEOUT_S}s)"
+  if [[ -z "$CORRELATION_ID" ]]; then
+    err "CORRELATION_ID is empty — cannot verify serviceCall correlation"
+    return 1
+  fi
+  local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  local found=""
+  while (( $(date +%s) < deadline )); do
+    # kubectl/psql failure -> retry, same as stage_verify_endpoint_call_correlation.
+    found="$(kubectl exec -n "$TRACKING_PG_NAMESPACE" "$TRACKING_PG_POD" -- \
+      psql -U "$TRACKING_PG_USER" -d "$TRACKING_PG_DB" -Atc \
+      "select correlation_id from tracking.tracked_events where kind = 'endpoint_call_completed' and envelope->>'resource' = 'service/${SERVICE_CALL_SERVICE_SLUG}' and correlation_id = '${CORRELATION_ID}' limit 1;" \
+      2>/dev/null)" || true
+    [[ -n "$found" ]] && break
+    sleep 3
+  done
+  if [[ -z "$found" ]]; then
+    err "No endpoint_call_completed row (resource service/${SERVICE_CALL_SERVICE_SLUG}) found for correlation_id ${CORRELATION_ID} within ${CHAIN_TIMEOUT_S}s"
+    return 1
+  fi
+  log "Confirmed: endpoint_call_completed row (resource service/${SERVICE_CALL_SERVICE_SLUG}) in tracking.tracked_events shares correlation_id ${CORRELATION_ID}"
+}
+
+stage_verify_service_call_events_gateway() {
+  # Stage 16 (T12): GET
+  # /api/tracking/events?type=connector.endpoint_call.completed.v1
+  # &resource=service/<slug>&limit=20 via the gateway and assert the
+  # response contains an event whose correlation_id matches the happy-path
+  # run — proves the gateway->ingester events-by-type/resource read path
+  # also carries serviceCall's correlation through, mirroring stage 14 for
+  # endpointCall. Captures the matched event_id into SERVICE_CALL_EVENT_ID
+  # for stage_verify_service_call_payload (stage 17).
+  log "Stage 16: GET /api/tracking/events (type=connector.endpoint_call.completed.v1, resource=service/${SERVICE_CALL_SERVICE_SLUG}) (timeout ${CHAIN_TIMEOUT_S}s)"
+  if [[ -z "$CORRELATION_ID" ]]; then
+    err "CORRELATION_ID is empty — cannot verify serviceCall events via gateway"
+    return 1
+  fi
+  local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  local combined body status
+  while (( $(date +%s) < deadline )); do
+    # timeout -> retry
+    combined="$(api_status GET "/api/tracking/events?type=connector.endpoint_call.completed.v1&resource=service/${SERVICE_CALL_SERVICE_SLUG}&limit=20")" || true
+    status="$(api_status_code "$combined")"
+    body="$(api_status_body "$combined")"
+    if [[ "$status" == "200" ]]; then
+      SERVICE_CALL_EVENT_ID="$(echo "$body" | jq -r --arg cid "$CORRELATION_ID" \
+        '[.events[]? | select(.correlation_id == $cid)][0].event_id // empty')"
+      if [[ -n "$SERVICE_CALL_EVENT_ID" ]]; then
+        log "Confirmed: gateway events endpoint returned a serviceCall event with correlation_id ${CORRELATION_ID} (event_id=${SERVICE_CALL_EVENT_ID})"
+        return 0
+      fi
+      log "Gateway events endpoint returned 200 but no matching serviceCall correlation_id yet; retrying"
+    else
+      log "Gateway events endpoint returned status ${status}; retrying"
+    fi
+    sleep 3
+  done
+  err "Gateway events endpoint never returned a serviceCall event with correlation_id ${CORRELATION_ID} within ${CHAIN_TIMEOUT_S}s"
+  err "Last response (status ${status}): ${body}"
+  return 1
+}
+
+stage_verify_service_call_payload() {
+  # stage_verify_service_call_payload <nonce>
+  #
+  # Stage 17 (T12): GET /api/tracking/chains/:cid/events/:eid/payload for
+  # the serviceCall event captured by stage 16, as the same authenticated
+  # tenant-admin token every other stage uses, and assert HTTP 200 with the
+  # payload containing the run's nonce. The manifest's 'probeService' action
+  # embeds `{{request.text}}` (the webhook nonce) into `args.data.nonce`
+  # (see e2e_manifest_body), so the captured requestBody round-trips it
+  # unredacted — same round-trip proof pattern as stage_verify_payload
+  # (stage 11) for the webhook ingress event.
+  local nonce="$1"
+  log "Stage 17: verify serviceCall payload round-trip for event ${SERVICE_CALL_EVENT_ID} (nonce ${nonce}, timeout ${CHAIN_TIMEOUT_S}s)"
+  if [[ -z "$SERVICE_CALL_EVENT_ID" ]]; then
+    err "SERVICE_CALL_EVENT_ID is empty — stage_verify_service_call_events_gateway (stage 16) must run first"
+    return 1
+  fi
+  if [[ -z "$CORRELATION_ID" ]]; then
+    err "CORRELATION_ID is empty — cannot verify serviceCall payload"
+    return 1
+  fi
+
+  local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  local combined body status
+  while (( $(date +%s) < deadline )); do
+    # timeout -> retry
+    combined="$(api_status GET "/api/tracking/chains/${CORRELATION_ID}/events/${SERVICE_CALL_EVENT_ID}/payload")" || true
+    status="$(api_status_code "$combined")"
+    body="$(api_status_body "$combined")"
+    if [[ "$status" == "200" ]]; then
+      if echo "$body" | jq -e --arg nonce "$nonce" \
+          '(.payload // {} | tostring) | contains($nonce)' >/dev/null; then
+        log "serviceCall payload fetched (status 200) and contains nonce ${nonce}"
+        return 0
+      fi
+      err "serviceCall payload fetched but did not contain nonce ${nonce}: ${body}"
+      return 1
+    fi
+    log "Payload endpoint returned status ${status} for serviceCall event; retrying"
+    sleep 3
+  done
+  err "serviceCall payload never returned status 200 within ${CHAIN_TIMEOUT_S}s (last status ${status}): ${body}"
+  return 1
+}
+
 main() {
   command -v jq >/dev/null || { err "jq is required"; exit 1; }
   stage_login
@@ -1297,8 +1474,19 @@ main() {
   stage_verify_run
   stage_verify_endpoint_call_correlation
   stage_verify_endpoint_events_gateway
+  # T12 (manual-loops/connectors/connection-call-inspector.md): serviceCall
+  # capture round-trip — same three-stage shape as the endpointCall
+  # assertions above (direct SQL correlation, gateway events read,
+  # guarded payload fetch). MCP and standalone-LLM emission paths (T03/T04
+  # of the same SPEC) are NOT covered here: no MCP server or standalone-LLM
+  # job fixture exists in this dev e2e today, so those two paths stay
+  # covered by service-level unit tests only — adding cluster fixtures for
+  # them is out of scope for T12.
+  stage_verify_service_call_correlation
+  stage_verify_service_call_events_gateway
+  stage_verify_service_call_payload "$NONCE"
   log_endpoint_orphans "after this run"
-  log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain + step events + payload round-trip + run view + endpointCall correlation round-trip verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
+  log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain + step events + payload round-trip + run view + endpointCall correlation round-trip + serviceCall correlation round-trip verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
 }
 
 main "$@"
