@@ -210,16 +210,35 @@ cd services/admin-console && pnpm test
 
 ### T04 — Cluster e2e: endpoint-filtered events round-trip
 
-- `scripts/e2e/http-workflow.sh`: after the Stage 14 adapter-scoped events
-  assertion (:1297-1330), add a stage polling
-  `GET /api/tracking/events?type=connector.endpoint_call.completed.v1&resource=adapter/<id>&endpointId=<epId>&limit=20`
-  with the endpoint id the script already created, asserting: at least one
-  row returns, every returned row's `payload_endpoint_id` equals the
-  requested id, and a request with a nonexistent `endpointId` returns 200
-  with an empty `events` array (filtered list, not a lookup — matches
-  `handle-events-request.ts` semantics).
-- Follow the stage's existing polling/timeout/log conventions verbatim.
-- Teardown unchanged — the stage only reads.
+> AMENDED 2026-07-29 (attempt-1 finding): the original task assumed the
+> script's existing `probeEndpoint` action produced events with a non-null
+> `endpointId`. It does not — it passes only `adapterId`+`url`, hitting the
+> adapter-base branch which publishes `endpointId: null`
+> (`execute-with-adapter-base.ts:126`); live data confirms every
+> `adapter/<id>` row has a NULL endpointId. The stage therefore needs one
+> additive provisioning step to make the assertion reachable.
+
+- `scripts/e2e/http-workflow.sh`:
+  1. After login, resolve a real endpoint id at runtime (never hardcode —
+     `scripts/e2e/README.md:62-82` documents the staleness class):
+     `GET /api/connectors/${ENDPOINT_ADAPTER_ID}` via the existing `api()`
+     transport (gateway route `connectors.controller.ts:71`), jq-select the
+     endpoint's id.
+  2. Add ONE new action `probeEndpointScoped` (`endpointCall` with
+     `adapterId` + the resolved `endpointId`) to the manifest workflow —
+     `probeEndpoint` and every existing stage/assertion stay untouched. This
+     branch (`execute-with-adapter-endpoint`) publishes
+     `resource: adapter/<id>` with the payload `endpointId` set.
+  3. Add the new stage after Stage 14 (:1297-1330) polling
+     `GET /api/tracking/events?type=connector.endpoint_call.completed.v1&resource=adapter/<id>&endpointId=<epId>&limit=20`,
+     asserting: at least one row returns, every returned row's
+     `payload_endpoint_id` equals the requested id, and a nonexistent
+     `endpointId` returns 200 with an empty `events` array (filtered list,
+     not a lookup — matches `handle-events-request.ts` semantics).
+- Follow the stage's existing polling/timeout/log conventions verbatim;
+  update the stage index comment block the same way previous stages did.
+- Teardown: the manifest-scoped teardown already covers manifest resources;
+  do not add new teardown paths.
 
 **Accept**
 ```
@@ -232,7 +251,7 @@ grep -n "endpointId=" scripts/e2e/http-workflow.sh
 - [x] T01 ingester scalar + filter param
 - [x] T02 console feed endpoint scope
 - [x] T03 selectable cards + filter chip
-- [ ] T04 e2e endpoint-filtered round-trip
+- [x] T04 e2e endpoint-filtered round-trip
 
 ## Out of scope (explicit)
 
