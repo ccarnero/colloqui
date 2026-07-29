@@ -16,6 +16,17 @@ const RESOURCE_PREFIX = "adapter/";
 /** Default lookback window: 7 days (was 60 minutes under audit-service). */
 const DEFAULT_WINDOW_MIN = 7 * 24 * 60;
 
+// T09 of manual-loops/connectors/connection-call-inspector.md: MCP detail's
+// "Recent calls" migrates from `AgentAdminService.getMcpServerUsage`'s
+// bundled recent-call list to this same tracked_events feed, filtered on
+// the MCP call kind and `resource=mcp/<mcpServerId>` (set by
+// `event-publisher.ts` for `connector.mcp_call.completed.v1`, per
+// `build-events-query.ts`'s resource-prefix note). The aggregate summary
+// cards KEEP reading `getMcpServerUsage` — this method only replaces the
+// recent-call ROWS.
+const MCP_EVENT_TYPE = "connector.mcp_call.completed.v1";
+const MCP_RESOURCE_PREFIX = "mcp/";
+
 const CONNECTOR_CACHE_RESULT = {
   HIT: "hit",
   MISS: "miss",
@@ -61,6 +72,25 @@ interface ITrackingEventRow {
   readonly payload_http_status?: number | null;
   readonly payload_duration_ms?: number | null;
   readonly payload_cache_result?: string | null;
+  /** `connector.mcp_call.completed.v1` only (T06/T09). */
+  readonly payload_tool_name?: string | null;
+  readonly payload_success?: boolean | string | null;
+  readonly payload_error?: string | null;
+}
+
+/** One row of the T09 MCP "Recent calls" tracked_events feed —
+ * `connector.mcp_call.completed.v1`, scalar-only (mirrors
+ * `IMcpUsageRecentCall`'s fields plus the tracking-chain identifiers the
+ * inspector and "View trace" link need). */
+export interface IMcpCall {
+  readonly mcpServerId: string;
+  readonly toolName: string;
+  readonly success: boolean;
+  readonly durationMs: number;
+  readonly error: string | null;
+  readonly timestamp: string;
+  readonly correlationId?: string;
+  readonly eventId?: string;
 }
 
 interface ITrackingEventsResponse {
@@ -96,6 +126,35 @@ export class ConnectorCallService {
         map((res) => (res.events ?? []).map((row) => toCall(row, adapterId)))
       );
   }
+
+  /**
+   * Returns recent MCP tool calls for a given server, server-side filtered
+   * by `resource=mcp/<mcpServerId>` (T09). Same window/limit defaults as
+   * {@link recentCalls}.
+   * @param mcpServerId  MCP server to filter on.
+   * @param windowMin    How many minutes back to search (default 7 days).
+   * @param limit        Max rows to return (default 20).
+   */
+  recentMcpCalls(
+    mcpServerId: string,
+    windowMin = DEFAULT_WINDOW_MIN,
+    limit = 20
+  ): Observable<IMcpCall[]> {
+    const from = new Date(Date.now() - windowMin * 60_000).toISOString();
+    const params = new HttpParams()
+      .set("type", MCP_EVENT_TYPE)
+      .set("resource", `${MCP_RESOURCE_PREFIX}${mcpServerId}`)
+      .set("from", from)
+      .set("limit", String(limit));
+
+    return this.http
+      .get<ITrackingEventsResponse>(`${TRACKING}/events`, { params })
+      .pipe(
+        map((res) =>
+          (res.events ?? []).map((row) => toMcpCall(row, mcpServerId))
+        )
+      );
+  }
 }
 
 function toCall(row: ITrackingEventRow, adapterId: string): IConnectorCall {
@@ -110,6 +169,22 @@ function toCall(row: ITrackingEventRow, adapterId: string): IConnectorCall {
     status: row.payload_http_status ?? 0,
     durationMs: row.payload_duration_ms ?? 0,
     cacheResult: normalizeCacheResult(row.payload_cache_result),
+    timestamp: row.occurred_at ?? "",
+    correlationId: row.correlation_id ?? undefined,
+    eventId: row.event_id ?? undefined,
+  };
+}
+
+function toMcpCall(row: ITrackingEventRow, mcpServerId: string): IMcpCall {
+  return {
+    mcpServerId,
+    toolName: row.payload_tool_name ?? "",
+    // `->>'success'` on jsonb yields the text `"true"`/`"false"` — coerce
+    // defensively so a boolean-typed row (test fixtures, future backend
+    // change) still resolves correctly.
+    success: row.payload_success === true || row.payload_success === "true",
+    durationMs: row.payload_duration_ms ?? 0,
+    error: row.payload_error ?? null,
     timestamp: row.occurred_at ?? "",
     correlationId: row.correlation_id ?? undefined,
     eventId: row.event_id ?? undefined,

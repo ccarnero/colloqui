@@ -13,6 +13,11 @@ import { BehaviorSubject, of, tap, throwError } from "rxjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IMcpServer, IMcpUsage } from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
+import { AuthService } from "../../../core/services/auth.service";
+import {
+  ConnectorCallService,
+  type IMcpCall,
+} from "../../../core/services/connector-call.service";
 import { ConfirmDialogComponent } from "../../../shared/components/confirm-dialog/confirm-dialog.component";
 import { McpServerDialogComponent } from "../../../shared/components/mcp-server-dialog/mcp-server-dialog.component";
 import { McpDetailComponent } from "./mcp-detail.component";
@@ -62,6 +67,7 @@ describe("McpDetailComponent", () => {
     updateMcpServer: ReturnType<typeof vi.fn>;
     deleteMcpServer: ReturnType<typeof vi.fn>;
   };
+  let calls: { recentMcpCalls: ReturnType<typeof vi.fn> };
   let dialogMock: { open: ReturnType<typeof vi.fn> };
   let paramMap$: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
   let router: Router;
@@ -69,7 +75,8 @@ describe("McpDetailComponent", () => {
   async function setup(
     serverObs = of(makeServer()),
     toolsObs = of([]),
-    usageObs = of(makeUsage())
+    usageObs = of(makeUsage()),
+    callsObs = of<IMcpCall[]>([])
   ) {
     paramMap$ = new BehaviorSubject(convertToParamMap({ id: "mcp-1" }));
     agentAdminService = {
@@ -79,6 +86,7 @@ describe("McpDetailComponent", () => {
       updateMcpServer: vi.fn().mockReturnValue(of(makeServer())),
       deleteMcpServer: vi.fn().mockReturnValue(of(undefined)),
     };
+    calls = { recentMcpCalls: vi.fn().mockReturnValue(callsObs) };
     dialogMock = {
       open: vi.fn().mockReturnValue({ afterClosed: () => of(undefined) }),
     };
@@ -93,6 +101,8 @@ describe("McpDetailComponent", () => {
           useValue: { paramMap: paramMap$.asObservable() },
         },
         { provide: AgentAdminService, useValue: agentAdminService },
+        { provide: ConnectorCallService, useValue: calls },
+        { provide: AuthService, useValue: { hasPermission: () => true } },
         { provide: MatDialog, useValue: dialogMock },
       ],
     }).compileComponents();
@@ -286,10 +296,141 @@ describe("McpDetailComponent", () => {
     expect(text).toContain("This server exposes no tools right now.");
   });
 
-  it("renders the recent-calls empty state", async () => {
-    await setup(of(makeServer()), of([]), of(makeUsage({ recentCalls: [] })));
+  it("renders the recent-calls empty state naming the 7-day window", async () => {
+    await setup(of(makeServer()), of([]), of(makeUsage()), of([]));
     const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
-    expect(text).toContain("No calls in the selected window.");
+    expect(text).toContain("No calls in the last 7 days.");
+  });
+
+  // T09 — "Recent calls" rows source from the tracking feed
+  // (ConnectorCallService.recentMcpCalls), NOT usage.recentCalls.
+  describe("T09 — tracking feed migration", () => {
+    function makeMcpCall(overrides: Partial<IMcpCall> = {}): IMcpCall {
+      return {
+        mcpServerId: "mcp-1",
+        toolName: "search",
+        success: true,
+        durationMs: 42,
+        error: null,
+        timestamp: "2026-06-01T12:00:00.000Z",
+        correlationId: "corr-42",
+        eventId: "evt-42",
+        ...overrides,
+      };
+    }
+
+    it("loads recent calls from ConnectorCallService.recentMcpCalls, not usage.recentCalls", async () => {
+      await setup(
+        of(makeServer()),
+        of([]),
+        of(
+          makeUsage({
+            // If the component still read usage.recentCalls, this row
+            // would leak into the DOM as toolName "should-not-render".
+            recentCalls: [
+              {
+                toolName: "should-not-render",
+                success: true,
+                durationMs: 1,
+                error: null,
+                createdAt: "2026-06-01T12:00:00.000Z",
+              },
+            ],
+          })
+        ),
+        of([makeMcpCall({ toolName: "list-files" })])
+      );
+
+      expect(calls.recentMcpCalls).toHaveBeenCalledWith("mcp-1", undefined, 20);
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+      expect(text).toContain("list-files");
+      expect(text).not.toContain("should-not-render");
+    });
+
+    it("summary cards keep reading getMcpServerUsage (SPEC decision 3)", async () => {
+      await setup(
+        of(makeServer()),
+        of([]),
+        of(
+          makeUsage({
+            windowDays: 7,
+            summary: {
+              totalCalls: 42,
+              successCalls: 40,
+              errorCalls: 2,
+              avgDurationMs: 120,
+            },
+          })
+        ),
+        of([])
+      );
+
+      expect(agentAdminService.getMcpServerUsage).toHaveBeenCalledWith("mcp-1");
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+      expect(text).toContain("Calls (7d)");
+      expect(text).toContain("42");
+    });
+
+    it("clicking a call row opens the inspector with that row's event", async () => {
+      await setup(
+        of(makeServer()),
+        of([]),
+        of(makeUsage()),
+        of([makeMcpCall()])
+      );
+
+      const host = fixture.nativeElement as HTMLElement;
+      const row = host.querySelector<HTMLElement>(".call-row");
+      expect(row).toBeTruthy();
+      row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.inspectorRow()).toEqual({
+        eventId: "evt-42",
+        correlationId: "corr-42",
+        kind: "mcp_call_completed",
+        scalars: {
+          toolName: "search",
+          success: true,
+          durationMs: 42,
+          error: null,
+        },
+      });
+      expect(host.querySelector("app-call-inspector")).toBeTruthy();
+    });
+
+    it("does not open the inspector for a row without eventId/correlationId", async () => {
+      await setup(
+        of(makeServer()),
+        of([]),
+        of(makeUsage()),
+        of([makeMcpCall({ correlationId: undefined, eventId: undefined })])
+      );
+
+      const host = fixture.nativeElement as HTMLElement;
+      const row = host.querySelector<HTMLElement>(".call-row");
+      row?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.inspectorRow()).toBeNull();
+      expect(host.querySelector("app-call-inspector")).toBeFalsy();
+    });
+
+    it("the View trace link navigates to /processes/trace/<correlationId> and does not toggle the inspector", async () => {
+      await setup(
+        of(makeServer()),
+        of([]),
+        of(makeUsage()),
+        of([makeMcpCall()])
+      );
+
+      const host = fixture.nativeElement as HTMLElement;
+      const trace = host.querySelector<HTMLAnchorElement>(
+        "a.trace-link[href='/processes/trace/corr-42']"
+      );
+      expect(trace).toBeTruthy();
+      expect(trace?.getAttribute("href")).toBe("/processes/trace/corr-42");
+    });
   });
 
   // Regression tests for review objection 1 (MCP Delete capability lost

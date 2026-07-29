@@ -474,7 +474,7 @@ grep -n "mcp_call\|llm_call" SCHEMAS.md
 - [x] T06 type-aware /events projections
 - [x] T07 shared docked call inspector
 - [x] T08 HTTP connector detail wiring
-- [ ] T09 MCP detail migration + inspector
+- [x] T09 MCP detail migration + inspector
 - [ ] T10 agent detail recent executions
 - [ ] T11 hosted services detail page
 - [ ] T12 cluster e2e serviceCall round-trip

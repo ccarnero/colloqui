@@ -15,9 +15,12 @@ import type {
   IMcpServer,
   IMcpServerTool,
   IMcpUsage,
-  IMcpUsageRecentCall,
 } from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
+import {
+  ConnectorCallService,
+  type IMcpCall,
+} from "../../../core/services/connector-call.service";
 import {
   ConfirmDialogComponent,
   type IConfirmDialogData,
@@ -34,6 +37,10 @@ import {
   StatusBadgeComponent,
 } from "../../../shared/components/status-badge/status-badge.component";
 import { UtcDatePipe } from "../../../shared/pipes/utc-date.pipe";
+import {
+  CallInspectorComponent,
+  type ICallInspectorRow,
+} from "../call-inspector/call-inspector.component";
 import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
 
 /**
@@ -45,11 +52,15 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
  * - **Tools** is read-only, with no "+ Add Tool" affordance anywhere — MCP
  *   tools are discovered live from the server (`GET :id/tools`), never
  *   manually defined (mcp-connections.md §6.4's explicit clarification).
- * - **Recent calls** comes from one combined endpoint
- *   (`GET :id/usage`, mcp-connections.md §3) that returns both the
- *   aggregate summary (for the Overview cards) and the recent-call list,
- *   rather than a separate audit-events endpoint the way Connectors' recent
- *   calls does — see `mcp-servers.service.ts`'s `getUsage` for why.
+ * - **Recent calls** used to come from the combined `GET :id/usage` endpoint
+ *   (`mcp-servers.service.ts`'s `getUsage`). T09 of
+ *   `manual-loops/connectors/connection-call-inspector.md` migrated the row
+ *   feed to `tracking.tracked_events` (`ConnectorCallService.recentMcpCalls`,
+ *   `type=connector.mcp_call.completed.v1&resource=mcp/<id>`), matching
+ *   `connector-detail.component.ts`'s T08 pattern — row click opens the
+ *   shared `app-call-inspector`, plus a "View trace" link. The Overview
+ *   summary cards KEEP reading `getUsage` (SPEC decision 3) — only the
+ *   row list moved.
  *
  * T03 restyle (console-redesign-connections.md): header health dot, KPI
  * cards for the overview row (real data only — `Calls (Nd)` from
@@ -70,6 +81,7 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
     StatusBadgeComponent,
     KpiCardComponent,
     UtcDatePipe,
+    CallInspectorComponent,
   ],
   template: `
     <div class="ws-breadcrumb">
@@ -182,25 +194,47 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
 
       <section class="section">
         <h3 class="section-title">Recent calls</h3>
-        @if (usageLoading()) {
+        @if (callsLoading()) {
           <div class="loader">
             <mat-spinner diameter="24"></mat-spinner
             ><span>Loading recent calls…</span>
           </div>
         } @else if (recentCalls().length === 0) {
-          <p class="no-calls">No calls in the selected window.</p>
+          <p class="no-calls">No calls in the last 7 days.</p>
         } @else {
-          <div class="call-list">
-            @for (c of recentCalls(); track $index; let idx = $index) {
-              <div class="call-row">
-                <span class="call-ts">{{ c.createdAt | utcDate: "medium" }}</span>
-                <span class="call-method">{{ c.toolName }}</span>
-                <span class="call-status" [class]="c.success ? 'st-2xx' : 'st-5xx'">
-                  {{ c.success ? "OK" : "Error" }}
-                </span>
-                <span class="call-dur">{{ c.durationMs }}ms</span>
-                <span class="call-url">{{ c.error ?? "" }}</span>
-              </div>
+          <div class="call-body">
+            <div class="call-list">
+              @for (c of recentCalls(); track $index) {
+                <div
+                  class="call-row"
+                  role="button"
+                  tabindex="0"
+                  [class.call-row--selected]="selectedCall() === c"
+                  (click)="openInspector(c)"
+                  (keydown.enter)="openInspector(c)"
+                >
+                  <span class="call-ts">{{ c.timestamp | utcDate: "medium" }}</span>
+                  <span class="call-method">{{ c.toolName }}</span>
+                  <span class="call-status" [class]="c.success ? 'st-2xx' : 'st-5xx'">
+                    {{ c.success ? "OK" : "Error" }}
+                  </span>
+                  <span class="call-dur">{{ c.durationMs }}ms</span>
+                  <span class="call-url">{{ c.error ?? "" }}</span>
+                  @if (c.correlationId) {
+                    <a
+                      [routerLink]="['/processes/trace', c.correlationId]"
+                      class="trace-link"
+                      (click)="$event.stopPropagation()"
+                    >
+                      <mat-icon>open_in_new</mat-icon>
+                      View trace
+                    </a>
+                  }
+                </div>
+              }
+            </div>
+            @if (inspectorRow(); as row) {
+              <app-call-inspector [row]="row" (close)="closeInspector()" />
             }
           </div>
         }
@@ -237,8 +271,10 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
     .endpoint-label { flex: 1; font-size: var(--rd-text-size-sm, 12px); color: var(--rd-text-3); }
     .endpoint-cache { font-size: var(--rd-text-size-xs, 11px); color: var(--rd-text-3); white-space: nowrap; }
     .no-calls { color: var(--rd-text-3); font-size: var(--rd-text-size-base, 13px); margin: 0; }
-    .call-list { display: flex; flex-direction: column; gap: var(--rd-space-2, 4px); }
-    .call-row { display: grid; grid-template-columns: 160px 1fr 60px 70px 1fr; gap: var(--rd-space-4, 8px); align-items: center; padding: var(--rd-space-3, 6px) var(--rd-space-4, 8px); border-radius: var(--rd-radius-3, 4px); background: var(--rd-panel); font-size: var(--rd-text-size-sm, 12px); color: var(--rd-text-2); }
+    .call-body { display: flex; gap: var(--rd-space-8, 16px); align-items: flex-start; }
+    .call-list { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: var(--rd-space-2, 4px); }
+    .call-row { display: grid; grid-template-columns: 160px 1fr 60px 70px 1fr auto; gap: var(--rd-space-4, 8px); align-items: center; padding: var(--rd-space-3, 6px) var(--rd-space-4, 8px); border-radius: var(--rd-radius-3, 4px); background: var(--rd-panel); font-size: var(--rd-text-size-sm, 12px); color: var(--rd-text-2); cursor: pointer; transition: background-color 0.12s; outline: none; }
+    .call-row:hover, .call-row:focus-visible, .call-row--selected { background: var(--rd-hover); color: var(--rd-text-1); }
     .call-ts { color: var(--rd-text-3); font-size: var(--rd-text-size-xs, 11px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .call-method { font-family: var(--rd-font-mono); font-size: var(--rd-text-size-xs, 11px); font-weight: 600; color: var(--rd-link); }
     .call-status { font-family: var(--rd-font-mono); font-weight: 600; font-size: var(--rd-text-size-sm, 12px); }
@@ -246,12 +282,16 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
     .st-5xx { color: var(--rd-red); }
     .call-dur { color: var(--rd-text-3); font-size: var(--rd-text-size-xs, 11px); }
     .call-url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--rd-font-mono); font-size: var(--rd-text-size-xs, 11px); }
+    .trace-link { display: inline-flex; align-items: center; gap: var(--rd-space-2, 4px); font-size: var(--rd-text-size-sm, 12px); color: var(--rd-accent); text-decoration: none; transition: color 0.12s; }
+    .trace-link:hover { color: var(--rd-text-1); text-decoration: underline; }
+    .trace-link mat-icon { font-size: 14px; width: 14px; height: 14px; }
   `,
 })
 export class McpDetailComponent implements OnInit {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly agentAdminService = inject(AgentAdminService);
+  private readonly calls = inject(ConnectorCallService);
   private readonly dialog = inject(MatDialog);
   private readonly snackBar = inject(MatSnackBar);
 
@@ -264,12 +304,44 @@ export class McpDetailComponent implements OnInit {
   readonly toolsLoading = signal(false);
   readonly toolsError = signal(false);
 
+  // T09: the aggregate summary (Overview KPI cards) keeps reading
+  // `getMcpServerUsage` — SPEC decision 3. It no longer feeds the row list.
   readonly usage = signal<IMcpUsage | null>(null);
   readonly usageLoading = signal(false);
 
-  readonly recentCalls = computed<IMcpUsageRecentCall[]>(
-    () => this.usage()?.recentCalls ?? []
-  );
+  // T09: "Recent calls" rows now come from `tracking.tracked_events`
+  // (`ConnectorCallService.recentMcpCalls`), not `usage.recentCalls`.
+  readonly recentCalls = signal<IMcpCall[]>([]);
+  readonly callsLoading = signal(false);
+
+  /** Currently-selected "Recent calls" row — feeds the docked
+   * `app-call-inspector` panel (T09, mirrors
+   * `connector-detail.component.ts`'s T08 `selectedCall`). `null` means the
+   * inspector is closed. */
+  readonly selectedCall = signal<IMcpCall | null>(null);
+
+  /** Projects `selectedCall()` into the inspector's row contract, per
+   * SPEC.md T07 ("event_id + correlation_id + kind + scalars"). MCP calls
+   * only carry `mcp_call_completed` events, so `kind` is hardcoded.
+   * `scalars` mirrors the columns already visible in the scalar-only feed
+   * row — no new fields, no payload. */
+  readonly inspectorRow = computed<ICallInspectorRow | null>(() => {
+    const c = this.selectedCall();
+    if (!c || !c.eventId || !c.correlationId) {
+      return null;
+    }
+    return {
+      eventId: c.eventId,
+      correlationId: c.correlationId,
+      kind: "mcp_call_completed",
+      scalars: {
+        toolName: c.toolName,
+        success: c.success,
+        durationMs: c.durationMs,
+        error: c.error,
+      },
+    };
+  });
 
   // Health mapping (SPEC console-redesign-connections.md, decision 3,
   // orchestrator ruling 2026-07-22): MCP servers map
@@ -352,6 +424,7 @@ export class McpDetailComponent implements OnInit {
         });
         this.loadTools(id);
         this.loadUsage(id);
+        this.loadCalls(id);
       },
       error: (err: unknown) => {
         console.error("[McpDetailComponent] failed to load MCP server", {
@@ -400,6 +473,56 @@ export class McpDetailComponent implements OnInit {
         this.usageLoading.set(false);
       },
     });
+  }
+
+  /** T09: `tracking.tracked_events` feed for the "Recent calls" list,
+   * server-side filtered to `resource=mcp/<id>` (7-day default window,
+   * limit 20 — mirrors `connector-detail.component.ts`'s `loadCalls`). */
+  private loadCalls(id: string): void {
+    this.callsLoading.set(true);
+    this.calls.recentMcpCalls(id, undefined, 20).subscribe({
+      next: (rows) => {
+        this.recentCalls.set(rows);
+        this.callsLoading.set(false);
+        console.debug("[McpDetailComponent] recent calls loaded", {
+          id,
+          count: rows.length,
+        });
+      },
+      error: (err: unknown) => {
+        console.error("[McpDetailComponent] failed to load recent calls", {
+          id,
+          err,
+        });
+        this.callsLoading.set(false);
+      },
+    });
+  }
+
+  /** Opens the docked call inspector for the clicked row (T09). Rows
+   * without an `eventId`/`correlationId` can't be resolved to a tracking
+   * event, so the click is a no-op — mirroring
+   * `connector-detail.component.ts`'s T08 `openInspector`. */
+  openInspector(call: IMcpCall): void {
+    if (!call.eventId || !call.correlationId) {
+      console.debug(
+        "[McpDetailComponent] inspector open skipped — call row has no eventId/correlationId",
+        { mcpServerId: call.mcpServerId, timestamp: call.timestamp }
+      );
+      return;
+    }
+    console.debug("[McpDetailComponent] opening call inspector", {
+      eventId: call.eventId,
+      correlationId: call.correlationId,
+    });
+    this.selectedCall.set(call);
+  }
+
+  /** Consumer side of the inspector's `close` output contract
+   * (`call-inspector.component.ts`'s `onClose()`). */
+  closeInspector(): void {
+    console.debug("[McpDetailComponent] closing call inspector");
+    this.selectedCall.set(null);
   }
 
   /**
