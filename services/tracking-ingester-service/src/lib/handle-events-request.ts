@@ -1,5 +1,8 @@
-// Orchestrates the `GET /events?type=<t>&resource=<r>&from=<iso>&limit=<n>`
-// request (T03 of manual-loops/connector-trace-linking.md): tenant guard,
+// Orchestrates the
+// `GET /events?type=<t>&resource=<r>&from=<iso>&limit=<n>&endpointId=<id>`
+// request (T03 of manual-loops/connector-trace-linking.md; the optional
+// `endpointId` filter is T01 of
+// manual-loops/connectors/endpoint-scoped-recent-calls.md): tenant guard,
 // query-param validation (`parseEventsQuery`), the projected list query
 // (`buildEventsQuery`), and shaping via `toEventsResponse` — WITHOUT touching
 // a concrete Postgres client. Same injected-I/O shape as
@@ -62,16 +65,23 @@ export async function handleEventsRequest(
     };
   }
 
-  const { type, resource, from, limit } = parsed.value;
+  const { type, resource, from, endpointId, limit } = parsed.value;
   log(
-    `handleEventsRequest: fetching tenant=${tenant} type=${type} resource=${resource ?? "-"} from=${from ?? "-"} limit=${limit}`
+    `handleEventsRequest: fetching tenant=${tenant} type=${type} resource=${resource ?? "-"} from=${from ?? "-"} endpointId=${endpointId ?? "-"} limit=${limit}`
   );
 
-  const query = buildEventsQuery({ tenant, type, resource, from, limit });
+  const query = buildEventsQuery({
+    tenant,
+    type,
+    resource,
+    from,
+    endpointId,
+    limit,
+  });
   const events = await deps.queryEvents(query);
 
   log(
-    `handleEventsRequest: OK tenant=${tenant} type=${type} resource=${resource ?? "-"} from=${from ?? "-"} limit=${limit} count=${events.length}`
+    `handleEventsRequest: OK tenant=${tenant} type=${type} resource=${resource ?? "-"} from=${from ?? "-"} endpointId=${endpointId ?? "-"} limit=${limit} count=${events.length}`
   );
 
   const response = toEventsResponse(
@@ -79,6 +89,7 @@ export async function handleEventsRequest(
     type,
     resource,
     from,
+    endpointId,
     limit,
     events
   );

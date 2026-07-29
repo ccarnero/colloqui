@@ -34,6 +34,7 @@ const EVENT: EventRow = {
   payload_http_status: 200,
   payload_duration_ms: 50,
   payload_cache_result: "hit",
+  payload_endpoint_id: "ep-42",
   payload_tool_name: null,
   payload_success: null,
   payload_error: null,
@@ -212,6 +213,94 @@ describe("handleEventsRequest", () => {
       "connector.endpoint_call.completed.v1",
       500,
     ]);
+  });
+
+  // T01 of manual-loops/connectors/endpoint-scoped-recent-calls.md — the
+  // optional `endpointId` query param is the ONLY API-surface change: it is
+  // parsed, forwarded to the query as an extra bound param (composing with
+  // `resource`/`from`), and echoed on the response.
+  it("forwards endpointId to the query, composing with resource and from, and echoes it", async () => {
+    let seenQuery: EventsQuery | null = null;
+    const result = await handleEventsRequest(
+      "tenant-a",
+      {
+        type: "connector.endpoint_call.completed.v1",
+        resource: "adapter/adp-1",
+        from: "2026-06-01T00:00:00.000Z",
+        limit: "10",
+        endpointId: " ep-42 ",
+      },
+      {
+        queryEvents: async (query) => {
+          seenQuery = query;
+          return [EVENT];
+        },
+      }
+    );
+
+    expect(seenQuery).not.toBeNull();
+    expect(seenQuery!.text).toContain(
+      "envelope->'data'->'payload'->>'endpointId' = $5"
+    );
+    expect(seenQuery!.params).toEqual([
+      "tenant-a",
+      "connector.endpoint_call.completed.v1",
+      "adapter/adp-1",
+      "2026-06-01T00:00:00.000Z",
+      "ep-42",
+      10,
+    ]);
+    expect(result.status).toBe(200);
+    if (result.status === 200) {
+      expect(result.body.endpointId).toBe("ep-42");
+      expect(result.body.resource).toBe("adapter/adp-1");
+      expect(result.body.events[0]!.payload_endpoint_id).toBe("ep-42");
+    }
+  });
+
+  it("echoes a null endpointId and omits the filter when it is absent", async () => {
+    let seenQuery: EventsQuery | null = null;
+    const result = await handleEventsRequest(
+      "tenant-a",
+      {
+        type: "connector.endpoint_call.completed.v1",
+        resource: null,
+        from: null,
+        limit: null,
+      },
+      {
+        queryEvents: async (query) => {
+          seenQuery = query;
+          return [EVENT];
+        },
+      }
+    );
+    expect(
+      seenQuery!.text.slice(seenQuery!.text.indexOf("WHERE"))
+    ).not.toContain("endpointId");
+    expect(result.status).toBe(200);
+    if (result.status === 200) {
+      expect(result.body.endpointId).toBeNull();
+    }
+  });
+
+  it("logs the endpointId on both the fetching and OK verbose lines", async () => {
+    const lines: string[] = [];
+    await handleEventsRequest(
+      "tenant-a",
+      {
+        type: "connector.endpoint_call.completed.v1",
+        resource: null,
+        from: null,
+        limit: null,
+        endpointId: "ep-42",
+      },
+      {
+        queryEvents: async () => [EVENT],
+        log: (message) => lines.push(message),
+      }
+    );
+    expect(lines.filter((l) => l.includes("endpointId=ep-42"))).toHaveLength(2);
   });
 
   it("never projects requestBody/responseBody onto the response events", async () => {

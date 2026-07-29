@@ -426,7 +426,7 @@ async function bootstrap(): Promise<void> {
         const tenant = request.headers.get("x-yoizen-tenant");
         const searchParams = url.searchParams;
         line(
-          `GET /events — tenant=${tenant ?? "MISSING"} type=${searchParams.get("type") ?? "-"} resource=${searchParams.get("resource") ?? "-"} from=${searchParams.get("from") ?? "-"} limit=${searchParams.get("limit") ?? "-"}`
+          `GET /events — tenant=${tenant ?? "MISSING"} type=${searchParams.get("type") ?? "-"} resource=${searchParams.get("resource") ?? "-"} from=${searchParams.get("from") ?? "-"} endpointId=${searchParams.get("endpointId") ?? "-"} limit=${searchParams.get("limit") ?? "-"}`
         );
         return handleEventsRequest(
           tenant,
@@ -435,6 +435,10 @@ async function bootstrap(): Promise<void> {
             resource: searchParams.get("resource"),
             from: searchParams.get("from"),
             limit: searchParams.get("limit"),
+            // T01 of manual-loops/connectors/endpoint-scoped-recent-calls.md
+            // — optional per-endpoint narrowing; composes with the filters
+            // above, never replaces them.
+            endpointId: searchParams.get("endpointId"),
           },
           {
             // Normalize driver rows before they reach the pure response

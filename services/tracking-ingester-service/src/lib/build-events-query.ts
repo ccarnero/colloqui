@@ -1,5 +1,7 @@
 // build-events-query.ts — parametrized SQL for `GET /events?type=<t>&resource=<r>
-// &from=<iso>&limit=<n>` (T03 of manual-loops/connector-trace-linking.md): the
+// &from=<iso>&limit=<n>&endpointId=<id>` (T03 of
+// manual-loops/connector-trace-linking.md; `endpointId` added by T01 of
+// manual-loops/connectors/endpoint-scoped-recent-calls.md): the
 // generic events-by-type/resource list the connector "Recent calls" feature (and
 // any future entity-detail "recent activity" panel) reads from
 // `tracking.tracked_events` directly instead of audit-service's 60-minute window.
@@ -75,6 +77,20 @@ export interface EventsQueryParams {
   readonly resource: string | null;
   /** Inclusive lower bound on `occurred_at`, ISO-8601. Optional. */
   readonly from: string | null;
+  /**
+   * `envelope->'data'->'payload'->>'endpointId'` filter (T01 of
+   * `manual-loops/connectors/endpoint-scoped-recent-calls.md`) — the id of
+   * the single connector endpoint whose calls the caller wants, as published
+   * by `services/connector-runtime/src/activities/_shared/event-publisher.ts:81`.
+   * Optional, and COMPOSES with `type`/`resource`/`from` (it never replaces
+   * any of them): `resource=adapter/<id>` narrows to one connector,
+   * `endpointId=<id>` narrows further to one endpoint of it. Matched
+   * verbatim with NO `COALESCE` fallback — an event family that does not
+   * carry the payload field simply never matches, which is the intended
+   * behavior (no schema/column change, same guardrail as the `agentId`
+   * addendum above).
+   */
+  readonly endpointId: string | null;
   /** Already clamped to `[1, MAX_LIST_LIMIT]` by the caller (`clampListLimit`). */
   readonly limit: number;
 }
@@ -143,6 +159,14 @@ export type EventRow = Pick<
   /** `data.payload.cacheResult` — `"hit" | "miss" | "bypass" | null`. HTTP
    * connector calls only. */
   payload_cache_result: string | null;
+  /** `data.payload.endpointId` — the connector endpoint the call targeted,
+   * emitted by
+   * `services/connector-runtime/src/activities/_shared/event-publisher.ts:81`
+   * (T01 of `manual-loops/connectors/endpoint-scoped-recent-calls.md`). A
+   * SCALAR only: the raw `envelope` jsonb stays excluded from this (and
+   * every other) list projection. `null` for event families that don't carry
+   * the field. */
+  payload_endpoint_id: string | null;
   /** `data.payload.toolName` — `connector.mcp_call.completed.v1` only. */
   payload_tool_name: string | null;
   /** `data.payload.success` — `connector.mcp_call.completed.v1` only. */
@@ -197,6 +221,13 @@ const EVENTS_COLUMNS = [
   "envelope->'data'->'payload'->>'status' AS payload_http_status",
   "envelope->'data'->'payload'->>'durationMs' AS payload_duration_ms",
   "envelope->'data'->'payload'->>'cacheResult' AS payload_cache_result",
+  // Connector endpoint identity (T01 of
+  // `manual-loops/connectors/endpoint-scoped-recent-calls.md`). Emitted by
+  // `services/connector-runtime/src/activities/_shared/event-publisher.ts:81`
+  // (`endpointId: evt.endpointId` on the endpoint_call payload). Projected
+  // as a scalar so the console can label/group calls per endpoint without
+  // fetching the envelope.
+  "envelope->'data'->'payload'->>'endpointId' AS payload_endpoint_id",
   // MCP tool calls (`connector.mcp_call.completed.v1`, T06). Bodies
   // (`arguments`/`result`) are deliberately NEVER projected here.
   "envelope->'data'->'payload'->>'toolName' AS payload_tool_name",
@@ -225,7 +256,8 @@ const AGENT_RESOURCE_PREFIX = "agent/";
 /**
  * Builds the parametrized SQL that fetches `tracking.tracked_events` rows
  * scoped to `tenant`, filtered by `envelope->>'type'` (required), optionally
- * `envelope->>'resource'` and a lower `occurred_at` bound, ordered
+ * `envelope->>'resource'`, a lower `occurred_at` bound and the payload's
+ * `endpointId` (each an independent AND — they compose), ordered
  * `occurred_at DESC` (most recent first — SPEC.md T03), capped at `limit`.
  * Never `SELECT *`; the raw `envelope` jsonb is excluded from the projection
  * (chain-list decision, manual-loops/trace-console.md T01, stands here too).
@@ -255,6 +287,16 @@ export function buildEventsQuery(params: EventsQueryParams): EventsQuery {
   if (params.from !== null) {
     values.push(params.from);
     conditions.push(`occurred_at >= $${values.length}`);
+  }
+
+  // T01 of `manual-loops/connectors/endpoint-scoped-recent-calls.md`:
+  // APPENDED to whatever `resource`/`from` already contributed — this is an
+  // additional AND, never a replacement for the filters above.
+  if (params.endpointId !== null) {
+    values.push(params.endpointId);
+    conditions.push(
+      `envelope->'data'->'payload'->>'endpointId' = $${values.length}`
+    );
   }
 
   values.push(params.limit);

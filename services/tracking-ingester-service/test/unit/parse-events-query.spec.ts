@@ -104,6 +104,67 @@ describe("parseEventsQuery", () => {
     }
   });
 
+  // T01 of manual-loops/connectors/endpoint-scoped-recent-calls.md —
+  // `endpointId` follows the exact same normalization rule as
+  // `resource`/`from`: trimmed, blank -> null, absent -> null, no format
+  // validation (it is an opaque id).
+  it("trims and passes through a provided endpointId", () => {
+    const result = parseEventsQuery({
+      type: "connector.endpoint_call.completed.v1",
+      resource: "adapter/adp-1",
+      from: null,
+      limit: null,
+      endpointId: "  ep-42  ",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.endpointId).toBe("ep-42");
+      // Composes with `resource` — never replaces it.
+      expect(result.value.resource).toBe("adapter/adp-1");
+    }
+  });
+
+  it("normalizes a blank endpointId to null", () => {
+    const result = parseEventsQuery({
+      type: "connector.endpoint_call.completed.v1",
+      resource: null,
+      from: null,
+      limit: null,
+      endpointId: "   ",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.endpointId).toBeNull();
+    }
+  });
+
+  it("normalizes an absent endpointId to null", () => {
+    const result = parseEventsQuery({
+      type: "connector.endpoint_call.completed.v1",
+      resource: null,
+      from: null,
+      limit: null,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.endpointId).toBeNull();
+    }
+  });
+
+  it("accepts an endpointId of any shape (opaque id — no format validation)", () => {
+    const result = parseEventsQuery({
+      type: "connector.endpoint_call.completed.v1",
+      resource: null,
+      from: null,
+      limit: null,
+      endpointId: "not/a/uuid but still accepted",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.endpointId).toBe("not/a/uuid but still accepted");
+    }
+  });
+
   it("passes through a valid 'from' and trims/keeps type and resource", () => {
     const result = parseEventsQuery({
       type: " connector.endpoint_call.completed.v1 ",

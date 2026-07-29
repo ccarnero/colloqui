@@ -10,6 +10,14 @@ export interface EventsResponse {
   readonly type: string;
   readonly resource: string | null;
   readonly from: string | null;
+  /** Echo of the `endpointId` filter that produced this list (T01 of
+   * `manual-loops/connectors/endpoint-scoped-recent-calls.md`) — echoed for
+   * the same reason `resource`/`from` are: the console renders the applied
+   * filter set from the response, not from what it believes it sent. `null`
+   * when the caller did not scope by endpoint. The per-row endpoint id is a
+   * DIFFERENT field, `EventRow.payload_endpoint_id`, which rides through
+   * inside `events`. */
+  readonly endpointId: string | null;
   readonly limit: number;
   readonly count: number;
   readonly events: readonly EventRow[];
@@ -20,6 +28,7 @@ export function toEventsResponse(
   type: string,
   resource: string | null,
   from: string | null,
+  endpointId: string | null,
   limit: number,
   events: readonly EventRow[]
 ): EventsResponse {
@@ -28,6 +37,7 @@ export function toEventsResponse(
     type,
     resource,
     from,
+    endpointId,
     limit,
     count: events.length,
     events,

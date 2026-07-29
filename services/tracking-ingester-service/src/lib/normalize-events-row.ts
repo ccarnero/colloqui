@@ -10,6 +10,11 @@
 // `manual-loops/connectors/connection-call-inspector.md` added the
 // MCP/LLM/agent-execution scalar columns; `payload_success` additionally
 // needs text->boolean coercion (`"true"`/`"false"` as extracted by `->>`).
+// T01 of `manual-loops/connectors/endpoint-scoped-recent-calls.md` added
+// `payload_endpoint_id`: plain TEXT (or `null`), so — exactly like
+// `payload_method`/`payload_resolved_url` — it needs NO coercion and rides
+// through on the `...row` spread below, staying in both `RawEventRow` and
+// `EventRow` unchanged.
 
 import type { EventRow } from "./build-events-query.js";
 import { toIsoMillis } from "./to-iso-millis.js";

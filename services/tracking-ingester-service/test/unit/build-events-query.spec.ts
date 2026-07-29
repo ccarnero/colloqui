@@ -8,6 +8,7 @@ describe("buildEventsQuery", () => {
       type: "connector.endpoint_call.completed.v1",
       resource: null,
       from: null,
+      endpointId: null,
       limit: 50,
     });
     const normalized = text.replace(/\s+/g, " ").trim();
@@ -23,6 +24,7 @@ describe("buildEventsQuery", () => {
       type: "connector.endpoint_call.completed.v1",
       resource: null,
       from: null,
+      endpointId: null,
       limit: 50,
     });
     expect(text).not.toMatch(/SELECT\s+\*/i);
@@ -34,6 +36,7 @@ describe("buildEventsQuery", () => {
       type: "connector.endpoint_call.completed.v1",
       resource: null,
       from: null,
+      endpointId: null,
       limit: 50,
     });
     const columnsBlock = text.slice(
@@ -68,6 +71,7 @@ describe("buildEventsQuery", () => {
       type: "connector.endpoint_call.completed.v1",
       resource: null,
       from: null,
+      endpointId: null,
       limit: 50,
     });
     expect(text).toContain("ORDER BY occurred_at DESC");
@@ -79,6 +83,7 @@ describe("buildEventsQuery", () => {
       type: "connector.endpoint_call.completed.v1",
       resource: null,
       from: null,
+      endpointId: null,
       limit: 50,
     });
     expect(text).not.toContain("resource");
@@ -97,6 +102,7 @@ describe("buildEventsQuery", () => {
       type: "connector.endpoint_call.completed.v1",
       resource: "adapter/adp-1",
       from: null,
+      endpointId: null,
       limit: 50,
     });
     expect(text).toContain("envelope->>'resource' = $3");
@@ -115,6 +121,7 @@ describe("buildEventsQuery", () => {
       type: "connector.endpoint_call.completed.v1",
       resource: null,
       from: "2026-07-01T00:00:00.000Z",
+      endpointId: null,
       limit: 50,
     });
     expect(text).toContain("occurred_at >= $3");
@@ -140,6 +147,7 @@ describe("buildEventsQuery", () => {
       type: "connector.endpoint_call.completed.v1",
       resource: resourceValue,
       from: null,
+      endpointId: null,
       limit: 50,
     });
     expect(text).toContain("envelope->>'resource' = $3");
@@ -161,6 +169,7 @@ describe("buildEventsQuery", () => {
       type: "io.yoizen.platform.runtime.execution_completed.v1",
       resource: "agent/agent-123",
       from: null,
+      endpointId: null,
       limit: 50,
     });
     expect(text).not.toContain("envelope->>'resource'");
@@ -187,6 +196,7 @@ describe("buildEventsQuery", () => {
       type: "connector.mcp_call.completed.v1",
       resource: null,
       from: null,
+      endpointId: null,
       limit: 50,
     });
     const columnsBlock = text.slice(
@@ -212,6 +222,7 @@ describe("buildEventsQuery", () => {
       type: "ai.llm_call.completed.v1",
       resource: null,
       from: null,
+      endpointId: null,
       limit: 50,
     });
     const columnsBlock = text.slice(
@@ -243,6 +254,7 @@ describe("buildEventsQuery", () => {
       type: "io.yoizen.platform.runtime.execution_completed.v1",
       resource: null,
       from: null,
+      endpointId: null,
       limit: 50,
     });
     const columnsBlock = text.slice(
@@ -263,12 +275,96 @@ describe("buildEventsQuery", () => {
     expect(columnsBlock).not.toContain("toolResults");
   });
 
+  // T01 of manual-loops/connectors/endpoint-scoped-recent-calls.md — the
+  // `endpointId` filter matches `envelope->'data'->'payload'->>'endpointId'`
+  // verbatim (the field `connector-runtime`'s
+  // `src/activities/_shared/event-publisher.ts:81` publishes) and COMPOSES
+  // with `type`/`resource`/`from` instead of replacing any of them.
+  it("projects the payload endpointId scalar as payload_endpoint_id", () => {
+    const { text } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.endpoint_call.completed.v1",
+      resource: null,
+      from: null,
+      endpointId: null,
+      limit: 50,
+    });
+    const columnsBlock = text.slice(
+      text.indexOf("SELECT") + "SELECT".length,
+      text.indexOf("FROM")
+    );
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'endpointId' AS payload_endpoint_id"
+    );
+  });
+
+  it("omits the endpointId condition when not provided", () => {
+    const { text, params } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.endpoint_call.completed.v1",
+      resource: null,
+      from: null,
+      endpointId: null,
+      limit: 50,
+    });
+    const whereBlock = text.slice(text.indexOf("WHERE"));
+    expect(whereBlock).not.toContain("endpointId");
+    expect(params).toEqual([
+      "tenant-a",
+      "connector.endpoint_call.completed.v1",
+      50,
+    ]);
+  });
+
+  it("adds the endpointId filter on the payload endpointId when provided", () => {
+    const { text, params } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.endpoint_call.completed.v1",
+      resource: null,
+      from: null,
+      endpointId: "ep-42",
+      limit: 50,
+    });
+    expect(text).toContain("envelope->'data'->'payload'->>'endpointId' = $3");
+    expect(text).toContain("LIMIT $4");
+    expect(params).toEqual([
+      "tenant-a",
+      "connector.endpoint_call.completed.v1",
+      "ep-42",
+      50,
+    ]);
+  });
+
+  it("composes endpointId with resource and from (never replaces them)", () => {
+    const { text, params } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.endpoint_call.completed.v1",
+      resource: "adapter/adp-1",
+      from: "2026-07-01T00:00:00.000Z",
+      endpointId: "ep-42",
+      limit: 25,
+    });
+    expect(text).toContain("envelope->>'resource' = $3");
+    expect(text).toContain("occurred_at >= $4");
+    expect(text).toContain("envelope->'data'->'payload'->>'endpointId' = $5");
+    expect(text).toContain("LIMIT $6");
+    expect(params).toEqual([
+      "tenant-a",
+      "connector.endpoint_call.completed.v1",
+      "adapter/adp-1",
+      "2026-07-01T00:00:00.000Z",
+      "ep-42",
+      25,
+    ]);
+  });
+
   it("combines resource and from with correctly ordered positional params", () => {
     const { text, params } = buildEventsQuery({
       tenant: "tenant-a",
       type: "connector.endpoint_call.completed.v1",
       resource: "adapter/adp-1",
       from: "2026-07-01T00:00:00.000Z",
+      endpointId: null,
       limit: 25,
     });
     expect(text).toContain("envelope->>'resource' = $3");

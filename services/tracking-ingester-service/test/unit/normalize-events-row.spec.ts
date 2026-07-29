@@ -34,6 +34,7 @@ const BASE: EventRow = {
   payload_http_status: 200,
   payload_duration_ms: 50,
   payload_cache_result: "hit",
+  payload_endpoint_id: "ep-42",
   payload_tool_name: null,
   payload_success: null,
   payload_error: null,
@@ -113,6 +114,19 @@ describe("normalizeEventsRow", () => {
       "https://api.example.com/data"
     );
     expect(normalized.payload_cache_result).toBe("hit");
+  });
+
+  // T01 of manual-loops/connectors/endpoint-scoped-recent-calls.md — the
+  // `payload_endpoint_id` scalar is plain text, carried through verbatim
+  // exactly like `payload_method` (no numeric/boolean coercion).
+  it("preserves payload_endpoint_id verbatim", () => {
+    const raw: RawEventRow = { ...BASE, payload_endpoint_id: "ep-99" };
+    expect(normalizeEventsRow(raw).payload_endpoint_id).toBe("ep-99");
+  });
+
+  it("normalizes an absent payload_endpoint_id to null", () => {
+    const raw: RawEventRow = { ...BASE, payload_endpoint_id: null };
+    expect(normalizeEventsRow(raw).payload_endpoint_id).toBeNull();
   });
 
   // T06 of manual-loops/connectors/connection-call-inspector.md — MCP call
