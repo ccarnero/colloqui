@@ -15,23 +15,24 @@ import { MatDialog, MatDialogModule } from "@angular/material/dialog";
 import { MatIconModule } from "@angular/material/icon";
 import { MatTableModule } from "@angular/material/table";
 import { MatTooltipModule } from "@angular/material/tooltip";
+import { Router } from "@angular/router";
+import type { IRegisteredService } from "../../../core/models/registry.model";
 import { RegistryService } from "../../../core/services/registry.service";
 import { TenantService } from "../../../core/services/tenant.service";
 import { PageHeaderComponent } from "../../../shared/components/page-header/page-header.component";
 import {
-  StatusBadgeComponent,
   type StatusBadgeColor,
+  StatusBadgeComponent,
 } from "../../../shared/components/status-badge/status-badge.component";
-import type { IRegisteredService } from "../../../core/models/registry.model";
 import {
-  ServiceDialogComponent,
+  type IRoutesDialogData,
+  RoutesDialogComponent,
+} from "./routes-dialog.component";
+import {
   type IServiceDialogData,
   type IServiceDialogResult,
+  ServiceDialogComponent,
 } from "./service-dialog.component";
-import {
-  RoutesDialogComponent,
-  type IRoutesDialogData,
-} from "./routes-dialog.component";
 
 @Component({
   selector: "app-hosted-services",
@@ -120,9 +121,18 @@ import {
             <button
               mat-icon-button
               type="button"
+              aria-label="View service"
+              matTooltip="View"
+              (click)="view(s.id); $event.stopPropagation()"
+            >
+              <mat-icon>visibility</mat-icon>
+            </button>
+            <button
+              mat-icon-button
+              type="button"
               aria-label="Edit service"
               matTooltip="Edit"
-              (click)="openEditDialog(s)"
+              (click)="openEditDialog(s); $event.stopPropagation()"
             >
               <mat-icon>edit</mat-icon>
             </button>
@@ -132,7 +142,7 @@ import {
               type="button"
               aria-label="Delete service"
               matTooltip="Delete"
-              (click)="deleteService(s)"
+              (click)="deleteService(s); $event.stopPropagation()"
             >
               <mat-icon>delete</mat-icon>
             </button>
@@ -146,6 +156,13 @@ import {
         <tr
           mat-row
           *matRowDef="let row; columns: displayedColumns"
+          (click)="view(row.id)"
+          role="button"
+          tabindex="0"
+          (keydown.enter)="view(row.id)"
+          (keydown.space)="view(row.id)"
+          [attr.aria-label]="'View ' + row.name"
+          class="clickable-row"
         ></tr>
       </table>
     </div>
@@ -175,10 +192,18 @@ import {
       font-weight: 600;
       font-size: 13px;
     }
+    .clickable-row {
+      cursor: pointer;
+      transition: background-color 0.12s;
+    }
+    .clickable-row:hover {
+      background-color: rgba(255, 255, 255, 0.07);
+    }
   `,
 })
 export class HostedServicesComponent implements OnInit {
   private readonly dialog = inject(MatDialog);
+  private readonly router = inject(Router);
   protected readonly registryService = inject(RegistryService);
   protected readonly tenant = inject(TenantService);
 
@@ -206,6 +231,27 @@ export class HostedServicesComponent implements OnInit {
       return "red";
     }
     return "gray";
+  }
+
+  /**
+   * Row click / keyboard activation / the explicit view action all land on
+   * the hosted service detail page built by connection-call-inspector.md
+   * T11 (`/connections/hosted-services/:id`). The route param resolves by
+   * id OR name — we always navigate with the registered service's id.
+   * Mirrors the HTTP connectors list (`connectors.component.ts:490`).
+   */
+  view(id: string): void {
+    console.debug("[HostedServicesComponent] hosted service row activated", {
+      id,
+    });
+    this.router
+      .navigate(["/connections/hosted-services", id])
+      .catch((error: unknown) => {
+        console.error("[HostedServicesComponent] navigation failed", {
+          id,
+          error,
+        });
+      });
   }
 
   openCreateDialog(): void {

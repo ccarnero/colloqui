@@ -37,6 +37,12 @@ recent N events. The docked call inspector behavior is unchanged.
 4. Scope is the HTTP connector detail page only. MCP tools, agent executions,
    and hosted-service operations do NOT get per-item filtering in this loop
    (see Out of scope).
+5. (2026-07-29, added with T05) The hosted services list becomes clickable
+   exactly like the HTTP connectors list (row click + keyboard + view action
+   navigating to the existing detail page), replicating the HTTP list
+   functionality. Hosted services have NO endpoints — endpoint/route-scoped
+   call filtering on the hosted screens was explicitly REJECTED; do not add
+   a routes section, a `urlPrefix` filter, or any per-route scoping.
 
 ## Prior art (validated 2026-07-29 — REUSE, do not duplicate)
 
@@ -246,18 +252,57 @@ cd services/admin-console && pnpm test
 grep -n "endpointId=" scripts/e2e/http-workflow.sh
 ```
 
+### T05 — Hosted services list: clickable rows navigate to the detail page
+
+> Added 2026-07-29 (user decision 5). Finding: the detail page
+> `/connections/hosted-services/:id` (Recent calls + docked inspector,
+> connection-call-inspector.md T11) exists and is routed
+> (`app.routes.ts:127-131`) but the list page has NO navigation to it —
+> only Edit/Delete actions (`hosted-services.component.ts:125,135`). The
+> page is reachable only by typing the URL.
+
+- `services/admin-console/src/app/features/automation/hosted-services/hosted-services.component.ts`
+  (a mat-table, same shell as the HTTP connectors list): replicate the HTTP
+  connectors list row pattern from
+  `features/data-integrations/connectors/connectors.component.ts:321-359,428-432,490`:
+  - `<tr mat-row>` gets `(click)`, `(keydown.enter)`, `(keydown.space)` →
+    `view(row.id)` navigating to `['/connections/hosted-services', id]`,
+    `tabindex="0"`, an `aria-label` naming the service, and the
+    `clickable-row` class with the same hover/cursor styling.
+  - Add an explicit view action (eye icon) in the actions column before
+    Edit/Delete, mirroring `connectors.component.ts:321` — with
+    `$event.stopPropagation()`.
+  - Existing Edit/Delete buttons get `$event.stopPropagation()` so they no
+    longer bubble into row navigation.
+  - Do NOT add endpoints/routes sections or any call filtering (decision 5:
+    hosted services have no endpoints — the detail page stays as T11 built
+    it).
+- The detail page resolves the route param by id OR name
+  (`hosted-service-detail.component.ts:290` region) — navigate with the id.
+- Component tests: row click navigates with the service id, Enter/Space
+  navigate, view button navigates, Edit/Delete do NOT navigate
+  (stopPropagation), row has the accessibility attributes.
+
+**Accept**
+```
+cd services/admin-console && pnpm test
+```
+
 ## Progress
 
 - [x] T01 ingester scalar + filter param
 - [x] T02 console feed endpoint scope
 - [x] T03 selectable cards + filter chip
 - [x] T04 e2e endpoint-filtered round-trip
+- [x] T05 hosted services clickable list
 
 ## Out of scope (explicit)
 
 - Per-item filtering on the other connection screens: MCP tool name, agent
   execution state, hosted-service operation. Same pattern would apply
   (`payload_tool_name` is even already projected) — future queue, on demand.
+  For hosted services specifically this was REJECTED, not deferred
+  (decision 5): no routes section, no `urlPrefix` filter.
 - Per-endpoint aggregates (call count, error rate, p95 on the endpoint card).
 - Persisting the selected endpoint in the URL (query-param deep link) —
   selection is ephemeral UI state in this loop.
