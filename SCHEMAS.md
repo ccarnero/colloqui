@@ -173,6 +173,66 @@ back to a root-event envelope (warn-logged) rather than failing the
 fire-and-forget publish. Pre-fix events already persisted in
 `tracking.tracked_events` remain valid root events; not backfilled.
 
+**Per-call capture parity extension (`manual-loops/connectors/connection-call-inspector.md`
+T01/T02):** `emitServiceCallEvent`
+(`services/connector-runtime/src/activities/service-call.activity.ts`) and
+`executeRaw` (`services/connector-runtime/src/lib/endpoint-call-core/execute-raw.ts`)
+now ALSO publish `connector.endpoint_call.completed.v1` through the same
+`publishEndpointCallEvent` sink — `serviceCall` and the raw no-adapter HTTP
+branch previously emitted nothing. Both set `evt.resource` explicitly
+(`service/<serviceName>`, `raw/<host>`) since `event-publisher.ts`'s
+default `adapter/${adapterId}`/`invocation/${invocationId}` derivation
+does not fit either caller. No envelope shape change — same kind, same
+causal/redaction/truncation contract, new resource prefixes only.
+
+## 14. Connector-runtime MCP tool-call events (`services/connector-runtime`)
+
+Owner: **`connector-runtime`**. `connector.mcp_call.completed.v1`
+(`publishMcpCallEvent` / `emitMcpCall()`,
+`src/activities/_shared/event-publisher.ts`) rides the canonical
+`EventEnvelope` shape, published by `mcp-call.activity.ts`'s
+`emitMcpCallEvent` on top of the pre-existing `reportMcpUsageEvent` HTTP
+call to agent-admin-service (unchanged, still the source for the aggregate
+MCP usage summary — decision 3 of
+`manual-loops/connectors/connection-call-inspector.md`). ADDITIVE, not a
+replacement: this bus event carries the tool call's `arguments`/`result`
+content the usage-summary HTTP call never did.
+
+Payload: `serverName`, `mcpServerId`, `toolName`, `success`, `durationMs`,
+`error?` (message only), `arguments` (tool call args, `truncateBody` 8192
+chars), `result` (tool result content, `truncateBody` 8192 chars).
+Resource: `mcp/<mcpServerId>`. Emitted on BOTH success and failure. Causal
+threading and the `DepthExceededError` root-event fallback are identical
+to `connector.endpoint_call.completed.v1` (§13 above) — same
+`buildEventEnvelope`/`DepthExceededError` plumbing in the same module.
+Classified by `TAXONOMY.md` rule 24 (`tech: connector`,
+`business_fn: connector-invocation`).
+
+## 15. Agent-ai-service standalone LLM call events (`services/agent-ai-service`)
+
+Owner: **`agent-ai-service`**. `ai.llm_call.completed.v1`
+(`LlmCallEventPublisherService`,
+`src/modules/llm/llm-call-event-publisher.service.ts`) rides the canonical
+`EventEnvelope` shape. Published ONLY by `LlmActionService.execute`
+(`src/modules/job-executor/actions/llm-action.service.ts`) — the
+job-executor's `llm_call` action, OUTSIDE chat/agent executions. Chat
+executions are explicitly excluded: they already carry their full payload
+in `execution_completed` (rule 6) via `execution.handler.ts`, which never
+depends on this publisher, so there is no double-capture path.
+
+Payload: `model`, `provider`, `prompt` (`truncateText`, 8192 chars),
+`completion` (`truncateText`, 8192 chars), `inputTokens`, `outputTokens`,
+`cachedInputTokens`, `costUsd`, `durationMs`. Resource:
+`execution/<executionId>`. Causal contract: `deriveEnvelope` when the
+job-executor has an incoming envelope for the triggering event, otherwise
+`buildEventEnvelope` (causal root); a `DepthExceededError` from either
+falls back to a root event (warn-logged), mirroring `connector-runtime`'s
+`event-publisher.ts` fallback contract (§13). Fire-and-forget: `publish()`
+never throws synchronously, and the call site additionally wraps the
+publish call in try/catch. Classified by `TAXONOMY.md` rule 25
+(`tech: platform`, `business_fn: llm-invocation`, a NEW business_fn value
+distinct from rule 6's `agent-execution`).
+
 ---
 
 ## Coverage map

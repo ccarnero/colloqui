@@ -1125,6 +1125,74 @@ consumer). Until `tracking-ingester-service`, `workflow-service`,
 renders hidden (the correct degraded state, not a bug) — captured live in
 the T09 after-audit screenshots.
 
+## Change: connection call inspector — per-call request/response on every connection (connection-call-inspector)
+
+Spec-driven change closing the last per-call capture gaps and giving every
+connection type a docked call inspector: `serviceCall`, the raw no-adapter
+HTTP branch, and `mcpCall`'s tool arguments/result now durably capture
+per-call request/response (joining `endpointCall` and agent executions,
+already captured), standalone LLM calls made outside chat executions emit
+their own audit event, MCP "Recent calls" migrates off `mcp_call_events`
+onto the tracked-events read API, hosted services get a full detail page,
+and a shared docked `CallInspectorComponent` (pattern: the trace event
+inspector) opens on every connection screen's call rows — HTTP connector,
+MCP server, agent, hosted service — fetching payloads on demand instead of
+requiring a trip to the trace. Full task queue, gates, and human decisions:
+`manual-loops/connectors/connection-call-inspector.md`. Per-call capture
+contract (serviceCall/raw/MCP kinds, resources, redaction/truncation,
+fire-and-forget semantics): `services/connector-runtime/README.md` "Per-call
+capture: serviceCall, raw HTTP, and MCP". Standalone LLM event contract:
+`services/agent-ai-service/README.md` "Event Publishing — standalone LLM
+calls". Ingester classification + type-aware `/events` projections:
+`services/tracking-ingester-service/README.md` "Type-aware scalar
+projections" / "New event kinds classified". Envelope inventory entries:
+`SCHEMAS.md` §14/§15.
+
+Decision cuádruple:
+- **Rule**: connection screens now render per-call payloads in a docked
+  side inspector, fetched on demand through the guarded payload endpoint —
+  this SUPERSEDES `manual-loops/connector-trace-linking.md` §User decisions
+  2 (dated 2026-07-13: "Payloads are viewed in the trace only — entity
+  screens never render payloads"). The 2026-07-13 decision is not deleted,
+  it stands as history; this SPEC dates and supersedes it
+  (`manual-loops/connectors/connection-call-inspector.md` §User decisions
+  1, dated 2026-07-28). Event-kind mapping (decision 7, human-approved with
+  the SPEC): `serviceCall`/raw HTTP reuse
+  `connector.endpoint_call.completed.v1` with resource prefixes
+  `service/<name>`/`raw/<host>`; MCP calls get
+  `connector.mcp_call.completed.v1` (`mcp/<mcpServerId>`); standalone LLM
+  calls get `ai.llm_call.completed.v1` (`execution/<executionId>`) — no
+  other new kinds.
+- **Why**: four connector invocation types were causal-orphaned or entirely
+  uncaptured at the per-call level (`serviceCall` and the raw branch emitted
+  no audit event at all; MCP tool calls only reported scalar usage, never
+  the actual args/result), forcing operators into the trace console for any
+  payload inspection even on entity screens designed to show "Recent
+  calls" — the docked inspector plus emission parity closes both gaps in
+  one loop instead of two.
+- **Evidence**: the two documented code-level gaps —
+  `service-call.activity.ts:53-61` ("serviceCall emits no
+  endpoint_call_completed event") and `execute-raw.ts:25-27` — are now
+  publish call sites reusing the SAME `_shared/event-publisher.ts` sink
+  `endpoint-call.activity.ts` already used (T01/T02); `mcp-call.activity.ts`'s
+  `emitMcpCallEvent` is ADDITIVE to `reportMcpUsageEvent`, which keeps
+  feeding `mcp_call_events`' aggregate summary unchanged (decision 3, T03);
+  `LlmActionService.execute` is the sole publish call site for
+  `ai.llm_call.completed.v1`, verified NOT to overlap `execution_completed`
+  since chat executions route through `execution.handler.ts`, which never
+  depends on `LlmCallEventPublisherService` (T04). Ingester classification
+  rules 24/25 (`TAXONOMY.md` §4) plus the `resource=agent/<agentId>` query
+  alias in `build-events-query.ts` (T05) make every new resource family
+  filterable without a schema change. Cluster e2e (T12) verified the
+  `serviceCall` round-trip live: the `endpoint_call_completed` row with
+  resource `service/...` lands in `tracked_events` sharing the run's
+  `correlation_id`, is returned via `GET /tracking/events`, and its payload
+  fetch returns 200 with the run's nonce. MCP and standalone-LLM paths are
+  covered by service-level tests only — no MCP server or LLM job fixture
+  exists in the dev e2e today (T12 recorded limitation, fixtures out of
+  scope for this loop).
+- **Engram topic**: `connectors/call-inspector`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

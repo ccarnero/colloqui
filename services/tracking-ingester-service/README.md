@@ -248,16 +248,69 @@ empty `events` array when nothing matches — this is a filtered list, not a
 single-resource lookup, so an empty result is not a `404`.
 
 Response projection excludes the raw `envelope` jsonb (same chain-list
-decision as `GET /chains/:correlationId`) but adds five payload scalars
-extracted server-side for the connector "Recent calls" view: `payload_method`,
-`payload_resolved_url`, `payload_http_status`, `payload_duration_ms`,
-`payload_cache_result` (from `data.payload.method`/`resolvedUrl`/`status`/
-`durationMs`/`cacheResult` respectively) — the full payload is never
-returned by this endpoint.
+decision as `GET /chains/:correlationId`) but adds payload scalars
+extracted server-side — request/response BODIES stay excluded from every
+list projection, same as the chain endpoint.
 
 Built from `build-events-query.ts` (query) + `parse-events-query.ts`
 (validation) + `handle-events-request.ts` (orchestration) — same pure-core,
 I/O-at-the-edges shape as the chain/run endpoints.
+
+### Type-aware scalar projections (`manual-loops/connectors/connection-call-inspector.md` T05/T06)
+
+`build-events-query.ts`'s column set (`EVENTS_COLUMNS`) is a STATIC
+superset of scalar columns covering every supported `envelope->>'type'` —
+NOT branching SQL per type, since a single `/events` call is already
+scoped to exactly one `type` via the `WHERE` clause; a row for a kind that
+doesn't carry a given field simply projects `null` for it (Postgres'
+"empty jsonb path → null" behavior):
+
+| Kind | Scalars projected |
+|---|---|
+| `connector.endpoint_call.completed.v1` (`service/<name>`, `raw/<host>`, `adapter/<id>`, `invocation/<id>` resources) | `payload_method`, `payload_resolved_url`, `payload_http_status`, `payload_duration_ms`, `payload_cache_result` |
+| `connector.mcp_call.completed.v1` (`mcp/<mcpServerId>`) | `payload_tool_name`, `payload_success`, `payload_error` (message only — never a full error object) |
+| `ai.llm_call.completed.v1` (`execution/<executionId>`) | `payload_model`, `payload_provider`, `payload_duration_ms`, `payload_input_tokens`, `payload_output_tokens`, `payload_cost_usd` |
+| Agent `execution_completed` | `payload_state`, `payload_model`, `payload_duration_ms` (if present), `payload_cost_usd` |
+
+Bodies/args/results/prompts (`requestBody`/`responseBody`/`arguments`/
+`result`/`prompt`/`completion`) are NEVER projected by this endpoint —
+only the guarded payload-read endpoint above returns them, per-event, with
+its audit trail.
+
+**`resource=agent/<agentId>` filter alias**: agent-execution events
+(TAXONOMY.md rule 6) do not carry an `agent/<agentId>`-shaped
+`envelope.resource` — the emitter sets `resource: "execution/<executionId>"`.
+Rather than require an emitter change outside this service, `resource`
+values prefixed `agent/` are handled as a query-level alias: they filter
+on the agent-execution payload's `agentId` field instead
+(`COALESCE(envelope->'data'->'payload'->>'agentId',
+envelope->'data'->'payload'->'input'->>'agentId')`, covering both
+`execution_started`/`execution_completed`'s top-level `agentId` and
+`execution_requested`'s nested `input.agentId`). Every other `resource`
+value (`service/<name>`, `raw/<host>`, `mcp/<mcpServerId>`, `adapter/<id>`,
+`invocation/<id>`) matches `envelope->>'resource'` verbatim, unchanged.
+
+### New event kinds classified (T05)
+
+`src/lib/classify.ts` adds two rules for the two new kinds this loop
+introduces (full detail: `TAXONOMY.md` §4 rules 24/25):
+
+- **Rule 24** — `connector.mcp_call.completed.v1`
+  (`evt.*.connector-runtime.platform.mcp.system.mcp_call_completed.v1`) →
+  `tech: connector`, `business_fn: connector-invocation` (REUSED, not a new
+  value — MCP tool calls are grouped with `endpointCall` as one of "every
+  connector invocation type" per the SPEC). Evaluated right after rule 11
+  (same producer, different channel token — `mcp`, not `endpoint` — so
+  rule 11's substring check never matches it).
+- **Rule 25** — `ai.llm_call.completed.v1`
+  (`evt.*.agent-ai-service.platform.llm.system.llm_call_completed.v1`) →
+  `tech: platform`, `business_fn: llm-invocation` (a NEW value, distinct
+  from rule 6's `agent-execution` and rules 11/24's `connector-invocation`
+  — a standalone LLM call is its own producer-intent business concern).
+- `serviceCall`/raw-branch `connector.endpoint_call.completed.v1` events
+  classify under the EXISTING rule 11 unchanged — same kind, just new
+  `resource` prefixes (`service/<name>`, `raw/<host>`), which rule 11 never
+  inspects.
 
 The gateway mirrors this route at `GET /api/tracking/events` under the
 standard tenant/auth guards, forwarding query params verbatim — same

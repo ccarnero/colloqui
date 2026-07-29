@@ -281,6 +281,80 @@ Backward compatibility: events emitted before this contract existed (no
 `causal` field ever passed) remain valid root events — the causal fields
 are additive, not a breaking envelope change.
 
+## Per-call capture: serviceCall, raw HTTP, and MCP
+
+`manual-loops/connectors/connection-call-inspector.md` closes the remaining
+gaps in per-call request/response capture — `serviceCall` and the raw
+no-adapter HTTP branch previously emitted NO audit event at all, and MCP
+tool calls only reported scalar usage to agent-admin-service, never the
+actual tool arguments/result content. All three paths now reuse the SAME
+`_shared/event-publisher.ts` sink (`publishEndpointCallEvent` /
+`publishMcpCallEvent`) `endpoint-call.activity.ts` already used — no new
+publisher module, same fire-and-forget/redaction/truncation/causal contract
+described above.
+
+### serviceCall — `service/<serviceName>`
+
+`src/activities/service-call.activity.ts`'s `emitServiceCallEvent` publishes
+`connector.endpoint_call.completed.v1` after every completed platform
+service call (mirror-resolved or registry-fallback branch alike), with
+`resource: \`service/${serviceName}\`` (`serviceSlug ?? serviceId`) instead
+of the sink's default `adapter/${adapterId}` derivation — `evt.resource`
+overrides it. Emitted unconditionally on a completed HTTP response (2xx
+AND non-2xx — only transport-level failures that never reach a response
+skip emission, same semantics as `execute-with-adapter-endpoint.ts`).
+Request/response headers go through `redactHeaders`, bodies through
+`truncateBody` (8192 chars). Causal context, when the calling workflow
+action supplied one, is threaded the same way `mcp-call.activity.ts`
+threads its usage event.
+
+### Raw no-adapter HTTP — `raw/<host>`
+
+`src/lib/endpoint-call-core/execute-raw.ts` (the branch used when no
+`adapterId` is supplied — a caller-provided absolute URL) publishes the
+same `connector.endpoint_call.completed.v1` event via the `publish` port
+injected by the entrypoint, with `resource: \`raw/${host}\`` — `host` is
+derived from the resolved URL (`rawResourceHost`, falling back to the full
+URL string if parsing somehow fails so resource derivation itself can
+never break the fire-and-forget publish). Redaction, truncation, causal
+threading, and emit-on-any-completed-status all match the adapter-driven
+branches; this branch has no `adapterId` to key the default resource shape
+on, so `resource` is always set explicitly.
+
+### mcpCall — `mcp/<mcpServerId>`, args + result
+
+`src/activities/mcp-call.activity.ts`'s `emitMcpCallEvent` publishes a
+SECOND, additive event kind — `connector.mcp_call.completed.v1`
+(`publishMcpCallEvent`, `_shared/event-publisher.ts`) — on top of the
+existing `reportMcpUsageEvent` HTTP call to agent-admin-service, which
+keeps feeding the `mcp_call_events` aggregate usage summary UNCHANGED
+(decision 3 of the SPEC — do not extend or delete it). Payload:
+`serverName`, `mcpServerId`, `toolName`, `success`, `durationMs`, `error?`,
+`arguments` (the tool call args) and `result` (the tool's `CallToolResult`
+content) — BOTH `arguments` and `result` go through `truncateBody` (8192
+chars). Resource: `mcp/<mcpServerId>`. Emitted on BOTH success and failure
+(a failed tool call is the interesting case for the inspector) — causal
+context reuses the same `outcome.causal` already threaded into the usage
+event.
+
+### Shared contract across all three paths
+
+- **Fire-and-forget**: `publishEndpointCallEvent`/`publishMcpCallEvent`
+  never throw synchronously into the caller; publish failures are caught
+  inside `emit()`/`emitMcpCall()` and logged as warnings.
+- **`DepthExceededError` fallback**: identical to the base contract above —
+  causal threading that would exceed `MAX_DEPTH_BY_CATEGORY` falls back to
+  a root event (warn-logged), never a lost event.
+- **Redaction/truncation**: every header map goes through
+  `_shared/redact-headers.ts` (12-38, denylist of auth-bearing headers);
+  every body/args/result goes through `_shared/truncate-body.ts` (8192
+  chars, `truncateBody`).
+- **Payload lifecycle**: these events ride the SAME `payload_status`
+  state machine and 30-day retention scrub as every other envelope the
+  ingester persists — see
+  `services/tracking-ingester-service/README.md` "Payload lifecycle". No
+  retention changes were made for this loop.
+
 ## Error Handling
 
 ### Circuit Breaker
