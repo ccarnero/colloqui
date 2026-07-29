@@ -27,6 +27,18 @@ const DEFAULT_WINDOW_MIN = 7 * 24 * 60;
 const MCP_EVENT_TYPE = "connector.mcp_call.completed.v1";
 const MCP_RESOURCE_PREFIX = "mcp/";
 
+// T10 of manual-loops/connectors/connection-call-inspector.md: agent
+// detail's "Recent executions" feeds off the SAME tracked_events endpoint,
+// filtered to the agent-execution lifecycle kind and the `agent/<agentId>`
+// query-level alias (T05 addendum, `build-events-query.ts`'s
+// `AGENT_RESOURCE_PREFIX` — matched against the payload's `agentId` field,
+// NOT `envelope->>'resource'`). The full type string is verified against
+// `build-events-query.ts`'s own doc comments (T06), which cite it verbatim:
+// `io.yoizen.platform.runtime.execution_completed.v1`.
+const AGENT_EXECUTION_EVENT_TYPE =
+  "io.yoizen.platform.runtime.execution_completed.v1";
+const AGENT_RESOURCE_PREFIX = "agent/";
+
 const CONNECTOR_CACHE_RESULT = {
   HIT: "hit",
   MISS: "miss",
@@ -76,6 +88,10 @@ interface ITrackingEventRow {
   readonly payload_tool_name?: string | null;
   readonly payload_success?: boolean | string | null;
   readonly payload_error?: string | null;
+  /** `io.yoizen.platform.runtime.execution_completed.v1` only (T06/T10). */
+  readonly payload_state?: string | null;
+  readonly payload_model?: string | null;
+  readonly payload_cost_usd?: number | string | null;
 }
 
 /** One row of the T09 MCP "Recent calls" tracked_events feed —
@@ -88,6 +104,21 @@ export interface IMcpCall {
   readonly success: boolean;
   readonly durationMs: number;
   readonly error: string | null;
+  readonly timestamp: string;
+  readonly correlationId?: string;
+  readonly eventId?: string;
+}
+
+/** One row of the T10 agent "Recent executions" tracked_events feed —
+ * `io.yoizen.platform.runtime.execution_completed.v1`, scalar-only (state,
+ * model, duration, cost, occurred_at, plus the tracking-chain identifiers
+ * the inspector and "View trace" link need). */
+export interface IAgentExecutionCall {
+  readonly agentId: string;
+  readonly state: string | null;
+  readonly model: string | null;
+  readonly durationMs: number | null;
+  readonly costUsd: number | null;
   readonly timestamp: string;
   readonly correlationId?: string;
   readonly eventId?: string;
@@ -155,6 +186,36 @@ export class ConnectorCallService {
         )
       );
   }
+
+  /**
+   * Returns recent agent executions for a given agent, server-side filtered
+   * by `resource=agent/<agentId>` (T10 — the query-level alias documented in
+   * `build-events-query.ts`, matched against the payload's `agentId` field).
+   * Same window/limit defaults as {@link recentCalls}.
+   * @param agentId    Agent to filter on.
+   * @param windowMin  How many minutes back to search (default 7 days).
+   * @param limit      Max rows to return (default 20).
+   */
+  recentAgentExecutions(
+    agentId: string,
+    windowMin = DEFAULT_WINDOW_MIN,
+    limit = 20
+  ): Observable<IAgentExecutionCall[]> {
+    const from = new Date(Date.now() - windowMin * 60_000).toISOString();
+    const params = new HttpParams()
+      .set("type", AGENT_EXECUTION_EVENT_TYPE)
+      .set("resource", `${AGENT_RESOURCE_PREFIX}${agentId}`)
+      .set("from", from)
+      .set("limit", String(limit));
+
+    return this.http
+      .get<ITrackingEventsResponse>(`${TRACKING}/events`, { params })
+      .pipe(
+        map((res) =>
+          (res.events ?? []).map((row) => toAgentExecutionCall(row, agentId))
+        )
+      );
+  }
 }
 
 function toCall(row: ITrackingEventRow, adapterId: string): IConnectorCall {
@@ -185,6 +246,28 @@ function toMcpCall(row: ITrackingEventRow, mcpServerId: string): IMcpCall {
     success: row.payload_success === true || row.payload_success === "true",
     durationMs: row.payload_duration_ms ?? 0,
     error: row.payload_error ?? null,
+    timestamp: row.occurred_at ?? "",
+    correlationId: row.correlation_id ?? undefined,
+    eventId: row.event_id ?? undefined,
+  };
+}
+
+function toAgentExecutionCall(
+  row: ITrackingEventRow,
+  agentId: string
+): IAgentExecutionCall {
+  return {
+    agentId,
+    state: row.payload_state ?? null,
+    model: row.payload_model ?? null,
+    durationMs:
+      row.payload_duration_ms === undefined || row.payload_duration_ms === null
+        ? null
+        : Number(row.payload_duration_ms),
+    costUsd:
+      row.payload_cost_usd === undefined || row.payload_cost_usd === null
+        ? null
+        : Number(row.payload_cost_usd),
     timestamp: row.occurred_at ?? "",
     correlationId: row.correlation_id ?? undefined,
     eventId: row.event_id ?? undefined,
