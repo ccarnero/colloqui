@@ -463,9 +463,12 @@ export class ConnectionsFleetComponent implements OnInit {
 
   /**
    * Row click navigates to the type's existing detail route (decision 2:
-   * routes unchanged). Hosted services have no per-item detail route
-   * (T01 §1) — clicking a hosted row goes to the existing hosted-services
-   * list page instead of inventing a new route.
+   * routes unchanged). UPDATE (T11 of
+   * manual-loops/connectors/connection-call-inspector.md, SPEC decision 4
+   * — supersedes the T01 §1 finding below): hosted services now HAVE a
+   * per-item detail route (`/connections/hosted-services/:id`), so a
+   * hosted row click navigates there with the row's `id` (the registered
+   * service's uuid, set in `mapHostedRow`) instead of the list page.
    */
   onRowClick(row: IConnectionRow): void {
     console.debug("[ConnectionsFleetComponent] fleet row clicked", {
@@ -490,7 +493,7 @@ export class ConnectionsFleetComponent implements OnInit {
         ? ["/connections", "http", id]
         : kind === "mcp"
           ? ["/connections", "mcp", id]
-          : ["/connections", "hosted-services"];
+          : ["/connections", "hosted-services", id];
     this.router.navigate(path).catch((error: unknown) => {
       console.error("[ConnectionsFleetComponent] navigation failed", {
         kind,

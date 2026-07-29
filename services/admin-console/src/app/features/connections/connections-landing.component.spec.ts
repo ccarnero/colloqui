@@ -235,7 +235,10 @@ describe("ConnectionsLandingComponent", () => {
       expect(navigate).toHaveBeenCalledWith(["/connections", "mcp", "mcp-42"]);
     });
 
-    it("navigates to the hosted-services list route (no per-item detail route exists)", async () => {
+    // T11 of manual-loops/connectors/connection-call-inspector.md (SPEC
+    // decision 4): supersedes the old "hosted rows go to the list" route —
+    // hosted services now have a per-item detail route.
+    it("navigates to the hosted service detail route", async () => {
       const { fixture, navigate } = await renderComponent({
         hostedServices: [buildHostedService({ id: "hosted-42" })],
       });
@@ -245,6 +248,7 @@ describe("ConnectionsLandingComponent", () => {
       expect(navigate).toHaveBeenCalledWith([
         "/connections",
         "hosted-services",
+        "hosted-42",
       ]);
     });
   });

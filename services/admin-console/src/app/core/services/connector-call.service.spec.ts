@@ -268,4 +268,78 @@ describe("ConnectorCallService", () => {
       expect(result[0]?.eventId).toBeUndefined();
     });
   });
+
+  // T11 of manual-loops/connectors/connection-call-inspector.md: hosted
+  // services detail's "Recent calls" feed.
+  describe("recentServiceCalls", () => {
+    it("requests the tracking/events route with the endpoint-call type and resource=service/<name>", () => {
+      service.recentServiceCalls("echo-service").subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      expect(req.request.method).toBe("GET");
+      expect(req.request.params.get("type")).toBe(EVENT_TYPE);
+      expect(req.request.params.get("resource")).toBe("service/echo-service");
+      expect(req.request.params.get("limit")).toBe("20");
+      expect(req.request.params.get("from")).toBeTruthy();
+      req.flush({ events: [] });
+    });
+
+    it("defaults the lookback window to 7 days", () => {
+      const before = Date.now();
+      service.recentServiceCalls("echo-service").subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      const from = new Date(req.request.params.get("from") ?? "").getTime();
+      expect(before - from).toBeGreaterThanOrEqual(SEVEN_DAYS_MS - 5000);
+      expect(before - from).toBeLessThanOrEqual(SEVEN_DAYS_MS + 5000);
+      req.flush({ events: [] });
+    });
+
+    it("maps tracking-event rows into IServiceCall", () => {
+      let result: unknown[] = [];
+      service
+        .recentServiceCalls("echo-service")
+        .subscribe((rows) => (result = rows));
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      req.flush({ events: [makeRow()] });
+
+      expect(result).toEqual([
+        {
+          serviceName: "echo-service",
+          method: "GET",
+          resolvedUrl: "https://api.example.com/data",
+          status: 200,
+          durationMs: 50,
+          cacheResult: "hit",
+          timestamp: "2026-06-01T12:00:00.000Z",
+          correlationId: "corr-1",
+          eventId: "evt-1",
+        },
+      ]);
+    });
+
+    it("respects a custom limit", () => {
+      service.recentServiceCalls("echo-service", 60, 5).subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      expect(req.request.params.get("limit")).toBe("5");
+      req.flush({ events: [] });
+    });
+
+    it("leaves correlationId/eventId undefined when absent (not null)", () => {
+      let result: Array<{ correlationId?: string; eventId?: string }> = [];
+      service
+        .recentServiceCalls("echo-service")
+        .subscribe((rows) => (result = rows));
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      req.flush({
+        events: [makeRow({ correlation_id: null, event_id: null })],
+      });
+
+      expect(result[0]?.correlationId).toBeUndefined();
+      expect(result[0]?.eventId).toBeUndefined();
+    });
+  });
 });

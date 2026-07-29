@@ -76,11 +76,30 @@ describe("resolveEntityDeepLink", () => {
     expect(result).toBeNull();
   });
 
-  it("returns null for hosted serviceCall events (no real tracked-event type exists)", () => {
-    // service-call.activity.ts's own header comment confirms serviceCall
-    // emits no event at all.
+  // T11 of manual-loops/connectors/connection-call-inspector.md (SPEC
+  // decision 4): supersedes the old "hosted serviceCall events are never
+  // mapped" assertion below — T01 of the same loop shipped a real
+  // `connector.endpoint_call.completed.v1` + `resource: service/<name>`
+  // event for hosted service calls, and this task added the detail route.
+  it("maps connector.endpoint_call.completed.v1 + resource service/<name> to the hosted service detail route", () => {
     const result = resolveEntityDeepLink(
-      event({ type: "hosted.service_call.completed.v1" })
+      event({
+        type: "connector.endpoint_call.completed.v1",
+        resource: "service/echo-service",
+      })
+    );
+    expect(result).toEqual({
+      route: ["/connections/hosted-services", "echo-service"],
+      label: "Open hosted service",
+    });
+  });
+
+  it("returns null for a service event with an empty service name", () => {
+    const result = resolveEntityDeepLink(
+      event({
+        type: "connector.endpoint_call.completed.v1",
+        resource: "service/",
+      })
     );
     expect(result).toBeNull();
   });

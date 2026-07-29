@@ -249,6 +249,23 @@ describe("ConnectionsFleetComponent", () => {
       row.click();
       expect(navigate).toHaveBeenCalledWith(["/connections", "mcp", "mcp-42"]);
     });
+
+    // T11 of manual-loops/connectors/connection-call-inspector.md (SPEC
+    // decision 4): supersedes the old "hosted rows go to the list" route —
+    // hosted services now have a per-item detail route.
+    it("navigates to the hosted service detail route", async () => {
+      const { fixture, navigate } = await renderComponent({
+        hostedServices: [buildHostedService({ id: "hosted-42" })],
+      });
+      const el = fixture.nativeElement as HTMLElement;
+      const row = el.querySelector(".table-row") as HTMLElement;
+      row.click();
+      expect(navigate).toHaveBeenCalledWith([
+        "/connections",
+        "hosted-services",
+        "hosted-42",
+      ]);
+    });
   });
 
   describe("refreshMcpServers (external mutation refresh hook)", () => {

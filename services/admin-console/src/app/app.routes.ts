@@ -118,6 +118,18 @@ export const routes: Routes = [
                 "./features/automation/hosted-services/hosted-services.component"
               ).then((m) => m.HostedServicesComponent),
           },
+          // T11 of manual-loops/connectors/connection-call-inspector.md
+          // (SPEC decision 4): hosted services get a full detail page —
+          // supersedes the old "list only" decision. `:id` accepts either
+          // the registered service's `id` (uuid, normal navigation) or its
+          // `name` (slug, deep links — see `resolve-entity-deep-link.ts`).
+          {
+            path: "hosted-services/:id",
+            loadComponent: () =>
+              import(
+                "./features/connections/hosted-service-detail/hosted-service-detail.component"
+              ).then((m) => m.HostedServiceDetailComponent),
+          },
         ],
       },
       // Back-compat redirects

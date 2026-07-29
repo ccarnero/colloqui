@@ -28,13 +28,20 @@
 //     (`packages/shared/src/mcp-usage-client.ts` -> `POST admin/mcp-servers/
 //     usage-events`), which persists to a usage table, not `tracking.
 //     tracked_events`. No MCP tracked-event `type` string exists to match on.
-//   - Hosted `serviceCall`: `service-call.activity.ts`'s own header comment
-//     confirms it — "`serviceCall` emits no `endpoint_call_completed` event
-//     to thread causal context into". No hosted-service tracked-event
-//     exists either.
-// Both gaps are reported in the task summary rather than worked around with
-// an invented type string (human boundary: no mapping beyond the four
-// entity types named in the SPEC, and no invented event types).
+// This gap is reported in the task summary rather than worked around with an
+// invented type string (human boundary: no mapping beyond the entity types
+// named in the SPEC, and no invented event types).
+//
+// UPDATE (T11 of `manual-loops/connectors/connection-call-inspector.md`,
+// SPEC decision 4 — supersedes this file's original T05 finding for hosted
+// `serviceCall` events): T01 of the same loop shipped a REAL tracked-event
+// for hosted service calls — `service-call.activity.ts`'s
+// `emitServiceCallEvent` publishes `connector.endpoint_call.completed.v1`
+// with `resource: \`service/${serviceName}\`` (the SAME event type the
+// adapter/<id> branch above uses, disambiguated only by the resource
+// prefix). Hosted services also gained a detail route in this task
+// (`/connections/hosted-services/:id`), so the mapping below now resolves
+// to it instead of returning null.
 
 /** Minimal event shape this function needs — deliberately NOT the full
  * `EventEnvelope` (`@yoizen/shared`): callers adapt whatever event
@@ -55,6 +62,14 @@ export interface IEntityDeepLink {
 
 const CONNECTOR_ENDPOINT_CALL_TYPE = "connector.endpoint_call.completed.v1";
 const ADAPTER_RESOURCE_PREFIX = "adapter/";
+/** T11: hosted `serviceCall` events reuse `CONNECTOR_ENDPOINT_CALL_TYPE`
+ * with this resource prefix instead of `ADAPTER_RESOURCE_PREFIX`
+ * (`service-call.activity.ts`'s `emitServiceCallEvent`). The segment after
+ * the prefix is the registered service's `name` (slug) — the only
+ * identifier the emitted event carries — NOT its `id` (uuid). The hosted
+ * detail component resolves either shape (T11 finding, see
+ * `hosted-service-detail.component.ts`'s `load()`). */
+const SERVICE_RESOURCE_PREFIX = "service/";
 
 /** `agent-ai-service`'s `execution.handler.ts`: `type` is built as
  * `` `io.yoizen.platform.runtime.${kind}.v1` `` for exactly these three
@@ -85,6 +100,21 @@ export function resolveEntityDeepLink(
       : null;
   }
 
+  // Rule (T11): connector.endpoint_call.completed.v1 + resource
+  // service/<name> -> /connections/hosted-services/<name>
+  if (
+    event.type === CONNECTOR_ENDPOINT_CALL_TYPE &&
+    event.resource?.startsWith(SERVICE_RESOURCE_PREFIX)
+  ) {
+    const serviceName = event.resource.slice(SERVICE_RESOURCE_PREFIX.length);
+    return serviceName.length > 0
+      ? {
+          route: ["/connections/hosted-services", serviceName],
+          label: "Open hosted service",
+        }
+      : null;
+  }
+
   // Rule: agent execution_* events (payload.agentId) -> /ai/agents/<agentId>
   if (event.type !== null && AGENT_EXECUTION_TYPES.has(event.type)) {
     const agentId = event.payload?.["agentId"];
@@ -93,8 +123,8 @@ export function resolveEntityDeepLink(
       : null;
   }
 
-  // MCP call events and hosted serviceCall events are intentionally NOT
-  // mapped here — no real tracked-event `type` string exists for either
-  // (see header). Everything else (unknown types) also falls through to null.
+  // MCP call events are intentionally NOT mapped here — no real
+  // tracked-event `type` string exists for them (see header). Everything
+  // else (unknown types) also falls through to null.
   return null;
 }

@@ -39,6 +39,16 @@ const AGENT_EXECUTION_EVENT_TYPE =
   "io.yoizen.platform.runtime.execution_completed.v1";
 const AGENT_RESOURCE_PREFIX = "agent/";
 
+// T11 of manual-loops/connectors/connection-call-inspector.md: the hosted
+// services detail page's "Recent calls" feeds off the SAME tracked_events
+// endpoint the HTTP connector detail page uses (`connector.endpoint_call.
+// completed.v1`, T01), filtered to `resource=service/<serviceName>` instead
+// of `adapter/<adapterId>` — `service-call.activity.ts`'s `emitServiceCallEvent`
+// sets `resource: \`service/${serviceName}\`` where `serviceName` is
+// `args.serviceSlug ?? args.serviceId` (the registered service's `name`
+// slug, NOT its `id` UUID — callers must pass the service's `name`).
+const SERVICE_RESOURCE_PREFIX = "service/";
+
 const CONNECTOR_CACHE_RESULT = {
   HIT: "hit",
   MISS: "miss",
@@ -119,6 +129,24 @@ export interface IAgentExecutionCall {
   readonly model: string | null;
   readonly durationMs: number | null;
   readonly costUsd: number | null;
+  readonly timestamp: string;
+  readonly correlationId?: string;
+  readonly eventId?: string;
+}
+
+/** One row of the T11 hosted-service "Recent calls" tracked_events feed —
+ * `connector.endpoint_call.completed.v1` with `resource=service/<name>`,
+ * scalar-only (same shape as {@link IConnectorCall}, renamed for the
+ * hosted-service caller's clarity — mirrors `IMcpCall`/`IAgentExecutionCall`
+ * having their own dedicated interfaces rather than reusing `IConnectorCall`
+ * verbatim). */
+export interface IServiceCall {
+  readonly serviceName: string;
+  readonly method: string;
+  readonly resolvedUrl: string;
+  readonly status: number;
+  readonly durationMs: number;
+  readonly cacheResult: ConnectorCacheResult;
   readonly timestamp: string;
   readonly correlationId?: string;
   readonly eventId?: string;
@@ -216,6 +244,38 @@ export class ConnectorCallService {
         )
       );
   }
+
+  /**
+   * Returns recent platform service calls for a given hosted service,
+   * server-side filtered by `resource=service/<serviceName>` (T11). Callers
+   * MUST pass the registered service's `name` (slug), not its `id` — the
+   * `resource` prefix is set from `args.serviceSlug ?? args.serviceId` at
+   * emission time (`service-call.activity.ts`), which resolves to the slug
+   * whenever it is known. Same window/limit defaults as {@link recentCalls}.
+   * @param serviceName  Hosted service `name` (slug) to filter on.
+   * @param windowMin    How many minutes back to search (default 7 days).
+   * @param limit        Max rows to return (default 20).
+   */
+  recentServiceCalls(
+    serviceName: string,
+    windowMin = DEFAULT_WINDOW_MIN,
+    limit = 20
+  ): Observable<IServiceCall[]> {
+    const from = new Date(Date.now() - windowMin * 60_000).toISOString();
+    const params = new HttpParams()
+      .set("type", EVENT_TYPE)
+      .set("resource", `${SERVICE_RESOURCE_PREFIX}${serviceName}`)
+      .set("from", from)
+      .set("limit", String(limit));
+
+    return this.http
+      .get<ITrackingEventsResponse>(`${TRACKING}/events`, { params })
+      .pipe(
+        map((res) =>
+          (res.events ?? []).map((row) => toServiceCall(row, serviceName))
+        )
+      );
+  }
 }
 
 function toCall(row: ITrackingEventRow, adapterId: string): IConnectorCall {
@@ -268,6 +328,23 @@ function toAgentExecutionCall(
       row.payload_cost_usd === undefined || row.payload_cost_usd === null
         ? null
         : Number(row.payload_cost_usd),
+    timestamp: row.occurred_at ?? "",
+    correlationId: row.correlation_id ?? undefined,
+    eventId: row.event_id ?? undefined,
+  };
+}
+
+function toServiceCall(
+  row: ITrackingEventRow,
+  serviceName: string
+): IServiceCall {
+  return {
+    serviceName,
+    method: row.payload_method ?? "GET",
+    resolvedUrl: row.payload_resolved_url ?? "",
+    status: row.payload_http_status ?? 0,
+    durationMs: row.payload_duration_ms ?? 0,
+    cacheResult: normalizeCacheResult(row.payload_cache_result),
     timestamp: row.occurred_at ?? "",
     correlationId: row.correlation_id ?? undefined,
     eventId: row.event_id ?? undefined,
