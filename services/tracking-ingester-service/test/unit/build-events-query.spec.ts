@@ -9,6 +9,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     const normalized = text.replace(/\s+/g, " ").trim();
@@ -25,6 +26,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     expect(text).not.toMatch(/SELECT\s+\*/i);
@@ -37,6 +39,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     const columnsBlock = text.slice(
@@ -72,6 +75,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     expect(text).toContain("ORDER BY occurred_at DESC");
@@ -84,6 +88,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     expect(text).not.toContain("resource");
@@ -103,6 +108,7 @@ describe("buildEventsQuery", () => {
       resource: "adapter/adp-1",
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     expect(text).toContain("envelope->>'resource' = $3");
@@ -122,6 +128,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: "2026-07-01T00:00:00.000Z",
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     expect(text).toContain("occurred_at >= $3");
@@ -148,6 +155,7 @@ describe("buildEventsQuery", () => {
       resource: resourceValue,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     expect(text).toContain("envelope->>'resource' = $3");
@@ -170,6 +178,7 @@ describe("buildEventsQuery", () => {
       resource: "agent/agent-123",
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     expect(text).not.toContain("envelope->>'resource'");
@@ -197,6 +206,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     const columnsBlock = text.slice(
@@ -223,6 +233,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     const columnsBlock = text.slice(
@@ -255,6 +266,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     const columnsBlock = text.slice(
@@ -287,6 +299,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     const columnsBlock = text.slice(
@@ -305,6 +318,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: null,
+      toolName: null,
       limit: 50,
     });
     const whereBlock = text.slice(text.indexOf("WHERE"));
@@ -323,6 +337,7 @@ describe("buildEventsQuery", () => {
       resource: null,
       from: null,
       endpointId: "ep-42",
+      toolName: null,
       limit: 50,
     });
     expect(text).toContain("envelope->'data'->'payload'->>'endpointId' = $3");
@@ -342,6 +357,7 @@ describe("buildEventsQuery", () => {
       resource: "adapter/adp-1",
       from: "2026-07-01T00:00:00.000Z",
       endpointId: "ep-42",
+      toolName: null,
       limit: 25,
     });
     expect(text).toContain("envelope->>'resource' = $3");
@@ -365,6 +381,7 @@ describe("buildEventsQuery", () => {
       resource: "adapter/adp-1",
       from: "2026-07-01T00:00:00.000Z",
       endpointId: null,
+      toolName: null,
       limit: 25,
     });
     expect(text).toContain("envelope->>'resource' = $3");
@@ -375,6 +392,119 @@ describe("buildEventsQuery", () => {
       "connector.endpoint_call.completed.v1",
       "adapter/adp-1",
       "2026-07-01T00:00:00.000Z",
+      25,
+    ]);
+  });
+
+  // T06 of manual-loops/connectors/endpoint-scoped-recent-calls.md — the
+  // `toolName` filter matches `envelope->'data'->'payload'->>'toolName'`
+  // verbatim (the same field the `payload_tool_name` projection column
+  // already reads — NO new projection column) and COMPOSES with
+  // `type`/`resource`/`from`/`endpointId` instead of replacing any of them.
+  it("omits the toolName condition when not provided", () => {
+    const { text, params } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.mcp_call.completed.v1",
+      resource: null,
+      from: null,
+      endpointId: null,
+      toolName: null,
+      limit: 50,
+    });
+    const whereBlock = text.slice(text.indexOf("WHERE"));
+    expect(whereBlock).not.toContain("toolName");
+    expect(params).toEqual(["tenant-a", "connector.mcp_call.completed.v1", 50]);
+  });
+
+  it("adds the toolName filter on the payload toolName when provided", () => {
+    const { text, params } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.mcp_call.completed.v1",
+      resource: null,
+      from: null,
+      endpointId: null,
+      toolName: "search_docs",
+      limit: 50,
+    });
+    expect(text).toContain("envelope->'data'->'payload'->>'toolName' = $3");
+    expect(text).toContain("LIMIT $4");
+    expect(params).toEqual([
+      "tenant-a",
+      "connector.mcp_call.completed.v1",
+      "search_docs",
+      50,
+    ]);
+  });
+
+  it("adds NO new projection column for the toolName filter", () => {
+    const { text } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.mcp_call.completed.v1",
+      resource: null,
+      from: null,
+      endpointId: null,
+      toolName: "search_docs",
+      limit: 50,
+    });
+    const columnsBlock = text.slice(
+      text.indexOf("SELECT") + "SELECT".length,
+      text.indexOf("FROM")
+    );
+    // The pre-existing scalar is the ONLY `toolName` reference in the
+    // projection — the filter lives in the WHERE clause.
+    expect(columnsBlock).toContain(
+      "envelope->'data'->'payload'->>'toolName' AS payload_tool_name"
+    );
+    expect(
+      columnsBlock.split("toolName").length - 1,
+      "projection must reference toolName exactly once"
+    ).toBe(1);
+  });
+
+  it("composes toolName with resource, from and endpointId (never replaces them)", () => {
+    const { text, params } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.mcp_call.completed.v1",
+      resource: "mcp/mcp-1",
+      from: "2026-07-01T00:00:00.000Z",
+      endpointId: "ep-42",
+      toolName: "search_docs",
+      limit: 25,
+    });
+    expect(text).toContain("envelope->>'resource' = $3");
+    expect(text).toContain("occurred_at >= $4");
+    expect(text).toContain("envelope->'data'->'payload'->>'endpointId' = $5");
+    expect(text).toContain("envelope->'data'->'payload'->>'toolName' = $6");
+    expect(text).toContain("LIMIT $7");
+    expect(params).toEqual([
+      "tenant-a",
+      "connector.mcp_call.completed.v1",
+      "mcp/mcp-1",
+      "2026-07-01T00:00:00.000Z",
+      "ep-42",
+      "search_docs",
+      25,
+    ]);
+  });
+
+  it("composes toolName with resource alone", () => {
+    const { text, params } = buildEventsQuery({
+      tenant: "tenant-a",
+      type: "connector.mcp_call.completed.v1",
+      resource: "mcp/mcp-1",
+      from: null,
+      endpointId: null,
+      toolName: "search_docs",
+      limit: 25,
+    });
+    expect(text).toContain("envelope->>'resource' = $3");
+    expect(text).toContain("envelope->'data'->'payload'->>'toolName' = $4");
+    expect(text).toContain("LIMIT $5");
+    expect(params).toEqual([
+      "tenant-a",
+      "connector.mcp_call.completed.v1",
+      "mcp/mcp-1",
+      "search_docs",
       25,
     ]);
   });

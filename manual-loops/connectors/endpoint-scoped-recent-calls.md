@@ -288,6 +288,65 @@ grep -n "endpointId=" scripts/e2e/http-workflow.sh
 cd services/admin-console && pnpm test
 ```
 
+### T06 — Ingester: optional `toolName` filter on `GET /events`
+
+> Added 2026-07-29 (user approval in session). MCP per-tool scoping: the
+> scalar `payload_tool_name` is ALREADY projected
+> (`build-events-query.ts:201` region, `EventRow.payload_tool_name`) — this
+> task only adds the filter param, mirroring T01's `endpointId` verbatim.
+
+- `services/tracking-ingester-service/src/lib/parse-events-query.ts`: add
+  optional `toolName` — same blank-string-normalizes-to-`null` rule, no
+  format validation (opaque name, matches `envelope` payload verbatim).
+- `build-events-query.ts`: in the WHERE assembly inside `buildEventsQuery`,
+  append `envelope->'data'->'payload'->>'toolName' = $n` when `toolName` is
+  non-null; composes with `type`/`resource`/`from`/`endpointId`. NO new
+  projection column (the scalar already exists).
+- `handle-events-request.ts` + `to-events-response.ts` + `src/main.ts`:
+  thread the param exactly as `endpointId` is threaded (both verbose log
+  lines, response echo, I/O-edge searchParams read).
+- Unit tests mirroring T01's: parsed present/blank/absent, SQL filter only
+  when set, composes with `resource` and `endpointId`, response echo.
+  Existing tests extended additively, never weakened.
+
+**Accept**
+```
+cd services/tracking-ingester-service && bun test && bunx tsc -p tsconfig.json --noEmit
+grep -n "toolName" services/tracking-ingester-service/src/lib/build-events-query.ts
+```
+
+### T07 — MCP detail: selectable tool cards scope Recent calls
+
+> Added 2026-07-29. Mirrors T03's interaction spec (decision 2) on the MCP
+> detail page: tool cards toggle in place, filter chip clears, no
+> navigation. The tools list is live-discovered (`GET :id/tools`) — a tool
+> the server no longer exposes simply can't be selected; a selected tool
+> that disappears on refetch drops the filter (log it).
+
+- `services/admin-console/src/app/core/services/connector-call.service.ts`:
+  `recentMcpCalls` (:230 region) gains an optional `toolName` argument —
+  same shape as T02's `recentCalls` change; appends the `toolName` query
+  param when set. `toMcpCall` already maps `payload_tool_name` (:336) — no
+  mapping change.
+- `services/admin-console/src/app/features/connections/mcp-detail/mcp-detail.component.ts`:
+  - Tools section (:173-193): cards become selectable — click/Enter
+    toggles `selectedToolName` signal, selected card highlighted, same
+    keyboard/a11y pattern as T03's endpoint cards.
+  - Recent calls (:196+, `loadCalls` :481-490): when scoped, re-fetch via
+    the new `recentMcpCalls(id, undefined, 20, toolName)`; filter chip
+    "`<toolName>` ×" above the list clears back; filtered empty state: "No
+    calls for this tool in the last 7 days."; open inspector closes on
+    filter change; spinner reused.
+- Component tests mirroring T03's set: card click scopes the feed (4th arg
+  asserted), chip renders tool name, × clears to the 3-arg call, selected
+  class toggles, filtered empty state, inspector closes on filter change,
+  Enter key.
+
+**Accept**
+```
+cd services/admin-console && pnpm test
+```
+
 ## Progress
 
 - [x] T01 ingester scalar + filter param
@@ -295,14 +354,16 @@ cd services/admin-console && pnpm test
 - [x] T03 selectable cards + filter chip
 - [x] T04 e2e endpoint-filtered round-trip
 - [x] T05 hosted services clickable list
+- [x] T06 ingester toolName filter
+- [ ] T07 MCP selectable tool cards
 
 ## Out of scope (explicit)
 
-- Per-item filtering on the other connection screens: MCP tool name, agent
-  execution state, hosted-service operation. Same pattern would apply
-  (`payload_tool_name` is even already projected) — future queue, on demand.
-  For hosted services specifically this was REJECTED, not deferred
-  (decision 5): no routes section, no `urlPrefix` filter.
+- Per-item filtering on the remaining connection screens: agent execution
+  state, hosted-service operation. (MCP tool-name filtering was pulled INTO
+  scope 2026-07-29 as T06/T07.) For hosted services specifically this was
+  REJECTED, not deferred (decision 5): no routes section, no `urlPrefix`
+  filter.
 - Per-endpoint aggregates (call count, error rate, p95 on the endpoint card).
 - Persisting the selected endpoint in the URL (query-param deep link) —
   selection is ephemeral UI state in this loop.

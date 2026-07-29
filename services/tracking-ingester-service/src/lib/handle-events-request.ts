@@ -1,7 +1,8 @@
 // Orchestrates the
-// `GET /events?type=<t>&resource=<r>&from=<iso>&limit=<n>&endpointId=<id>`
+// `GET /events?type=<t>&resource=<r>&from=<iso>&limit=<n>&endpointId=<id>
+// &toolName=<name>`
 // request (T03 of manual-loops/connector-trace-linking.md; the optional
-// `endpointId` filter is T01 of
+// `endpointId` filter is T01 and the optional `toolName` filter is T06 of
 // manual-loops/connectors/endpoint-scoped-recent-calls.md): tenant guard,
 // query-param validation (`parseEventsQuery`), the projected list query
 // (`buildEventsQuery`), and shaping via `toEventsResponse` — WITHOUT touching
@@ -65,9 +66,9 @@ export async function handleEventsRequest(
     };
   }
 
-  const { type, resource, from, endpointId, limit } = parsed.value;
+  const { type, resource, from, endpointId, toolName, limit } = parsed.value;
   log(
-    `handleEventsRequest: fetching tenant=${tenant} type=${type} resource=${resource ?? "-"} from=${from ?? "-"} endpointId=${endpointId ?? "-"} limit=${limit}`
+    `handleEventsRequest: fetching tenant=${tenant} type=${type} resource=${resource ?? "-"} from=${from ?? "-"} endpointId=${endpointId ?? "-"} toolName=${toolName ?? "-"} limit=${limit}`
   );
 
   const query = buildEventsQuery({
@@ -76,12 +77,13 @@ export async function handleEventsRequest(
     resource,
     from,
     endpointId,
+    toolName,
     limit,
   });
   const events = await deps.queryEvents(query);
 
   log(
-    `handleEventsRequest: OK tenant=${tenant} type=${type} resource=${resource ?? "-"} from=${from ?? "-"} endpointId=${endpointId ?? "-"} limit=${limit} count=${events.length}`
+    `handleEventsRequest: OK tenant=${tenant} type=${type} resource=${resource ?? "-"} from=${from ?? "-"} endpointId=${endpointId ?? "-"} toolName=${toolName ?? "-"} limit=${limit} count=${events.length}`
   );
 
   const response = toEventsResponse(
@@ -90,6 +92,7 @@ export async function handleEventsRequest(
     resource,
     from,
     endpointId,
+    toolName,
     limit,
     events
   );

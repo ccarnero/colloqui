@@ -165,6 +165,69 @@ describe("parseEventsQuery", () => {
     }
   });
 
+  // T06 of manual-loops/connectors/endpoint-scoped-recent-calls.md —
+  // `toolName` follows the exact same normalization rule as
+  // `resource`/`from`/`endpointId`: trimmed, blank -> null, absent -> null, no
+  // format validation (it is an opaque tool name matched verbatim).
+  it("trims and passes through a provided toolName", () => {
+    const result = parseEventsQuery({
+      type: "connector.mcp_call.completed.v1",
+      resource: "mcp/mcp-1",
+      from: null,
+      limit: null,
+      endpointId: "ep-42",
+      toolName: "  search_docs  ",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.toolName).toBe("search_docs");
+      // Composes with `resource`/`endpointId` — never replaces them.
+      expect(result.value.resource).toBe("mcp/mcp-1");
+      expect(result.value.endpointId).toBe("ep-42");
+    }
+  });
+
+  it("normalizes a blank toolName to null", () => {
+    const result = parseEventsQuery({
+      type: "connector.mcp_call.completed.v1",
+      resource: null,
+      from: null,
+      limit: null,
+      toolName: "   ",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.toolName).toBeNull();
+    }
+  });
+
+  it("normalizes an absent toolName to null", () => {
+    const result = parseEventsQuery({
+      type: "connector.mcp_call.completed.v1",
+      resource: null,
+      from: null,
+      limit: null,
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.toolName).toBeNull();
+    }
+  });
+
+  it("accepts a toolName of any shape (opaque name — no format validation)", () => {
+    const result = parseEventsQuery({
+      type: "connector.mcp_call.completed.v1",
+      resource: null,
+      from: null,
+      limit: null,
+      toolName: "weird tool/name v2",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.toolName).toBe("weird tool/name v2");
+    }
+  });
+
   it("passes through a valid 'from' and trims/keeps type and resource", () => {
     const result = parseEventsQuery({
       type: " connector.endpoint_call.completed.v1 ",

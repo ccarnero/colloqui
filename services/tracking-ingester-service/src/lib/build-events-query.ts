@@ -1,6 +1,7 @@
 // build-events-query.ts — parametrized SQL for `GET /events?type=<t>&resource=<r>
-// &from=<iso>&limit=<n>&endpointId=<id>` (T03 of
-// manual-loops/connector-trace-linking.md; `endpointId` added by T01 of
+// &from=<iso>&limit=<n>&endpointId=<id>&toolName=<name>` (T03 of
+// manual-loops/connector-trace-linking.md; `endpointId` added by T01 and
+// `toolName` by T06 of
 // manual-loops/connectors/endpoint-scoped-recent-calls.md): the
 // generic events-by-type/resource list the connector "Recent calls" feature (and
 // any future entity-detail "recent activity" panel) reads from
@@ -91,6 +92,21 @@ export interface EventsQueryParams {
    * addendum above).
    */
   readonly endpointId: string | null;
+  /**
+   * `envelope->'data'->'payload'->>'toolName'` filter (T06 of
+   * `manual-loops/connectors/endpoint-scoped-recent-calls.md`) — the name of
+   * the single MCP tool whose calls the caller wants, as carried by
+   * `connector.mcp_call.completed.v1` payloads (the same field the
+   * `payload_tool_name` projection column already reads; NO new projection
+   * column is needed here). Optional, and COMPOSES with
+   * `type`/`resource`/`from`/`endpointId` (it never replaces any of them):
+   * `resource=mcp/<mcpServerId>` narrows to one MCP server, `toolName=<name>`
+   * narrows further to one tool of it. Matched verbatim as an opaque name
+   * with NO `COALESCE` fallback — an event family that does not carry the
+   * payload field simply never matches, which is the intended behavior (same
+   * guardrail as `endpointId` above).
+   */
+  readonly toolName: string | null;
   /** Already clamped to `[1, MAX_LIST_LIMIT]` by the caller (`clampListLimit`). */
   readonly limit: number;
 }
@@ -257,7 +273,7 @@ const AGENT_RESOURCE_PREFIX = "agent/";
  * Builds the parametrized SQL that fetches `tracking.tracked_events` rows
  * scoped to `tenant`, filtered by `envelope->>'type'` (required), optionally
  * `envelope->>'resource'`, a lower `occurred_at` bound and the payload's
- * `endpointId` (each an independent AND — they compose), ordered
+ * `endpointId`/`toolName` (each an independent AND — they compose), ordered
  * `occurred_at DESC` (most recent first — SPEC.md T03), capped at `limit`.
  * Never `SELECT *`; the raw `envelope` jsonb is excluded from the projection
  * (chain-list decision, manual-loops/trace-console.md T01, stands here too).
@@ -296,6 +312,17 @@ export function buildEventsQuery(params: EventsQueryParams): EventsQuery {
     values.push(params.endpointId);
     conditions.push(
       `envelope->'data'->'payload'->>'endpointId' = $${values.length}`
+    );
+  }
+
+  // T06 of `manual-loops/connectors/endpoint-scoped-recent-calls.md`:
+  // APPENDED to whatever `resource`/`from`/`endpointId` already contributed —
+  // an additional AND, never a replacement. No new projection column: the
+  // `payload_tool_name` scalar is already in `EVENTS_COLUMNS` above.
+  if (params.toolName !== null) {
+    values.push(params.toolName);
+    conditions.push(
+      `envelope->'data'->'payload'->>'toolName' = $${values.length}`
     );
   }
 

@@ -46,6 +46,23 @@ const EVENT: EventRow = {
   payload_state: null,
 };
 
+/** T06 of manual-loops/connectors/endpoint-scoped-recent-calls.md — an MCP
+ * tool call row: the `payload_tool_name` scalar already existed in the
+ * projection, this task only added the `toolName` FILTER. */
+const MCP_EVENT: EventRow = {
+  ...EVENT,
+  event_id: "evt-mcp-1",
+  subject:
+    "evt.tenant-a.connector-runtime.platform.endpoint.system.mcp_call_completed.v1",
+  kind: "mcp_call_completed",
+  payload_method: null,
+  payload_resolved_url: null,
+  payload_http_status: null,
+  payload_cache_result: null,
+  payload_tool_name: "search_docs",
+  payload_success: true,
+};
+
 describe("handleEventsRequest", () => {
   it("returns 400 when tenant is missing (stubbed pool never called)", async () => {
     let called = false;
@@ -301,6 +318,118 @@ describe("handleEventsRequest", () => {
       }
     );
     expect(lines.filter((l) => l.includes("endpointId=ep-42"))).toHaveLength(2);
+  });
+
+  // T06 of manual-loops/connectors/endpoint-scoped-recent-calls.md — the
+  // optional `toolName` query param is the ONLY API-surface change: it is
+  // parsed, forwarded to the query as an extra bound param (composing with
+  // `resource`/`from`/`endpointId`), and echoed on the response. No new
+  // projection column — `payload_tool_name` already existed.
+  it("forwards toolName to the query, composing with resource, from and endpointId, and echoes it", async () => {
+    let seenQuery: EventsQuery | null = null;
+    const result = await handleEventsRequest(
+      "tenant-a",
+      {
+        type: "connector.mcp_call.completed.v1",
+        resource: "mcp/mcp-1",
+        from: "2026-06-01T00:00:00.000Z",
+        limit: "10",
+        endpointId: "ep-42",
+        toolName: " search_docs ",
+      },
+      {
+        queryEvents: async (query) => {
+          seenQuery = query;
+          return [MCP_EVENT];
+        },
+      }
+    );
+
+    expect(seenQuery).not.toBeNull();
+    expect(seenQuery!.text).toContain(
+      "envelope->'data'->'payload'->>'toolName' = $6"
+    );
+    expect(seenQuery!.params).toEqual([
+      "tenant-a",
+      "connector.mcp_call.completed.v1",
+      "mcp/mcp-1",
+      "2026-06-01T00:00:00.000Z",
+      "ep-42",
+      "search_docs",
+      10,
+    ]);
+    expect(result.status).toBe(200);
+    if (result.status === 200) {
+      expect(result.body.toolName).toBe("search_docs");
+      expect(result.body.endpointId).toBe("ep-42");
+      expect(result.body.resource).toBe("mcp/mcp-1");
+      expect(result.body.events[0]!.payload_tool_name).toBe("search_docs");
+    }
+  });
+
+  it("echoes a null toolName and omits the filter when it is absent", async () => {
+    let seenQuery: EventsQuery | null = null;
+    const result = await handleEventsRequest(
+      "tenant-a",
+      {
+        type: "connector.mcp_call.completed.v1",
+        resource: null,
+        from: null,
+        limit: null,
+      },
+      {
+        queryEvents: async (query) => {
+          seenQuery = query;
+          return [MCP_EVENT];
+        },
+      }
+    );
+    expect(
+      seenQuery!.text.slice(seenQuery!.text.indexOf("WHERE"))
+    ).not.toContain("toolName");
+    expect(result.status).toBe(200);
+    if (result.status === 200) {
+      expect(result.body.toolName).toBeNull();
+    }
+  });
+
+  it("logs the toolName on both the fetching and OK verbose lines", async () => {
+    const lines: string[] = [];
+    await handleEventsRequest(
+      "tenant-a",
+      {
+        type: "connector.mcp_call.completed.v1",
+        resource: null,
+        from: null,
+        limit: null,
+        toolName: "search_docs",
+      },
+      {
+        queryEvents: async () => [MCP_EVENT],
+        log: (message) => lines.push(message),
+      }
+    );
+    expect(
+      lines.filter((l) => l.includes("toolName=search_docs"))
+    ).toHaveLength(2);
+  });
+
+  it("logs toolName=- on both verbose lines when no tool filter is applied", async () => {
+    const lines: string[] = [];
+    await handleEventsRequest(
+      "tenant-a",
+      {
+        type: "connector.mcp_call.completed.v1",
+        resource: null,
+        from: null,
+        limit: null,
+      },
+      {
+        queryEvents: async () => [MCP_EVENT],
+        log: (message) => lines.push(message),
+      }
+    );
+    expect(lines.filter((l) => l.includes("toolName=-"))).toHaveLength(2);
   });
 
   it("never projects requestBody/responseBody onto the response events", async () => {
