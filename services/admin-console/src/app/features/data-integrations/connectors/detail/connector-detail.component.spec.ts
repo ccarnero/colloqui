@@ -510,4 +510,193 @@ describe("ConnectorDetailComponent", () => {
     expect(fixture.componentInstance.adapter()?.name).toBe("Renamed connector");
     expect(fixture.componentInstance.saveError()).toBeNull();
   });
+
+  // ---------------------------------------------------------------------
+  // T03 (endpoint-scoped-recent-calls.md, user decision 2, 2026-07-29):
+  // endpoint cards toggle selection IN PLACE (no navigation, no route) and
+  // scope the "Recent calls" feed server-side through T02's
+  // `recentCalls(adapterId, windowMin, limit, endpointId?)`.
+  // ---------------------------------------------------------------------
+  describe("T03 — selectable endpoint cards + filter chip", () => {
+    function adapterWithEndpoints(): IAdapterDto {
+      return makeAdapter({
+        endpoints: [
+          {
+            id: "ep-1",
+            adapterId: "adp-1",
+            label: "Get items",
+            method: "GET",
+            path: "/items",
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+          {
+            id: "ep-2",
+            adapterId: "adp-1",
+            label: "Create order",
+            method: "POST",
+            path: "/orders",
+            createdAt: "2026-01-01T00:00:00Z",
+          },
+        ],
+      });
+    }
+
+    function clickEndpointCard(index: number): void {
+      const host = fixture.nativeElement as HTMLElement;
+      const cards = host.querySelectorAll<HTMLElement>(".endpoint-card");
+      const card = cards[index];
+      expect(card).toBeTruthy();
+      card?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      fixture.detectChanges();
+    }
+
+    it("endpoint cards are clickable and keyboard-accessible (role/tabindex)", async () => {
+      await setup(of(adapterWithEndpoints()), true, of([]));
+
+      const host = fixture.nativeElement as HTMLElement;
+      const card = host.querySelector<HTMLElement>(".endpoint-card");
+      expect(card?.getAttribute("role")).toBe("button");
+      expect(card?.getAttribute("tabindex")).toBe("0");
+    });
+
+    it("clicking an endpoint card scopes the feed to that endpoint id", async () => {
+      await setup(of(adapterWithEndpoints()), true, of([]));
+      expect(calls.recentCalls).toHaveBeenCalledWith("adp-1", undefined, 20);
+
+      clickEndpointCard(0);
+
+      expect(fixture.componentInstance.selectedEndpointId()).toBe("ep-1");
+      expect(calls.recentCalls).toHaveBeenLastCalledWith(
+        "adp-1",
+        undefined,
+        20,
+        "ep-1"
+      );
+    });
+
+    it("renders the filter chip with the selected endpoint's method + path", async () => {
+      await setup(of(adapterWithEndpoints()), true, of([]));
+
+      clickEndpointCard(1);
+
+      const host = fixture.nativeElement as HTMLElement;
+      const chip = host.querySelector<HTMLElement>(".endpoint-filter-chip");
+      expect(chip).toBeTruthy();
+      expect(chip?.textContent).toContain("POST");
+      expect(chip?.textContent).toContain("/orders");
+    });
+
+    it("the chip's × clears the selection and restores the all-adapter feed", async () => {
+      await setup(of(adapterWithEndpoints()), true, of([]));
+      clickEndpointCard(0);
+
+      const host = fixture.nativeElement as HTMLElement;
+      const clear = host.querySelector<HTMLElement>(".endpoint-filter-clear");
+      expect(clear).toBeTruthy();
+      clear?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.selectedEndpointId()).toBeNull();
+      expect(calls.recentCalls).toHaveBeenLastCalledWith(
+        "adp-1",
+        undefined,
+        20
+      );
+      expect(host.querySelector(".endpoint-filter-chip")).toBeFalsy();
+    });
+
+    it("toggles the selected-card class and deselects when the same card is clicked again", async () => {
+      await setup(of(adapterWithEndpoints()), true, of([]));
+
+      clickEndpointCard(0);
+      let host = fixture.nativeElement as HTMLElement;
+      let cards = host.querySelectorAll<HTMLElement>(".endpoint-card");
+      expect(cards[0]?.classList.contains("endpoint-card--selected")).toBe(
+        true
+      );
+      expect(cards[1]?.classList.contains("endpoint-card--selected")).toBe(
+        false
+      );
+
+      clickEndpointCard(0);
+      host = fixture.nativeElement as HTMLElement;
+      cards = host.querySelectorAll<HTMLElement>(".endpoint-card");
+      expect(cards[0]?.classList.contains("endpoint-card--selected")).toBe(
+        false
+      );
+      expect(fixture.componentInstance.selectedEndpointId()).toBeNull();
+      expect(calls.recentCalls).toHaveBeenLastCalledWith(
+        "adp-1",
+        undefined,
+        20
+      );
+    });
+
+    it("shows the endpoint-scoped empty state while filtered", async () => {
+      await setup(of(adapterWithEndpoints()), true, of([]));
+
+      clickEndpointCard(0);
+
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+      expect(text).toContain("No calls for this endpoint in the last 7 days.");
+      expect(text).not.toContain("No calls in the last 7 days.");
+    });
+
+    it("closes an open inspector when the endpoint filter changes", async () => {
+      const call: IConnectorCall = {
+        adapterId: "adp-1",
+        endpointId: "ep-1",
+        method: "GET",
+        resolvedUrl: "https://api.example.com/items",
+        status: 200,
+        durationMs: 20,
+        cacheResult: "hit",
+        timestamp: "2026-06-01T12:00:00.000Z",
+        correlationId: "corr-42",
+        eventId: "evt-42",
+      };
+      await setup(of(adapterWithEndpoints()), true, of([call]));
+
+      const host = fixture.nativeElement as HTMLElement;
+      host
+        .querySelector<HTMLElement>(".call-row")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      fixture.detectChanges();
+      expect(host.querySelector("app-call-inspector")).toBeTruthy();
+
+      clickEndpointCard(0);
+
+      expect(fixture.componentInstance.selectedCall()).toBeNull();
+      expect(fixture.componentInstance.inspectorRow()).toBeNull();
+      expect(host.querySelector("app-call-inspector")).toBeFalsy();
+    });
+
+    it("keyboard Enter on an endpoint card selects it", async () => {
+      await setup(of(adapterWithEndpoints()), true, of([]));
+
+      const host = fixture.nativeElement as HTMLElement;
+      const card = host.querySelector<HTMLElement>(".endpoint-card");
+      card?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true })
+      );
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.selectedEndpointId()).toBe("ep-1");
+      expect(calls.recentCalls).toHaveBeenLastCalledWith(
+        "adp-1",
+        undefined,
+        20,
+        "ep-1"
+      );
+    });
+
+    it("does not scope the feed when the user lacks diagnostics:read", async () => {
+      await setup(of(adapterWithEndpoints()), false, of([]));
+
+      clickEndpointCard(0);
+
+      expect(fixture.componentInstance.selectedEndpointId()).toBe("ep-1");
+      expect(calls.recentCalls).not.toHaveBeenCalled();
+    });
+  });
 });

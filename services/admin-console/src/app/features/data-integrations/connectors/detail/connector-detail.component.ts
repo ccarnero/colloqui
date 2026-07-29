@@ -156,7 +156,14 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
           <h3 class="section-title">Endpoints</h3>
           <div class="endpoints-list">
             @for (ep of a.endpoints; track ep.id) {
-              <div class="endpoint-card">
+              <div
+                class="endpoint-card"
+                role="button"
+                tabindex="0"
+                [class.endpoint-card--selected]="selectedEndpointId() === ep.id"
+                (click)="toggleEndpointFilter(ep.id)"
+                (keydown.enter)="toggleEndpointFilter(ep.id)"
+              >
                 <span class="endpoint-badge">{{ ep.method }}</span>
                 <span class="endpoint-path">{{ ep.path }}</span>
                 @if (ep.label) {
@@ -190,10 +197,27 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
       @if (canViewCalls()) {
         <section class="section">
           <h3 class="section-title">Recent calls</h3>
+          @if (selectedEndpoint(); as ep) {
+            <div class="endpoint-filter-chip">
+              <span class="endpoint-filter-text">{{ ep.method }} {{ ep.path }}</span>
+              <button
+                type="button"
+                class="endpoint-filter-clear"
+                aria-label="Clear endpoint filter"
+                (click)="clearEndpointFilter()"
+              >
+                ×
+              </button>
+            </div>
+          }
           @if (callsLoading()) {
             <div class="loader"><mat-spinner diameter="24"></mat-spinner><span>Loading recent calls…</span></div>
           } @else if (recentCalls().length === 0) {
-            <p class="no-calls">No calls in the last 7 days.</p>
+            @if (selectedEndpointId()) {
+              <p class="no-calls">No calls for this endpoint in the last 7 days.</p>
+            } @else {
+              <p class="no-calls">No calls in the last 7 days.</p>
+            }
           } @else {
             <div class="call-body">
               <div class="call-list">
@@ -410,8 +434,43 @@ const DIAGNOSTICS_PERMISSION = "diagnostics:read";
       cursor: pointer;
       transition: background-color 0.12s;
     }
-    .endpoint-card:hover {
+    .endpoint-card:hover,
+    .endpoint-card:focus-visible {
       background: var(--rd-hover);
+    }
+    /* Selected endpoint (T03) — same background/foreground shift as
+       .call-row--selected, plus an inset accent ring so it stays visible
+       next to the identical :hover state. */
+    .endpoint-card--selected {
+      background: var(--rd-hover);
+      color: var(--rd-text-1);
+      box-shadow: inset 0 0 0 1px var(--rd-accent);
+    }
+    .endpoint-filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--rd-space-3, 6px);
+      margin-bottom: var(--rd-space-6, 12px);
+      padding: 2px var(--rd-space-3, 6px) 2px var(--rd-space-5, 9px);
+      border: 1px solid var(--rd-line-3);
+      border-radius: var(--rd-radius-5, 6px);
+      background: var(--rd-panel);
+      font-family: var(--rd-font-mono);
+      font-size: var(--rd-text-size-xs, 11px);
+      color: var(--rd-text-2);
+    }
+    .endpoint-filter-clear {
+      border: none;
+      background: transparent;
+      color: var(--rd-text-3);
+      font-size: var(--rd-text-size-md, 14px);
+      line-height: 1;
+      padding: 0 2px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .endpoint-filter-clear:hover {
+      color: var(--rd-text-1);
     }
     .endpoint-badge {
       font-size: var(--rd-text-size-xs, 11px);
@@ -553,6 +612,28 @@ export class ConnectorDetailComponent implements OnInit {
   readonly recentCalls = signal<IConnectorCall[]>([]);
   readonly callsLoading = signal(false);
 
+  /** Endpoint scope for the "Recent calls" feed (T03 of
+   * `manual-loops/connectors/endpoint-scoped-recent-calls.md`, user decision 2
+   * 2026-07-29): clicking an endpoint card toggles this id IN PLACE — no
+   * navigation, no route, no URL persistence. `null` means the feed is
+   * adapter-wide. Filtering itself is SERVER-SIDE (decision 1) via T02's
+   * `ConnectorCallService.recentCalls(adapterId, windowMin, limit, endpointId?)`,
+   * so a low-traffic endpoint's calls are found even outside the adapter's
+   * most recent N events. */
+  readonly selectedEndpointId = signal<string | null>(null);
+
+  /** The selected endpoint's DTO — drives the filter chip's
+   * "`{{ method }} {{ path }}` ×" label. Resolves to `null` whenever the
+   * selection is cleared or the adapter reload no longer carries that
+   * endpoint (e.g. it was deleted in the edit dialog). */
+  readonly selectedEndpoint = computed(() => {
+    const id = this.selectedEndpointId();
+    if (!id) {
+      return null;
+    }
+    return this.adapter()?.endpoints.find((ep) => ep.id === id) ?? null;
+  });
+
   /** The currently-selected "Recent calls" row (T08) — feeds the docked
    * `app-call-inspector` panel (T07). `null` means the inspector is
    * closed. */
@@ -654,6 +735,15 @@ export class ConnectorDetailComponent implements OnInit {
   private load(id: string): void {
     this.loading.set(true);
     this.errorMessage.set(null);
+    // A different adapter has different endpoints — never carry an endpoint
+    // scope across a route param change (T03).
+    if (this.selectedEndpointId() !== null) {
+      console.debug(
+        "[ConnectorDetailComponent] clearing endpoint filter — adapter route changed",
+        { id, previousEndpointId: this.selectedEndpointId() }
+      );
+      this.selectedEndpointId.set(null);
+    }
     console.debug("[ConnectorDetailComponent] loading adapter", { id });
     this.adapters.get(id).subscribe({
       next: (dto) => {
@@ -685,12 +775,24 @@ export class ConnectorDetailComponent implements OnInit {
       return;
     }
     this.callsLoading.set(true);
-    this.calls.recentCalls(id, undefined, 20).subscribe({
+    // T03: when an endpoint is selected the feed is re-fetched SERVER-SIDE
+    // scoped through T02's optional 4th argument. The unscoped call keeps its
+    // original 3-argument shape so the adapter-wide contract is unchanged.
+    const endpointId = this.selectedEndpointId();
+    console.debug("[ConnectorDetailComponent] loading recent calls", {
+      id,
+      endpointId: endpointId ?? "-",
+    });
+    const calls$ = endpointId
+      ? this.calls.recentCalls(id, undefined, 20, endpointId)
+      : this.calls.recentCalls(id, undefined, 20);
+    calls$.subscribe({
       next: (rows) => {
         this.recentCalls.set(rows);
         this.callsLoading.set(false);
         console.debug("[ConnectorDetailComponent] recent calls loaded", {
           id,
+          endpointId: endpointId ?? "-",
           count: rows.length,
         });
       },
@@ -699,12 +801,60 @@ export class ConnectorDetailComponent implements OnInit {
           "[ConnectorDetailComponent] failed to load recent calls",
           {
             id,
+            endpointId: endpointId ?? "-",
             err,
           }
         );
         this.callsLoading.set(false);
       },
     });
+  }
+
+  /**
+   * Endpoint card click/Enter (T03, user decision 2 of
+   * `manual-loops/connectors/endpoint-scoped-recent-calls.md`): toggles the
+   * endpoint scope in place — clicking the already-selected card deselects
+   * and restores the all-adapter feed. Any open call inspector is CLOSED
+   * first: the inspected call may not belong to the new feed.
+   */
+  toggleEndpointFilter(endpointId: string): void {
+    const next = this.selectedEndpointId() === endpointId ? null : endpointId;
+    console.debug("[ConnectorDetailComponent] endpoint filter toggled", {
+      endpointId,
+      previous: this.selectedEndpointId() ?? "-",
+      next: next ?? "-",
+    });
+    this.applyEndpointFilter(next);
+  }
+
+  /** The filter chip's × — clears the endpoint scope and restores the
+   * all-adapter feed (T03). */
+  clearEndpointFilter(): void {
+    console.debug("[ConnectorDetailComponent] endpoint filter cleared", {
+      previous: this.selectedEndpointId() ?? "-",
+    });
+    this.applyEndpointFilter(null);
+  }
+
+  /** Single write path for the endpoint scope: closes the inspector (the
+   * open call may leave the list) and re-fetches the feed. */
+  private applyEndpointFilter(endpointId: string | null): void {
+    this.selectedEndpointId.set(endpointId);
+    if (this.selectedCall() !== null) {
+      console.debug(
+        "[ConnectorDetailComponent] closing call inspector — endpoint filter changed"
+      );
+      this.selectedCall.set(null);
+    }
+    const adapterId = this.adapter()?.id;
+    if (!adapterId) {
+      console.error(
+        "[ConnectorDetailComponent] endpoint filter changed with no adapter loaded — feed not refreshed",
+        { endpointId: endpointId ?? "-" }
+      );
+      return;
+    }
+    this.loadCalls(adapterId);
   }
 
   /**
@@ -792,6 +942,20 @@ export class ConnectorDetailComponent implements OnInit {
               console.debug("[ConnectorDetailComponent] adapter edit saved", {
                 id: dto.id,
               });
+              // T03: an endpoint scoped by the filter may have been removed
+              // in the dialog — drop the now-dangling scope instead of
+              // silently querying a dead endpoint id.
+              const scopedId = this.selectedEndpointId();
+              if (
+                scopedId &&
+                !updated.endpoints.some((ep) => ep.id === scopedId)
+              ) {
+                console.debug(
+                  "[ConnectorDetailComponent] clearing endpoint filter — endpoint no longer exists after edit",
+                  { id: dto.id, endpointId: scopedId }
+                );
+                this.selectedEndpointId.set(null);
+              }
               this.loadCalls(dto.id);
             },
             error: (err: unknown) => {

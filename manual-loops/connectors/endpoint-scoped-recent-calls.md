@@ -231,7 +231,7 @@ grep -n "endpointId=" scripts/e2e/http-workflow.sh
 
 - [x] T01 ingester scalar + filter param
 - [x] T02 console feed endpoint scope
-- [ ] T03 selectable cards + filter chip
+- [x] T03 selectable cards + filter chip
 - [ ] T04 e2e endpoint-filtered round-trip
 
 ## Out of scope (explicit)
