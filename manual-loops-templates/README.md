@@ -37,6 +37,24 @@ distinto del ciclo (ver tabla más abajo).
 Regla práctica: arrancá con el simple; si te encontrás agregando
 dependencias, prior art u overrides de gates, pasate al canónico.
 
+## Cómo arrancar un loop (los pasos, en orden)
+
+1. Copiá el template a `manual-loops/<area>/<nombre>.md`, llenalo y borrá el
+   bloque TEMPLATE NOTES.
+2. **Aprobación humana del SPEC** — leelo de verdad: es el human boundary
+   número uno, y las User decisions que apruebes acá el loop no las rediscute.
+3. `git status` limpio — el motor se frena si no.
+4. Precondición, una sola vez: `./scripts/validate-dev-mode.sh --with-e2e`.
+   Si falla, los gates de iteración (G-a) se saltean y el skip SE REGISTRA
+   como deuda en el Progress del SPEC (regla anti-zombie — un fallback
+   temporal no se vuelve permanente en silencio).
+5. En una sesión interactiva:
+   `/manual-loop manual-loops/<area>/<nombre>.md` — opcionalmente con un id
+   (`... T03`) para correr una sola tarea.
+6. El loop se detiene solo: por bloqueo (te deja `BLOCKED.md` y se frena) o
+   por fin de queue. Al cerrar reporta commits por tarea y qué servicios hay
+   que rebuildear.
+
 ## El ciclo, por tarea
 
 Esto es lo que el comando hace con tu SPEC, tarea por tarea:

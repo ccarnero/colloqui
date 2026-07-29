@@ -54,6 +54,8 @@ Repeat each citation inside the body of the task that uses it.
 ## Gates (the `/manual-loop` command runs these verbatim, in order)
 
 ```
+# G0 — repo guards (doc/code drift, cheap, every attempt)
+./scripts/checks/doc-code-guards.sh
 # G1 — <primary service> tests
 cd services/<svc> && bun test
 # G2 — <primary service> typecheck
@@ -61,9 +63,9 @@ cd services/<svc> && bunx tsc -p tsconfig.json --noEmit
 # G3 — <other touched service> tests (from T0N onward)
 cd services/<other> && bun test
 # G5a — ITERATION (per attempt, source-mounted dev mode; admin-console has no dev-mode — skip)
-./dev-mode.sh deps && ./dev-mode.sh <svc> on && ./scripts/e2e-<feature>.sh
+./dev-mode.sh deps && ./dev-mode.sh <svc> on && ./scripts/e2e/<feature>.sh
 # G5b — COMMIT GATE (once per task, built image)
-./dev-mode.sh <svc> off && ./rebuild-redeploy.sh <svc> dev && ./scripts/e2e-<feature>.sh
+./dev-mode.sh <svc> off && ./rebuild-redeploy.sh <svc> dev && ./scripts/e2e/<feature>.sh
 ```
 
 Gate rules (self-contained — the engine runs THIS file verbatim; never
@@ -78,7 +80,9 @@ inherit rules by reference to another SPEC):
   previous attempt's green run IS the baseline; supersedes the rule above">.
 
 PRECONDITION: `./scripts/validate-dev-mode.sh --with-e2e` must be green once
-before T01; if it fails, skip G5a and rely solely on G5b.
+before T01; if it fails, skip G5a and rely solely on G5b — and RECORD the skip
+(date + failure symptom) in this SPEC's Progress as a pending repair item. A
+skipped iteration gate is debt; it does not silently carry over to the next SPEC.
 
 E2E CLEANUP: every e2e script tears down what it creates — trap-guarded,
 account-scoped, idempotent teardown. G5a/G5b failures count as failed attempts

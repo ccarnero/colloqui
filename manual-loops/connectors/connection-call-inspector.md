@@ -128,6 +128,8 @@ Repeat each citation inside the body of the task that uses it.
 ## Gates (the `/manual-loop` command runs these verbatim, in order)
 
 ```
+# G0 — repo guards (doc/code drift, cheap, every attempt)
+./scripts/checks/doc-code-guards.sh
 # G1 — connector-runtime tests + typecheck
 cd services/connector-runtime && bun test && bunx tsc -p tsconfig.json --noEmit
 # G2 — tracking-ingester-service tests + typecheck (from T05 onward)
@@ -139,13 +141,13 @@ cd services/api-gateway && bun test
 # G5 — admin-console tests (from T07 onward)
 cd services/admin-console && pnpm test
 # G6a — ITERATION (per attempt, source-mounted dev mode; admin-console tasks skip G6a)
-./dev-mode.sh deps && ./dev-mode.sh <touched-svc> on && ./scripts/e2e-http-workflow.sh
+./dev-mode.sh deps && ./dev-mode.sh <touched-svc> on && ./scripts/e2e/http-workflow.sh
 # G6b — COMMIT GATE (once per task, built image)
-./dev-mode.sh <touched-svc> off && ./rebuild-redeploy.sh <touched-svc> dev && ./scripts/e2e-http-workflow.sh
+./dev-mode.sh <touched-svc> off && ./rebuild-redeploy.sh <touched-svc> dev && ./scripts/e2e/http-workflow.sh
 ```
 
-Gate ids follow the shared convention: G1-G5 = per-service suites (a gate only
-runs once its first task exists), G6a/G6b = cluster e2e.
+Gate ids follow the shared convention: G0 = repo guards, G1-G5 = per-service
+suites (a gate only runs once its first task exists), G6a/G6b = cluster e2e.
 
 Gate rules (self-contained — the engine runs THIS file verbatim):
 
@@ -158,7 +160,11 @@ Gate rules (self-contained — the engine runs THIS file verbatim):
 - G6a/G6b failures count as failed attempts like any other gate.
 
 PRECONDITION: `./scripts/validate-dev-mode.sh --with-e2e` must be green once
-before T01; if it fails, skip G6a and rely solely on G6b.
+before T01; if it fails, skip G6a and rely solely on G6b — and RECORD the skip
+(date + failure symptom) in this SPEC's Progress as a pending repair item.
+KNOWN STATE 2026-07-29: the validator has an internal stage-5 race (diagnosed
+2026-07-16 in `provisioning-manifest-gaps.md:524`, re-confirmed 2026-07-24 in
+`gaps-4`) — expect this skip until the validator-fix loop lands.
 
 E2E CLEANUP: every e2e script tears down what it creates — trap-guarded,
 account-scoped, idempotent teardown (conventions from
@@ -420,7 +426,7 @@ grep -n "hosted-services/:id\|hosted-services/" services/admin-console/src/app/a
 
 ### T12 — Cluster e2e: serviceCall capture round-trip
 
-- Extend `scripts/e2e-http-workflow.sh` (keep its stage-per-function pattern,
+- Extend `scripts/e2e/http-workflow.sh` (keep its stage-per-function pattern,
   exit-code contract, and the T08 isolation conventions — account-scoped
   triggers, trap-guarded cleanup): add a `serviceCall` action to an e2e
   workflow, then assert:
@@ -439,7 +445,7 @@ grep -n "hosted-services/:id\|hosted-services/" services/admin-console/src/app/a
 ```
 ./rebuild-redeploy.sh connector-runtime dev
 ./rebuild-redeploy.sh tracking-ingester-service dev
-./scripts/e2e-http-workflow.sh
+./scripts/e2e/http-workflow.sh
 ```
 
 ### T13 — Docs + index
