@@ -355,7 +355,7 @@ cd services/admin-console && pnpm test
 - [x] T04 e2e endpoint-filtered round-trip
 - [x] T05 hosted services clickable list
 - [x] T06 ingester toolName filter
-- [ ] T07 MCP selectable tool cards
+- [x] T07 MCP selectable tool cards
 
 ## Out of scope (explicit)
 

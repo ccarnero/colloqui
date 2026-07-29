@@ -11,7 +11,11 @@ import {
 } from "@angular/router";
 import { BehaviorSubject, of, tap, throwError } from "rxjs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { IMcpServer, IMcpUsage } from "../../../core/models/agent.model";
+import type {
+  IMcpServer,
+  IMcpServerTool,
+  IMcpUsage,
+} from "../../../core/models/agent.model";
 import { AgentAdminService } from "../../../core/services/agent-admin.service";
 import { AuthService } from "../../../core/services/auth.service";
 import {
@@ -74,7 +78,7 @@ describe("McpDetailComponent", () => {
 
   async function setup(
     serverObs = of(makeServer()),
-    toolsObs = of([]),
+    toolsObs = of<IMcpServerTool[]>([]),
     usageObs = of(makeUsage()),
     callsObs = of<IMcpCall[]>([])
   ) {
@@ -430,6 +434,220 @@ describe("McpDetailComponent", () => {
       );
       expect(trace).toBeTruthy();
       expect(trace?.getAttribute("href")).toBe("/processes/trace/corr-42");
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // T07 (endpoint-scoped-recent-calls.md, user decision 2, 2026-07-29):
+  // tool cards toggle selection IN PLACE (no navigation, no route) and scope
+  // the "Recent calls" feed server-side through
+  // `recentMcpCalls(mcpServerId, windowMin, limit, toolName?)`.
+  // ---------------------------------------------------------------------
+  describe("T07 — selectable tool cards + filter chip", () => {
+    function makeTools(): IMcpServerTool[] {
+      return [
+        { name: "list-files", description: "Lists files", inputSchema: null },
+        { name: "search", description: "Searches", inputSchema: null },
+      ];
+    }
+
+    function makeMcpCall(overrides: Partial<IMcpCall> = {}): IMcpCall {
+      return {
+        mcpServerId: "mcp-1",
+        toolName: "list-files",
+        success: true,
+        durationMs: 42,
+        error: null,
+        timestamp: "2026-06-01T12:00:00.000Z",
+        correlationId: "corr-42",
+        eventId: "evt-42",
+        ...overrides,
+      };
+    }
+
+    function clickToolCard(index: number): void {
+      const host = fixture.nativeElement as HTMLElement;
+      const cards = host.querySelectorAll<HTMLElement>(".endpoint-card");
+      const card = cards[index];
+      expect(card).toBeTruthy();
+      card?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      fixture.detectChanges();
+    }
+
+    it("tool cards are clickable and keyboard-accessible (role/tabindex)", async () => {
+      await setup(of(makeServer()), of(makeTools()));
+
+      const host = fixture.nativeElement as HTMLElement;
+      const card = host.querySelector<HTMLElement>(".endpoint-card");
+      expect(card?.getAttribute("role")).toBe("button");
+      expect(card?.getAttribute("tabindex")).toBe("0");
+    });
+
+    it("clicking a tool card scopes the feed to that tool name", async () => {
+      await setup(of(makeServer()), of(makeTools()));
+      expect(calls.recentMcpCalls).toHaveBeenCalledWith("mcp-1", undefined, 20);
+
+      clickToolCard(0);
+
+      expect(fixture.componentInstance.selectedToolName()).toBe("list-files");
+      expect(calls.recentMcpCalls).toHaveBeenLastCalledWith(
+        "mcp-1",
+        undefined,
+        20,
+        "list-files"
+      );
+    });
+
+    it("renders the filter chip with the selected tool's name", async () => {
+      await setup(of(makeServer()), of(makeTools()));
+
+      clickToolCard(1);
+
+      const host = fixture.nativeElement as HTMLElement;
+      const chip = host.querySelector<HTMLElement>(".endpoint-filter-chip");
+      expect(chip).toBeTruthy();
+      expect(chip?.textContent).toContain("search");
+    });
+
+    it("the chip's × clears the selection and restores the all-server feed", async () => {
+      await setup(of(makeServer()), of(makeTools()));
+      clickToolCard(0);
+
+      const host = fixture.nativeElement as HTMLElement;
+      const clear = host.querySelector<HTMLElement>(".endpoint-filter-clear");
+      expect(clear).toBeTruthy();
+      clear?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.selectedToolName()).toBeNull();
+      expect(calls.recentMcpCalls).toHaveBeenLastCalledWith(
+        "mcp-1",
+        undefined,
+        20
+      );
+      expect(host.querySelector(".endpoint-filter-chip")).toBeFalsy();
+    });
+
+    it("toggles the selected-card class and deselects when the same card is clicked again", async () => {
+      await setup(of(makeServer()), of(makeTools()));
+
+      clickToolCard(0);
+      let host = fixture.nativeElement as HTMLElement;
+      let cards = host.querySelectorAll<HTMLElement>(".endpoint-card");
+      expect(cards[0]?.classList.contains("endpoint-card--selected")).toBe(
+        true
+      );
+      expect(cards[1]?.classList.contains("endpoint-card--selected")).toBe(
+        false
+      );
+
+      clickToolCard(0);
+      host = fixture.nativeElement as HTMLElement;
+      cards = host.querySelectorAll<HTMLElement>(".endpoint-card");
+      expect(cards[0]?.classList.contains("endpoint-card--selected")).toBe(
+        false
+      );
+      expect(fixture.componentInstance.selectedToolName()).toBeNull();
+      expect(calls.recentMcpCalls).toHaveBeenLastCalledWith(
+        "mcp-1",
+        undefined,
+        20
+      );
+    });
+
+    it("shows the tool-scoped empty state while filtered", async () => {
+      await setup(of(makeServer()), of(makeTools()));
+
+      clickToolCard(0);
+
+      const text = (fixture.nativeElement as HTMLElement).textContent ?? "";
+      expect(text).toContain("No calls for this tool in the last 7 days.");
+      expect(text).not.toContain("No calls in the last 7 days.");
+    });
+
+    it("closes an open inspector when the tool filter changes", async () => {
+      await setup(
+        of(makeServer()),
+        of(makeTools()),
+        of(makeUsage()),
+        of([makeMcpCall()])
+      );
+
+      const host = fixture.nativeElement as HTMLElement;
+      host
+        .querySelector<HTMLElement>(".call-row")
+        ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      fixture.detectChanges();
+      expect(host.querySelector("app-call-inspector")).toBeTruthy();
+
+      clickToolCard(0);
+
+      expect(fixture.componentInstance.selectedCall()).toBeNull();
+      expect(fixture.componentInstance.inspectorRow()).toBeNull();
+      expect(host.querySelector("app-call-inspector")).toBeFalsy();
+    });
+
+    it("keyboard Enter on a tool card selects it", async () => {
+      await setup(of(makeServer()), of(makeTools()));
+
+      const host = fixture.nativeElement as HTMLElement;
+      const card = host.querySelector<HTMLElement>(".endpoint-card");
+      card?.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "Enter", bubbles: true })
+      );
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.selectedToolName()).toBe("list-files");
+      expect(calls.recentMcpCalls).toHaveBeenLastCalledWith(
+        "mcp-1",
+        undefined,
+        20,
+        "list-files"
+      );
+    });
+
+    // The tools list is LIVE-DISCOVERED — a scoped tool can disappear on the
+    // next `GET :id/tools` (here: the post-edit re-discovery). The dangling
+    // filter must be dropped (with a log) and the feed restored server-wide.
+    it("drops the filter when a tools refetch no longer exposes the selected tool", async () => {
+      await setup(of(makeServer()), of(makeTools()));
+      clickToolCard(0);
+      expect(fixture.componentInstance.selectedToolName()).toBe("list-files");
+
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      // Post-edit re-discovery returns a tool list without "list-files".
+      agentAdminService.listMcpServerTools.mockReturnValue(
+        of([{ name: "search", description: null, inputSchema: null }])
+      );
+      const existingServer = makeServer();
+      dialogMock.open.mockReturnValue({
+        afterClosed: () =>
+          of({
+            name: existingServer.name,
+            url: "https://other.example.com",
+            transport_type: existingServer.transport_type,
+            auth_type: existingServer.auth_type,
+            auth_config: null,
+            headers: null,
+            enabled: existingServer.enabled,
+            scope: existingServer.scope,
+          }),
+      });
+
+      fixture.componentInstance.openEdit();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.selectedToolName()).toBeNull();
+      expect(debugSpy).toHaveBeenCalledWith(
+        "[McpDetailComponent] clearing tool filter — tool no longer exposed by this server",
+        { id: "mcp-1", toolName: "list-files" }
+      );
+      expect(calls.recentMcpCalls).toHaveBeenLastCalledWith(
+        "mcp-1",
+        undefined,
+        20
+      );
+      debugSpy.mockRestore();
     });
   });
 

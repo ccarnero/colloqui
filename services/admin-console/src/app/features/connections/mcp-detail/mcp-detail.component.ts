@@ -180,7 +180,14 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
         } @else {
           <div class="endpoints-list">
             @for (t of tools(); track t.name) {
-              <div class="endpoint-card">
+              <div
+                class="endpoint-card"
+                role="button"
+                tabindex="0"
+                [class.endpoint-card--selected]="selectedToolName() === t.name"
+                (click)="toggleToolFilter(t.name)"
+                (keydown.enter)="toggleToolFilter(t.name)"
+              >
                 <span class="endpoint-path">{{ t.name }}</span>
                 @if (t.description) {
                   <span class="endpoint-label">{{ t.description }}</span>
@@ -194,13 +201,30 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
 
       <section class="section">
         <h3 class="section-title">Recent calls</h3>
+        @if (selectedToolName(); as tool) {
+          <div class="endpoint-filter-chip">
+            <span class="endpoint-filter-text">{{ tool }}</span>
+            <button
+              type="button"
+              class="endpoint-filter-clear"
+              aria-label="Clear tool filter"
+              (click)="clearToolFilter()"
+            >
+              ×
+            </button>
+          </div>
+        }
         @if (callsLoading()) {
           <div class="loader">
             <mat-spinner diameter="24"></mat-spinner
             ><span>Loading recent calls…</span>
           </div>
         } @else if (recentCalls().length === 0) {
-          <p class="no-calls">No calls in the last 7 days.</p>
+          @if (selectedToolName()) {
+            <p class="no-calls">No calls for this tool in the last 7 days.</p>
+          } @else {
+            <p class="no-calls">No calls in the last 7 days.</p>
+          }
         } @else {
           <div class="call-body">
             <div class="call-list">
@@ -266,7 +290,15 @@ import { buildMcpServerUpdatePayload } from "./build-mcp-server-update-payload";
     .info-value { font-size: var(--rd-text-size-base, 13px); color: var(--rd-text-1); }
     .mono { font-family: var(--rd-font-mono); }
     .endpoints-list { display: flex; flex-direction: column; gap: var(--rd-space-4, 8px); }
-    .endpoint-card { display: flex; align-items: center; gap: var(--rd-space-6, 12px); padding: var(--rd-space-6, 12px); background: var(--rd-panel); border-radius: var(--rd-radius-5, 6px); font-size: var(--rd-text-size-base, 13px); }
+    .endpoint-card { display: flex; align-items: center; gap: var(--rd-space-6, 12px); padding: var(--rd-space-6, 12px); background: var(--rd-panel); border-radius: var(--rd-radius-5, 6px); font-size: var(--rd-text-size-base, 13px); cursor: pointer; transition: background-color 0.12s; outline: none; }
+    .endpoint-card:hover, .endpoint-card:focus-visible { background: var(--rd-hover); }
+    /* Selected tool (T07) — identical treatment to connector-detail's
+       .endpoint-card--selected: background/foreground shift plus an inset
+       accent ring so it stays distinguishable from :hover. */
+    .endpoint-card--selected { background: var(--rd-hover); color: var(--rd-text-1); box-shadow: inset 0 0 0 1px var(--rd-accent); }
+    .endpoint-filter-chip { display: inline-flex; align-items: center; gap: var(--rd-space-3, 6px); margin-bottom: var(--rd-space-6, 12px); padding: 2px var(--rd-space-3, 6px) 2px var(--rd-space-5, 9px); border: 1px solid var(--rd-line-3); border-radius: var(--rd-radius-5, 6px); background: var(--rd-panel); font-family: var(--rd-font-mono); font-size: var(--rd-text-size-xs, 11px); color: var(--rd-text-2); }
+    .endpoint-filter-clear { border: none; background: transparent; color: var(--rd-text-3); font-size: var(--rd-text-size-md, 14px); line-height: 1; padding: 0 2px; cursor: pointer; font-family: inherit; }
+    .endpoint-filter-clear:hover { color: var(--rd-text-1); }
     .endpoint-path { font-family: var(--rd-font-mono); font-size: var(--rd-text-size-sm, 12px); color: var(--rd-text-2); }
     .endpoint-label { flex: 1; font-size: var(--rd-text-size-sm, 12px); color: var(--rd-text-3); }
     .endpoint-cache { font-size: var(--rd-text-size-xs, 11px); color: var(--rd-text-3); white-space: nowrap; }
@@ -313,6 +345,16 @@ export class McpDetailComponent implements OnInit {
   // (`ConnectorCallService.recentMcpCalls`), not `usage.recentCalls`.
   readonly recentCalls = signal<IMcpCall[]>([]);
   readonly callsLoading = signal(false);
+
+  /** Tool scope for the "Recent calls" feed (T07 of
+   * `manual-loops/connectors/endpoint-scoped-recent-calls.md`, user decision 2
+   * 2026-07-29 — the MCP analog of `connector-detail.component.ts`'s
+   * `selectedEndpointId`): clicking a tool card toggles this name IN PLACE —
+   * no navigation, no route, no URL persistence. `null` means the feed is
+   * server-wide. Filtering is SERVER-SIDE via `recentMcpCalls`'s optional
+   * `toolName` argument, so a rarely-used tool's calls are found even outside
+   * the server's most recent N events. */
+  readonly selectedToolName = signal<string | null>(null);
 
   /** Currently-selected "Recent calls" row — feeds the docked
    * `app-call-inspector` panel (T09, mirrors
@@ -412,6 +454,15 @@ export class McpDetailComponent implements OnInit {
   private load(id: string): void {
     this.loading.set(true);
     this.errorMessage.set(null);
+    // A different server exposes different tools — never carry a tool scope
+    // across a route param change (T07, mirrors connector-detail's T03).
+    if (this.selectedToolName() !== null) {
+      console.debug(
+        "[McpDetailComponent] clearing tool filter — MCP server route changed",
+        { id, previousToolName: this.selectedToolName() }
+      );
+      this.selectedToolName.set(null);
+    }
     console.debug("[McpDetailComponent] loading MCP server", { id });
     this.agentAdminService.getMcpServer(id).subscribe({
       next: (server) => {
@@ -448,6 +499,20 @@ export class McpDetailComponent implements OnInit {
           id,
           count: tools.length,
         });
+        // T07: tools are LIVE-DISCOVERED (`GET :id/tools`), so a scoped tool
+        // can vanish between refetches (server redeployed, tool renamed or
+        // removed). Drop the now-dangling scope instead of silently querying
+        // a tool name that no longer exists — mirrors connector-detail's T03
+        // dangling-endpoint handling after an edit.
+        const scopedTool = this.selectedToolName();
+        if (scopedTool && !tools.some((t) => t.name === scopedTool)) {
+          console.debug(
+            "[McpDetailComponent] clearing tool filter — tool no longer exposed by this server",
+            { id, toolName: scopedTool }
+          );
+          this.selectedToolName.set(null);
+          this.loadCalls(id);
+        }
       },
       error: (err: unknown) => {
         console.error("[McpDetailComponent] failed to load tools", { id, err });
@@ -480,23 +545,84 @@ export class McpDetailComponent implements OnInit {
    * limit 20 — mirrors `connector-detail.component.ts`'s `loadCalls`). */
   private loadCalls(id: string): void {
     this.callsLoading.set(true);
-    this.calls.recentMcpCalls(id, undefined, 20).subscribe({
+    // T07: when a tool is selected the feed is re-fetched SERVER-SIDE scoped
+    // through `recentMcpCalls`'s optional 4th argument. The unscoped call
+    // keeps its original 3-argument shape so the server-wide contract is
+    // unchanged.
+    const toolName = this.selectedToolName();
+    console.debug("[McpDetailComponent] loading recent calls", {
+      id,
+      toolName: toolName ?? "-",
+    });
+    const calls$ = toolName
+      ? this.calls.recentMcpCalls(id, undefined, 20, toolName)
+      : this.calls.recentMcpCalls(id, undefined, 20);
+    calls$.subscribe({
       next: (rows) => {
         this.recentCalls.set(rows);
         this.callsLoading.set(false);
         console.debug("[McpDetailComponent] recent calls loaded", {
           id,
+          toolName: toolName ?? "-",
           count: rows.length,
         });
       },
       error: (err: unknown) => {
         console.error("[McpDetailComponent] failed to load recent calls", {
           id,
+          toolName: toolName ?? "-",
           err,
         });
         this.callsLoading.set(false);
       },
     });
+  }
+
+  /**
+   * Tool card click/Enter (T07, user decision 2 of
+   * `manual-loops/connectors/endpoint-scoped-recent-calls.md`): toggles the
+   * tool scope in place — clicking the already-selected card deselects and
+   * restores the all-server feed. Any open call inspector is CLOSED first:
+   * the inspected call may not belong to the new feed.
+   */
+  toggleToolFilter(toolName: string): void {
+    const next = this.selectedToolName() === toolName ? null : toolName;
+    console.debug("[McpDetailComponent] tool filter toggled", {
+      toolName,
+      previous: this.selectedToolName() ?? "-",
+      next: next ?? "-",
+    });
+    this.applyToolFilter(next);
+  }
+
+  /** The filter chip's × — clears the tool scope and restores the all-server
+   * feed (T07). */
+  clearToolFilter(): void {
+    console.debug("[McpDetailComponent] tool filter cleared", {
+      previous: this.selectedToolName() ?? "-",
+    });
+    this.applyToolFilter(null);
+  }
+
+  /** Single write path for the tool scope: closes the inspector (the open
+   * call may leave the list) and re-fetches the feed. */
+  private applyToolFilter(toolName: string | null): void {
+    this.selectedToolName.set(toolName);
+    if (this.selectedCall() !== null) {
+      console.debug(
+        "[McpDetailComponent] closing call inspector — tool filter changed"
+      );
+      this.selectedCall.set(null);
+    }
+    const serverId = this.server()?.id;
+    if (!serverId) {
+      console.error(
+        "[McpDetailComponent] tool filter changed with no MCP server loaded — feed not refreshed",
+        { toolName: toolName ?? "-" }
+      );
+      return;
+    }
+    this.loadCalls(serverId);
   }
 
   /** Opens the docked call inspector for the clicked row (T09). Rows
@@ -569,6 +695,11 @@ export class McpDetailComponent implements OnInit {
             console.debug("[McpDetailComponent] MCP server updated", {
               id: server.id,
             });
+            // T07: the edit may have repointed the server (url/transport/auth)
+            // at a different tool surface — re-discover the live tool list so
+            // the cards match reality. `loadTools` drops a now-dangling tool
+            // filter (and refreshes the feed) if the scoped tool disappeared.
+            this.loadTools(server.id);
           },
           error: (err: unknown) => {
             console.error(

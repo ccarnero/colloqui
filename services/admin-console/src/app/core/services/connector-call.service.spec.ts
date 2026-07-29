@@ -219,6 +219,65 @@ describe("ConnectorCallService", () => {
     expect(result[0]?.responseBody).toBeUndefined();
   });
 
+  // T07 of manual-loops/connectors/endpoint-scoped-recent-calls.md: optional
+  // per-tool scope on the MCP feed (`toolName` query param, ingester-side
+  // filter on `envelope->'data'->'payload'->>'toolName'`).
+  describe("MCP tool scope (T07)", () => {
+    const MCP_EVENT_TYPE = "connector.mcp_call.completed.v1";
+
+    it("omits the toolName param when no tool scope is given", () => {
+      service.recentMcpCalls("mcp-1").subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      expect(req.request.params.get("type")).toBe(MCP_EVENT_TYPE);
+      expect(req.request.params.get("resource")).toBe("mcp/mcp-1");
+      expect(req.request.params.has("toolName")).toBe(false);
+      req.flush({ events: [] });
+    });
+
+    it("appends the toolName param alongside resource when scoped", () => {
+      service.recentMcpCalls("mcp-1", 60, 5, "list-files").subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      expect(req.request.params.get("type")).toBe(MCP_EVENT_TYPE);
+      expect(req.request.params.get("resource")).toBe("mcp/mcp-1");
+      expect(req.request.params.get("toolName")).toBe("list-files");
+      expect(req.request.params.get("limit")).toBe("5");
+      req.flush({ events: [] });
+    });
+
+    it("omits the toolName param for null/empty scopes", () => {
+      service.recentMcpCalls("mcp-1", undefined, undefined, null).subscribe();
+      const nullReq = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      expect(nullReq.request.params.has("toolName")).toBe(false);
+      nullReq.flush({ events: [] });
+
+      service.recentMcpCalls("mcp-1", undefined, undefined, "").subscribe();
+      const emptyReq = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      expect(emptyReq.request.params.has("toolName")).toBe(false);
+      emptyReq.flush({ events: [] });
+    });
+
+    it("still maps toolName from the row's payload_tool_name when scoped", () => {
+      let result: Array<{ toolName: string }> = [];
+      service
+        .recentMcpCalls("mcp-1", undefined, 20, "list-files")
+        .subscribe((rows) => (result = rows));
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      req.flush({
+        events: [
+          makeRow({
+            payload_tool_name: "list-files",
+            payload_success: "true",
+          }),
+        ],
+      });
+
+      expect(result[0]?.toolName).toBe("list-files");
+    });
+  });
+
   // T10 of manual-loops/connectors/connection-call-inspector.md: agent
   // detail's "Recent executions" feed.
   describe("recentAgentExecutions", () => {

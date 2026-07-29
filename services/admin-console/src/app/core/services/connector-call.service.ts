@@ -60,6 +60,15 @@ const SERVICE_RESOURCE_PREFIX = "service/";
 // with no DTO validation layer.
 const ENDPOINT_ID_PARAM = "endpointId";
 
+// T07 of manual-loops/connectors/endpoint-scoped-recent-calls.md: the MCP
+// analog of `ENDPOINT_ID_PARAM` — the MCP call feed can now be narrowed to a
+// SINGLE tool by appending the optional `toolName` query param alongside
+// `resource` (shipped on the ingester's `GET /events` in commit 46ca327c,
+// filtering on `envelope->'data'->'payload'->>'toolName'`). Like `endpointId`
+// it needs no gateway change: `tracking.controller.ts`'s `getEvents` forwards
+// `@Query()` verbatim.
+const TOOL_NAME_PARAM = "toolName";
+
 const CONNECTOR_CACHE_RESULT = {
   HIT: "hit",
   MISS: "miss",
@@ -221,23 +230,40 @@ export class ConnectorCallService {
 
   /**
    * Returns recent MCP tool calls for a given server, server-side filtered
-   * by `resource=mcp/<mcpServerId>` (T09). Same window/limit defaults as
-   * {@link recentCalls}.
+   * by `resource=mcp/<mcpServerId>` (T09) — optionally narrowed to a single
+   * tool of that server via the T07 `toolName` query param. Same window/limit
+   * defaults as {@link recentCalls}.
    * @param mcpServerId  MCP server to filter on.
    * @param windowMin    How many minutes back to search (default 7 days).
    * @param limit        Max rows to return (default 20).
+   * @param toolName     Optional tool scope; when omitted/null/empty the
+   *                     param is NOT sent and the feed stays server-wide.
    */
   recentMcpCalls(
     mcpServerId: string,
     windowMin = DEFAULT_WINDOW_MIN,
-    limit = 20
+    limit = 20,
+    toolName?: string | null
   ): Observable<IMcpCall[]> {
     const from = new Date(Date.now() - windowMin * 60_000).toISOString();
-    const params = new HttpParams()
+    let params = new HttpParams()
       .set("type", MCP_EVENT_TYPE)
       .set("resource", `${MCP_RESOURCE_PREFIX}${mcpServerId}`)
       .set("from", from)
       .set("limit", String(limit));
+
+    if (toolName) {
+      params = params.set(TOOL_NAME_PARAM, toolName);
+      console.debug(
+        "[ConnectorCallService] recentMcpCalls scoped to tool",
+        JSON.stringify({ mcpServerId, toolName, windowMin, limit })
+      );
+    } else {
+      console.debug(
+        "[ConnectorCallService] recentMcpCalls server-wide (no tool scope)",
+        JSON.stringify({ mcpServerId, windowMin, limit })
+      );
+    }
 
     return this.http
       .get<ITrackingEventsResponse>(`${TRACKING}/events`, { params })
