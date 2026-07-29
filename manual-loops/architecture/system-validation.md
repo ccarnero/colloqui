@@ -134,7 +134,7 @@ grep -n "T03 findings" manual-loops/architecture/system-validation.md
   skipped per Gates rule; relying on G3b. See
   `manual-loops/architecture/dev-mode-validator-fix.md`.
 - [x] T01 shared caps + DTO enforcement
-- [ ] T02 cross-service invariant test
+- [x] T02 cross-service invariant test
 - [ ] T03 docs + validation report
 
 ## Out of scope (explicit)

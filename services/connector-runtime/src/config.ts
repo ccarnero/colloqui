@@ -6,6 +6,22 @@ import {
 
 const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
 
+/**
+ * JetStream `ack_wait` for the async invoke consumer
+ * (`src/invoke-consumer-main.ts`). Exported (rather than inlined in that
+ * entrypoint's consumer config) because it is one half of a cross-service
+ * invariant: the worst-case handler chain
+ * `ADAPTER_MAX_RETRIES_MAX * (ADAPTER_TIMEOUT_MS_MAX +
+ * ADAPTER_RETRY_BACKOFF_MS_MAX)` (caps owned by `@yoizen/shared`) plus
+ * `invokeWebhookTimeoutMs` MUST stay strictly below this value — otherwise
+ * NATS redelivers an in-flight message and the outbound HTTP call is
+ * duplicated. `test/unit/invoke-ack-wait-invariant.spec.ts` asserts that
+ * against THIS constant, so raising a cap or lowering this number without
+ * rebalancing breaks the build. Not env-overridable on purpose: an operator
+ * tuning it by env would silently bypass that guard.
+ */
+export const INVOKE_CONSUMER_ACK_WAIT_MS = 300_000;
+
 type WorkflowHttpWorkerConfig = {
   readonly port: number;
   readonly temporalAddress: string;

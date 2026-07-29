@@ -17,7 +17,10 @@ import {
   publishInvokeCompletedEvent,
 } from "./activities/_shared/invoke-request-publisher";
 import { deliverWebhook } from "./activities/_shared/webhook-delivery";
-import { workflowHttpWorkerConfig } from "./config";
+import {
+  INVOKE_CONSUMER_ACK_WAIT_MS,
+  workflowHttpWorkerConfig,
+} from "./config";
 import { handleInvokeRequestedMessage } from "./lib/invoke-consumer/handle-invoke-requested-message";
 import {
   type ParsedInvokeRequestedMessage,
@@ -130,8 +133,10 @@ async function main(): Promise<void> {
     // comes from the adapter (no upper cap) and multiplies by maxRetries +
     // retryBackoffMs, then the T05 webhook delivery adds its own timeout.
     // The 60s package default risks in-flight redelivery = duplicated
-    // outbound HTTP. 5 minutes covers the worst realistic chain.
-    ackWaitMs: 300_000,
+    // outbound HTTP. 5 minutes covers the worst realistic chain — see
+    // `INVOKE_CONSUMER_ACK_WAIT_MS`'s doc comment in `./config` and the
+    // invariant test that guards it against the shared adapter caps.
+    ackWaitMs: INVOKE_CONSUMER_ACK_WAIT_MS,
     // Async invoke work is I/O-bound (outbound HTTP + Redis + NATS
     // publishes) and independent per-invocation — safe to run several in
     // flight per pod, mirroring `webhook-ingress-consumer.service.ts`'s
