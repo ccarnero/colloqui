@@ -49,6 +49,17 @@ const AGENT_RESOURCE_PREFIX = "agent/";
 // slug, NOT its `id` UUID — callers must pass the service's `name`).
 const SERVICE_RESOURCE_PREFIX = "service/";
 
+// T02 of manual-loops/connectors/endpoint-scoped-recent-calls.md: the
+// endpoint-call feed can now be narrowed to a SINGLE connector endpoint by
+// appending the optional `endpointId` query param alongside `resource`
+// (T01 shipped it on the ingester's `GET /events`, filtering on
+// `envelope->'data'->'payload'->>'endpointId'` and projecting
+// `payload_endpoint_id` on every row — see `build-events-query.ts`). No
+// gateway change was needed: `tracking.controller.ts`'s `getEvents`
+// (:100-118) forwards `@Query()` verbatim as a raw `Record<string, string>`,
+// with no DTO validation layer.
+const ENDPOINT_ID_PARAM = "endpointId";
+
 const CONNECTOR_CACHE_RESULT = {
   HIT: "hit",
   MISS: "miss",
@@ -94,6 +105,11 @@ interface ITrackingEventRow {
   readonly payload_http_status?: number | null;
   readonly payload_duration_ms?: number | null;
   readonly payload_cache_result?: string | null;
+  /** `data.payload.endpointId` — the connector endpoint the call targeted.
+   * Projected on EVERY row since T01 of
+   * manual-loops/connectors/endpoint-scoped-recent-calls.md (`null` for
+   * event kinds that carry no endpoint, e.g. hosted-service calls). */
+  readonly payload_endpoint_id?: string | null;
   /** `connector.mcp_call.completed.v1` only (T06/T09). */
   readonly payload_tool_name?: string | null;
   readonly payload_success?: boolean | string | null;
@@ -162,22 +178,39 @@ export class ConnectorCallService {
 
   /**
    * Returns recent endpoint calls for a given adapter, server-side filtered
-   * by `resource=adapter/<adapterId>`.
-   * @param adapterId  Adapter to filter on.
-   * @param windowMin  How many minutes back to search (default 7 days).
-   * @param limit      Max rows to return (default 20).
+   * by `resource=adapter/<adapterId>` — optionally narrowed to a single
+   * endpoint of that adapter via the T02 `endpointId` query param.
+   * @param adapterId   Adapter to filter on.
+   * @param windowMin   How many minutes back to search (default 7 days).
+   * @param limit       Max rows to return (default 20).
+   * @param endpointId  Optional endpoint scope; when omitted/null/empty the
+   *                    param is NOT sent and the feed stays adapter-wide.
    */
   recentCalls(
     adapterId: string,
     windowMin = DEFAULT_WINDOW_MIN,
-    limit = 20
+    limit = 20,
+    endpointId?: string | null
   ): Observable<IConnectorCall[]> {
     const from = new Date(Date.now() - windowMin * 60_000).toISOString();
-    const params = new HttpParams()
+    let params = new HttpParams()
       .set("type", EVENT_TYPE)
       .set("resource", `${RESOURCE_PREFIX}${adapterId}`)
       .set("from", from)
       .set("limit", String(limit));
+
+    if (endpointId) {
+      params = params.set(ENDPOINT_ID_PARAM, endpointId);
+      console.debug(
+        "[ConnectorCallService] recentCalls scoped to endpoint",
+        JSON.stringify({ adapterId, endpointId, windowMin, limit })
+      );
+    } else {
+      console.debug(
+        "[ConnectorCallService] recentCalls adapter-wide (no endpoint scope)",
+        JSON.stringify({ adapterId, windowMin, limit })
+      );
+    }
 
     return this.http
       .get<ITrackingEventsResponse>(`${TRACKING}/events`, { params })
@@ -281,10 +314,11 @@ export class ConnectorCallService {
 function toCall(row: ITrackingEventRow, adapterId: string): IConnectorCall {
   return {
     adapterId: row.connector_id ?? adapterId,
-    // `endpointId` is not present in the tracked-events projection
-    // (`build-events-query.ts`'s `EventRow`) — never available from this
+    // T02: `payload_endpoint_id` is projected on every tracked-events row
+    // since T01 (`build-events-query.ts`), so the endpoint is now carried
+    // through; `null` when the row predates T01 or the event kind has no
     // endpoint.
-    endpointId: null,
+    endpointId: row.payload_endpoint_id ?? null,
     method: row.payload_method ?? "GET",
     resolvedUrl: row.payload_resolved_url ?? "",
     status: row.payload_http_status ?? 0,

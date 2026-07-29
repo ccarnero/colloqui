@@ -230,7 +230,7 @@ grep -n "endpointId=" scripts/e2e/http-workflow.sh
 ## Progress
 
 - [x] T01 ingester scalar + filter param
-- [ ] T02 console feed endpoint scope
+- [x] T02 console feed endpoint scope
 - [ ] T03 selectable cards + filter chip
 - [ ] T04 e2e endpoint-filtered round-trip
 

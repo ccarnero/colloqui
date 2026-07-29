@@ -97,6 +97,73 @@ describe("ConnectorCallService", () => {
     ]);
   });
 
+  // T02 of manual-loops/connectors/endpoint-scoped-recent-calls.md: optional
+  // endpoint scope on the adapter feed + `payload_endpoint_id` mapping.
+  describe("endpoint scope (T02)", () => {
+    it("omits the endpointId param when no endpoint scope is given", () => {
+      service.recentCalls("adp-target").subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      expect(req.request.params.has("endpointId")).toBe(false);
+      expect(req.request.params.get("resource")).toBe("adapter/adp-target");
+      req.flush({ events: [] });
+    });
+
+    it("appends the endpointId param alongside resource when scoped", () => {
+      service.recentCalls("adp-target", 60, 5, "ep-42").subscribe();
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      expect(req.request.params.get("type")).toBe(EVENT_TYPE);
+      expect(req.request.params.get("resource")).toBe("adapter/adp-target");
+      expect(req.request.params.get("endpointId")).toBe("ep-42");
+      expect(req.request.params.get("limit")).toBe("5");
+      req.flush({ events: [] });
+    });
+
+    it("omits the endpointId param for null/empty scopes", () => {
+      service.recentCalls("adp-target", undefined, undefined, null).subscribe();
+      const nullReq = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      expect(nullReq.request.params.has("endpointId")).toBe(false);
+      nullReq.flush({ events: [] });
+
+      service.recentCalls("adp-target", undefined, undefined, "").subscribe();
+      const emptyReq = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      expect(emptyReq.request.params.has("endpointId")).toBe(false);
+      emptyReq.flush({ events: [] });
+    });
+
+    it("maps endpointId from the row's payload_endpoint_id", () => {
+      let result: Array<{ endpointId: string | null }> = [];
+      service.recentCalls("adp-target").subscribe((rows) => (result = rows));
+
+      const req = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      req.flush({ events: [makeRow({ payload_endpoint_id: "ep-42" })] });
+
+      expect(result[0]?.endpointId).toBe("ep-42");
+    });
+
+    it("nulls endpointId when payload_endpoint_id is null or missing", () => {
+      let nullResult: Array<{ endpointId: string | null }> = [];
+      service
+        .recentCalls("adp-target")
+        .subscribe((rows) => (nullResult = rows));
+      const nullReq = httpMock.expectOne((r) => r.url === TRACKING_EVENTS_URL);
+      nullReq.flush({ events: [makeRow({ payload_endpoint_id: null })] });
+      expect(nullResult[0]?.endpointId).toBeNull();
+
+      let missingResult: Array<{ endpointId: string | null }> = [];
+      service
+        .recentCalls("adp-target")
+        .subscribe((rows) => (missingResult = rows));
+      const missingReq = httpMock.expectOne(
+        (r) => r.url === TRACKING_EVENTS_URL
+      );
+      // `makeRow()` carries no `payload_endpoint_id` key at all.
+      missingReq.flush({ events: [makeRow()] });
+      expect(missingResult[0]?.endpointId).toBeNull();
+    });
+  });
+
   it("respects a custom limit", () => {
     service.recentCalls("adp-1", 60, 5).subscribe();
 
