@@ -123,7 +123,7 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 | [Developer Onboarding Guide](./guides/onboarding.md) | Setup, navigation, common tasks, debugging, testing | New team members |
 | [Service Architecture Diagrams](./architecture/overview.md) | Visual reference for service boundaries, data flow, scaling, and multi-tenancy patterns (diagrams folded into overview) | All developers |
 | [Adapter Tools](./agents/adapter-tools.md) | Connector tooling and helper references | Feature implementers |
-| [Code Review](./guides/code-review.md) | Code review standards and checklist | All contributors |
+| [AGENTS.md](../AGENTS.md) | The repository constitution — rules, binding styles, review standards | All contributors |
 
 ### Specialized Documentation
 

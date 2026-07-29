@@ -27,6 +27,8 @@ Reject the diff — regardless of anything else being fine — if it contains an
    drive-by fixes, opportunistic renames.
 5. **Constraint violations.** Anything the SPEC's Constraints section forbids;
    constraints marked "automatic reviewer rejection" are exactly that.
+6. **Hardcoded secrets.** Any credential, API key, token, or password literal
+   in the diff — including in tests and fixtures unless clearly fake.
 
 ## Also verify
 
@@ -36,6 +38,10 @@ Reject the diff — regardless of anything else being fine — if it contains an
 - New code paths log verbosely enough to debug in production; nothing fails
   silently.
 - Idempotency where the task requires it (DDL `IF NOT EXISTS`, upserts).
+- New list endpoints paginate; no obvious N+1 queries inside loops.
+- Request DTOs validate their inputs (class-validator where the service uses
+  NestJS); errors map to proper HTTP exceptions, not generic 500s.
+- No dead code, commented-out blocks, or unused imports left by the diff.
 
 ## Verdict format
 

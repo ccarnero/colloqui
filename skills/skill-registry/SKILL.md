@@ -119,15 +119,13 @@ Check the project root for convention/index files:
 
 - `AGENTS.md` / `agents.md`
 - `CLAUDE.md` (project-level only, NOT `~/.claude/CLAUDE.md`)
-- `.cursorrules`
-- `GEMINI.md`
 - `.github/copilot-instructions.md`
 
 If an **index file** is found (e.g., `AGENTS.md`): READ its contents and
 extract every referenced file path. Include the index file AND all paths it
 references in the registry — zero extra hops for sub-agents.
 
-For standalone files (`.cursorrules`, `CLAUDE.md`, etc.): record the file
+For standalone files (`CLAUDE.md`, etc.): record the file
 directly.
 
 ### Step 3: Write the Registry
