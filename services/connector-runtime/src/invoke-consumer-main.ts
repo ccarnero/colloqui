@@ -126,6 +126,12 @@ async function main(): Promise<void> {
     durableName: DURABLE_NAME,
     filterSubject: INVOKE_REQUESTED_SUBJECT_FILTER,
     description: "connector-runtime async invoke consumer (T05)",
+    // The handler chains adapter-defined I/O: the endpoint call's timeoutMs
+    // comes from the adapter (no upper cap) and multiplies by maxRetries +
+    // retryBackoffMs, then the T05 webhook delivery adds its own timeout.
+    // The 60s package default risks in-flight redelivery = duplicated
+    // outbound HTTP. 5 minutes covers the worst realistic chain.
+    ackWaitMs: 300_000,
     // Async invoke work is I/O-bound (outbound HTTP + Redis + NATS
     // publishes) and independent per-invocation — safe to run several in
     // flight per pod, mirroring `webhook-ingress-consumer.service.ts`'s
