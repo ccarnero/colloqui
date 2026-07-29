@@ -23,7 +23,12 @@ export {
   createAdapterClientWithRedisAndFetch,
 } from "./adapter-client";
 export { ADAPTER_MONGO_SCHEMA } from "./adapter-mongo-schema";
-export { ADAPTER_SCHEMA_SQL } from "./adapter-schema";
+export {
+  ADAPTER_MAX_RETRIES_MAX,
+  ADAPTER_RETRY_BACKOFF_MS_MAX,
+  ADAPTER_SCHEMA_SQL,
+  ADAPTER_TIMEOUT_MS_MAX,
+} from "./adapter-schema";
 export { PLATFORM_ADMIN_MONGO_SCHEMA } from "./admin-mongo-schema";
 export { sleep } from "./async.utils";
 export type {

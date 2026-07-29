@@ -128,7 +128,12 @@ grep -n "T03 findings" manual-loops/architecture/system-validation.md
 
 ## Progress
 
-- [ ] T01 shared caps + DTO enforcement
+- [ ] PENDING REPAIR (recorded 2026-07-29): PRECONDITION
+  `./scripts/validate-dev-mode.sh --with-e2e` failed at stage 1/7 preflight —
+  "deps PVC missing — run ./dev-mode.sh deps first". Iteration dev-mode use
+  skipped per Gates rule; relying on G3b. See
+  `manual-loops/architecture/dev-mode-validator-fix.md`.
+- [x] T01 shared caps + DTO enforcement
 - [ ] T02 cross-service invariant test
 - [ ] T03 docs + validation report
 

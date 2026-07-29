@@ -1,26 +1,30 @@
 import {
-  ArrayUnique,
-  IsBoolean,
-  IsString,
-  IsNotEmpty,
-  IsIn,
-  IsOptional,
-  IsInt,
-  Min,
-  IsArray,
-  ValidateNested,
-  IsObject,
-  IsUrl,
-  registerDecorator,
-  type ValidationArguments,
-  type ValidationOptions,
-} from "class-validator";
-import { Type } from "class-transformer";
-import {
+  ADAPTER_MAX_RETRIES_MAX,
+  ADAPTER_RETRY_BACKOFF_MS_MAX,
+  ADAPTER_TIMEOUT_MS_MAX,
   AdapterCacheMethod,
   AdapterCacheQueryParamsMode,
 } from "@yoizen/shared";
 import { PaginatedQueryDto } from "@yoizen/shared/dto/pagination";
+import { Type } from "class-transformer";
+import {
+  ArrayUnique,
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  IsUrl,
+  Max,
+  Min,
+  registerDecorator,
+  ValidateNested,
+  type ValidationArguments,
+  type ValidationOptions,
+} from "class-validator";
 
 const HTTP_METHODS = [
   "GET",
@@ -50,7 +54,7 @@ const CACHE_METHODS = [
 ] as const;
 
 function IsStringArrayOrAll(validationOptions?: ValidationOptions) {
-  return function (object: object, propertyName: string): void {
+  return (object: object, propertyName: string): void => {
     registerDecorator({
       name: "isStringArrayOrAll",
       target: object.constructor,
@@ -67,7 +71,7 @@ function IsStringArrayOrAll(validationOptions?: ValidationOptions) {
           return (
             Array.isArray(value) &&
             value.every(
-              (entry) => typeof entry === "string" && entry.trim().length > 0,
+              (entry) => typeof entry === "string" && entry.trim().length > 0
             )
           );
         },
@@ -185,16 +189,19 @@ export class CreateAdapterDto {
 
   @IsInt()
   @Min(100)
+  @Max(ADAPTER_TIMEOUT_MS_MAX)
   @IsOptional()
   timeoutMs?: number;
 
   @IsInt()
   @Min(0)
+  @Max(ADAPTER_MAX_RETRIES_MAX)
   @IsOptional()
   maxRetries?: number;
 
   @IsInt()
   @Min(0)
+  @Max(ADAPTER_RETRY_BACKOFF_MS_MAX)
   @IsOptional()
   retryBackoffMs?: number;
 
@@ -244,16 +251,19 @@ export class UpdateAdapterDto {
 
   @IsInt()
   @Min(100)
+  @Max(ADAPTER_TIMEOUT_MS_MAX)
   @IsOptional()
   timeoutMs?: number;
 
   @IsInt()
   @Min(0)
+  @Max(ADAPTER_MAX_RETRIES_MAX)
   @IsOptional()
   maxRetries?: number;
 
   @IsInt()
   @Min(0)
+  @Max(ADAPTER_RETRY_BACKOFF_MS_MAX)
   @IsOptional()
   retryBackoffMs?: number;
 

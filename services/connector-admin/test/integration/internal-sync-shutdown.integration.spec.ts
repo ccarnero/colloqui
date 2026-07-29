@@ -38,6 +38,7 @@ import {
   describe,
   expect,
   it,
+  setDefaultTimeout,
 } from "bun:test";
 import type { JsMsg } from "nats";
 import {
@@ -73,6 +74,14 @@ const HAS_DOCKER = (() => {
 })();
 
 const describeIfDocker = HAS_DOCKER ? describe : describe.skip;
+
+/**
+ * Bun's lifecycle hooks reject a per-hook timeout argument
+ * (`beforeAll(fn, ms)` throws at module load), so the container-boot
+ * budget is declared file-wide instead — same 120s ceiling the
+ * `beforeAll` used to carry.
+ */
+setDefaultTimeout(120_000);
 
 const silentLogger: INatsConsumerLogger & {
   log: (m: string) => void;
@@ -134,7 +143,7 @@ describeIfDocker(
       natsTc = await startNatsTestcontainer();
       clients = await connectNats(natsTc.url);
       streamName = await createTenantStream(clients.jsm, TENANT_ID);
-    }, 120_000);
+    });
 
     afterAll(async () => {
       try {

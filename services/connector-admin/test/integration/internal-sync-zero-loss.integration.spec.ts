@@ -12,6 +12,7 @@ import {
   describe,
   expect,
   it,
+  setDefaultTimeout,
   spyOn,
 } from "bun:test";
 import { Test } from "@nestjs/testing";
@@ -50,6 +51,14 @@ const HAS_DOCKER = (() => {
 })();
 
 const describeIfDocker = HAS_DOCKER ? describe : describe.skip;
+
+/**
+ * Bun's lifecycle hooks reject a per-hook timeout argument
+ * (`beforeAll(fn, ms)` throws at module load), so the container-boot
+ * budget is declared file-wide instead — same 180s ceiling the
+ * `beforeAll` used to carry.
+ */
+setDefaultTimeout(180_000);
 
 interface ITenantHandle {
   readonly tenantId: string;
@@ -111,7 +120,7 @@ describeIfDocker(
 
       process.env.SERVICE_MODE = "worker";
       __resetServiceModeCacheForTests();
-    }, 180_000);
+    });
 
     afterAll(async () => {
       delete process.env.SERVICE_MODE;

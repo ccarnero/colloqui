@@ -13,6 +13,20 @@
  * run on every `ensureSchema(tenantId)` call for tenants provisioned
  * before this module landed.
  */
+/**
+ * Upper bounds for the adapter resilience knobs (`timeout_ms`,
+ * `max_retries`, `retry_backoff_ms`).
+ *
+ * Single source of truth: the connector-admin DTOs import these for
+ * `@Max(...)` validation so an operator cannot persist an adapter whose
+ * per-request budget (`timeoutMs * (maxRetries + 1)` plus backoff) blows
+ * past what upstream callers are willing to wait for. Never duplicate
+ * these numbers — import them.
+ */
+export const ADAPTER_TIMEOUT_MS_MAX = 60_000;
+export const ADAPTER_MAX_RETRIES_MAX = 3;
+export const ADAPTER_RETRY_BACKOFF_MS_MAX = 10_000;
+
 export const ADAPTER_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS http_adapters (
   id                     TEXT PRIMARY KEY,

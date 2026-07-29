@@ -511,3 +511,16 @@ describe("InternalSyncService — handler dispatch", () => {
     await service.onModuleDestroy();
   });
 });
+
+/**
+ * `MultiTenantConsumerManager.prototype` is process-global and bun runs
+ * every spec file inside ONE process — leaving the lifecycle stubs
+ * installed silently disables `start()`/`stop()` for the docker
+ * integration specs loaded afterwards, which then time out waiting for
+ * deliveries that never happen. Restore the real methods once this
+ * file's suites are done.
+ */
+afterAll(() => {
+  startSpy.mockRestore();
+  stopSpy.mockRestore();
+});
