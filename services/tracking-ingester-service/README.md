@@ -348,10 +348,21 @@ bun test                         # unit specs (colocated under test/)
 bunx tsc -p tsconfig.json --noEmit
 ```
 
-The golden gate re-applies the `TAXONOMY.md` §4 rules to `golden/labeled.tsv`
-(the audited truth) and asserts >= 90% accuracy on (`tech`, `business_fn`, `rule`)
-across the 72 audited rows (currently 72/72). Drift in `classify.ts` beyond that
-threshold fails the gate.
+The golden gate (`test/classify.golden.spec.ts`) re-applies the `TAXONOMY.md` §4
+rules to the repo-root dataset `golden/labeled.tsv` (the audited truth — one
+header line plus the data rows) and asserts >= 90% accuracy on (`tech`,
+`business_fn`, `rule`) across the 92 audited rows. Drift in `classify.ts` beyond
+that threshold fails the gate.
+
+Recount the dataset with:
+
+```bash
+echo $(( $(rg -c '\S' golden/labeled.tsv) - 1 ))   # from the repo root -> 92
+```
+
+`scripts/checks/doc-code-guards.sh` guard **K9b(numeric-claims)** pins the three
+numbers above (this README, the spec's row-count assertion, and the file itself)
+to the same value, so this paragraph cannot silently go stale.
 
 ## Schema
 

@@ -452,6 +452,78 @@ k9_di_type_imports() {
   fi
 }
 
+# ---------------------------------------------------------------------------
+# K9b — Numeric claims in docs vs generated reality.
+#
+# Drift class: a number QUOTED in prose ("across the 72 audited rows") silently
+# diverges from the artifact it describes. Descriptive docs are derived FROM
+# the artifact — the artifact decides, so the guard recomputes it and compares.
+#
+# Numbering note: K9 above (k9_di_type_imports) is a different drift class
+# (type-only DI imports) that already claimed the number; this is the second
+# guard in the K9 family, hence K9b.
+#
+# Claim 1 — tracking-ingester golden row count. Three statements must agree
+# with the data-row count of golden/labeled.tsv, computed exactly the way
+# loadGolden() parses it (services/tracking-ingester-service/test/
+# classify.golden.spec.ts:24-46: non-blank lines, minus the single header):
+#   * services/tracking-ingester-service/README.md  "across the N audited rows"
+#   * test/classify.golden.spec.ts                  it("parses N labeled data rows")
+#   * test/classify.golden.spec.ts                  expect(rows.length).toBe(N)
+# ---------------------------------------------------------------------------
+k9b_numeric_claims() {
+  local guard="K9b(numeric-claims)"
+  local ok=1
+
+  local golden="golden/labeled.tsv"
+  local readme="services/tracking-ingester-service/README.md"
+  local spec="services/tracking-ingester-service/test/classify.golden.spec.ts"
+
+  local f
+  for f in "$golden" "$readme" "$spec"; do
+    if [[ ! -f "$f" ]]; then
+      fail "$guard: $f does not exist — update $0"
+      return
+    fi
+  done
+
+  local nonblank actual
+  nonblank=$(rg -c '\S' "$golden" || echo 0)
+  actual=$((nonblank - 1))
+
+  # claim-id -> "<human label>|<number currently stated in that file>".
+  #
+  # Implemented as a case statement (not an associative array) so this
+  # script runs under macOS's default /bin/bash 3.2, which has no -A support.
+  golden_count_claim() {
+    case "$1" in
+      readme-prose)
+        echo "$readme \"across the N audited rows\"|$(rg -o 'across the ([0-9]+) audited rows' -r '$1' "$readme" | head -1)" ;;
+      spec-test-name)
+        echo "$spec it(\"parses N labeled data rows\")|$(rg -o 'parses ([0-9]+) labeled data rows' -r '$1' "$spec" | head -1)" ;;
+      spec-assertion)
+        echo "$spec expect(rows.length).toBe(N)|$(rg -o 'rows\.length\)\.toBe\(([0-9]+)\)' -r '$1' "$spec" | head -1)" ;;
+      *) echo "|" ;;
+    esac
+  }
+
+  local claim entry label claimed
+  for claim in readme-prose spec-test-name spec-assertion; do
+    entry=$(golden_count_claim "$claim")
+    label="${entry%%|*}"
+    claimed="${entry##*|}"
+    if [[ -z "$claimed" ]]; then
+      fail "$guard: golden row-count claim '$claim' not found — expected $label; its wording drifted, restore the phrasing or update $0"
+      ok=0
+    elif [[ "$claimed" != "$actual" ]]; then
+      fail "$guard: $label states $claimed but $golden has $actual data rows (non-blank lines minus the header)"
+      ok=0
+    fi
+  done
+
+  [[ "$ok" -eq 1 ]] && pass "$guard: golden row count ($actual) matches every stated claim"
+}
+
 main() {
   k6a_service_inventory
   k6b_no_scaledobject
@@ -462,6 +534,7 @@ main() {
   k7_ack_wait_census
   k8_agent_call_timeout_ceiling
   k9_di_type_imports
+  k9b_numeric_claims
 
   echo
   if [[ "$FAILURES" -eq 0 ]]; then

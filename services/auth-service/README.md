@@ -62,12 +62,12 @@ Requires: PostgreSQL, Redis, `JWT_SECRET` env var.
 
 ## Login Flow
 
-The `POST /auth/login` endpoint supports two identity sources:
+The `POST /auth/login` endpoint supports two identity sources (`src/modules/token/token.service.ts:114-123`):
 
-1. **Platform users** -- looked up first in `platform_users` by email. Issues JWT with `scope: 'platform'`.
-2. **Tenant users** -- looked up in `tenant_users` by email (optionally scoped by `tenant_id` in the request body). Issues JWT with `scope: 'tenant:<id>'`, `role`, `tenant_id`, and `email` embedded in the payload.
+1. **Platform users** -- looked up first in the platform `platform_users` table by email (`src/modules/token/token.postgres.repository.ts:117-122`). Issues JWT with `scope: 'platform'`.
+2. **Tenant users** -- looked up in the tenant's own database, joining `tenant_users` to `tenant_roles` so the role NAME travels in the token (`src/modules/token/token.postgres.repository.ts:147-154`). Issues JWT with `scope: 'tenant:<id>'` plus the role, tenant and email claims (`src/modules/token/token.service.ts:285-298`).
 
-If an email exists in multiple tenants and no `tenant_id` is provided, the endpoint returns an error asking the caller to disambiguate.
+The optional tenant hint in the login body (`LoginDto`, `src/modules/token/token.dto.ts:36`) selects which tenant database is probed. Without it, the service probes every `provisioning_status = 'ready'` tenant database in turn (`token.postgres.repository.ts:160-217`); if the email matches in more than one tenant the endpoint returns `401 Unauthorized` asking the caller to disambiguate (`token.service.ts:261-265`).
 
 ## Token Scopes & Roles
 
@@ -76,30 +76,64 @@ If an email exists in multiple tenants and no `tenant_id` is provided, the endpo
 | `platform` | Full platform management access |
 | `tenant:<id>` | Restricted to operations for that specific tenant |
 
-| Role | Scope | Description |
-|------|-------|-------------|
-| `admin` | Platform | Full platform admin |
-| `operator` | Platform | Limited platform operations |
-| `tenant_admin` | Tenant | Full access to tenant resources, can manage tenant users |
-| `tenant_editor` | Tenant | Edit tenant resources (workflows, adapters, etc.) |
-| `tenant_viewer` | Tenant | Read-only access to tenant resources |
+**Platform roles** live in the `platform_users.role` column. `POST /auth/users` only accepts `admin` (`UserRole` enum, `src/modules/users/user.dto.ts:9-11`); the column itself defaults to `operator` (`src/providers/postgres.module.ts:16`).
+
+**Tenant roles are data, not an enum.** They are rows in the tenant's own `tenant_roles` table and are created per tenant via `/auth/tenant-roles`. The only reserved name is `tenant_admin` (`SYSTEM_ROLE_TENANT_ADMIN`, `packages/shared/src/auth.interfaces.ts:7`), seeded idempotently per tenant with `is_system = true` (`src/modules/tenant-roles/tenant-roles.service.ts:49-64`) and rejected as a name for user-created roles (`tenant-roles.service.ts:70-74`). A system role resolves to a wildcard permission set; every other role resolves to its explicit `tenant_role_permissions` rows (`src/modules/token/token.service.ts:323-333`, `token.postgres.repository.ts:219-230`).
 
 ## Database Schema
 
+The service reads TWO kinds of database: one platform database and one database **per tenant**. There is no shared table holding rows for every tenant.
+
+### Platform database
+
+DDL: `AUTH_PLATFORM_SCHEMA_SQL` in `src/providers/postgres.module.ts:11-65`.
+
 ```sql
-platform_users  (id, email, password_hash, role, is_active, created_at, updated_at)
-tenant_users    (id, tenant_id, email, password_hash, role, display_name, is_active, created_at, updated_at)
-api_clients     (id, client_id, client_secret_hash, name, scope, is_active, created_at, updated_at)
+platform_users  (id, email UNIQUE, password_hash, role, is_active, created_at, updated_at)
+api_clients     (id, client_id UNIQUE, client_secret_hash, name, scope, is_active, created_at, updated_at)
 public_routes   (id, method, path_pattern, scope, environment, created_at)
+tenants         (id, name UNIQUE, tier, configuration, created_at, updated_at,
+                 provisioning_status, provisioning_error,
+                 provisioning_started_at, provisioning_completed_at)
 ```
 
-The `tenant_users` table has a `UNIQUE(tenant_id, email)` constraint -- the same email can exist across different tenants but must be unique within a tenant.
+### Per-tenant database
+
+DDL: `TENANT_AUTH_SCHEMA_SQL` in `packages/shared/src/tenant-auth-schema.ts:10-48` — the single source of truth shared by this service's `AuthTenantConnectionManagerPostgres` (`src/providers/auth-tenant-connection-manager.postgres.ts:13-21`) and tenant-service provisioning.
+
+```sql
+tenant_roles            (id, name, description, is_system, is_active,
+                         created_at, updated_at, UNIQUE(name))
+tenant_role_permissions (id, role_id -> tenant_roles(id) ON DELETE CASCADE,
+                         resource, action, UNIQUE(role_id, resource, action))
+tenant_users            (id, email, password_hash, role_id -> tenant_roles(id),
+                         display_name, is_active, created_at, updated_at,
+                         UNIQUE(email))
+```
+
+Three things the code decides here:
+
+- **No `tenant` column on any of these tables.** Tenancy is the database, not a column — `AuthTenantConnectionManagerPostgres` configures `SharedTenantDatabaseMode.PerTenantDatabase` (`auth-tenant-connection-manager.postgres.ts:16-18`), and every tenant query runs against the connection returned by `ensureSchema(<tenant>)` (`src/modules/token/token.postgres.repository.ts:19-21`). The absence of that column is deliberate and documented in the schema file's own header (`packages/shared/src/tenant-auth-schema.ts:6-8`).
+- **`tenant_users.email` is `UNIQUE` outright** (`tenant-auth-schema.ts:43`), not a compound key — uniqueness is per tenant database, so the same email may still exist in a different tenant's database.
+- **`tenant_users` has no `role` string.** It carries `role_id`, a `NOT NULL` FK into `tenant_roles(id)` (`tenant-auth-schema.ts:38`); the role NAME is resolved by joining at query time (`token.postgres.repository.ts:147-154`).
+
+The equivalent Mongo shape is `TENANT_AUTH_MONGO_SCHEMA`, applied by `AuthTenantConnectionManagerMongo` (`src/providers/auth-tenant-connection-manager.mongo.ts:12-20`) in the same per-tenant-database mode.
+
+### Storage engine selection
+
+Postgres and Mongo repositories coexist; `DB_ENGINE` picks one at bootstrap (see [DOCS/runbooks/storage-engines.md](../../DOCS/runbooks/storage-engines.md)):
+
+- `resolveStorageEngine()` reads `DB_ENGINE`, falls back to `STORAGE_ENGINE`, then defaults to `postgres`, and throws on any other value (`packages/database/src/engine.ts:13-23`).
+- `authServiceConfig.dbEngine` exposes it lazily (`src/config.ts:22-24`).
+- `ProvidersModule` imports `AuthPostgresModule` or `AuthMongoModule` from that single value (`src/providers/providers.module.ts:21-50`), and each feature module picks its repository through `createRepositoryProvider({ engine: authServiceConfig.dbEngine })` (e.g. `src/modules/token/token.module.ts:16-21`).
 
 ## Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `3000` | HTTP server port |
+| `PORT` | `3000` | HTTP server port (`src/config.ts:19-21`) |
+| `DB_ENGINE` | `postgres` | Storage engine: `postgres` or `mongo`; falls back to `STORAGE_ENGINE`, throws on any other value (`packages/database/src/engine.ts:13-23`) |
+| `MONGO_DB` | `yoizen` | Mongo database name when `DB_ENGINE=mongo` (`src/config.ts:25-27`) |
 | `POSTGRES_HOST` | `localhost` | PostgreSQL host |
 | `POSTGRES_PORT` | `5432` | PostgreSQL port |
 | `POSTGRES_DB` | `yoizen` | PostgreSQL database |

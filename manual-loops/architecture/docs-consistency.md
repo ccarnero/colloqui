@@ -218,8 +218,30 @@ grep -n "docs-consistency" cowork/INDEX.md
 
 ## Progress
 
-- [ ] T01 lying READMEs + K9
+- [x] T01 lying READMEs + K9 (landed as K9b — name taken)
 - [ ] T02 five service README gaps
+
+**T01 follow-ups (recorded 2026-07-30, code bugs / doc drift found during
+verification — NOT fixed in this loop):**
+
+1. auth-service endpoint tables (README pre-rewrite and `AGENTS.md`) omit the
+   whole `/auth/tenant-roles` controller
+   (`services/auth-service/src/modules/tenant-roles/tenant-roles.controller.ts:18-61`).
+   The AGENTS.md drift resolves when T03 absorbs and deletes that file.
+2. CODE: `platform_users.role` defaults to `operator`
+   (`src/providers/postgres.module.ts:16`) but `CreateUserDto` only accepts
+   `admin` (`src/modules/user/user.dto.ts:9-11`) — the default is unreachable
+   through the API. Follow-up for an auth-service loop.
+3. `services/auth-service/AGENTS.md` still carries the old shared-table
+   schema block (same lie class as the README fixed in T01) — T03 will
+   adjudicate on absorption.
+4. SPEC path correction: T01's task text cites
+   `services/tracking-ingester-service/golden/labeled.tsv`; the dataset
+   actually lives at repo-root `golden/labeled.tsv`
+   (`test/classify.golden.spec.ts:7-14`). K9b guards the real path.
+5. Guard numbering: the SPEC's "K9" name was already taken by
+   `k9_di_type_imports` in the guard script; the numeric-claims guard landed
+   as **K9b** (same family, documented in the script's numbering note).
 - [ ] T03 absorb remaining AGENTS.md + resurrection guard
 - [ ] T04 package READMEs + K11
 - [ ] T05 one ADR channel

@@ -1,6 +1,11 @@
 # Cache Service
 
-HTTP CRUD API backed by a two-tier cache: L1 in-memory `Map` (1000 entries, FIFO eviction) and L2 Redis. Supports single operations, batch GET via pipelines, and key listing via SCAN. Standalone service with no NATS or shared package dependency.
+HTTP CRUD API backed by a two-tier cache: L1 in-memory `Map` (1000 entries, FIFO eviction) and L2 Redis. Supports single operations, batch GET via pipelines, and key listing via SCAN.
+
+Standalone HTTP service: no NATS client and no calls to other platform services. It DOES depend on the shared workspace packages:
+
+- `@yoizen/shared` — `TENANT_HEADER` for tenant-scoped keys (`src/modules/cache/cache.controller.ts:14`), `evictOldestIfCapacityBeforeSet` for the L1 FIFO eviction (`src/modules/cache/cache.service.ts:3`), and the `ICacheServiceHealthResponse` type (`src/modules/health/health.controller.ts:4`).
+- `@yoizen/database` — the `redisProvider` / `REDIS_CLIENT` token re-exported by `src/redis.module.ts:2-8`.
 
 ## Quick Start
 
