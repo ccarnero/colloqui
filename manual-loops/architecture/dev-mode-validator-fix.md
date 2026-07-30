@@ -206,7 +206,7 @@ untouched — no instrumentation was left in any repo file).
    SPEC; closing the validator's window removes the trigger regardless.
 
 - [x] T01 reproduce + pinpoint (report)
-- [ ] T02 readiness barrier
+- [x] T02 readiness barrier
 - [ ] T03 retire debt notes + docs
 
 ## Out of scope (explicit)
