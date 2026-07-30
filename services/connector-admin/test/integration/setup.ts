@@ -26,6 +26,7 @@
  */
 
 import { randomBytes } from "node:crypto";
+import { Socket } from "node:net";
 import { MongoClient, type Db } from "mongodb";
 import { applyMongoSchema } from "@yoizen/database";
 import { ADAPTER_MONGO_SCHEMA } from "@yoizen/shared";
@@ -119,6 +120,7 @@ export async function startNatsTestcontainer(): Promise<NatsTestcontainer> {
 
   const host = container.getHost();
   const port = container.getMappedPort(4222);
+  await waitForHostPortConnectable(host, port);
   return {
     url: `nats://${host}:${port}`,
     host,
@@ -151,6 +153,7 @@ export async function startMongoTestcontainer(): Promise<MongoTestcontainer> {
 
   const host = container.getHost();
   const port = container.getMappedPort(27017);
+  await waitForHostPortConnectable(host, port);
   return {
     uri: `mongodb://${host}:${port}`,
     host,
@@ -393,6 +396,93 @@ export async function waitFor(
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Interval between host-port connect probes (ms). */
+const HOST_PORT_PROBE_INTERVAL_MS = 10;
+/** Per-probe socket timeout (ms) — a refusal is normally instant. */
+const HOST_PORT_PROBE_TIMEOUT_MS = 1_000;
+/** Ceiling for the whole host-port readiness gate (ms). */
+const HOST_PORT_READY_TIMEOUT_MS = 30_000;
+
+/**
+ * Blocks until a TCP connect to `host:port` succeeds — i.e. until the
+ * *host side* of the container's port mapping is actually accepting
+ * connections.
+ *
+ * Why this exists (flaky-suite RCA): both `startNatsTestcontainer` and
+ * `startMongoTestcontainer` wait on `Wait.forLogMessage(...)`, and that
+ * line is emitted by the process INSIDE the container. The container
+ * runtime publishes the `host:<ephemeral>` → `container:<port>` proxy
+ * asynchronously, so `container.start()` can resolve a few ms BEFORE
+ * the mapped port accepts anything. Every spec here dials the broker
+ * from `beforeAll` the instant `start()` returns, so the very first
+ * `connect()` intermittently died with `ECONNREFUSED` /
+ * `NatsError: CONNECTION_REFUSED` — bun reports that as a failing
+ * `(unnamed)` hook. Measured locally: after the readiness LINE, the
+ * mapped port was NOT yet connectable on 5 of 6 container boots,
+ * lagging 2–14ms.
+ *
+ * We cannot delegate to testcontainers' own `Wait.forListeningPorts()`
+ * (which performs exactly this host-port check): it *also* runs three
+ * `docker exec` probes per poll against the container-internal port,
+ * and those execs never return under this container runtime — the
+ * composite strategy hangs past the startup budget (verified: the
+ * host-port half logged `complete`, the internal half never did). So
+ * we replicate only the host-side half here.
+ *
+ * This is a wait on the real signal (a successful TCP connect), not a
+ * fixed sleep: it returns on the first successful probe and throws
+ * loudly if the port never opens.
+ *
+ * O(1) memory; O(elapsed / interval) probes — typically 1–2.
+ *
+ * @throws when the port still refuses connections after `timeoutMs`.
+ */
+export async function waitForHostPortConnectable(
+  host: string,
+  port: number,
+  timeoutMs: number = HOST_PORT_READY_TIMEOUT_MS,
+): Promise<void> {
+  const startedAt = Date.now();
+  let attempts = 0;
+  while (Date.now() - startedAt < timeoutMs) {
+    attempts++;
+    if (await isPortConnectable(host, port)) {
+      // Only noisy when the port was NOT ready on the first probe —
+      // that is precisely the race this gate absorbs, so surface it.
+      if (attempts > 1) {
+        console.log(
+          `[integration-setup] host port ${host}:${port} accepted a connection after ${attempts} probes / ${Date.now() - startedAt}ms (mapping published late)`,
+        );
+      }
+      return;
+    }
+    await sleep(HOST_PORT_PROBE_INTERVAL_MS);
+  }
+  const message = `[integration-setup] host port ${host}:${port} never accepted a connection within ${timeoutMs}ms (${attempts} probes)`;
+  console.error(message);
+  throw new Error(message);
+}
+
+/**
+ * One non-throwing TCP connect attempt. Resolves `true` on connect,
+ * `false` on refusal / timeout / any socket error. The socket is always
+ * destroyed, so no probe can leak a handle and keep the process alive.
+ */
+export function isPortConnectable(host: string, port: number): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = new Socket();
+    const settle = (connectable: boolean): void => {
+      socket.destroy();
+      resolve(connectable);
+    };
+    socket.setTimeout(HOST_PORT_PROBE_TIMEOUT_MS);
+    socket.once("connect", () => settle(true));
+    socket.once("timeout", () => settle(false));
+    socket.once("error", () => settle(false));
+    socket.connect(port, host);
+  });
 }
 
 /**

@@ -1193,6 +1193,47 @@ Decision cuádruple:
   scope for this loop).
 - **Engram topic**: `connectors/call-inspector`.
 
+## Change: system validation run — manual-loop machinery proven via adapter retry-chain caps (system-validation)
+
+Manual-loop change (not SDD) whose primary product is EVIDENCE: one full pass of
+the manual-loop machinery (engine, context contract, G0 repo guards, per-service
+gates, dual review, auto-checked Progress, conventional commits) on a real
+change, with each mechanism's firing recorded in the SPEC's own Progress as a
+validation report. The vehicle shipping real value: upper caps on the connector
+retry-chain fields — `ADAPTER_TIMEOUT_MS_MAX = 60_000`,
+`ADAPTER_MAX_RETRIES_MAX = 3`, `ADAPTER_RETRY_BACKOFF_MS_MAX = 10_000`, exported
+from `packages/shared/src/adapter-schema.ts` and enforced via `@Max` on the
+Create and Update DTOs in
+`services/connector-admin/src/modules/adapters/adapters.dto.ts`. Full task
+queue, gates, human decisions, and the validation report:
+`manual-loops/architecture/system-validation.md` (dated 2026-07-29). Operational
+contract (the three caps, their rationale, the invariant guard, the
+validation-layer-only scope): `services/connector-admin/README.md` "Retry-chain
+caps".
+
+Decision cuádruple:
+- **Rule**: the caps live as exported constants in `packages/shared` and are
+  IMPORTED, never duplicated as magic numbers per service; enforcement is
+  validation-layer only — NO DB `CHECK` constraint and NO migration, so
+  pre-existing rows above a cap keep working until their next edit —
+  `manual-loops/architecture/system-validation.md` §User decisions 2/3.
+- **Why**: an uncapped adapter `timeoutMs` × retries could exceed the async
+  invoke consumer's 300s JetStream ack wait, after which NATS redelivers the
+  in-flight message and the outbound HTTP call is DUPLICATED. With the caps the
+  worst chain is 3 × (60s + 10s) + 10s webhook delivery = 220s < 300s.
+- **Evidence**: the invariant is a permanent test, not a comment —
+  `services/connector-runtime/test/unit/invoke-ack-wait-invariant.spec.ts`
+  asserts the worst chain against the real exported
+  `INVOKE_CONSUMER_ACK_WAIT_MS` (`services/connector-runtime/src/config.ts`),
+  so raising any cap or lowering the ack wait without rebalancing breaks the
+  build. Machinery evidence lives in the SPEC's "T03 findings" block: G0 green
+  on every attempt, four independent reviewer verdicts (both T02 reviewers
+  independently flagged the same non-blocking defect), one human-arbitrated
+  retry round that exposed a PRE-EXISTING red `bun test` baseline in
+  connector-admin, and two mechanisms explicitly recorded as NOT observed
+  (BLOCKED.md flow, same-error-twice fast-block) rather than assumed working.
+- **Engram topic**: `architecture/system-validation`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

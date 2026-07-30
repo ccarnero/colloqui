@@ -30,6 +30,38 @@ Requires the configured storage engine. `DB_ENGINE` / `STORAGE_ENGINE` defaults 
 
 All connector routes require `x-yoizen-tenant` for tenant scoping.
 
+## Retry-chain caps (`timeoutMs`, `maxRetries`, `retryBackoffMs`)
+
+The three connector retry-chain fields have upper caps, exported as shared
+constants from `packages/shared/src/adapter-schema.ts` and enforced with
+`@Max(...)` on both the Create and the Update DTO in
+`src/modules/adapters/adapters.dto.ts`:
+
+| Field | Cap constant | Value |
+|-------|--------------|-------|
+| `timeoutMs` | `ADAPTER_TIMEOUT_MS_MAX` | `60_000` (60s) |
+| `maxRetries` | `ADAPTER_MAX_RETRIES_MAX` | `3` |
+| `retryBackoffMs` | `ADAPTER_RETRY_BACKOFF_MS_MAX` | `10_000` (10s) |
+
+**Why the caps exist.** An uncapped `timeoutMs` × retries lets a single
+connector call outlive the async invoke consumer's JetStream ack wait
+(`INVOKE_CONSUMER_ACK_WAIT_MS = 300_000` in
+`services/connector-runtime/src/config.ts`). Past that window NATS redelivers
+the in-flight message and the outbound HTTP call is duplicated. With the caps
+in place the worst-case chain is
+`3 × (60s + 10s) + 10s` webhook delivery `= 220s < 300s`, so the ack wait is
+never exceeded.
+
+**The invariant is a test, not a comment.**
+`services/connector-runtime/test/unit/invoke-ack-wait-invariant.spec.ts`
+asserts the worst chain against the real exported `INVOKE_CONSUMER_ACK_WAIT_MS`
+— raising any of the three caps or lowering the ack wait without rebalancing
+breaks the build.
+
+**Validation layer only.** There is no DB `CHECK` constraint and no migration:
+pre-existing rows whose values sit above a cap keep working as-is and are only
+rejected the next time they are written through `POST`/`PATCH`.
+
 ## Environment Variables
 
 | Variable | Default | Description |

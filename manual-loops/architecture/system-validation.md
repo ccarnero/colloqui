@@ -135,7 +135,63 @@ grep -n "T03 findings" manual-loops/architecture/system-validation.md
   `manual-loops/architecture/dev-mode-validator-fix.md`.
 - [x] T01 shared caps + DTO enforcement
 - [x] T02 cross-service invariant test
-- [ ] T03 docs + validation report
+- [x] T03 docs + validation report
+
+**T03 findings (recorded 2026-07-29, item 8 appended 2026-07-30):**
+
+1. **G0 ran on every attempt** — three times total (T01 attempt 1, T01 re-run
+   after the spec fix, T02), green each time. Evidence: doc-code-guards
+   "CLEAN" output per attempt.
+2. **Context contract held** — each implementer launch received only the task
+   text, its Accept block, and the Constraints section (plus prior-attempt
+   failure context on the retry, as designed). Implementers were barred from
+   touching this SPEC; the orchestrator made every SPEC edit.
+3. **Dual review fired independently** — two reviewers per task, four
+   verdicts, all APPROVED, none rubber-stamped: both T02 reviewers
+   independently flagged the same non-blocking defect ("the third test …
+   only checks the constant is a finite positive number — it does not
+   actually detect someone re-inlining a literal in invoke-consumer-main.ts,
+   contrary to its comment"). No REJECTED round occurred, so the
+   objection-retry path was NOT exercised this run.
+4. **Progress auto-marking worked** — T01/T02 checkboxes flipped by the
+   orchestrator in the same commit as the code, as specified.
+5. **Commits conventional and scoped** — `6561c7a8`
+   feat(connector-admin): T01 …, `be98e50d` test(connector-runtime): T02 …;
+   no Co-Authored-By.
+6. **Retry cycle exercised (1 round, human-arbitrated)** — T01 attempt 1
+   failed gate G1 on a PRE-EXISTING red baseline: three
+   internal-sync integration specs used node-style `beforeAll(fn, timeout)`,
+   which bun rejects, so `bun test` exited 1 before T01 touched anything.
+   Finding: the gate as authored had never been green — the loop caught it,
+   the orchestrator stopped instead of burning attempts, and the human chose
+   "fix the specs". The fix exposed a second latent defect: module-scope
+   prototype spies leaking from `internal-sync.service.spec.ts` into the
+   integration specs (fixed with `afterAll` + `mockRestore`).
+7. **PRECONDITION path exercised** — `validate-dev-mode.sh --with-e2e`
+   failed (deps PVC missing); the skip was recorded per the Gates rule and
+   G3b carried the burden: full rebuild-redeploy + e2e ran green twice
+   (T01: admin+runtime because packages/shared changed; T02: admin+runtime
+   because runtime source changed).
+8. **Second retry cycle exercised, human-arbitrated (T03, recorded
+   2026-07-30)** — G1 failed on T03's docs-only diff: the internal-sync
+   shutdown integration test flaked ~2-in-5 runs. Latent defect exposed by
+   T01's spec repair (the test had never actually executed under bun
+   before). Human chose "fix it now". Root cause was test-harness, not
+   product: testcontainers publishes the host→container port mapping
+   asynchronously after `start()` resolves (measured 2–14 ms lag, first
+   connect refused in 5 of 6 boots), so `beforeAll` could dial NATS before
+   the port existed — bun reports a failed hook as `(unnamed)`, masquerading
+   as the test body. Fix: `waitForHostPortConnectable` TCP-probe gate in
+   `test/integration/setup.ts` for NATS and Mongo containers + a regression
+   spec (`setup-readiness.integration.spec.ts`) that fails 2/5 on the
+   pre-fix harness. Stability proof: 10/10 green on the shutdown spec,
+   10 (3+7) consecutive green full-suite runs. API outage note: the T03
+   implementer launch was blocked ~40 min by upstream 529s — loop state
+   survived idle and resumed cleanly.
+9. **Mechanism NOT observed:** BLOCKED.md flow (no task blocked) and the
+   same-error-twice fast-block — neither had a trigger this run. Also noted
+   for template repair: the PostToolUse organize-imports hook strips
+   not-yet-referenced imports, forcing usage-before-import edit ordering.
 
 ## Out of scope (explicit)
 
