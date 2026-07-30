@@ -1274,6 +1274,73 @@ Decision cuádruple:
   `scripts/e2e/http-workflow.sh` never inspects `.preconditions` — worth its own SPEC.
 - **Engram topic**: `architecture/dev-mode-validator`.
 
+## Change: long-running agent executions (long-running-agent-executions)
+
+Manual-loop change proving that an agent execution which takes LONGER than any default
+HTTP timeout completes correctly through the async path — immediate handle, no live HTTP
+connection during the wait, correct result delivery, ZERO NATS redeliveries, flat
+resources — and that the same holds for the workflow `agentCall` path. Slowness is
+injected deterministically by an env-gated, dev-only delay hook inside the REAL execution
+pipeline (`AGENT_TEST_DELAY_ENABLED` + per-execution `__test_delay_ms`, hard cap 600 s,
+`services/agent-ai-service/src/nats-handlers/test-delay.ts`), never by a real slow model or
+an executor mock. Target duration **120 s** (decision 3), which T01 confirmed fits every
+budget with 7.5× margin against the tightest one it crosses. Full task queue, gates, human
+decisions, and the numbered T01 budget inventory:
+`manual-loops/agents/long-running-agent-executions.md` (dated 2026-07-30). Operational
+contract (13-budget table with `file:line`, the serial-consumer caveat, the delay hook):
+`services/agent-ai-service/README.md`. Feature-author guide:
+`DOCS/agents/long-running-executions.md`. Executable proof:
+`scripts/e2e/long-agent-execution.sh`.
+
+Decision cuádruple:
+- **Rule**: the evidence bar is the async contract AND resources — immediate handle, no held
+  connection, correct delivery, zero redeliveries, before/during/after `kubectl top` — with
+  ONE normal workflow running during the wait as the contention probe; load testing (N
+  concurrent long executions) is explicitly OUT (decision 2). Hard gate assertions only on
+  DETERMINISTIC facts (status codes, completion, redelivery counts, ack-pending drain,
+  duration ≥ delay); resource numbers are REQUIRED report evidence behind a deliberately
+  generous ceiling (during-wait agent-ai CPU vs 500 m, measured 10-23 m). **Amendment
+  2026-07-30 (decision 5, human-approved mid-loop):** T03 discovered the delay key was
+  UNREACHABLE from the async submit path — neither `variables` nor `metadata` was declared on
+  `CreateExecutionDto` in api-gateway or ai-agent-gateway, and the shared bootstrap installs
+  a `ValidationPipe` with `whitelist` + `forbidNonWhitelisted`, so both 400'd
+  (`{"message":["property variables should not exist"]}`, verified live against the cluster).
+  The agent instead of a workaround: STOP + report, then a human approved widening BOTH DTOs
+  with one optional pass-through `metadata` object, nothing else.
+- **Why**: a long agent execution is a normal case (slow tool chains, reasoning models, bad
+  MCP days), and the platform's protection for it was undocumented and unproven — believed
+  correct by design, never demonstrated. The 120 s target is longer than common client
+  defaults and far under the Knative 960 s floor and the Temporal budgets, so it exercises
+  the real risk without inventing an extreme.
+- **Evidence**: T01 read every budget first-hand and pinned the invariant *delay < ackWait*
+  (consumer ackWait 900 s refreshed by `msg.working()` every 30 s; buffered-execution abort
+  900 s; Temporal `startToClose` 15 min / `heartbeatTimeout` 30 s with a heartbeat every 15 s;
+  `AGENT_CALL_TIMEOUT_MS` 900 s; Knative revision 3600 s, floor 960 s; api-gateway proxy fetch
+  30 s guarding only sub-second hops; Redis result TTL 3600 s; JetStream duplicate window
+  120 s) — no amendment to the 120 s target was needed and ai-agent-gateway/workflow-service
+  stayed read-only apart from the human-approved DTO field. T03/T04 runs on the dev cluster:
+  handle in **0.05 s** (budget 5 s) with the follow-up GET reading `started`, contention probe
+  green in **6-7 s** during the wait, direct execution completed after **123-125 s** with the
+  hook's own log line `[test-delay] End after 120001ms` and **exactly one** handler delivery,
+  `num_redelivered` 0→0 with `num_ack_pending` drained to 0, during-wait CPU **11-23 m** vs a
+  500 m ceiling, and the workflow `agentCall` run COMPLETED after **122-125 s** with no
+  Temporal failure and **exactly one** agent `execution_completed` on its tracking chain
+  (plus exactly one `execution_requested`, zero `execution_failed`). Two real bugs the loop
+  caught rather than assumed away: (a) a draining OLD Knative revision still bound to the
+  durable consumer swallowed an in-flight execution — the message stayed un-acked for the full
+  900 s ackWait and poisoned the next run's baseline — now a fail-fast preflight that waits
+  for pods to settle on the latest ready revision AND requires `num_ack_pending == 0`;
+  (b) `num_redelivered` is a GAUGE, not a cumulative counter (verified live: 0→1 at
+  redelivery, back to 0 after ack), so the before/after comparison is backed by a mid-flight
+  sample and by an "exactly one `[test-delay] Start` per executionId" log assertion.
+  Also recorded: the webhook body structurally cannot carry the delay key on the workflow
+  path (`trigger-consumer.service.ts:185-193` builds a FIXED request shape), and starting the
+  run via `POST /workflows/:id/execute` DOES deliver the canonical
+  `variables.request.__test_delay_ms` but produces NO causal context, so the agent's
+  `execution_completed` lands on a different chain — hence the e2e uses the production
+  webhook trigger with the delay in the action args.
+- **Engram topic**: `agents/long-running-executions`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

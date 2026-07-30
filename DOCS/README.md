@@ -116,6 +116,7 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 | [NATS and JetStream](./messaging/service-bus.md) | Canonical messaging topology, subjects, and envelope contract | Backend/platform engineers |
 | [Workflow Engine](./workflows/engine.md) | Trigger bridge, action dispatch, and task queue model | Automation developers |
 | [Agent Execution Flow](./agents/execution.md) | `agentCall` lifecycle from workflow to runtime and back | Automation/AI developers |
+| [Long-Running Agent Executions](./agents/long-running-executions.md) | The async submit/poll contract for agents that take minutes, the timeout budgets, the serial per-tenant consumer caveat, and how the e2e proves it | Feature implementers |
 | [UI Flows](./guides/ui-flows.md) | Admin and messaging console flows mapped to backend services | Frontend/full-stack developers |
 | [Connector Runtime vs Workflow Service](./workflows/connector-vs-workflow.md) | Decision matrix and when to use each service with scenario walkthroughs, including invoking connectors directly from hosted-service code via `connectors.invoke()` | Feature implementers |
 | [Workflow Telegram Sequence](./channels/telegram-sequence.md) | Concrete Telegram inbound flow with hosted + agent branches | All developers |
@@ -140,7 +141,7 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 |--------|----------|
 | [`messaging/`](./messaging/) | Messaging layer — service bus topology, envelope contract, claim-check, ingress bridge |
 | [`channels/`](./channels/) | Channel integration — Telegram sequence, channel-service pipeline, Instagram, Meta provider pattern |
-| [`agents/`](./agents/) | Agent runtime — execution flow, adapter tools, memory management (`agents/memory.md`), scheduled jobs (`agents/jobs.md`) |
+| [`agents/`](./agents/) | Agent runtime — execution flow, long-running executions (`agents/long-running-executions.md`), adapter tools, memory management (`agents/memory.md`), scheduled jobs (`agents/jobs.md`) |
 
 ### Service READMEs
 

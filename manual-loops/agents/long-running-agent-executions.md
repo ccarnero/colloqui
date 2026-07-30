@@ -233,7 +233,7 @@ grep -n "AGENT_TEST_DELAY" services/agent-ai-service/README.md
 - [x] T02 deterministic delay hook
 - [x] T03 long-execution e2e + contention probe
 - [x] T04 workflow agentCall path
-- [ ] T05 docs + index
+- [x] T05 docs + index
 
 **T01 findings (recorded 2026-07-30):** every budget below was read
 first-hand at the cited file:line. **Verdict: the 120s default of decision 3
