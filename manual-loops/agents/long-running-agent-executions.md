@@ -34,6 +34,16 @@ deterministic, repeatable e2e — not by anecdote.
 4. The delay hook is env-gated OFF by default: enabled only where the dev
    overlay explicitly turns it on. Production behavior is byte-identical
    when the gate is off.
+5. (2026-07-30, T03 amendment — human approved) The direct submit path
+   cannot carry `__test_delay_ms`: both `CreateExecutionDto` classes
+   (api-gateway `runtime.dto.ts`, ai-agent-gateway `executions.dto.ts`)
+   whitelist fields with `forbidNonWhitelisted` (live-proven 400).
+   AMENDMENT: the read-only boundary is lifted MINIMALLY for T03 — add an
+   optional pass-through object field (`metadata`) to both DTOs so the
+   execution input can carry the test key. No other gateway change.
+   Additionally: the delay gate env var is made live by applying the full
+   dev overlay (`kubectl apply -k knative/services/overlays/local/postgres-dev`)
+   — `rebuild-redeploy.sh` alone never re-applies overlay env.
 
 ## Prior art (validated 2026-07-30 — REUSE, do not duplicate)
 
@@ -221,7 +231,7 @@ grep -n "AGENT_TEST_DELAY" services/agent-ai-service/README.md
 
 - [x] T01 timeout & ack inventory (report)
 - [x] T02 deterministic delay hook
-- [ ] T03 long-execution e2e + contention probe
+- [x] T03 long-execution e2e + contention probe
 - [ ] T04 workflow agentCall path
 - [ ] T05 docs + index
 
