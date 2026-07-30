@@ -113,10 +113,12 @@ grep -n "K9" scripts/checks/doc-code-guards.sh
   README to the bar, DELETE the AGENTS.md.
 - `agent-memory-service`, `ai-agent-gateway`: write READMEs from code.
 
-**Accept**
+**Accept** (corrected 2026-07-30: 13 AGENTS.md existed at run time, not 14 —
+deleting the three named lands on 10; and BSD `wc -l` pads with spaces, so
+`grep -x N` can never match without `tr -d ' '`. Intent unchanged.)
 ```
 ls services/agent-admin-service/README.md services/agent-memory-service/README.md services/ai-agent-gateway/README.md services/channel-service/README.md services/usage-aggregator-service/README.md
-find services -maxdepth 2 -name "AGENTS.md" | wc -l | grep -x 11
+find services -maxdepth 2 -name "AGENTS.md" | wc -l | tr -d ' ' | grep -x 10
 ```
 
 ### T03 — Absorb + delete the remaining per-service AGENTS.md
@@ -219,7 +221,13 @@ grep -n "docs-consistency" cowork/INDEX.md
 ## Progress
 
 - [x] T01 lying READMEs + K9 (landed as K9b — name taken)
-- [ ] T02 five service README gaps
+- [x] T02 five service README gaps
+- [ ] T03 absorb remaining AGENTS.md + resurrection guard
+- [ ] T04 package READMEs + K11
+- [ ] T05 one ADR channel
+- [ ] T06 K10 dead-link guard + fixes
+- [ ] T07 full-corpus sweep + doc-side fixes
+- [ ] T08 docs + index
 
 **T01 follow-ups (recorded 2026-07-30, code bugs / doc drift found during
 verification — NOT fixed in this loop):**
@@ -242,12 +250,43 @@ verification — NOT fixed in this loop):**
 5. Guard numbering: the SPEC's "K9" name was already taken by
    `k9_di_type_imports` in the guard script; the numeric-claims guard landed
    as **K9b** (same family, documented in the script's numbering note).
-- [ ] T03 absorb remaining AGENTS.md + resurrection guard
-- [ ] T04 package READMEs + K11
-- [ ] T05 one ADR channel
-- [ ] T06 K10 dead-link guard + fixes
-- [ ] T07 full-corpus sweep + doc-side fixes
-- [ ] T08 docs + index
+
+**T02 adjudications (recorded 2026-07-30 — AGENTS.md vs code, code won):**
+
+1. agent-admin-service AGENTS.md documented six `/admin/credentials` and five
+   `/admin/channels` endpoints — neither module exists in `src/` (the
+   `credentials` TABLE exists, `schema-initializer.ts:166`, with no HTTP
+   surface; `channels` has neither controller nor DDL). Dropped.
+2. agent-admin-service "NATS only publisher: No consumers" — false: durable
+   consumers `ingestion-worker` and `skb-ingestion-worker` exist. Corrected.
+3. agent-admin-service "Seed Data" section — fiction: no SeedService, nothing
+   reads `data/agents/*.yaml` or `data/jobs.yaml` (only `data/templates.yaml`,
+   `config.ts:56-58`). Dropped.
+4. usage-aggregator-service AGENTS.md claimed per-tenant MongoDB + `MONGO_*`
+   config — code defaults to Postgres/Timescale via `resolveStorageEngine()`
+   (`config.ts:25-27`) and reads `TENANT_{POSTGRES,MONGO}_SHARED_USAGE_*`.
+   Corrected.
+5. channel-service AGENTS.md: thin but not wrong; expanded from code.
+
+**T02 follow-ups (recorded 2026-07-30 — code bugs / dead artifacts, NOT
+fixed in this loop):**
+
+1. Orphaned files: `services/agent-admin-service/data/agents/*.yaml` and
+   `data/jobs.yaml` — no code path reads them.
+2. Dead config: usage-aggregator `config.ts:28-39` (`tenantServiceUrl`,
+   `tenantDiscoveryIntervalMs`) has no reader.
+3. `PLATFORM_SKILL_CHANGED` declared locally
+   (`agent-admin-service/src/providers/nats.provider.ts:70`) instead of in
+   `packages/shared/src/constants.ts` with its siblings.
+4. agent-admin-service uses literal `process.env.SERVICE_MODE !== "worker"`
+   (`ingestion-worker.service.ts:76`, `skb-ingestion-worker.service.ts:84`)
+   where other services use `isWorkerMode()` from `@yoizen/observability`.
+5. agent-admin SKB/KB tables carry a `tenant_id` column
+   (`schema-initializer.ts:8`, `:382`) inside a per-tenant database —
+   inconsistent with the "database is the boundary" rule.
+6. ai-agent-gateway lifecycle publisher emits `state: "started"` which is not
+   in the `YoizenClawExecutionState` union (pre-existing gap, code comment at
+   `executions.service.ts:307-312`).
 
 ## Out of scope (explicit)
 
