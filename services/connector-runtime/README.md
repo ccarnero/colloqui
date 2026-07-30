@@ -386,9 +386,27 @@ If test succeeds → circuit closes, normal operation resumes
 
 ## Performance
 
+### Worker configuration (`src/worker.ts`)
+
+| Setting | Value | Source |
+|---|---|---|
+| Task queue | `CONNECTOR_RUNTIME_TASK_QUEUE` (`@yoizen/shared`) | `src/worker.ts:24` |
+| Max concurrent activity task executions | `400` per replica | `src/worker.ts:35` |
+| Shutdown grace time | `30s` | `src/worker.ts:37` |
+| Max concurrent activity task POLLS | `20` | `src/worker.ts:36` |
+| DNS resolution | IPv4-first via `dns.setDefaultResultOrder("ipv4first")`, for Kubernetes compatibility | `src/worker.ts:12` |
+
+The 400 ceiling is deliberate and explained in the code: HTTP activities are
+pure I/O (outbound `tracedFetch`), so one pod comfortably sustains hundreds of
+in-flight requests (`src/worker.ts:31-35`).
+
+There is no NestJS here — the entrypoint is a raw Temporal worker driven by
+`runTemporalWorkerCli` (`src/worker.ts:14`) with `exitOnSignal: true` (`:21`),
+so SIGTERM/SIGINT drain in-flight activities within the grace window and exit.
+
 ### Concurrency
 
-- **Max concurrent activities**: 400 per replica
+- **Max concurrent activities**: 400 per replica (`src/worker.ts:35`)
 - **Task dequeue**: Pull-based from Temporal (prevents overload)
 - **Activity timeout**: 30s default, configurable per connector
 
@@ -837,6 +855,5 @@ redis-cli KEYS "*adapter*"
 
 ## Further Reading
 
-- [AGENTS.md](AGENTS.md) — Detailed architecture, worker configuration, code structure
 - [Temporal Activity Documentation](https://temporal.io/docs/concepts/what-is-a-workflow-definition#activities)
 - [Circuit Breaker Pattern](https://martinfowler.com/bliki/CircuitBreaker.html)

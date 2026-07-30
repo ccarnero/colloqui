@@ -188,8 +188,7 @@ Each service follows this pattern:
 
 ```
 services/{service}/
-├── README.md                    # Start here
-├── AGENTS.md                    # Architecture details
+├── README.md                    # Start here — purpose, contracts, env vars, architecture
 ├── package.json                 # Bun dependencies
 ├── src/
 │   ├── main.ts                  # NestJS bootstrap (if API server)

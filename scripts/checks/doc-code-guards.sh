@@ -11,8 +11,12 @@
 #   scripts/checks/doc-code-guards.sh          # run all guards
 #   scripts/checks/doc-code-guards.sh -v        # verbose: also print PASS lines
 #
-# Requires: bash 4+, ripgrep (rg), fd, yq (mikefarah v4+). All are already
-# used elsewhere in scripts/ and DOCS/guides/doc-code-validation-tests.md.
+# Requires: bash 3.2+ (macOS's default /bin/bash — several guards note this
+# explicitly and use case statements instead of associative arrays for it),
+# ripgrep (rg), fd, yq (mikefarah v4+). All are already used elsewhere in
+# scripts/ and DOCS/guides/doc-code-validation-tests.md.
+#
+# Verify with: /bin/bash scripts/checks/doc-code-guards.sh
 #
 # Standalone by design: there is no lefthook.yml or CI pipeline yaml in this
 # repo yet (checked at implementation time), so this script is not wired into
@@ -247,6 +251,38 @@ k6f_archive_banner() {
     fi
   done
   [[ "$ok" -eq 1 ]] && pass "$guard: every archived runbook keeps its historical banner"
+}
+
+# ---------------------------------------------------------------------------
+# K6g — No per-service AGENTS.md may exist.
+#
+# Drift class: per-component agent files resurrect. Every `services/*/AGENTS.md`
+# was absorbed into that service's README (manual-loops/architecture/
+# docs-consistency.md T02/T03), so the README is now the single descriptive
+# doc per service. A re-created AGENTS.md immediately re-forks the narrative
+# and starts drifting from the code again.
+#
+# Scope is `services/*` ONLY, at exactly one level below `services/`:
+#   * the ROOT `AGENTS.md` is the repo constitution and MUST NOT match —
+#     the glob is anchored at `services/`, so it never can.
+#   * `packages/*/AGENTS.md` is absorbed in a later task; this guard is
+#     deliberately not extended there yet, because a guard must be green on
+#     the commit that introduces it.
+# ---------------------------------------------------------------------------
+k6g_no_service_agents_md() {
+  local guard="K6g(no-service-agents-md)"
+  local found=""
+  local f
+  for f in services/*/AGENTS.md; do
+    [[ -e "$f" ]] || continue
+    found="$found $f"
+  done
+
+  if [[ -n "$found" ]]; then
+    fail "$guard: per-service AGENTS.md resurrected —$found. Absorb the content into the service's README.md (with file:line citations) and delete the file; the root AGENTS.md is the only agent file in this repo."
+  else
+    pass "$guard: no services/*/AGENTS.md on disk"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -531,6 +567,7 @@ main() {
   k6d_referenced_scripts_exist
   k6e_alert_names
   k6f_archive_banner
+  k6g_no_service_agents_md
   k7_ack_wait_census
   k8_agent_call_timeout_ceiling
   k9_di_type_imports

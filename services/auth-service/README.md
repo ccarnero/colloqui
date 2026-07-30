@@ -46,6 +46,21 @@ Requires: PostgreSQL, Redis, `JWT_SECRET` env var.
 | `GET` | `/auth/clients` | Platform scope | List API clients |
 | `DELETE` | `/auth/clients/:id` | Platform scope | Revoke API client |
 
+### Tenant Roles
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/auth/tenant-roles` | Tenant from BODY, not header | Create a role in the tenant's own `tenant_roles` table. Unlike its four siblings, `create()` reads the tenant from the request body (`CreateTenantRoleDto`, `src/modules/tenant-roles/tenant-roles.controller.ts:22-30`) instead of the `x-yoizen-tenant` header |
+| `GET` | `/auth/tenant-roles` | Tenant header | List roles (`tenant-roles.controller.ts:32`) |
+| `GET` | `/auth/tenant-roles/:id` | Tenant header | Get one role with its permissions (`tenant-roles.controller.ts:37`) |
+| `PATCH` | `/auth/tenant-roles/:id` | Tenant header | Update name/description/permissions (`tenant-roles.controller.ts:48`) |
+| `DELETE` | `/auth/tenant-roles/:id` | Tenant header | Delete a role (`tenant-roles.controller.ts:61`) |
+
+`tenant_admin` is reserved: it cannot be created (`tenant-roles.service.ts:70-74`),
+renamed away from itself, or claimed by a non-system role
+(`tenant-roles.service.ts:155-160`), and a system role cannot be deleted
+(`tenant-roles.service.ts:198`).
+
 ### Public Routes
 
 | Method | Path | Auth | Description |
@@ -53,6 +68,20 @@ Requires: PostgreSQL, Redis, `JWT_SECRET` env var.
 | `POST` | `/auth/public-routes` | Platform scope | Create public route |
 | `GET` | `/auth/public-routes` | Platform scope | List public routes |
 | `DELETE` | `/auth/public-routes/:id` | Platform scope | Remove public route |
+
+Every write re-syncs the FULL route set to Redis
+(`syncToRedis`, `src/modules/public-routes/public-routes.service.ts:62-89`),
+writing two keys:
+
+- `public_routes:<env>` — every route, read by api-gateway
+  (`PUBLIC_ROUTES_CACHE_KEY_PREFIX`, `packages/shared/src/auth.constants.ts:3`;
+  applied at `public-routes.service.ts:74-75`).
+- `public_routes:<env>:<tenant>` — written only when the mutation carried a
+  tenant, and filtered to routes whose scope is `platform` or that exact tenant
+  (`public-routes.service.ts:77-84`).
+
+The gateway caches these for 30 s, so a change here is not effective
+immediately.
 
 ### Health
 
@@ -68,6 +97,30 @@ The `POST /auth/login` endpoint supports two identity sources (`src/modules/toke
 2. **Tenant users** -- looked up in the tenant's own database, joining `tenant_users` to `tenant_roles` so the role NAME travels in the token (`src/modules/token/token.postgres.repository.ts:147-154`). Issues JWT with `scope: 'tenant:<id>'` plus the role, tenant and email claims (`src/modules/token/token.service.ts:285-298`).
 
 The optional tenant hint in the login body (`LoginDto`, `src/modules/token/token.dto.ts:36`) selects which tenant database is probed. Without it, the service probes every `provisioning_status = 'ready'` tenant database in turn (`token.postgres.repository.ts:160-217`); if the email matches in more than one tenant the endpoint returns `401 Unauthorized` asking the caller to disambiguate (`token.service.ts:261-265`).
+
+## Password hashing
+
+All passwords and client secrets go through one entry point, `hashSecret`
+(`src/utils/password.ts:10-12`), which applies the `ARGON2_OPTIONS` constant:
+Argon2id with `memoryCost: 19456` and `timeCost: 2`
+(`src/utils/password.ts:1-5`). Verification uses `Bun.password.verify`
+(`src/modules/token/token.service.ts:84`, `:233`, `:280`).
+
+## Startup seeding
+
+Two independent, idempotent seeders run on module init; both are complete no-ops
+unless their env vars are set:
+
+- **Platform admin** (`UsersService.onModuleInit` → `seedAdmin`,
+  `src/modules/users/users.service.ts:25-27`, `:69-79`): needs `ADMIN_EMAIL`
+  and `ADMIN_PASSWORD`; skipped entirely if ANY admin already exists (`:74-75`).
+  Creates the user with role `admin` (`:77`).
+- **Tenant admin** (`TenantUsersService.onModuleInit` → `seedTenantAdmin`,
+  `src/modules/tenant-users/tenant-users.service.ts:67`, `:214-244`): needs
+  `TENANT_ADMIN_TENANT_ID`, `TENANT_ADMIN_EMAIL` and `TENANT_ADMIN_PASSWORD`
+  (`:220-222`). It first seeds the tenant's `tenant_admin` system role, then
+  creates the user bound to that `role_id` (`:233-241`) — skipped if that email
+  already exists in the tenant (`:224-231`).
 
 ## Token Scopes & Roles
 
@@ -143,17 +196,28 @@ Postgres and Mongo repositories coexist; `DB_ENGINE` picks one at bootstrap (see
 | `REDIS_PORT` | `6379` | Redis port |
 | `JWT_SECRET` | *(required)* | HS256 signing key |
 | `PLATFORM_ENVIRONMENT` | `dev` | Environment name |
-| `ADMIN_EMAIL` | *(optional)* | Seed admin user email |
-| `ADMIN_PASSWORD` | *(optional)* | Seed admin user password |
+| `ADMIN_EMAIL` | *(optional)* | Platform-admin seed email (`src/config.ts:34-36`) |
+| `ADMIN_PASSWORD` | *(optional)* | Platform-admin seed password (`src/config.ts:37-39`) |
+| `TENANT_ADMIN_TENANT_ID` | *(optional)* | Tenant to seed a `tenant_admin` into (`src/config.ts:40-42`) |
+| `TENANT_ADMIN_EMAIL` | *(optional)* | Tenant-admin seed email (`src/config.ts:43-45`) |
+| `TENANT_ADMIN_PASSWORD` | *(optional)* | Tenant-admin seed password (`src/config.ts:46-48`) |
+| `TENANT_ADMIN_DISPLAY_NAME` | *(optional)* | Tenant-admin display name (`src/config.ts:49-51`) |
 
 ## Testing
 
 ```bash
-bun test              # All tests
-bun test test/unit    # Unit tests
-bun test test/integration  # Integration tests
+cd services/auth-service
+bun run test:unit
 ```
 
-## Architecture
+Only `test/unit/` exists; `test:integration` matches no directory today.
 
-See [AGENTS.md](AGENTS.md) for detailed architecture, module dependency graphs, token flows, and conventions.
+## Deploy
+
+Knative Service, min 1 / max 3, concurrency target 50, image
+`dev.local/auth-service:local`
+(`knative/services/base/auth-service.yaml:14-16`, `:21`).
+
+```bash
+./rebuild-redeploy.sh auth-service dev
+```

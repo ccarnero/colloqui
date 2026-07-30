@@ -791,6 +791,9 @@ Branch on failure: if results.processResource.status === FAILED
 | `REDIS_PORT` | `6379` | Redis port (worker only). |
 | `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
 | `SERVICE_MODE` | `api` | Process mode: `api` or `worker` |
+| `DB_ENGINE` | `postgres` | Repository engine for definitions/executions: `postgres` or `mongo`; falls back to `STORAGE_ENGINE`, throws on any other value (`packages/database/src/engine.ts:13-23`, read at `src/config.ts:36-38`). Does NOT affect Temporal's own store |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | — | Credentials used against each tenant's own Postgres; platform-level `POSTGRES_HOST`/`_PORT`/`_DB` are deliberately NOT consumed (`src/config.ts:18-28`) |
+| `REGISTRY_SERVICE_URL` | `http://registry-service.platform-services-dev.svc.cluster.local` | Service-slug lookup for `serviceCall` (`src/config.ts:29-30`) |
 
 ## Debugging Tips
 
@@ -861,9 +864,63 @@ Usually available at `http://localhost:8080`:
 - **Per-tenant Postgres**: Workflow storage
 - **agent-ai-service**: Agent execution
 
+## Activity Idempotency Contract
+
+Temporal retries activities aggressively. The 2026-05-22 stress run
+(`post-mortem/POST-MORTEM.md`) observed five cases of *"Activity not found on
+completion … workflow execution already completed"*, proving an activity CAN
+finish on the worker side after Temporal has already started a retry. **Every
+activity in this service must therefore be idempotent under retry and double
+completion.**
+
+| Activity | Idempotency strategy |
+|---|---|
+| `executeChannelSend` (`src/temporal/activities/channel-send.activity.ts`) | Sets `Nats-Msg-Id` from the envelope's `idempotencykey` (`:159`); JetStream's `duplicate_window` collapses retries (`:45`) |
+| `publishExecutionCompletedEvent` and its siblings (`src/temporal/activities/execution-completed-publisher.activity.ts`) | `Nats-Msg-Id = sha256:canonical(payload)` (`:81`), set on every publish path (`:186`, `:321`, `:491`, `:656`) |
+| `executeServiceBusCall` (`src/temporal/activities/service-bus.activity.ts`) | `Nats-Msg-Id = args.dedupKey` when supplied, else a derived hash (`deriveDedupKey`, `:63`, applied `:98-99`, `msgID` `:120`). Publishes through JetStream to keep the dedup contract, falling back to core NATS only when the subject has no stream (`:109`) |
+| `executeAgentCall` (`src/temporal/activities/agent-call.activity.ts`) | `executionId = "<runId>:<activityId>"` from `Context.current().info` (`deriveStableExecutionId`, `:241-255`), so every retry of the same invocation collapses inside the `duplicate_window` |
+| `executeJsFunction` (`src/temporal/activities/js-function.activity.ts:13`) | The activity itself is pure — `new Function(...)`. Any side effect the USER's JS performs is the author's responsibility and must be keyed on a stable identifier from `context`. **Contract documented, not enforced.** |
+
+Known gap, recorded in the code rather than hidden: `submitExecution` still
+computes `requestedAt` per call, so `executeAgentCall`'s `Nats-Msg-Id` hash
+drifts by milliseconds between attempts. JetStream's default two-minute
+`duplicate_window` covers every retry observed in the post-mortem (seconds
+apart), and the stable `executionId` collapses the duplicate in the common case
+(`agent-call.activity.ts:294-304`).
+
+When adding an activity: identify the side effect, pick a dedup key that does
+NOT change across retries (`runId + activityId`, an envelope idempotency key, a
+content hash), prefer server-side dedup (`Nats-Msg-Id`, `INSERT … ON CONFLICT`)
+over client-side bookkeeping, and add a row to the table above.
+
+`executeAgentCall` also heartbeats every 15 s so Temporal knows a multi-minute
+LLM call is still alive (`agent-call.activity.ts:267-270`).
+
+## Storage engine
+
+Workflow **definitions and executions** support both Postgres (default) and
+Mongo through repository adapters — `workflows.mongo.repository.ts`,
+`executions.mongo.repository.ts`, `tenant-connection-manager.mongo.ts` — selected
+by `DB_ENGINE` via `resolveStorageEngine()` (`src/config.ts:36-38`). **Temporal
+itself stays on its own dedicated Postgres regardless of this setting.**
+
+`src/config.ts` deliberately declares no platform Postgres settings: workflow
+data is per-tenant, so only `POSTGRES_USER` / `POSTGRES_PASSWORD` are read, to
+authenticate against each tenant's own instance. `POSTGRES_HOST` / `_PORT` /
+`_DB` are no longer consumed (`src/config.ts:18-28`).
+
+### Execution projector buffering
+
+`ExecutionProjectorService`
+(`src/modules/executions-projector/execution-projector.service.ts`) partitions
+its in-memory buffer by `tenantId`, parsed from the canonical subject
+(`:190-193`), and emits one `UPDATE … FROM (unnest(...))` per tenant on flush
+(`:76-77`). A database failure for one tenant therefore does not NAK sibling
+tenants' batches.
+
 ## Further Reading
 
-- [AGENTS.md](AGENTS.md) — Detailed architecture, worker configuration, database schema
+- Detailed worker configuration and database schema: the sections above
 - [Temporal Workflow Documentation](https://temporal.io/docs/concepts/what-is-a-workflow-definition)
 - [Template Resolution Guide](../DOCS/workflows/patterns.md#template-resolution)
 - [Connector Runtime Integration](../connector-runtime/README.md)

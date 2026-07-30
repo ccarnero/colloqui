@@ -131,10 +131,14 @@ find services -maxdepth 2 -name "AGENTS.md" | wc -l | tr -d ' ' | grep -x 10
   to FAIL on any `services/*/AGENTS.md` or `packages/*/AGENTS.md` existing at
   all — the class "per-component agent files resurrect" gets a guard.
 
-**Accept**
+**Accept** (corrected 2026-07-30: `packages/shared/AGENTS.md` is absorbed in
+T04 by explicit instruction there, so T03's zero-count covers services only;
+the resurrection guard covers `services/*` in T03 and extends to `packages/*`
+in T04 — a guard must be green when it lands (decision 3). BSD `wc` padding
+fixed with `tr -d ' '`.)
 ```
 ./scripts/checks/doc-code-guards.sh
-find services packages -maxdepth 2 -name "AGENTS.md" | wc -l | grep -x 0
+find services -maxdepth 2 -name "AGENTS.md" | wc -l | tr -d ' ' | grep -x 0
 ```
 
 ### T04 — Package READMEs + storage-engine guard (K11)
@@ -222,7 +226,7 @@ grep -n "docs-consistency" cowork/INDEX.md
 
 - [x] T01 lying READMEs + K9 (landed as K9b — name taken)
 - [x] T02 five service README gaps
-- [ ] T03 absorb remaining AGENTS.md + resurrection guard
+- [x] T03 absorb remaining AGENTS.md + resurrection guard (K6g, services/*)
 - [ ] T04 package READMEs + K11
 - [ ] T05 one ADR channel
 - [ ] T06 K10 dead-link guard + fixes
@@ -288,7 +292,47 @@ fixed in this loop):**
    in the `YoizenClawExecutionState` union (pre-existing gap, code comment at
    `executions.service.ts:307-312`).
 
-## Out of scope (explicit)
+**T03 adjudications (recorded 2026-07-30 — AGENTS.md vs code, code won;
+guard landed as K6g(no-service-agents-md), services/* only, packages/*
+extension deferred to T04 by design):**
+
+1. audit-service: both docs described a single `audit-writer` durable on an
+   `EVENTS` stream with one `events` table — reality is FOUR consumers
+   (`audit-events`, `channel-audit`, `execution-audit` on per-tenant
+   `INGRESS-*` streams; `gateway-audit-writer` on `GATEWAY_AUDIT`) and four
+   tables. Mongo-vs-Postgres conflict: `DB_ENGINE`-selected, Postgres default.
+2. api-gateway: documented events module (`POST /api/events`,
+   `GET /api/results/:id`, SSE) does not exist; `schedulers`/`adapters`
+   modules gone; ten real modules were undocumented; `PLATFORM_PREFIXES`
+   stale.
+3. registry-service: Mongo-throughout claims → `DB_ENGINE`-selected,
+   Postgres default; Knative max-scale 5 → 3.
+4. proxy-service: `/health` actually probes tenant-service (degraded/
+   unreachable states); hop-by-hop set has 4 entries; `PLATFORM_ENVIRONMENT`
+   env row was fiction.
+5. tenant-service: provisioning is ASYNC (202 + `tenant-provisioner` durable,
+   ackWait 300s), not synchronous StatefulSet creation; `PATCH /tenants/:name`
+   undocumented.
+6. cache-service: Knative min-scale 0 → 1. connector-runtime: concurrency
+   self-contradiction resolved to 400 (code). workflow-service: absorbed
+   Activity Idempotency Contract + Mongo adapters + projector partitioning.
+   auth-service: T01 README stayed baseline; absorbed tenant-roles routes,
+   Argon2id params, seeders, Redis public-routes sync.
+
+**T03 follow-ups (recorded 2026-07-30 — code bugs, NOT fixed here):**
+
+1. CODE BUG: connector-admin OAuth2 dead path — DTO accepts `oauth2-client`
+   (`adapters.dto.ts:39-45`) but both consumers switch on `oauth2`
+   (`packages/shared/src/adapter-auth-headers.ts:38`,
+   `packages/shared/src/adapter-client.ts:395`): such connectors send NO
+   Authorization header. Documented in the README as a known mismatch.
+2. proxy-service test scripts self-recurse (`package.json:9-10`).
+3. api-gateway `bun run test` fails by construction (no `test/integration/`).
+4. proxy-service, registry-service, tenant-service, auth-service declare
+   `test:integration` with no matching directory.
+5. Resurrection vector: eight gitignored `services/*/CLAUDE.md` files are
+   stale copies of the deleted AGENTS.md (auto-loaded into agent context).
+   Untracked → outside K6g's reach. Needs an explicit human decision.
 
 - Service source changes of any kind (follow-ups only).
 - CODE-side envelope drift (future envelope-drift loop owns it).
