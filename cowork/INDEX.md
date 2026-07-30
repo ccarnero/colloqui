@@ -1234,6 +1234,46 @@ Decision cuádruple:
   (BLOCKED.md flow, same-error-twice fast-block) rather than assumed working.
 - **Engram topic**: `architecture/system-validation`.
 
+## Change: dev-mode validator stage-4→5 readiness barrier (dev-mode-validator-fix)
+
+Manual-loop change (not SDD) repairing `scripts/validate-dev-mode.sh`, whose internal
+stage-5 race had — since 2026-07-16 — forced every backend manual-loop to skip its
+per-iteration dev-mode gates via the PRECONDITION escape hatch and run commit-gates-only.
+Stage 4's canary appends to `services/workflow-service/src/main.ts` and reverts it, and that
+file is the entry point of the worker Deployments AND of the `workflow-service-api` ksvc, so
+BOTH writes restart the API's `bun --watch` while stage 4 only ever watched the worker
+Deployment. New stage 4b polls an authenticated `GET /api/workflows` through the gateway
+until it is HTTP 200 AND a JSON array, 3 consecutive good samples after the revert's observed
+outage (20s grace + WARN if the restart was too fast to sample), bounded at 120s, every
+attempt logged. Full task queue, gates, human decisions, and the T01 evidence:
+`manual-loops/architecture/dev-mode-validator-fix.md` (dated 2026-07-30). Operational
+contract (stage list, barrier design, `BARRIER_*` knobs, the historical race):
+`DOCS/guides/dev-mode.md` "Validating dev mode".
+
+Decision cuádruple:
+- **Rule**: the barrier WAITS for observable readiness — never a fixed sleep — and it checks
+  the response SHAPE, not liveness: only HTTP 200 with a JSON *array* body counts, and the
+  streak is accepted only after at least one bad sample proved the revert's reload happened
+  (a single 200 can land in the gap between the append's reload and the revert's). Fix the
+  VALIDATOR, not the loops, and touch no `dev-mode.sh` or service source —
+  `manual-loops/architecture/dev-mode-validator-fix.md` §User decisions 1/2 and Constraints.
+- **Why**: during the ~2–2.5s restart window the gateway answers a well-formed HTTP 502 JSON
+  *object* (`{"statusCode":502,"message":"dial tcp ... connection refused"}`), which any
+  200-or-liveness probe would have accepted as healthy; that body is precisely what broke the
+  two downstream consumers, so the shape is the only honest readiness signal.
+- **Evidence**: T01 reproduced the window with a 0.5s probe running alongside two full red
+  runs plus two controlled replays of stage 4 outside the validator — the 502 body makes the
+  e2e's `jq '.[] | select(.name ...)'` iterate the object's VALUES and index the number `502`
+  (`Cannot index number with string "name"`, the 2026-07-16 symptom), and makes
+  `provisioning-service`'s workflow `findByName` warn-and-continue into a PARTIAL manifest
+  apply (`missing an expected resource externalId`, the 2026-07-24 symptom) — one window, two
+  consumers, no second mechanism. Acceptance was determinism, not a single green:
+  `./scripts/validate-dev-mode.sh --with-e2e` passing twice consecutively. Recorded but NOT
+  fixed here (service source is out of scope for this loop): `build-manifest-plan.ts:128-138`
+  downgrades a failed downstream lookup to a warning and applies partially, and
+  `scripts/e2e/http-workflow.sh` never inspects `.preconditions` — worth its own SPEC.
+- **Engram topic**: `architecture/dev-mode-validator`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

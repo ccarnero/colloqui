@@ -207,7 +207,7 @@ untouched — no instrumentation was left in any repo file).
 
 - [x] T01 reproduce + pinpoint (report)
 - [x] T02 readiness barrier
-- [ ] T03 retire debt notes + docs
+- [x] T03 retire debt notes + docs
 
 ## Out of scope (explicit)
 

@@ -196,6 +196,38 @@ Either way, a rebuilt image is picked up automatically: the CronJob references t
 
 Once both are in place, `rebuild-redeploy.sh <service> <env>` will apply the CronJob automatically the first time it runs against an environment where the CronJob doesn't exist yet, and leave it alone on every run after that.
 
+## Validating dev mode — `scripts/validate-dev-mode.sh`
+
+`./scripts/validate-dev-mode.sh [--with-e2e]` is the end-to-end proof that dev mode still works on this cluster. It runs seven stages against `workflow-service` (the hardcoded guinea pig — worst case: 1 ksvc + 2 worker Deployments): preflight, snapshot the declared image+command of every object, `dev-mode.sh on` (waiting for the rollout), a live-reload canary, the **readiness barrier** (stage 4b), an optional e2e smoke, `dev-mode.sh off`, and a restoration check (the 2026-06-13 regression guard). Manual-loop SPECs use it as the precondition for their per-iteration dev-mode gates.
+
+### Stage 4 — the live-reload canary
+
+Stage 4 appends `console.log("dev-mode-canary-<ts>")` to `services/workflow-service/src/main.ts`, waits for that nonce to appear in the reloaded worker pod's logs, and then undoes the edit with `git checkout -- <file>`. Both the append and the revert are file writes, so **each of them restarts `bun --watch`**.
+
+### Stage 4b — the stage-4→5 readiness barrier
+
+`src/main.ts` is the entry point of the `workflow-service-*` worker Deployments **and** of the `workflow-service-api` ksvc. Stage 4 only observes the worker Deployment, so the API ksvc is still restarting when the canary reports success. Stage 4b closes that window before stage 5's e2e starts:
+
+- **Probe** — authenticated `GET /api/workflows` through the API gateway, i.e. the exact transport stage 5 uses (it reuses the e2e's `E2E_API_URL` / `E2E_HOST_HEADER` / `E2E_TENANT` / `E2E_EMAIL` / `E2E_PASSWORD` / `E2E_RESOLVE_IP` env overrides). A 401/403 refreshes the token instead of counting as un-readiness.
+- **Shape check, not liveness** — a sample is good only when the response is HTTP 200 **and** the body is a JSON *array*. During a reload the gateway answers a well-formed HTTP 502 JSON *object*, which a plain 200/liveness check would never catch.
+- **Consecutive samples after the observed outage** — `BARRIER_CONSECUTIVE` (3) good samples in a row, accepted only once at least one bad sample proved the revert's reload actually happened. The append and the revert are two distinct reloads, so a single 200 can legitimately land in the gap between them.
+- **Grace for a too-fast restart** — if no outage is sampled within `BARRIER_RELOAD_GRACE` (20s) but the streak holds, the barrier accepts with a `[WARN]`; it never skips silently.
+- **Bounded, never a fixed sleep** — `BARRIER_TIMEOUT` (120s) from the revert, polling every `BARRIER_INTERVAL` (1s), then a hard failure. Every attempt logs elapsed time, HTTP code, JSON type and streak.
+
+The knobs live at the top of `scripts/validate-dev-mode.sh` (`BARRIER_*`).
+
+### Historical race (2026-07-16 → 2026-07-30)
+
+Between 2026-07-16 and 2026-07-30 the validator had no barrier: stage 5 started on the line right after the canary revert. It reliably hit the ~2–2.5s restart window of the `workflow-service-api` ksvc, where the gateway returns:
+
+```json
+{"statusCode":502,"message":"dial tcp 127.0.0.1:3000: connect: connection refused\n"}
+```
+
+Two consumers broke on that body. The e2e's workflow LIST does `jq -r '.[] | select(.name | ...)'`, and `.[]` over that object iterates its *values* — so jq indexes the number `502` with `"name"` and fails with `jq: Cannot index number with string "name"`. `provisioning-service`'s workflow `findByName` saw the same 502, downgraded the lookup to a warning, and applied the manifest partially — surfacing later as `Manifest apply response missing an expected resource externalId`.
+
+The symptom was diagnosed twice (2026-07-16, re-confirmed 2026-07-24) and every backend manual-loop degraded to commit-gates-only in the meantime. Full evidence and the fix: `manual-loops/architecture/dev-mode-validator-fix.md` (T01 findings + T02, 2026-07-30). If you see a 502-shaped failure in stage 5 again, read the stage-4b attempt log first — it prints exactly what the API was answering.
+
 ## Limitations
 
 - **OrbStack only.** The hostPath mount relies on OrbStack's VirtioFS and the single-node cluster topology. Minikube and remote clusters require a different approach (e.g. Tilt sync, or `livenessPatch` with a cloud volume).

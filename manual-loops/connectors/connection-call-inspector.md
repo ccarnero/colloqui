@@ -162,9 +162,6 @@ Gate rules (self-contained — the engine runs THIS file verbatim):
 PRECONDITION: `./scripts/validate-dev-mode.sh --with-e2e` must be green once
 before T01; if it fails, skip G6a and rely solely on G6b — and RECORD the skip
 (date + failure symptom) in this SPEC's Progress as a pending repair item.
-KNOWN STATE 2026-07-29: the validator has an internal stage-5 race (diagnosed
-2026-07-16 in `provisioning-manifest-gaps.md:524`, re-confirmed 2026-07-24 in
-`gaps-4`) — expect this skip until the validator-fix loop lands.
 
 E2E CLEANUP: every e2e script tears down what it creates — trap-guarded,
 account-scoped, idempotent teardown (conventions from
