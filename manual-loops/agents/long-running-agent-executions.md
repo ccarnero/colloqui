@@ -219,11 +219,208 @@ grep -n "AGENT_TEST_DELAY" services/agent-ai-service/README.md
 
 ## Progress
 
-- [ ] T01 timeout & ack inventory (report)
+- [x] T01 timeout & ack inventory (report)
 - [ ] T02 deterministic delay hook
 - [ ] T03 long-execution e2e + contention probe
 - [ ] T04 workflow agentCall path
 - [ ] T05 docs + index
+
+**T01 findings (recorded 2026-07-30):** every budget below was read
+first-hand at the cited file:line. **Verdict: the 120s default of decision 3
+fits every budget with margin — no amendment needed, and NO change to
+ai-agent-gateway or workflow-service is required (both stay read-only).**
+
+1. **agent-ai-service consumer ackWait — the message IS held for the whole
+   execution, and that is safe.**
+   - `multi-tenant-consumer.service.ts:60-67` sets
+     `ackWaitMs: agentAiServiceConfig.consumerAckWaitMs`,
+     `backoffMs: [900_000, 1_200_000, 1_800_000, 3_600_000]`, and
+     `runnerOptions: { workingIntervalMs: agentAiServiceConfig.consumerWorkingIntervalMs }`.
+   - `services/agent-ai-service/src/config.ts:76-81` — `consumerAckWaitMs`
+     defaults to `900_000` (`AGENT_AI_CONSUMER_ACK_WAIT_MS`);
+     `config.ts:88-93` — `consumerWorkingIntervalMs` defaults to `30_000`
+     (`AGENT_AI_CONSUMER_WORKING_INTERVAL_MS`). Neither var is overridden in
+     any Knative manifest (`rg AGENT_AI_CONSUMER_ACK_WAIT_MS knative/` → no
+     hits), so the deployed values ARE the defaults.
+   - Hold-vs-ack-early: `packages/database/src/nats-consumer-runner.ts:491-517`
+     — `processOne` does `await this.handler(msg); msg.ack();`. The ack
+     happens strictly AFTER the handler returns, i.e. after
+     `generateReply`. There is NO ack-before-execute design.
+   - Keepalive: `nats-consumer-runner.ts:524-539` — `startWorkingTimer`
+     calls `msg.working()` on a `setInterval(intervalMs)` for the whole
+     in-flight window, cleared in the `finally` at line 513-516.
+   - **Invariant pinned: delay < ackWait.** 120_000 ms < 900_000 ms
+     (7.5× margin), and `msg.working()` fires 4× during a 120s delay
+     (30s interval), so the server-side deadline is extended long before
+     it can expire. Backoff step 0 (`900_000`) also overrides `ack_wait`
+     per `packages/database/src/nats-durable-consumer.ts:26-37`, so the
+     effective first redelivery window is 900s either way. No decision-3
+     amendment is proposed.
+   - Backpressure/concurrency caveat (design note, not a blocker):
+     `nats-durable-consumer.ts:13` `DEFAULT_MAX_ACK_PENDING = 1000`, and
+     `multi-tenant-consumer-manager.ts:324-334` builds ONE
+     `NatsConsumerRunner` per tenant stream with only the
+     `workingIntervalMs` runner option — `concurrency` is unset, so
+     `nats-consumer-runner.ts:427-431` takes the serial path
+     (`concurrency = 1`). Consequence: while a 120s execution is in
+     flight, OTHER agent messages of the SAME tenant queue behind it
+     (they are not lost, not redelivered — `num_ack_pending` will read 1
+     and drain). The T03 contention probe (`e2e-http-log`: jsFunction +
+     endpointCall + serviceCall, `scripts/e2e/http-workflow.sh:684-721`)
+     touches neither agent-ai-service nor its consumer, so it is a valid
+     probe. But T04's `agentCall` stage MUST be sequenced AFTER the T03
+     long execution completes (or its total duration budgeted as
+     delay + delay), because same-tenant agent work serializes.
+
+2. **ai-agent-gateway execution flow — fully async, nothing holds a
+   connection for the wait.**
+   - Submit: `services/ai-agent-gateway/src/modules/executions/executions.controller.ts:29-37`
+     — `POST /runtime/executions` with `@HttpCode(HttpStatus.ACCEPTED)`
+     (202) → `executions.service.ts:113-123` `submitExecution` →
+     `packages/shared/src/execution-client.ts:78-161`, which seeds Redis
+     (`pending` + `status`) and JetStream-publishes
+     `execution_requested` with `Nats-Msg-Id` dedup, then returns
+     `{ executionId, status: "accepted" }` (line 160) immediately. No
+     wait, no timeout on this path.
+   - Result exposure — BOTH mechanisms exist:
+     (a) Redis status endpoint `GET /runtime/executions/:id`
+     (`executions.controller.ts:39-45` → `executions.service.ts:125-163`
+     → `execution-client.ts:163-174`), fed by the gateway's own durable
+     projector `ai-agent-gateway-results`
+     (`executions.service.ts:61-67, 89-104, 379-411` →
+     `execution-client.ts:334-347 persistExecutionStatus`);
+     (b) the `execution_completed` bus event published by
+     `services/agent-ai-service/src/nats-handlers/execution.handler.ts:175-192`
+     (full payload: response, usage, costUsd, toolCalls, toolResults,
+     model, provider) on
+     `evt.<tenant>.ai-agent-gateway.automation.platform.internal.execution_completed.v1`
+     (`execution.handler.ts:394-395`).
+   - Redis TTLs: `RESULT_TTL = 3600` and `PENDING_TTL = 3600` seconds
+     (`packages/shared/src/constants.ts:17-18`) — 30× the 120s target, so
+     a poller cannot miss the result by TTL expiry.
+   - Polling endpoint's own timeout: none of its own; it is a single
+     Redis GET. `getExecution` throws 404 until the projector writes the
+     terminal state (`executions.service.ts:129-132`) — the poll loop in
+     T03 must tolerate the pre-terminal `state: "pending"/"started"`
+     rather than treating it as failure.
+   - The only wait-bearing API is `waitForExecutionResult(..., timeoutMs)`
+     (`execution-client.ts:176-283`) — an in-process NATS subscription
+     with a caller-supplied timeout, used by the WORKFLOW path (finding 4),
+     never by the HTTP submit path.
+   - Streaming variant (`POST /runtime/executions/stream`,
+     `executions.controller.ts:61-77` → `executions.service.ts:201-377`)
+     DOES hold an SSE connection and would violate the "no live HTTP
+     connection during the wait" bar of decision 2 — T03 must use the
+     async submit + poll path, not this one.
+   - Agent-side wall-clock ceiling on the buffered path:
+     `execution.handler.ts:155-161` aborts via
+     `agentAiServiceConfig.bufferedExecutionTimeoutMs`, default `900_000`
+     (`config.ts:113-118`, `AGENT_BUFFERED_EXECUTION_TIMEOUT_MS`, not
+     overridden in Knative). 120s < 900s — the delay hook of T02 must sit
+     INSIDE this window (it does), and T02 must not disable this abort.
+
+3. **HTTP hops — the 120s never rides on one.**
+   - client → api-gateway: `services/api-gateway/src/modules/runtime/runtime.controller.ts:25-38`
+     (`POST /api/runtime/executions`, 202) and `:40-51`
+     (`GET /api/runtime/executions/:id`).
+   - api-gateway → ai-agent-gateway: `runtime-proxy.service.ts:43` uses
+     `AbortSignal.timeout(PROXY_TIMEOUT_MS)` with
+     `services/api-gateway/src/constants.ts:5` `PROXY_TIMEOUT_MS = 30_000`.
+     This 30s cap is the TIGHTEST internal fetch default in the path — and
+     it is fine, because both hops it guards are sub-second (a JetStream
+     publish and a Redis GET). It would only bite if someone made the
+     submit endpoint synchronous, which this loop must not do.
+   - Knative revision timeouts: `knative/services/base/api-gateway.yaml:30`
+     and `knative/services/base/ai-agent-gateway.yaml:25` both declare
+     `timeoutSeconds: 3600`, above the K8 floor of 960 enforced by
+     `scripts/checks/doc-code-guards.sh:394-398` (`min_required=960`,
+     "900s AGENT_CALL_TIMEOUT_MS + 60s margin"). Cluster ceiling is set in
+     `knative/serving/config-defaults.yaml:9-13`.
+   - e2e client-side: `scripts/e2e/http-workflow.sh:508-510` and `:527-529`
+     bound every `api()`/`api_status()` curl with
+     `--connect-timeout 10 --max-time 45`. The submit POST returns in
+     milliseconds so this is fine, but the new T03 script MUST NOT wrap
+     the 120s wait in a single curl — it has to poll.
+
+4. **Temporal budgets — 120s fits, with heartbeats covering it.**
+   - `services/workflow-service/src/temporal/workflows.ts:181-190`:
+     `httpAgent = proxyActivities<IAgentHttpActivities>({ startToCloseTimeout: "15m",
+     heartbeatTimeout: "30s", retry: { maximumAttempts: 3, initialInterval: "1s",
+     backoffCoefficient: 2, maximumInterval: "60s" } })` — confirmed
+     verbatim, exactly the 15m + 30s the SPEC expected.
+   - Heartbeat emission:
+     `services/workflow-service/src/temporal/activities/agent-call.activity.ts:267-276`
+     — `setInterval(() => Context.current().heartbeat(), 15_000)`, cleared
+     in `finally` (line 346-348). 15s emit vs 30s `heartbeatTimeout` → a
+     120s wait produces ~8 heartbeats; no `heartbeatTimeout` failure.
+   - Activity-level wait:
+     `agent-call.activity.ts:20-23` `AGENT_CALL_TIMEOUT_MS` defaults to
+     `15 * 60 * 1000` (900_000), used at `:265` as
+     `timeout = agentTimeoutMs ?? AGENT_CALL_TIMEOUT_MS` and passed to
+     `client.executeAndWait(tenantId, args, timeout, ...)` at `:279`.
+     120s < 900s < 15m startToClose — ordered correctly at every level.
+   - NOTE: the workflow `agentCall` does NOT traverse ai-agent-gateway over
+     HTTP. `agent-call.activity.ts:88-99` builds its own
+     `YoizenClawExecutionClient` and publishes `execution_requested`
+     straight to JetStream, then waits on core NATS
+     (`execution-client.ts:285-301 executeAndWait`). So the api-gateway 30s
+     proxy cap of finding 3 is irrelevant to the workflow path.
+   - Retry-safety during a long wait:
+     `agent-call.activity.ts:241-255 deriveStableExecutionId` pins the
+     executionId to `runId:activityId` so retries reuse it; the comment at
+     `:294-304` records that `requestedAt` still drifts the
+     `Nats-Msg-Id` hash and only JetStream's 2-minute duplicate window
+     collapses retries. A 120s delay sits right at that 2-minute boundary —
+     T04 must assert exactly ONE `execution_completed` (the SPEC already
+     requires it) and must not introduce artificial activity retries.
+
+5. **The e2e echo agent — provisioned declaratively, and its execution DOES
+   go through the real `execution.handler.ts`.**
+   - Provisioning: `scripts/e2e/http-workflow.sh:661-678` — a single
+     `IntegrationManifest` PUT/apply (stages at `:765-773`) declaring
+     `agents[0] = { name: "${AGENT_NAME}", profile: { system_prompt: ...,
+     model_config: { provider: "mock", model: "echo" } } }`.
+     `AGENT_NAME="e2e-http-agent-echo"` is FIXED and reused across runs
+     (`:246`), unlike the nonce-suffixed workflow names.
+   - It is consumed by the second workflow `e2e-http-agentflow`
+     (`:734-758`), whose only action is
+     `{ "activity": "agentCall", "args": { "agentId": { "agentRef": ... },
+     "message": "{{request.text}}" } }`, sharing the http trigger.
+   - Real path, confirmed end to end: workflow `agentCall` →
+     `agent-call.activity.ts:279 executeAndWait` →
+     `execution-client.ts:121-158` publish `execution_requested` →
+     agent-ai-service consumer filter subject
+     `evt.*.ai-agent-gateway.automation.platform.internal.execution_requested.v1`
+     (`multi-tenant-consumer.service.ts:29`) → `handleMessage`
+     (`:89-91`) → `message-router.service.ts:77-79`
+     `case "execution_requested": await this.executionHandler.handle(...)`
+     → `execution.handler.ts:76-137`. `stream` is absent on the workflow
+     payload, so it lands in `handleBuffered` (`:139-222`) — the real
+     pipeline, no mock handler. That is the insertion point T02 targets.
+   - The "mock" is only the LLM provider, not the execution path:
+     `services/agent-ai-service/src/modules/llm/provider-registry.service.ts:82-84`
+     routes `provider === "mock"` to `createMockModel`, which HARD-FAILS
+     unless `RUNTIME_ALLOW_MOCK_PROVIDER=true` (`:113-119`). The dev
+     overlay sets it —
+     `knative/services/overlays/local/postgres-dev/env-patches.yaml:581-582`
+     (and the mongo-dev overlay at `:637`) — so the dev cluster already
+     runs this agent for real, echoing in ~10ms/chunk (`:147`).
+   - **Isolation warning for T02/T03:** because `AGENT_NAME` is fixed and
+     shared, the delay hook must NEVER be attached to
+     `e2e-http-agent-echo` — `scripts/e2e/http-workflow.sh:311`
+     `POLL_TIMEOUT_S="${E2E_POLL_TIMEOUT_S:-120}"` means a 120s delay on
+     that agent would push the EXISTING G2b e2e past its poll budget and
+     turn G2b red. T03's own ephemeral, nonce-scoped agent (already
+     mandated by the SPEC) is the hard requirement, not a preference.
+
+**Summary table (all confirmed, none violated by 120s):** consumer ackWait
+900s (+ `msg.working()` every 30s) | buffered-execution abort 900s |
+Temporal `startToClose` 15m / `heartbeatTimeout` 30s (heartbeat emitted
+every 15s) | `AGENT_CALL_TIMEOUT_MS` 900s | Knative revision 3600s (floor
+960s) | api-gateway proxy fetch 30s (guards only sub-second hops) | Redis
+result TTL 3600s | JetStream duplicate window 120s (retry-dedup only).
+Tightest budget the 120s wait actually crosses: the 900s ackWait —
+7.5× margin.
 
 ## Out of scope (explicit)
 
