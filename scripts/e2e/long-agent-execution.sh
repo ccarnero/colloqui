@@ -62,6 +62,26 @@ fi
 #      a sleeping execution must look like sleep, not like a busy-wait.
 #      Memory is report-only.
 #
+# T04 — THE WORKFLOW PATH (stages 13-15), appended AFTER the direct path's
+# execution has completed and its JetStream message is acked, because the
+# agent-ai consumer is SERIAL per tenant (T01 finding 1): a second long agent
+# execution started earlier would simply queue. A nonce-scoped workflow whose
+# only action is an `agentCall` against the SAME ephemeral agent is triggered
+# the way production does it — ONE webhook POST to that workflow's own private
+# http channel — and the delay travels in the action args
+# (`args.metadata.__test_delay_ms`), NOT in the webhook body, which
+# structurally cannot carry it. `stage_run_agent_workflow` documents both
+# routes that were tested live and why the webhook trigger is the only one
+# that carries the key AND keeps the run's causal chain intact.
+# The run must: complete; carry no Temporal `failure` (heartbeats, emitted
+# every 15s against a 30s heartbeatTimeout, covered the whole wait); last at
+# least the injected delay; echo this run's nonce back through the agent; and
+# produce EXACTLY ONE agent `execution_completed` (plus exactly one
+# `execution_requested`, zero `execution_failed`) on its tracking chain — the
+# no-duplicate/no-retry guard that matters because the 120s wait sits right at
+# JetStream's 2-minute duplicate window. The normal-workflow contention probe
+# runs alongside this wait too (stage 13b).
+#
 # ISOLATION (T01 finding 5 — hard requirement, not a preference): this run
 # provisions its OWN nonce-suffixed echo agent. The shared, fixed
 # `e2e-http-agent-echo` agent of http-workflow.sh must NEVER be delayed —
@@ -104,6 +124,21 @@ CPU_CEILING_MILLICORES="${E2E_LONG_CPU_CEILING_MILLICORES:-500}"
 # draining its previous revision (see stage_preflight_revision_settled).
 SETTLE_TIMEOUT_S="${E2E_LONG_SETTLE_TIMEOUT_S:-180}"
 
+# --- T04 (workflow agentCall path) ------------------------------------------
+# Its own delay parameter (SPEC decision 1), defaulting to the SAME 120s target
+# as the direct path so the default run proves decision 3 on BOTH paths. Lower
+# it (e.g. E2E_WORKFLOW_DELAY_MS=30000) only to shorten a local iteration —
+# the assertions stay identical, just against a smaller number.
+WORKFLOW_DELAY_MS="${E2E_WORKFLOW_DELAY_MS:-120000}"
+WORKFLOW_DELAY_S=$(( WORKFLOW_DELAY_MS / 1000 ))
+# Poll bound for the Temporal run. Generous vs the Temporal budgets it must
+# fit inside (startToClose 15m, heartbeatTimeout 30s with a heartbeat every
+# 15s, AGENT_CALL_TIMEOUT_MS 900s — T01 finding 4).
+WORKFLOW_COMPLETION_TIMEOUT_S="${E2E_WORKFLOW_COMPLETION_TIMEOUT_S:-$(( WORKFLOW_DELAY_S + 180 ))}"
+# Tracking-chain read bound (ingester Postgres read behind the gateway) —
+# same class of budget as http-workflow.sh's CHAIN_TIMEOUT_S.
+CHAIN_TIMEOUT_S="${E2E_LONG_CHAIN_TIMEOUT_S:-120}"
+
 # Where JetStream's monitoring endpoint lives (evidence point 4). `/jsz` is
 # read with wget from inside the nats pod — the nats image ships wget but no
 # curl and no `nats` CLI (verified live), and there is no NATS ingress.
@@ -134,6 +169,20 @@ ACCOUNT_EXTERNAL_PREFIX="manifest:e2e-long-agent"
 CHANNEL_NAME_PREFIX="e2e-long-agent"
 WORKFLOW_NAME_PREFIX="e2e-long-probe"
 AGENT_NAME_PREFIX="e2e-long-agent-echo"
+# T04: the agentCall workflow and the PRIVATE http channel its trigger is
+# pinned to. Stage 13 posts exactly one webhook to this channel (with its own
+# appSecret) to start the run — the production trigger path, which is what
+# keeps the run's causal chain intact for the stage-15 chain assertion. The
+# channel is separate from the probe channel so a contention-probe webhook can
+# never also start a 120s agent execution. The delay is NOT in that webhook
+# body (the trigger consumer's request shape is fixed and would bury it under
+# `request.envelope`); it rides in the workflow's own action args as
+# `args.metadata.__test_delay_ms` — see stage_run_agent_workflow for both
+# routes tested live and the rationale. Both names share the
+# ACCOUNT_EXTERNAL_PREFIX/`e2e-long-agent` stem so the existing cleanup sweeps
+# reclaim them unchanged.
+AGENT_WORKFLOW_NAME_PREFIX="e2e-long-agentflow"
+AGENTFLOW_CHANNEL_NAME_PREFIX="e2e-long-agentflow-ch"
 
 # macOS mDNS resolves *.dev.local in ~5s even with /etc/hosts entries;
 # --resolve skips DNS. Override/disable via E2E_RESOLVE_IP. (Identical to
@@ -166,15 +215,31 @@ err()  { echo -e "${RED}[ERR]${NC}   $*" >&2; }
 
 NONCE="e2e-long-$(date +%s)-$RANDOM"
 PROBE_NONCE="e2e-long-probe-$(date +%s)-$RANDOM"
+# T04: a SECOND probe nonce, for the contention probe that runs alongside the
+# workflow-path long execution (stage 13). Distinct so the two probe runs can
+# never be confused in the executions list.
+PROBE_NONCE_WF="e2e-long-probe-wf-$(date +%s)-$RANDOM"
+# T04: the request nonce of the agentCall workflow run — echoed back by the
+# mock provider, so the run's own result proves it reached the real agent.
+WORKFLOW_NONCE="e2e-long-wf-$(date +%s)-$RANDOM"
 CHANNEL_NAME="${CHANNEL_NAME_PREFIX}-${NONCE}"
 WORKFLOW_NAME="${WORKFLOW_NAME_PREFIX}-${NONCE}"
 AGENT_NAME="${AGENT_NAME_PREFIX}-${NONCE}"
+AGENT_WORKFLOW_NAME="${AGENT_WORKFLOW_NAME_PREFIX}-${NONCE}"
+AGENTFLOW_CHANNEL_NAME="${AGENTFLOW_CHANNEL_NAME_PREFIX}-${NONCE}"
 
 TOKEN=""
 APP_SECRET=""
+AGENTFLOW_APP_SECRET=""
 ACCOUNT_ID=""
 AGENT_ID=""
 WORKFLOW_ID=""
+# T04 handles, captured by stage_apply_manifest / stage_run_agent_workflow.
+AGENT_WORKFLOW_ID=""
+AGENTFLOW_ACCOUNT_ID=""
+AGENT_RUN_EXECUTION_ID=""
+AGENT_RUN_START_EPOCH=0
+AGENT_RUN_CORRELATION_ID=""
 # The long execution's handle + timing, captured by stage_submit_long_execution.
 EXECUTION_ID=""
 SUBMIT_EPOCH=0
@@ -196,7 +261,7 @@ cleanup_e2e_resources() {
   local id
   local wf_ids
   wf_ids="$(api GET /api/workflows 2>/dev/null \
-    | jq -r ".[] | select(.name | startswith(\"${WORKFLOW_NAME_PREFIX}\")) | .id" 2>/dev/null || true)"
+    | jq -r ".[] | select(.name | startswith(\"${WORKFLOW_NAME_PREFIX}\") or startswith(\"${AGENT_WORKFLOW_NAME_PREFIX}\")) | .id" 2>/dev/null || true)"
   for id in $wf_ids; do
     cleanup_delete "workflow" "/api/workflows/${id}" "${id}"
   done
@@ -295,6 +360,19 @@ stage_preflight() {
   fi
   if (( PROBE_BUDGET_S >= DELAY_S )); then
     err "E2E_LONG_PROBE_BUDGET_S=${PROBE_BUDGET_S} must be strictly smaller than the delay (${DELAY_S}s), otherwise the contention probe cannot prove it ran DURING the wait"
+    return 1
+  fi
+  # Same three guards for the T04 workflow-path delay.
+  if (( WORKFLOW_DELAY_MS <= 0 )); then
+    err "E2E_WORKFLOW_DELAY_MS must be a positive number of milliseconds (got '${WORKFLOW_DELAY_MS}')"
+    return 1
+  fi
+  if (( WORKFLOW_DELAY_MS > 600000 )); then
+    err "E2E_WORKFLOW_DELAY_MS=${WORKFLOW_DELAY_MS} exceeds the service-side hard cap of 600000ms (T02) — the hook would clamp it and the duration assertion would be meaningless"
+    return 1
+  fi
+  if (( PROBE_BUDGET_S >= WORKFLOW_DELAY_S )); then
+    err "E2E_LONG_PROBE_BUDGET_S=${PROBE_BUDGET_S} must be strictly smaller than the workflow delay (${WORKFLOW_DELAY_S}s), otherwise stage 13b's probe cannot prove it ran DURING the agentCall wait"
     return 1
   fi
 
@@ -463,7 +541,25 @@ e2e_manifest_body() {
   #  - the contention-probe workflow: the `e2e-http-log` action shape of
   #    http-workflow.sh:684-721 (jsFunction + endpointCall + serviceCall),
   #    which deliberately touches NEITHER agent-ai-service NOR its serial
-  #    per-tenant consumer (T01 finding 1).
+  #    per-tenant consumer (T01 finding 1),
+  #  - (T04) the agentCall workflow, whose single action targets the SAME
+  #    ephemeral agent via the `agentRef` substitution, plus its own private
+  #    http channel. That channel exists so this workflow's `message_received`
+  #    trigger is pinned somewhere OTHER than the probe channel: sharing the
+  #    probe channel (the http-workflow.sh pattern) would make every
+  #    contention-probe webhook ALSO start a 120s agent execution, which the
+  #    serial per-tenant consumer would then queue behind the direct long
+  #    execution. Stage 13 posts exactly one webhook to it.
+  #    The delay travels in the ACTION ARGS (`args.metadata.__test_delay_ms`),
+  #    not in the webhook body — see stage_run_agent_workflow for the two
+  #    routes that were checked and why this is the only one that carries the
+  #    key AND keeps the causal chain intact. `metadata` is an extra key on
+  #    `AgentChatRequest`: the action validator only type-checks the fields it
+  #    knows (workflow-action.validator.ts's isAgentCallArgs), the manifest
+  #    substitution walker passes unrecognised keys through byte-identical,
+  #    and `agent-call.activity.ts` forwards the whole args object into
+  #    `submitExecution` — so it lands at `input.metadata` exactly like the
+  #    direct path's body field.
   # Raw `adapterId`/`serviceId` strings are pre-existing dev fixtures, never
   # `{connectorRef}`/`{serviceRef}` objects — same rationale as
   # http-workflow.sh.
@@ -474,7 +570,8 @@ e2e_manifest_body() {
   "metadata": { "name": "${MANIFEST_NAME}" },
   "spec": {
     "channels": [
-      { "name": "${CHANNEL_NAME}", "type": "http", "direction": "inbound" }
+      { "name": "${CHANNEL_NAME}", "type": "http", "direction": "inbound" },
+      { "name": "${AGENTFLOW_CHANNEL_NAME}", "type": "http", "direction": "inbound" }
     ],
     "agents": [
       {
@@ -529,6 +626,32 @@ e2e_manifest_body() {
             }
           }
         }
+      },
+      {
+        "name": "${AGENT_WORKFLOW_NAME}",
+        "definition": {
+          "application": "e2e",
+          "actions": [
+            {
+              "name": "callAgent",
+              "activity": "agentCall",
+              "args": {
+                "agentId": { "agentRef": "${AGENT_NAME}" },
+                "message": "{{request.text}}",
+                "metadata": { "__test_delay_ms": ${WORKFLOW_DELAY_MS} }
+              }
+            }
+          ],
+          "trigger": {
+            "type": "message_received",
+            "mode": "shared",
+            "config": {
+              "channels": ["http"],
+              "providers": ["http"],
+              "accountIds": [ { "channelRef": "${AGENTFLOW_CHANNEL_NAME}" } ]
+            }
+          }
+        }
       }
     ]
   }
@@ -537,7 +660,7 @@ JSON
 }
 
 stage_apply_manifest() {
-  log "Stage 2: PUT+plan+apply manifest '${MANIFEST_NAME}' (channel='${CHANNEL_NAME}', agent='${AGENT_NAME}', workflow='${WORKFLOW_NAME}')"
+  log "Stage 2: PUT+plan+apply manifest '${MANIFEST_NAME}' (channels=['${CHANNEL_NAME}','${AGENTFLOW_CHANNEL_NAME}'], agent='${AGENT_NAME}', workflows=['${WORKFLOW_NAME}','${AGENT_WORKFLOW_NAME}'])"
   local body put_resp put_revision
   body="$(e2e_manifest_body)"
   put_resp="$(api PUT "/api/provisioning/manifests/${MANIFEST_NAME}" "$body")"
@@ -564,24 +687,34 @@ stage_apply_manifest() {
   log "Manifest applied: appliedCount=${applied_count} noopCount=$(echo "$apply_resp" | jq -r '.noopCount // 0')"
 
   ACCOUNT_ID="$(echo "$apply_resp" | jq -r --arg n "$CHANNEL_NAME" '.resources[] | select(.name == $n) | .externalId')"
+  AGENTFLOW_ACCOUNT_ID="$(echo "$apply_resp" | jq -r --arg n "$AGENTFLOW_CHANNEL_NAME" '.resources[] | select(.name == $n) | .externalId')"
   AGENT_ID="$(echo "$apply_resp" | jq -r --arg n "$AGENT_NAME" '.resources[] | select(.name == $n) | .externalId')"
   WORKFLOW_ID="$(echo "$apply_resp" | jq -r --arg n "$WORKFLOW_NAME" '.resources[] | select(.name == $n) | .externalId')"
-  if [[ -z "$ACCOUNT_ID" || -z "$AGENT_ID" || -z "$WORKFLOW_ID" ]]; then
-    err "Manifest apply response missing an expected externalId (channel=${ACCOUNT_ID:-<empty>} agent=${AGENT_ID:-<empty>} workflow=${WORKFLOW_ID:-<empty>}): $apply_resp"
+  AGENT_WORKFLOW_ID="$(echo "$apply_resp" | jq -r --arg n "$AGENT_WORKFLOW_NAME" '.resources[] | select(.name == $n) | .externalId')"
+  if [[ -z "$ACCOUNT_ID" || -z "$AGENTFLOW_ACCOUNT_ID" || -z "$AGENT_ID" || -z "$WORKFLOW_ID" || -z "$AGENT_WORKFLOW_ID" ]]; then
+    err "Manifest apply response missing an expected externalId (channel=${ACCOUNT_ID:-<empty>} agentflowChannel=${AGENTFLOW_ACCOUNT_ID:-<empty>} agent=${AGENT_ID:-<empty>} workflow=${WORKFLOW_ID:-<empty>} agentWorkflow=${AGENT_WORKFLOW_ID:-<empty>}): $apply_resp"
     return 1
   fi
-  log "Resolved externalIds: channel=${ACCOUNT_ID} agent=${AGENT_ID} workflow=${WORKFLOW_ID}"
+  log "Resolved externalIds: channel=${ACCOUNT_ID} agentflowChannel=${AGENTFLOW_ACCOUNT_ID} agent=${AGENT_ID} workflow=${WORKFLOW_ID} agentWorkflow=${AGENT_WORKFLOW_ID}"
 }
 
 stage_fetch_channel_secret() {
   # The apply engine never returns appSecret (channels-writer.ts keeps only
-  # externalId); GET /api/channels/accounts/:id returns it unmasked.
-  log "Stage 3: fetch appSecret for channel account ${ACCOUNT_ID}"
+  # externalId); GET /api/channels/accounts/:id returns it unmasked. Both
+  # channels need one: the probe channel (stages 7/13b) and the agentflow
+  # channel (stage 13).
+  log "Stage 3: fetch appSecrets for channel accounts ${ACCOUNT_ID} (probe) and ${AGENTFLOW_ACCOUNT_ID} (agentflow)"
   local resp
   resp="$(api GET "/api/channels/accounts/${ACCOUNT_ID}")"
   APP_SECRET="$(echo "$resp" | jq -r '.appSecret // empty')"
   if [[ -z "$APP_SECRET" ]]; then
     err "GET /api/channels/accounts/${ACCOUNT_ID} did not return appSecret: $resp"
+    return 1
+  fi
+  resp="$(api GET "/api/channels/accounts/${AGENTFLOW_ACCOUNT_ID}")"
+  AGENTFLOW_APP_SECRET="$(echo "$resp" | jq -r '.appSecret // empty')"
+  if [[ -z "$AGENTFLOW_APP_SECRET" ]]; then
+    err "GET /api/channels/accounts/${AGENTFLOW_ACCOUNT_ID} did not return appSecret: $resp"
     return 1
   fi
 }
@@ -697,15 +830,71 @@ stage_submit_long_execution() {
 }
 
 # --------------------------------------------------------------------------
-# Stage 7 — EVIDENCE POINT 2: contention probe DURING the wait.
+# Stage 7 (and, for T04, stage 13b) — EVIDENCE POINT 2: contention probe
+# DURING the wait. Parameterised over WHICH long execution it must overlap:
+#   - "direct"   -> the T03 execution submitted over POST /runtime/executions
+#   - "workflow" -> the T04 Temporal run whose agentCall is waiting
+# Both variants run the SAME normal workflow (jsFunction + endpointCall +
+# serviceCall, no agent hop), so the probe's own cost is identical.
 # --------------------------------------------------------------------------
-stage_contention_probe() {
-  log "Stage 7: contention probe — fire '${WORKFLOW_NAME}' (nonce ${PROBE_NONCE}) while execution ${EXECUTION_ID} waits (budget ${PROBE_BUDGET_S}s)"
+long_work_state() {
+  # long_work_state <target> — echoes exactly one of:
+  #   running          the long unit of work is still in flight
+  #   <terminal state> whatever terminal state the API reported
+  #   unreadable       the status could NOT be read (transport/JSON failure)
+  #
+  # "unreadable" is deliberately NOT collapsed into "running": every caller
+  # uses this function as a HARD assertion input ("is it still waiting?"), so
+  # a swallowed curl/jq failure must never be able to satisfy that assertion.
+  # Both branches retry once before giving up, because a single timeout inside
+  # an otherwise healthy run is a transport blip, not evidence.
+  local target="$1"
+  local attempt state
+  for attempt in 1 2; do
+    case "$target" in
+      direct)
+        # `|| true`: a curl/jq failure must not abort the script under
+        # pipefail — it is reported as "unreadable" below instead.
+        state="$(api GET "/api/runtime/executions/${EXECUTION_ID}" | jq -r '.state // empty')" || true
+        case "$state" in
+          pending|started) printf 'running'; return 0 ;;
+          "") ;;  # unreadable — retry once, then report it as such
+          *) printf '%s' "$state"; return 0 ;;
+        esac
+        ;;
+      workflow)
+        state="$(api GET "/api/workflows/${AGENT_WORKFLOW_ID}/executions/${AGENT_RUN_EXECUTION_ID}" \
+          | jq -r '.status // empty')" || true
+        case "$state" in
+          RUNNING|PENDING) printf 'running'; return 0 ;;
+          "") ;;  # unreadable — retry once, then report it as such
+          *) printf '%s' "$state"; return 0 ;;
+        esac
+        ;;
+      *)
+        printf 'unknown-target'
+        return 0
+        ;;
+    esac
+    if (( attempt == 1 )); then
+      # >&2 — this function's stdout IS its return value (callers use
+      # `$(long_work_state ...)`), so diagnostics must go to stderr only.
+      warn "Could not read the ${target} long execution's status (empty response) — retrying once" >&2
+      sleep 3
+    fi
+  done
+  printf 'unreadable'
+}
+
+run_contention_probe() {
+  # run_contention_probe <stage-label> <nonce> <overlap-target>
+  local label="$1" nonce="$2" target="$3"
+  log "${label}: contention probe — fire '${WORKFLOW_NAME}' (nonce ${nonce}) while the ${target} long execution waits (budget ${PROBE_BUDGET_S}s)"
   local webhook_args=(-s --connect-timeout 10 --max-time 45 -X POST "${API_URL}/api/webhooks/http/${TENANT}"
     -H "Host: ${HOST_HEADER}"
     -H "Content-Type: application/json"
     -H "x-http-channel-token: ${APP_SECRET}"
-    -d "{\"from\":\"e2e-long-probe\",\"text\":\"${PROBE_NONCE}\"}")
+    -d "{\"from\":\"e2e-long-probe\",\"text\":\"${nonce}\"}")
   [[ ${#RESOLVE_ARGS[@]} -gt 0 ]] && webhook_args+=("${RESOLVE_ARGS[@]}")
   local resp status
   local probe_start
@@ -723,32 +912,36 @@ stage_contention_probe() {
     # curl/jq timeouts inside a poll loop degrade to a retry (pipefail would
     # otherwise abort the run) — same guard as http-workflow.sh.
     wf_status="$(api GET "/api/workflows/${WORKFLOW_ID}/executions?pageSize=100" \
-      | jq -r ".items[]? | select(.request.text == \"${PROBE_NONCE}\") | .status" | head -1)" || true
+      | jq -r ".items[]? | select(.request.text == \"${nonce}\") | .status" | head -1)" || true
     if [[ "$wf_status" == "COMPLETED" ]]; then
       local elapsed=$(( $(date +%s) - probe_start ))
-      log "Contention probe COMPLETED in ${elapsed}s (budget ${PROBE_BUDGET_S}s) while the long execution was in flight"
+      log "Contention probe COMPLETED in ${elapsed}s (budget ${PROBE_BUDGET_S}s) while the ${target} long execution was in flight"
 
-      # The probe is only meaningful if the long execution really was still
+      # The probe is only meaningful if the long work really was still
       # waiting when it finished — assert that explicitly.
       local state
-      state="$(api GET "/api/runtime/executions/${EXECUTION_ID}" | jq -r '.state // empty')" || true
-      case "$state" in
-        pending|started)
-          log "Confirmed overlap: long execution ${EXECUTION_ID} is still '${state}' after the probe completed"
-          return 0
-          ;;
-        *)
-          err "Long execution already reached '${state}' before the probe finished — the two did not overlap, so this run proves nothing about contention (delay too short? gate off?)"
-          return 1
-          ;;
-      esac
+      state="$(long_work_state "$target")"
+      if [[ "$state" == "running" ]]; then
+        log "Confirmed overlap: the ${target} long execution is still running after the probe completed"
+        return 0
+      fi
+      if [[ "$state" == "unreadable" ]]; then
+        err "Could not read the ${target} long execution's status after the probe completed (two attempts) — the overlap is UNPROVEN, and an unproven assertion is a failed one"
+        return 1
+      fi
+      err "The ${target} long execution already reached '${state}' before the probe finished — the two did not overlap, so this run proves nothing about contention (delay too short? gate off?)"
+      return 1
     fi
     sleep 3
   done
-  err "Contention probe did not reach COMPLETED within ${PROBE_BUDGET_S}s (last status '${wf_status:-<none>}') — the long execution appears to be stalling unrelated work"
+  err "Contention probe did not reach COMPLETED within ${PROBE_BUDGET_S}s (last status '${wf_status:-<none>}') — the ${target} long execution appears to be stalling unrelated work"
   err "Recent probe-workflow executions:"
   api GET "/api/workflows/${WORKFLOW_ID}/executions?pageSize=20" | jq -c '.items[]? | {id, status, request}' >&2 || true
   return 1
+}
+
+stage_contention_probe() {
+  run_contention_probe "Stage 7" "$PROBE_NONCE" "direct"
 }
 
 # --------------------------------------------------------------------------
@@ -959,6 +1152,237 @@ stage_snapshot_after() {
   snapshot_resources "after"
 }
 
+# --------------------------------------------------------------------------
+# T04 — the WORKFLOW path: a Temporal run whose `agentCall` targets the same
+# delayed agent. Sequenced strictly AFTER stage 11 (the direct execution has
+# completed and its message is acked), because the agent-ai consumer is
+# SERIAL per tenant (T01 finding 1): two overlapping long agent executions
+# would queue, doubling the run's wall clock for no extra evidence.
+#
+# How the delay reaches the agent on THIS path, and how the run is started —
+# BOTH routes were checked live before choosing (2026-07-30):
+#   - Delay via the WEBHOOK BODY: impossible. `trigger-consumer.service.ts`
+#     builds a FIXED request shape
+#     (`{envelope, channel, provider, from, text, messageId, tenantId}`), so a
+#     `__test_delay_ms` field in the webhook body lands at
+#     `request.envelope.__test_delay_ms`, never at `request.__test_delay_ms`,
+#     while the hook reads `variables.request.__test_delay_ms`.
+#   - Start via `POST /api/workflows/:id/execute` with `{"request": {...}}`:
+#     this DOES deliver the canonical key (`runWorkflow` sets
+#     `variables.request = workflow.request`, and `agentCall` forwards
+#     `{...resolvedArgs, variables: context.variables}`) — verified live, the
+#     agent really waited 120s. But a directly-executed run has NO causal
+#     context (only the trigger consumer supplies one from the incoming
+#     envelope), so the agent execution gets its OWN correlation id and its
+#     `execution_completed` lands on a DIFFERENT chain than the run's —
+#     verified live: the run's chain held only workflow-service events. That
+#     would gut the "the RUN's trace carries exactly one execution_completed"
+#     assertion.
+#   - CHOSEN: real webhook -> trigger -> workflow (the production path, causal
+#     chain intact, exactly as http-workflow.sh's agent workflow), with the
+#     delay carried in the ACTION ARGS as `args.metadata.__test_delay_ms`
+#     (see e2e_manifest_body for why an unknown args key survives validation,
+#     manifest substitution and the activity boundary). The value is this
+#     script's WORKFLOW_DELAY_MS parameter, interpolated into the manifest.
+# --------------------------------------------------------------------------
+stage_run_agent_workflow() {
+  log "Stage 13: trigger '${AGENT_WORKFLOW_NAME}' (agentCall -> agent ${AGENT_ID}, args.metadata.__test_delay_ms=${WORKFLOW_DELAY_MS}) via its own webhook channel"
+  local webhook_args=(-s --connect-timeout 10 --max-time 45 -X POST "${API_URL}/api/webhooks/http/${TENANT}"
+    -H "Host: ${HOST_HEADER}"
+    -H "Content-Type: application/json"
+    -H "x-http-channel-token: ${AGENTFLOW_APP_SECRET}"
+    -d "{\"from\":\"e2e-long-agentflow\",\"text\":\"${WORKFLOW_NONCE}\"}")
+  [[ ${#RESOLVE_ARGS[@]} -gt 0 ]] && webhook_args+=("${RESOLVE_ARGS[@]}")
+
+  AGENT_RUN_START_EPOCH="$(date +%s)"
+  local resp status
+  resp="$(curl "${webhook_args[@]}")"
+  status="$(echo "$resp" | jq -r '.status // empty')"
+  if [[ "$status" != "accepted" ]]; then
+    err "Agentflow webhook not accepted: $resp"
+    return 1
+  fi
+
+  # The trigger consumer starts the Temporal run asynchronously; poll the
+  # executions list (by this run's nonce) for the id, same lookup
+  # http-workflow.sh uses.
+  local deadline=$(( AGENT_RUN_START_EPOCH + PROBE_BUDGET_S ))
+  while (( $(date +%s) < deadline )); do
+    AGENT_RUN_EXECUTION_ID="$(api GET "/api/workflows/${AGENT_WORKFLOW_ID}/executions?pageSize=100" \
+      | jq -r ".items[]? | select(.request.text == \"${WORKFLOW_NONCE}\") | .id" | head -1)" || true
+    [[ -n "$AGENT_RUN_EXECUTION_ID" ]] && break
+    sleep 2
+  done
+  if [[ -z "$AGENT_RUN_EXECUTION_ID" ]]; then
+    err "No '${AGENT_WORKFLOW_NAME}' execution appeared for nonce ${WORKFLOW_NONCE} within ${PROBE_BUDGET_S}s — the webhook never reached the trigger consumer"
+    api GET "/api/workflows/${AGENT_WORKFLOW_ID}/executions?pageSize=20" | jq -c '.items[]? | {id, status, request}' >&2 || true
+    return 1
+  fi
+  log "Agent workflow run started: executionId=${AGENT_RUN_EXECUTION_ID} (nonce ${WORKFLOW_NONCE})"
+
+  # Sanity: the run must NOT be finished already — otherwise the delay key
+  # never reached the agent and every assertion below would be vacuous.
+  local state
+  state="$(long_work_state "workflow")"
+  if [[ "$state" == "unreadable" ]]; then
+    err "Could not read the status of agent workflow run ${AGENT_RUN_EXECUTION_ID} right after start (two attempts) — cannot establish that the run is waiting, so the stages below would assert nothing"
+    return 1
+  fi
+  if [[ "$state" != "running" ]]; then
+    err "Agent workflow run ${AGENT_RUN_EXECUTION_ID} is already '${state}' right after start — the ${WORKFLOW_DELAY_MS}ms delay did not reach the agent over the workflow path"
+    err "Run detail: $(api GET "/api/workflows/${AGENT_WORKFLOW_ID}/executions/${AGENT_RUN_EXECUTION_ID}")"
+    return 1
+  fi
+  log "Agent workflow run is RUNNING — the agentCall is waiting on the delayed agent"
+}
+
+stage_contention_probe_workflow() {
+  # T04's "the normal-workflow probe still passes alongside": the SAME probe
+  # as stage 7, now overlapping the Temporal agentCall wait instead of the
+  # direct execution.
+  run_contention_probe "Stage 13b" "$PROBE_NONCE_WF" "workflow"
+}
+
+stage_wait_agent_workflow() {
+  log "Stage 14: poll the agent workflow run ${AGENT_RUN_EXECUTION_ID} to a terminal status (timeout ${WORKFLOW_COMPLETION_TIMEOUT_S}s)"
+  local deadline=$(( AGENT_RUN_START_EPOCH + WORKFLOW_COMPLETION_TIMEOUT_S ))
+  local body="" status=""
+  while (( $(date +%s) < deadline )); do
+    body="$(api GET "/api/workflows/${AGENT_WORKFLOW_ID}/executions/${AGENT_RUN_EXECUTION_ID}")" || true
+    status="$(echo "$body" | jq -r '.status // empty')" || true
+    case "$status" in
+      COMPLETED|FAILED|TIMED_OUT|CANCELED|TERMINATED) break ;;
+      *) sleep 3 ;;
+    esac
+  done
+
+  local elapsed=$(( $(date +%s) - AGENT_RUN_START_EPOCH ))
+  if [[ "$status" != "COMPLETED" ]]; then
+    err "Agent workflow run ${AGENT_RUN_EXECUTION_ID} ended '${status:-<none>}' after ${elapsed}s instead of COMPLETED — a Temporal budget (startToClose 15m / heartbeatTimeout 30s / AGENT_CALL_TIMEOUT_MS 900s) or the agent itself failed"
+    err "Run detail: ${body}"
+    return 1
+  fi
+  log "Agent workflow run COMPLETED after ${elapsed}s (injected delay ${WORKFLOW_DELAY_S}s)"
+
+  # Temporal budget coverage, asserted deterministically from the run record:
+  # a heartbeatTimeout or startToClose breach surfaces as a non-COMPLETED
+  # status AND a populated `failure` (IWorkflowFailureInfo). Both must be
+  # clean — the heartbeats (emitted every 15s by agent-call.activity.ts
+  # against a 30s heartbeatTimeout) covered the whole wait.
+  local failure
+  failure="$(echo "$body" | jq -c '.failure // empty')"
+  if [[ -n "$failure" && "$failure" != "null" ]]; then
+    err "Agent workflow run reports a failure even though status is COMPLETED: ${failure}"
+    return 1
+  fi
+  if (( elapsed < WORKFLOW_DELAY_S )); then
+    err "Agent workflow run finished in ${elapsed}s, FASTER than the injected ${WORKFLOW_DELAY_S}s delay — the delay key did not travel over the workflow path"
+    return 1
+  fi
+  log "No Temporal failure recorded and duration >= the injected delay — heartbeats covered the ${WORKFLOW_DELAY_S}s wait"
+
+  # The agentCall's own result must carry the echoed nonce, proving the run
+  # completed BECAUSE the agent answered (not because an action was skipped).
+  # Anchored to the EXACT result path of the manifest's 'callAgent' action —
+  # `result.results.callAgent.data.reply` (the activity's HttpExecutionResult:
+  # `{status, data: {reply, tool_calls}, headers}`, verified live) — rather
+  # than a recursive-descent grab for any `.reply`, so a reply appearing
+  # somewhere else in the run record can never stand in for the agent's.
+  local reply
+  reply="$(echo "$body" | jq -r '.result.results.callAgent.data.reply // empty')"
+  if [[ -z "$reply" ]]; then
+    err "Could not find the agentCall reply at result.results.callAgent.data.reply in the run result: ${body}"
+    return 1
+  fi
+  local call_status
+  call_status="$(echo "$body" | jq -r '.result.results.callAgent.status // empty')"
+  if [[ "$call_status" != "200" ]]; then
+    err "The 'callAgent' action reported status '${call_status:-<none>}' instead of 200: ${body}"
+    return 1
+  fi
+  log "agentCall reply: '${reply}'"
+  if [[ "$reply" != *"$WORKFLOW_NONCE"* ]]; then
+    err "The agentCall reply does not echo this run's nonce ${WORKFLOW_NONCE}: ${reply}"
+    return 1
+  fi
+  log "Workflow path OK: the delayed agent answered with this run's nonce"
+}
+
+stage_verify_agent_run_chain() {
+  # EXACTLY ONE `execution_completed` for the agent execution of this run.
+  # The chain also contains the WORKFLOW's own execution_started/completed
+  # pair (producer `workflow-service`, T02 of manual-loops/
+  # workflow-step-events.md), so the count is scoped by producer:
+  # `ai-agent-gateway` is the producer of the agent-runtime lifecycle events
+  # (execution.handler.ts publishes on
+  # evt.<tenant>.ai-agent-gateway.automation.platform.internal.*) — verified
+  # live against tracking.tracked_events.
+  #
+  # `execution_requested` is counted too: a Temporal activity retry would
+  # re-submit and (outside JetStream's 2-minute duplicate window) produce a
+  # second one. Exactly one requested + exactly one completed + zero failed
+  # is the no-duplicate, no-retry contract of T04.
+  log "Stage 15: resolve the agent run's correlation_id and assert exactly ONE agent execution_completed on its chain"
+  local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  while (( $(date +%s) < deadline )); do
+    # `result.causal.correlation_id` is the webhook-triggered run's inherited
+    # chain (http-workflow.sh stage 9's lookup). `stepEvents.actionCausal` is
+    # the same value on runs where the causal snapshot only survived on the
+    # step-event context — kept as a fallback so a shape change fails loudly
+    # in the assertions below rather than silently here.
+    AGENT_RUN_CORRELATION_ID="$(api GET "/api/workflows/${AGENT_WORKFLOW_ID}/executions/${AGENT_RUN_EXECUTION_ID}" \
+      | jq -r '.result.causal.correlation_id // .result.stepEvents.actionCausal.correlation_id // empty')" || true
+    [[ -n "$AGENT_RUN_CORRELATION_ID" ]] && break
+    sleep 3
+  done
+  if [[ -z "$AGENT_RUN_CORRELATION_ID" ]]; then
+    err "Agent workflow run ${AGENT_RUN_EXECUTION_ID} never reported result.causal.correlation_id within ${CHAIN_TIMEOUT_S}s"
+    err "Run detail: $(api GET "/api/workflows/${AGENT_WORKFLOW_ID}/executions/${AGENT_RUN_EXECUTION_ID}")"
+    return 1
+  fi
+  log "Agent run correlation_id=${AGENT_RUN_CORRELATION_ID}"
+
+  local chain_deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  local combined status body completed_count requested_count failed_count
+  while (( $(date +%s) < chain_deadline )); do
+    combined="$(api_status GET "/api/tracking/chains/${AGENT_RUN_CORRELATION_ID}")" || true
+    status="$(api_status_code "$combined")"
+    body="$(api_status_body "$combined")"
+    if [[ "$status" == "200" ]]; then
+      completed_count="$(echo "$body" | jq '[.events[]? | select(.kind == "execution_completed" and .producer == "ai-agent-gateway")] | length')"
+      requested_count="$(echo "$body" | jq '[.events[]? | select(.kind == "execution_requested" and .producer == "ai-agent-gateway")] | length')"
+      failed_count="$(echo "$body" | jq '[.events[]? | select(.kind == "execution_failed" and .producer == "ai-agent-gateway")] | length')"
+      if [[ "$completed_count" == "1" ]]; then
+        log "Chain ${AGENT_RUN_CORRELATION_ID}: agent execution_requested=${requested_count} execution_completed=${completed_count} execution_failed=${failed_count} (total events $(echo "$body" | jq '.events | length'))"
+        if [[ "$requested_count" != "1" ]]; then
+          err "Expected exactly 1 agent execution_requested on the chain, got ${requested_count} — the agentCall activity was retried/re-submitted"
+          return 1
+        fi
+        if [[ "$failed_count" != "0" ]]; then
+          err "Chain carries ${failed_count} agent execution_failed event(s) — the long agentCall did not survive cleanly"
+          return 1
+        fi
+        log "Exactly ONE agent execution_completed on the run's chain — no duplicate delivery, no retry"
+        return 0
+      fi
+      # Fast-fail on a duplicate BEFORE logging a "retrying" line: more than
+      # one agent execution_completed can never become correct by waiting.
+      if [[ "${completed_count:-0}" -gt 1 ]]; then
+        err "Chain ${AGENT_RUN_CORRELATION_ID} carries ${completed_count} agent execution_completed events — DUPLICATE delivery for a single agentCall"
+        err "Events: $(echo "$body" | jq -c '[.events[]? | {kind, producer, occurred_at}]')"
+        return 1
+      fi
+      log "Chain has ${completed_count:-0} agent execution_completed event(s) so far; retrying"
+    else
+      log "Chain endpoint returned status ${status}; retrying"
+    fi
+    sleep 3
+  done
+  err "Never observed exactly one agent execution_completed on chain ${AGENT_RUN_CORRELATION_ID} within ${CHAIN_TIMEOUT_S}s (last count '${completed_count:-<none>}', last status ${status})"
+  err "Last response: ${body}"
+  return 1
+}
+
 main() {
   stage_preflight
   stage_login
@@ -973,7 +1397,13 @@ main() {
   stage_verify_delay_hook_logs
   stage_verify_no_redeliveries
   stage_snapshot_after
-  log "E2E long-running agent execution verified: immediate handle (<${HANDLE_MAX_S}s) + no held connection, contention probe completed during the wait, execution completed after >= ${DELAY_S}s with a full payload, zero JetStream redeliveries with ack-pending drained, and before/during/after resource evidence captured (execution ${EXECUTION_ID}, nonce ${NONCE})"
+  # T04 — the workflow path, strictly AFTER the direct execution has completed
+  # and been acked (serial per-tenant consumer, T01 finding 1).
+  stage_run_agent_workflow
+  stage_contention_probe_workflow
+  stage_wait_agent_workflow
+  stage_verify_agent_run_chain
+  log "E2E long-running agent execution verified: immediate handle (<${HANDLE_MAX_S}s) + no held connection, contention probe completed during the wait, execution completed after >= ${DELAY_S}s with a full payload, zero JetStream redeliveries with ack-pending drained, before/during/after resource evidence captured, AND the workflow agentCall path completed after >= ${WORKFLOW_DELAY_S}s with no Temporal failure, exactly one agent execution_completed on its chain, and its own contention probe green (direct execution ${EXECUTION_ID}, workflow run ${AGENT_RUN_EXECUTION_ID}, chain ${AGENT_RUN_CORRELATION_ID})"
 }
 
 main "$@"
