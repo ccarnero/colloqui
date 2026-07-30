@@ -220,7 +220,7 @@ grep -n "AGENT_TEST_DELAY" services/agent-ai-service/README.md
 ## Progress
 
 - [x] T01 timeout & ack inventory (report)
-- [ ] T02 deterministic delay hook
+- [x] T02 deterministic delay hook
 - [ ] T03 long-execution e2e + contention probe
 - [ ] T04 workflow agentCall path
 - [ ] T05 docs + index

@@ -16,7 +16,20 @@ type AgentAiServiceConfig = {
   readonly consumerWorkingIntervalMs: number;
   readonly mcpLiveCallTimeoutMs: number;
   readonly bufferedExecutionTimeoutMs: number;
+  readonly testDelayEnabled: boolean;
+  readonly testDelayMaxMs: number;
 };
+
+/**
+ * Absolute ceiling (ms) for the dev-only deterministic execution delay hook
+ * (`test-delay.ts`). Deliberately below BOTH the consumer ackWait
+ * (`consumerAckWaitMs`, 900_000 — the JetStream message is held for the whole
+ * handler, `nats-consumer-runner.ts`) and the buffered-execution abort ceiling
+ * (`bufferedExecutionTimeoutMs`, 900_000), so an injected delay can never push
+ * an execution past redelivery or silently swallow the abort timer. Not
+ * overridable upward: `AGENT_TEST_DELAY_MAX_MS` can only lower it.
+ */
+export const AGENT_TEST_DELAY_HARD_CAP_MS = 600_000;
 
 export const agentAiServiceConfig: AgentAiServiceConfig = {
   get port() {
@@ -115,5 +128,35 @@ export const agentAiServiceConfig: AgentAiServiceConfig = {
       process.env.AGENT_BUFFERED_EXECUTION_TIMEOUT_MS ?? String(900_000),
       10
     );
+  },
+  /**
+   * Gates the deterministic execution delay hook in `handleBuffered`
+   * (`execution.handler.ts`, long-running-agent-executions.md T02). When
+   * `false` (the default, and the only value in any non-dev overlay), the
+   * `__test_delay_ms` key carried by an execution's variables/metadata is
+   * ignored and logged at debug — production behavior is byte-identical to
+   * before the hook existed. Only the local dev overlays set
+   * `AGENT_TEST_DELAY_ENABLED=true`.
+   */
+  get testDelayEnabled() {
+    return process.env.AGENT_TEST_DELAY_ENABLED === "true";
+  },
+  /**
+   * Upper bound (ms) applied to the per-execution `__test_delay_ms` value.
+   * Defaults to {@link AGENT_TEST_DELAY_HARD_CAP_MS} and is hard-clamped to
+   * it, so `AGENT_TEST_DELAY_MAX_MS` can only ever LOWER the ceiling (tests
+   * use a few ms). Non-numeric / non-positive overrides fall back to the
+   * hard cap.
+   */
+  get testDelayMaxMs() {
+    const raw = process.env.AGENT_TEST_DELAY_MAX_MS;
+    if (raw === undefined) {
+      return AGENT_TEST_DELAY_HARD_CAP_MS;
+    }
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return AGENT_TEST_DELAY_HARD_CAP_MS;
+    }
+    return Math.min(parsed, AGENT_TEST_DELAY_HARD_CAP_MS);
   },
 };

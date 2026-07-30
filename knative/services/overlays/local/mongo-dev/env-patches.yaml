@@ -636,6 +636,13 @@ spec:
             # runtime streaming e2e (DOCS/architecture/runtime-streaming.md).
             - name: RUNTIME_ALLOW_MOCK_PROVIDER
               value: "true"
+            # Dev-only: enables the deterministic execution delay hook used by
+            # the long-running-execution e2e. Inert unless the execution itself
+            # carries `__test_delay_ms`
+            # (services/agent-ai-service/README.md). NEVER set in a non-dev
+            # overlay.
+            - name: AGENT_TEST_DELAY_ENABLED
+              value: "true"
             - name: MEMORY_SERVICE_URL
               value: "http://agent-memory-service.platform-services-dev.svc.cluster.local"
             - name: CONNECTOR_ADMIN_URL

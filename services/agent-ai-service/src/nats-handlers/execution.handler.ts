@@ -17,6 +17,7 @@ import type { ChatRequest } from "../modules/chat/chat.dto";
 // biome-ignore lint/style/useImportType: ChatService is constructor-injected by NestJS DI — must be a value import so `design:paramtypes` metadata resolves the real class at runtime, not `type`.
 import { ChatService } from "../modules/chat/chat.service";
 import { JETSTREAM } from "../providers/nats.provider";
+import { resolveTestDelayMs, waitTestDelay } from "./test-delay";
 
 @Injectable()
 export class ExecutionHandler implements OnModuleInit {
@@ -168,6 +169,27 @@ export class ExecutionHandler implements OnModuleInit {
     );
 
     try {
+      // Dev-only deterministic delay hook (test-delay.ts): no-op unless
+      // AGENT_TEST_DELAY_ENABLED=true AND this execution explicitly carries
+      // `__test_delay_ms`. Sits INSIDE the abort window above — the wall-clock
+      // ceiling and the cancel subscription still abort it — and is capped well
+      // below both ackWait and bufferedExecutionTimeoutMs. Resolved
+      // SYNCHRONOUSLY and awaited only when it actually fires, so the default
+      // (gate-off) path keeps its exact pre-hook microtask ordering.
+      const testDelayMs = resolveTestDelayMs(
+        request,
+        { executionId, tenantId },
+        this.logger
+      );
+      if (testDelayMs > 0) {
+        await waitTestDelay(
+          testDelayMs,
+          { executionId, tenantId },
+          abortController.signal,
+          this.logger
+        );
+      }
+
       const result = await this.chatService.generateReply(tenantId, request, {
         abortSignal: abortController.signal,
       });
