@@ -17,6 +17,7 @@ import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
 import {
   AGENT_MEMORY_DOMAIN,
   AGENT_MEMORY_EXPIRED,
+  AGENT_MEMORY_PRODUCER,
   AGENT_MEMORY_PROPOSED,
   AGENT_MEMORY_PUBLISHED,
   AGENT_MEMORY_REJECTED,
@@ -27,7 +28,6 @@ import {
   MAX_DEPTH_BY_CATEGORY,
   PLATFORM_ACCOUNT_ID,
   PLATFORM_CHANNEL,
-  PLATFORM_PRODUCER,
   PLATFORM_PROVIDER,
   type TenantTier,
 } from "@yoizen/shared";
@@ -206,7 +206,12 @@ function buildEventEnvelope(
     causation_id: options.causationId ?? null,
     correlation_id: options.correlationId,
     tenant: tenantId,
-    producer: PLATFORM_PRODUCER,
+    // Same rule as `domain` below: the body must not contradict its subject.
+    // The subject's producer token is `agent-memory-service`, and this service
+    // is what publishes the event. It previously reported agent-admin's
+    // PLATFORM_PRODUCER — inherited when this file was renamed out of the admin
+    // service (`R061` in `e9e3a94b`), where that value was correct.
+    producer: AGENT_MEMORY_PRODUCER,
     // Subject and body must answer "which domain?" identically: the subject
     // token is `agent-memory` (AGENT_MEMORY_SUBJECT_PREFIX), so the envelope
     // says the same. It used to report agent-admin's PLATFORM_DOMAIN

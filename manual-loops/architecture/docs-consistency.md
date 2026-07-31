@@ -470,13 +470,19 @@ code and where. Loop SPEC: `manual-loops/messaging/envelope-drift.md`.
 5. FIXED — envelope-drift T03 (`5db90ac5`). The registry names `channel-audit`
    in all three rows; the `consumed-by.ts` comment and the trace README
    followed. The other two registry durables were swept and were correct.
-6. PARTIALLY FIXED — envelope-drift T08 (`1f6fc4cd`). The constants moved to
-   `packages/shared/src/constants.ts:119-127` and the envelope `domain` now
-   reads `agent-memory`, matching its subject. STILL OPEN: the same envelope
-   sets `producer: PLATFORM_PRODUCER` (`agent-admin-service`) while its
-   subject's producer token is `agent-memory-service` — the identical defect
-   one field over, found during T08 and deliberately left for its own
-   consumer sweep.
+6. FIXED — envelope-drift T08 (`1f6fc4cd`) + producer half fixed 2026-07-31
+   (envelope-drift follow-up). T08 moved the constants to
+   `packages/shared/src/constants.ts:119-127` and aligned the envelope
+   `domain`; the follow-up aligned `producer`, which reported
+   `agent-admin-service` against a subject whose producer token is
+   `agent-memory-service`. A human-authorised investigation established the
+   root cause for both: `git log --follow` shows the publisher was renamed out
+   of the admin service at 61% similarity (`R061` in `e9e3a94b`), where those
+   constants were correct, and the extraction rewrote the subject and
+   `transport.agent_id` but not the envelope identity fields. The consumer
+   sweep was clean — nothing branches on `envelope.producer` (the classifier
+   matches subject tokens, `classify.ts:258`; the `producer` column is
+   projected and displayed, never filtered).
 7. FIXED — envelope-drift T01 (`971ad0c3`). The `@default` tags match the
    constants, and both are pinned by a constant test.
 8. OPEN — deferred by envelope-drift decision 4 (tier wiring is a design

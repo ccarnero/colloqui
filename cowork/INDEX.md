@@ -1526,6 +1526,16 @@ Findings that only surfaced during implementation:
   is `agent-memory-service` — the identical defect one field over. Left for its own
   consumer sweep rather than folded in silently.
 
+  [Fixed 2026-07-31 — human-authorised post-loop follow-up after an
+  investigation-only pass; see `manual-loops/messaging/envelope-drift.md`
+  Progress and `manual-loops/architecture/docs-consistency.md` finding 6, now
+  FIXED. Root cause for this AND the T08 domain half: the publisher was renamed
+  out of the admin service at 61% similarity (`R061` in `e9e3a94b`), which
+  rewrote the subject and `transport.agent_id` but not the envelope identity
+  fields. The consumer sweep was clean. Two findings from that investigation
+  remain OPEN: the agent-memory `type` grammar plus the inherited
+  `accountid: "platform-admin"`, and the `PLATFORM_*` naming trap.]
+
 Two cross-cutting mechanics worth reusing: accept-gate greps like
 `rg "webhook.received.v1"` treat `.` as a wildcard and match the CORRECT token too, so
 regression tests that must assert a removed literal's absence assemble it

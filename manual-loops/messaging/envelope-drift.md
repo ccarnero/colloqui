@@ -337,6 +337,41 @@ grep -n "envelope-drift" cowork/INDEX.md
   forwarding into stage-2 `data.headers` — follow-up; finding 8 tier wiring
   — deferred by decision 4)
 
+**Post-loop follow-up (2026-07-31): agent-memory `producer` FIXED.** Human
+authorised after an investigation-only pass. `nats.provider.ts:214` now sets
+`producer: AGENT_MEMORY_PRODUCER`, matching its subject's producer token.
+Root cause for this AND the T08 domain half: `git log --follow` shows the
+publisher was renamed out of the admin service at 61% similarity (`R061` in
+`e9e3a94b`), where `producer`/`domain` were correct; the extraction rewrote the
+subject and `transport.agent_id` (`:55`) but not the envelope identity fields.
+Ownership confirms the fix direction — agent-memory-service owns the `memories`
+table (`src/schema/memory-schema.sql:1-31`), the full REST surface and all four
+publishers, while agent-admin-service publishes NO memory events and only
+proxies three proposal endpoints (`memories.service.ts` → `memoryServiceUrl`).
+Consumer sweep clean: nothing branches on `envelope.producer` (classifier reads
+subject tokens, `classify.ts:258`; the column is projected and displayed
+(`causal-graph-geometry.ts:50-51`), never filtered — the `/events` `from`
+param is `occurred_at`, `build-events-query.ts:305`). The `producer` column
+now spans the cutover like `domain`.
+
+**Still OPEN — pending human decision (both surfaced by that investigation):**
+
+1. **agent-memory `type` grammar + `accountid` inheritance.** `EVENT_TYPES`
+   (`nats.provider.ts:59-63`) emits `io.yoizen.agent-memory.memory.proposed.v1`
+   — six segments, and its kind (`memory.proposed`) disagrees with the subject
+   kind (`memory_proposed`); `envelope.md:77` prescribes
+   `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`. Same class as T05's
+   stage-1 token and a T05-shaped task (historical values stay queryable).
+   `accountid: PLATFORM_ACCOUNT_ID` (`"platform-admin"`, `constants.ts:91`) is
+   inherited from the same copy and needs the same adjudication.
+2. **`PLATFORM_*` naming trap.** `PLATFORM_PRODUCER` /
+   `PLATFORM_SUBJECT_PREFIX` read as generic but MEAN `agent-admin-service`
+   (`constants.ts:87`) — precisely what invited this bug. Rename candidate:
+   `AGENT_ADMIN_PRODUCER`. Note `agent-scheduler-service` also publishes with
+   `producer: PLATFORM_PRODUCER` (`nats.provider.ts:158`) but on the
+   agent-admin subject family (`PLATFORM_JOB_TRIGGER`), so it is internally
+   consistent today — a rename is a readability fix, not a bug fix.
+
 ## Out of scope (explicit)
 
 - `TENANT_TIER_LIMITS` wiring into `ensureTenantIngressStream` (finding 8)

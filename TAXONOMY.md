@@ -94,6 +94,24 @@
 > **Decision note (Q3 — `agent-memory` added after code verification):** the subject shape was verified in the publisher code, not guessed. `AGENT_MEMORY_SUBJECT_PREFIX` (`packages/shared/src/constants.ts:119-127`) is published through `NatsPublisher.publishEvent` (`services/agent-memory-service/src/providers/nats.provider.ts:317`) using the shared `buildPlatformSubject` helper. This subject family's 4th token (domain) is `agent-memory`, NOT `automation`. Classify by SUBJECT (rule 9 below) — that remains the rule for every family.
 >
 > **Updated 2026-07-31 (envelope-drift T08):** both halves of the original caveat are fixed. The constants moved from the service to `packages/shared/src/constants.ts`, beside every other internal producer's prefix; and the envelope body now sets `domain: AGENT_MEMORY_DOMAIN` (`agent-memory`, `nats.provider.ts:214`) instead of agent-admin's `PLATFORM_DOMAIN` (`automation`), so body and subject agree. Rows ingested before that date still carry `domain: "automation"` in `tracking.tracked_events` (the column copies the envelope field verbatim). `DRIFT.md` #9 records the original finding.
+>
+> **Updated 2026-07-31 (envelope-drift follow-up, producer half):** the same
+> envelope also reported `producer: "agent-admin-service"` while its subject's
+> producer token is `agent-memory-service`. It now sets
+> `producer: AGENT_MEMORY_PRODUCER` (`nats.provider.ts:214`). Both fields were
+> one leftover: `git log --follow` shows the publisher was renamed out of the
+> admin service at 61% similarity (`R061` in `e9e3a94b`), where those values
+> were correct — the extraction rewrote the subject and `transport.agent_id`
+> but not the envelope identity fields. As with `domain`, rows ingested before
+> this date keep `producer: "agent-admin-service"` in `tracking.tracked_events`,
+> so that column spans the cutover; nothing filters on it (the classifier reads
+> the subject, `classify.ts:258`), and the admin console only displays it
+> (`causal-graph-geometry.ts:50-51`).
+>
+> [Citation correction, same date: the T08 note above places
+> `domain: AGENT_MEMORY_DOMAIN` at `nats.provider.ts:214`. That line now holds
+> `producer`; `domain` moved to `:219` when the producer fix inserted its
+> comment block. The note's text is otherwise unchanged and still accurate.]
 
 > **Decision note (Q6 — `legacy` bucket):** the user wants deprecated `events.>` / `results.>` traffic graphed separately, trending to zero, instead of polluting the `unknown` alarm signal. `unknown` therefore means strictly "we have never seen this shape" — any non-zero `unknown` count is actionable.
 

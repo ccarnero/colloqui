@@ -17,8 +17,16 @@ import { NatsPublisher } from "../../src/providers/nats.provider";
  *
  * agent-memory publishes on `...agent-memory-service.agent-memory.platform.
  * internal...` while the envelope body used to report `domain: "automation"`
- * (`PLATFORM_DOMAIN`, borrowed from agent-admin). Two different answers to
- * "which domain is this event?" in the same message.
+ * AND `producer: "agent-admin-service"` (`PLATFORM_DOMAIN`/`PLATFORM_PRODUCER`,
+ * borrowed from agent-admin). Two different answers to "which domain is this
+ * event?" and "who published it?" in the same message.
+ *
+ * Both were one leftover: `git log --follow` shows this file was renamed out of
+ * the admin service at 61% similarity (`R061` in `e9e3a94b`), where those
+ * constants were correct. The extraction rewrote the SUBJECT and
+ * `transport.agent_id` (`nats.provider.ts:55`) for the new service but left the
+ * envelope identity fields pointing at the old one. T08 fixed the domain half;
+ * the producer half followed on 2026-07-31.
  *
  * Nothing classified on the envelope field — `tracking-ingester`'s rule 9
  * reads the SUBJECT and says so explicitly (`classify.ts:252-253`) — but the
@@ -118,6 +126,18 @@ describe("NatsPublisher subject/envelope agreement", () => {
       expect(envelope["domain"]).toBe(tokens.domain);
       // The value it used to carry, borrowed from agent-admin's PLATFORM_DOMAIN.
       expect(envelope["domain"]).not.toBe("automation");
+    });
+
+    it(`${kind}: envelope.producer equals the subject's producer token`, async () => {
+      await publish();
+      const { subject, envelope } = published();
+      const tokens = subjectTokens(subject);
+
+      expect(tokens.producer).toBe(AGENT_MEMORY_PRODUCER);
+      expect(envelope["producer"]).toBe(tokens.producer);
+      // The inherited value: this file was renamed out of the admin service
+      // (R061 in `e9e3a94b`), which is where `agent-admin-service` came from.
+      expect(envelope["producer"]).not.toBe("agent-admin-service");
     });
 
     it(`${kind}: envelope channel/provider also match their subject tokens`, async () => {

@@ -83,18 +83,24 @@ Subjects are built from `AGENT_MEMORY_SUBJECT_PREFIX =
 (`packages/shared/src/constants.ts:119-127` — moved out of this service on
 2026-07-31 by envelope-drift T08, so every internal producer's subject
 constants now live together), with `{tenant}` substituted by
-`buildPlatformSubject` (`src/providers/nats.provider.ts:322`).
+`buildPlatformSubject` (`src/providers/nats.provider.ts:327`).
 
-The envelope body reports `domain: AGENT_MEMORY_DOMAIN` (`agent-memory`) —
-the same value as the subject's domain token. It previously carried
-agent-admin's `PLATFORM_DOMAIN` (`automation`), contradicting its own subject.
+The envelope body reports `producer: AGENT_MEMORY_PRODUCER`
+(`agent-memory-service`) and `domain: AGENT_MEMORY_DOMAIN` (`agent-memory`) —
+the same values as the subject's producer and domain tokens. Both previously
+carried agent-admin's `PLATFORM_PRODUCER`/`PLATFORM_DOMAIN`
+(`agent-admin-service`/`automation`), contradicting the subject: this publisher
+was renamed out of the admin service (`R061` in `e9e3a94b`), which rewrote the
+subject and `transport.agent_id` but left the envelope identity fields behind.
+Fixed by envelope-drift T08 (domain) and its 2026-07-31 follow-up (producer);
+rows ingested earlier keep the old values.
 
 | Subject | Publisher | Constant |
 |---|---|---|
-| `.memory_proposed.v1` | `publishMemoryProposed` (`nats.provider.ts:371-397`) | `AGENT_MEMORY_PROPOSED` (`packages/shared/src/constants.ts:124`) |
-| `.memory_published.v1` | `publishMemoryApproved` (`nats.provider.ts:399-423`) | `AGENT_MEMORY_PUBLISHED` (`packages/shared/src/constants.ts:125`) |
-| `.memory_rejected.v1` | `publishMemoryRejected` (`nats.provider.ts:425-448`) | `AGENT_MEMORY_REJECTED` (`packages/shared/src/constants.ts:126`) |
-| `.memory_expired.v1` | `publishMemoryExpired` (`nats.provider.ts:450-472`) | `AGENT_MEMORY_EXPIRED` (`packages/shared/src/constants.ts:127`) |
+| `.memory_proposed.v1` | `publishMemoryProposed` (`nats.provider.ts:376-402`) | `AGENT_MEMORY_PROPOSED` (`packages/shared/src/constants.ts:124`) |
+| `.memory_published.v1` | `publishMemoryApproved` (`nats.provider.ts:404-428`) | `AGENT_MEMORY_PUBLISHED` (`packages/shared/src/constants.ts:125`) |
+| `.memory_rejected.v1` | `publishMemoryRejected` (`nats.provider.ts:430-453`) | `AGENT_MEMORY_REJECTED` (`packages/shared/src/constants.ts:126`) |
+| `.memory_expired.v1` | `publishMemoryExpired` (`nats.provider.ts:455-477`) | `AGENT_MEMORY_EXPIRED` (`packages/shared/src/constants.ts:127`) |
 
 `memory_proposed`'s envelope id is persisted into `metadata.proposedEventId` and
 becomes the causation anchor for the later `memory_published` /
