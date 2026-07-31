@@ -21,17 +21,17 @@ import {
   DepthExceededError,
   MAX_DEPTH_BY_CATEGORY,
   PLATFORM_ACCOUNT_ID,
-  PLATFORM_AGENT_PUBLISHED,
-  PLATFORM_AGENT_UNPUBLISHED,
+  AGENT_ADMIN_AGENT_PUBLISHED,
+  AGENT_ADMIN_AGENT_UNPUBLISHED,
   PLATFORM_CHANNEL,
-  PLATFORM_CONFIG_SYNC,
-  PLATFORM_DOCUMENT_INGESTION,
+  AGENT_ADMIN_CONFIG_SYNC,
+  AGENT_ADMIN_DOCUMENT_INGESTION,
   PLATFORM_DOMAIN,
-  PLATFORM_JOB_TRIGGER,
-  PLATFORM_PRODUCER,
+  AGENT_ADMIN_JOB_TRIGGER,
+  AGENT_ADMIN_PRODUCER,
   PLATFORM_PROVIDER,
-  PLATFORM_SKB_FILE_INGESTION,
-  PLATFORM_SUBJECT_PREFIX,
+  AGENT_ADMIN_SKB_FILE_INGESTION,
+  AGENT_ADMIN_SUBJECT_PREFIX,
   type TenantTier,
 } from "@yoizen/shared";
 import {
@@ -67,7 +67,16 @@ const EVENT_TYPES = {
   SKB_FILE_INGESTION: "io.yoizen.platform.admin.skb_file_ingestion.v1",
 } as const;
 
-const PLATFORM_SKILL_CHANGED = `${PLATFORM_SUBJECT_PREFIX}.skill_changed.v1`;
+/**
+ * Renamed from the platform-prefixed name on 2026-07-31 (envelope-drift
+ * post-loop item 2) — same trap as the shared constants: a generic-sounding
+ * prefix over a value that names this service. Pure rename, value unchanged.
+ *
+ * Still declared HERE rather than in `packages/shared/src/constants.ts` beside
+ * its twelve siblings — that move is a separate open item (docs-consistency
+ * T02 follow-up), not folded in here.
+ */
+const AGENT_ADMIN_SKILL_CHANGED = `${AGENT_ADMIN_SUBJECT_PREFIX}.skill_changed.v1`;
 
 interface IBuildEventOptions {
   eventType: string;
@@ -235,7 +244,7 @@ function buildEventEnvelope(
     causation_id: options.causationId ?? null,
     correlation_id: options.correlationId,
     tenant: tenantId,
-    producer: PLATFORM_PRODUCER,
+    producer: AGENT_ADMIN_PRODUCER,
     domain: PLATFORM_DOMAIN,
     channel: PLATFORM_CHANNEL,
     provider: PLATFORM_PROVIDER,
@@ -438,7 +447,7 @@ export class NatsPublisher implements OnModuleDestroy {
       source: "//agent-admin-service/admin/agents/publish",
     });
 
-    return this.publishEvent(tenantId, PLATFORM_AGENT_PUBLISHED, event);
+    return this.publishEvent(tenantId, AGENT_ADMIN_AGENT_PUBLISHED, event);
   }
 
   async publishAgentUnpublished(
@@ -464,7 +473,7 @@ export class NatsPublisher implements OnModuleDestroy {
       source: "//agent-admin-service/admin/agents/unpublish",
     });
 
-    return this.publishEvent(tenantId, PLATFORM_AGENT_UNPUBLISHED, event);
+    return this.publishEvent(tenantId, AGENT_ADMIN_AGENT_UNPUBLISHED, event);
   }
 
   async publishRuntimeConfigSync(
@@ -490,7 +499,7 @@ export class NatsPublisher implements OnModuleDestroy {
       source: "//agent-admin-service/admin/config-files/deploy",
     });
 
-    return this.publishEvent(tenantId, PLATFORM_CONFIG_SYNC, event);
+    return this.publishEvent(tenantId, AGENT_ADMIN_CONFIG_SYNC, event);
   }
 
   async publishJobTrigger(options: {
@@ -520,7 +529,7 @@ export class NatsPublisher implements OnModuleDestroy {
       source: "//agent-admin-service/admin/jobs/trigger",
     });
 
-    return this.publishEvent(tenantId, PLATFORM_JOB_TRIGGER, event);
+    return this.publishEvent(tenantId, AGENT_ADMIN_JOB_TRIGGER, event);
   }
 
   async publishDocumentIngestion(
@@ -551,7 +560,7 @@ export class NatsPublisher implements OnModuleDestroy {
         "//agent-admin-service/admin/knowledge-bases/documents/upload-file",
     });
 
-    return this.publishEvent(tenantId, PLATFORM_DOCUMENT_INGESTION, event);
+    return this.publishEvent(tenantId, AGENT_ADMIN_DOCUMENT_INGESTION, event);
   }
 
   /**
@@ -589,7 +598,7 @@ export class NatsPublisher implements OnModuleDestroy {
         "//agent-admin-service/admin/structured-kb/containers/files/upload",
     });
 
-    return this.publishEvent(tenantId, PLATFORM_SKB_FILE_INGESTION, event);
+    return this.publishEvent(tenantId, AGENT_ADMIN_SKB_FILE_INGESTION, event);
   }
 
   async publishSkillChanged(
@@ -616,7 +625,7 @@ export class NatsPublisher implements OnModuleDestroy {
       source: "//agent-admin-service/admin/skills",
     });
 
-    return this.publishEvent(tenantId, PLATFORM_SKILL_CHANGED, event);
+    return this.publishEvent(tenantId, AGENT_ADMIN_SKILL_CHANGED, event);
   }
 }
 

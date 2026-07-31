@@ -17,7 +17,8 @@ import { NatsPublisher } from "../../src/providers/nats.provider";
  *
  * agent-memory publishes on `...agent-memory-service.agent-memory.platform.
  * internal...` while the envelope body used to report `domain: "automation"`
- * AND `producer: "agent-admin-service"` (`PLATFORM_DOMAIN`/`PLATFORM_PRODUCER`,
+ * AND `producer: "agent-admin-service"` (the constants then named
+ * `PLATFORM_DOMAIN`/`PLATFORM_PRODUCER`,
  * borrowed from agent-admin). Two different answers to "which domain is this
  * event?" and "who published it?" in the same message.
  *

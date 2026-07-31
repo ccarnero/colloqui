@@ -4,13 +4,13 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { Sql } from "@yoizen/database";
 import {
   PLATFORM_ACCOUNT_ID,
-  PLATFORM_AGENT_PUBLISHED,
-  PLATFORM_AGENT_UNPUBLISHED,
+  AGENT_ADMIN_AGENT_PUBLISHED,
+  AGENT_ADMIN_AGENT_UNPUBLISHED,
   PLATFORM_CHANNEL,
-  PLATFORM_CONFIG_SYNC,
+  AGENT_ADMIN_CONFIG_SYNC,
   PLATFORM_DOMAIN,
-  PLATFORM_JOB_TRIGGER,
-  PLATFORM_PRODUCER,
+  AGENT_ADMIN_JOB_TRIGGER,
+  AGENT_ADMIN_PRODUCER,
   PLATFORM_PROVIDER,
   buildPlatformSubject,
   type EventEnvelope,
@@ -147,10 +147,10 @@ const EVENT_TYPES = {
 } as const;
 
 const EVENT_SUBJECTS: Record<CapturedEventName, string> = {
-  "agent.published": PLATFORM_AGENT_PUBLISHED,
-  "agent.unpublished": PLATFORM_AGENT_UNPUBLISHED,
-  "runtime.config.sync": PLATFORM_CONFIG_SYNC,
-  "job.trigger": PLATFORM_JOB_TRIGGER,
+  "agent.published": AGENT_ADMIN_AGENT_PUBLISHED,
+  "agent.unpublished": AGENT_ADMIN_AGENT_UNPUBLISHED,
+  "runtime.config.sync": AGENT_ADMIN_CONFIG_SYNC,
+  "job.trigger": AGENT_ADMIN_JOB_TRIGGER,
 };
 
 function createTraceId(): string {
@@ -194,7 +194,7 @@ function createCapturedEvent(
       timestamp: Date.parse(time),
     },
     payload,
-    producer: PLATFORM_PRODUCER,
+    producer: AGENT_ADMIN_PRODUCER,
     provider: PLATFORM_PROVIDER,
     resource: options.resource,
     source: options.source,

@@ -22,7 +22,7 @@ import {
  * values:
  * - `RUNTIME_STREAM_SUBJECT_PREFIX` is `"rt.{tenant}.exec.{executionId}"`,
  *   NOT the bare `"rt."` prefix the audit shorthand suggested. The literal
- *   template (verified at packages/shared/src/constants.ts:139) is asserted
+ *   template (verified at packages/shared/src/constants.ts:198) is asserted
  *   below, and it does start with `"rt."` (checked separately, since that's
  *   the invariant the audit actually cares about — never `"evt."`).
  * - All other values (`WORKFLOW_DEFAULT_TIMEOUT_MS`, `WORKFLOW_TASK_TIMEOUT_MS`,

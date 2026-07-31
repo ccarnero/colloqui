@@ -42,7 +42,7 @@ Traced from source (verified 2026-07-05):
   - `submitExecution()` → `YoizenClawExecutionClient.submitExecution` (publishes
     `execution_requested` to JetStream `INGRESS-<tenant>`).
   - `streamExecutionEvents()` subscribes **core NATS** (`nc.subscribe`, ephemeral)
-    to `PLATFORM_EXECUTION_STARTED/COMPLETED/FAILED` via
+    to `AI_AGENT_GATEWAY_EXECUTION_STARTED/COMPLETED/FAILED` via
     `src/utils/nats-stream-observable.util.ts` (`createNatsMultiSubjectObservable`)
     and maps to RxJS `MessageEvent`. **This is the reuse anchor for the token relay.**
   - A durable `MultiTenantConsumerManager` projects the same lifecycle events to
@@ -348,7 +348,7 @@ by `executionId` + `seq` as the resume cursor — designed for later, not built 
   1. `const executionId = randomUUID()`.
   2. Build a merged core-NATS subscription over
      `rt.<t>.exec.<id>.token|tool_call|tool_result` **and**
-     `PLATFORM_EXECUTION_STARTED/COMPLETED/FAILED` (filtered by `executionId`),
+     `AI_AGENT_GATEWAY_EXECUTION_STARTED/COMPLETED/FAILED` (filtered by `executionId`),
      reusing/extending `createNatsMultiSubjectObservable`
      (`utils/nats-stream-observable.util.ts`).
   3. `submitExecution(tenantId, { …dto, stream: true }, { requestedBy, executionId, correlationId })`.

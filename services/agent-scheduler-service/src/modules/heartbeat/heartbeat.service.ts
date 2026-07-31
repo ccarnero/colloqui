@@ -1,7 +1,7 @@
 import { Inject, Injectable, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
 import type { JetStreamClient } from "nats";
 import { PinoLoggerService } from "@yoizen/observability";
-import { buildPlatformSubject, PLATFORM_SCHEDULER_HEARTBEAT } from "@yoizen/shared";
+import { buildPlatformSubject, SCHEDULER_HEARTBEAT } from "@yoizen/shared";
 import { JETSTREAM } from "../../providers/nats.provider";
 import type { IHeartbeatEngine } from "../../abstractions/heartbeat-engine.interface";
 
@@ -114,7 +114,7 @@ export class HeartbeatService implements IHeartbeatEngine, OnModuleInit, OnModul
           },
         };
 
-        const subject = buildPlatformSubject(PLATFORM_SCHEDULER_HEARTBEAT, tenantId);
+        const subject = buildPlatformSubject(SCHEDULER_HEARTBEAT, tenantId);
         await this.js.publish(subject, JSON.stringify(envelope));
       } catch (error) {
         this.logger.warn(

@@ -375,20 +375,99 @@ now spans the cutover like `domain`.
    Not an inheritance artifact — it is the platform convention for
    internal-producer events, shared by all three services that publish on the
    `platform`/`internal` channel/provider family: agent-admin
-   (`nats.provider.ts:242`), agent-scheduler (`nats.provider.ts:162`) and
+   (`nats.provider.ts:251`), agent-scheduler (`nats.provider.ts:162`) and
    agent-memory (`nats.provider.ts:232`), from one shared constant
-   (`constants.ts:91`). `accountid` means "logical account ID (not the tenant)"
+   (`constants.ts:117`). `accountid` means "logical account ID (not the tenant)"
    (`envelope.md:88`); these events have no channel account, so the sentinel is
    correct. (Services outside that family use ad-hoc values — `""`, `"system"`,
    the tenant id — which disagree with each other; that inconsistency is a
    separate, wider question and is NOT evidence against the sentinel.)
-2. **`PLATFORM_*` naming trap — still OPEN.** `PLATFORM_PRODUCER` /
-   `PLATFORM_SUBJECT_PREFIX` read as generic but MEAN `agent-admin-service`
-   (`constants.ts:87`) — precisely what invited this bug. Rename candidate:
-   `AGENT_ADMIN_PRODUCER`. Note `agent-scheduler-service` also publishes with
-   `producer: PLATFORM_PRODUCER` (`nats.provider.ts:158`) but on the
-   agent-admin subject family (`PLATFORM_JOB_TRIGGER`), so it is internally
-   consistent today — a rename is a readability fix, not a bug fix.
+2. **`PLATFORM_*` naming trap — DONE 2026-07-31 (item 2).** The constants
+   whose VALUES name agent-admin-service were renamed to `AGENT_ADMIN_*`:
+   `AGENT_ADMIN_PRODUCER`, `AGENT_ADMIN_SUBJECT_PREFIX` and the twelve subjects
+   built from it (`config_sync`, `jobs_sync`, `job_trigger`, `chat_respond`,
+   `online`, `agent_outbound`, `execution_status`, `agent_published`,
+   `agent_unpublished`, `event`, `document_ingestion`, `skb_file_ingestion`).
+   Pure rename — every wire value byte-identical, pinned by
+   `packages/shared/src/__tests__/agent-admin.constants.test.ts` (teeth
+   verified: a silently altered prefix fails 18 assertions across that file and
+   `platform.constants.test.ts`). 127 replacements across 16 files; zero old
+   names remain in `services`/`packages`/`sdk`. `agent-scheduler-service` now
+   imports `AGENT_ADMIN_PRODUCER`/`AGENT_ADMIN_JOB_TRIGGER`, which makes its
+   cross-family publishing legible instead of accidental-looking.
+
+   KEPT deliberately (their names are correct): `PLATFORM_CHANNEL`
+   (`platform`), `PLATFORM_PROVIDER` (`internal`) and `PLATFORM_ACCOUNT_ID`
+   (`platform-admin`) — the internal-event convention every platform producer
+   shares.
+
+   **Two same-class traps found during the inventory were folded into this
+   item after adjudication (human scope call): every service-specific constant
+   loses the misleading `PLATFORM_` prefix.**
+   - `PLATFORM_EXECUTION_REQUESTED/STARTED/COMPLETED/FAILED` →
+     `AI_AGENT_GATEWAY_EXECUTION_*` (values built from
+     `AI_AGENT_GATEWAY_SUBJECT_PREFIX`, unchanged). Consumers migrated: shared
+     `execution-client.ts`, `ai-agent-gateway` `executions.service.ts`,
+     `audit-service` `execution-audit.service.ts`.
+   - `PLATFORM_SCHEDULER_HEARTBEAT` → `SCHEDULER_HEARTBEAT` (built from
+     `SCHEDULER_SUBJECT_PREFIX`). Consumer migrated: agent-scheduler
+     `heartbeat.service.ts`.
+
+   Plus one LOCAL constant carrying the same trap:
+   `PLATFORM_SKILL_CHANGED` → `AGENT_ADMIN_SKILL_CHANGED`
+   (`services/agent-admin-service/src/providers/nats.provider.ts:79`, value
+   already built from `AGENT_ADMIN_SUBJECT_PREFIX`). It stays declared in the
+   service rather than in shared — that move is the separate docs-consistency
+   T02 follow-up, not folded in here.
+
+   **Exact tally — 20 identifiers renamed, all values byte-identical.**
+   19 exported from `packages/shared/src/constants.ts` (grep
+   `^export const (AGENT_ADMIN_|AI_AGENT_GATEWAY_EXECUTION_|SCHEDULER_HEARTBEAT)`
+   to reproduce the list) + 1 local in agent-admin. In full:
+
+   agent-admin family (14): `AGENT_ADMIN_PRODUCER`,
+   `AGENT_ADMIN_SUBJECT_PREFIX`, `AGENT_ADMIN_CONFIG_SYNC`,
+   `AGENT_ADMIN_JOBS_SYNC`, `AGENT_ADMIN_JOB_TRIGGER`,
+   `AGENT_ADMIN_CHAT_RESPOND`, `AGENT_ADMIN_ONLINE`,
+   `AGENT_ADMIN_AGENT_OUTBOUND`, `AGENT_ADMIN_EXECUTION_STATUS`,
+   `AGENT_ADMIN_AGENT_PUBLISHED`, `AGENT_ADMIN_AGENT_UNPUBLISHED`,
+   `AGENT_ADMIN_EVENT`, `AGENT_ADMIN_DOCUMENT_INGESTION`,
+   `AGENT_ADMIN_SKB_FILE_INGESTION` — i.e. producer + prefix + 12 subjects.
+   ai-agent-gateway family (4): `AI_AGENT_GATEWAY_EXECUTION_REQUESTED`,
+   `_STARTED`, `_COMPLETED`, `_FAILED`.
+   agent-scheduler (1): `SCHEDULER_HEARTBEAT`.
+   agent-admin local (1): `AGENT_ADMIN_SKILL_CHANGED`.
+
+   (An earlier revision of this entry said "16 constants" — that number was
+   simply wrong; the enumeration above is authoritative and greppable.)
+
+**Remaining OPEN questions (replacing the resolved `PLATFORM_*` trap):**
+
+1. **`PLATFORM_DOMAIN` → `AUTOMATION_DOMAIN`?** Deliberately UNTOUCHED. Its
+   value `automation` is not service-specific: agent-admin
+   (`nats.provider.ts:248`), agent-scheduler (`:159`) and shared
+   `execution-client.ts:132,323` all use it as the automation-family domain
+   token, with the same intent. The name is still imprecise, but renaming it
+   is a wider decision than de-genericising one service's constants — it
+   touches the automation family as a whole. Needs a human call.
+2. **Move `AGENT_ADMIN_SKILL_CHANGED` into shared?** It is the only member of
+   the agent-admin subject family still declared inside the service
+   (`nats.provider.ts:79`) instead of beside its twelve siblings in
+   `packages/shared/src/constants.ts`. Pre-existing docs-consistency T02
+   follow-up; renamed here, not relocated.
+3. **`heartbeat.service.ts` builds its envelope from hardcoded literals.**
+   `services/agent-scheduler-service/src/modules/heartbeat/heartbeat.service.ts:95-105`
+   inlines `type`, `producer`, `domain`, `channel`, `provider` as string
+   literals instead of using the shared constants, so it cannot benefit from
+   the subject/envelope agreement guarantees the loop built elsewhere. Its
+   values are correct today (verified during item 2) — this is a robustness
+   follow-up, not a bug.
+4. **`AGENT_ADMIN_ONLINE` looks dead.** No publisher and no consumer in any
+   service; only `packages/shared`'s own test references it. NOT deleted here
+   (out of scope) — a dead-code candidate to confirm before anyone relies on
+   it. Note agent-ai's runtime-presence heartbeat publishes `online.v1` on the
+   ai-agent-gateway family instead (`classify.ts` rule 20), which is probably
+   why this constant was left stranded.
 
 ## Out of scope (explicit)
 

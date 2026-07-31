@@ -138,7 +138,7 @@ There is no automatic cleanup of the `IJobExecution` table; only the Redis sched
 
 ## NATS Subject
 
-The scheduler publishes to the `PLATFORM_JOB_TRIGGER` constant:
+The scheduler publishes to the `AGENT_ADMIN_JOB_TRIGGER` constant:
 
 ```
 evt.<tenant>.agent-admin-service.automation.platform.internal.job_trigger.v1

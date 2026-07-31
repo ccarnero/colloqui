@@ -1,36 +1,36 @@
 import { describe, it, expect } from "bun:test";
 
 describe("SKB NATS Constants", () => {
-  describe("PLATFORM_SKB_FILE_INGESTION", () => {
+  describe("AGENT_ADMIN_SKB_FILE_INGESTION", () => {
     it("should exist in @yoizen/shared/constants", async () => {
       const constants = await import("@yoizen/shared/constants");
-      expect(constants.PLATFORM_SKB_FILE_INGESTION).toBeDefined();
+      expect(constants.AGENT_ADMIN_SKB_FILE_INGESTION).toBeDefined();
     });
 
     it("should follow the canonical subject format", async () => {
-      const { PLATFORM_SKB_FILE_INGESTION } = await import("@yoizen/shared/constants");
+      const { AGENT_ADMIN_SKB_FILE_INGESTION } = await import("@yoizen/shared/constants");
       const expectedPrefix = "evt.{tenant}.agent-admin-service.automation.platform.internal";
-      expect(PLATFORM_SKB_FILE_INGESTION).toContain(expectedPrefix);
-      expect(PLATFORM_SKB_FILE_INGESTION).toContain("skb_file_ingestion");
-      expect(PLATFORM_SKB_FILE_INGESTION).toEndWith(".v1");
+      expect(AGENT_ADMIN_SKB_FILE_INGESTION).toContain(expectedPrefix);
+      expect(AGENT_ADMIN_SKB_FILE_INGESTION).toContain("skb_file_ingestion");
+      expect(AGENT_ADMIN_SKB_FILE_INGESTION).toEndWith(".v1");
     });
 
     it("should have the exact subject format for SKB file ingestion events", async () => {
-      const { PLATFORM_SKB_FILE_INGESTION } = await import("@yoizen/shared/constants");
-      expect(PLATFORM_SKB_FILE_INGESTION).toBe(
+      const { AGENT_ADMIN_SKB_FILE_INGESTION } = await import("@yoizen/shared/constants");
+      expect(AGENT_ADMIN_SKB_FILE_INGESTION).toBe(
         "evt.{tenant}.agent-admin-service.automation.platform.internal.skb_file_ingestion.v1",
       );
     });
 
     it("should be re-exported from @yoizen/shared barrel", async () => {
       const shared = await import("@yoizen/shared");
-      expect(shared.PLATFORM_SKB_FILE_INGESTION).toBeDefined();
+      expect(shared.AGENT_ADMIN_SKB_FILE_INGESTION).toBeDefined();
     });
 
     it("should produce a valid tenant-specific subject via buildPlatformSubject", async () => {
-      const { buildPlatformSubject, PLATFORM_SKB_FILE_INGESTION } = await import("@yoizen/shared");
+      const { buildPlatformSubject, AGENT_ADMIN_SKB_FILE_INGESTION } = await import("@yoizen/shared");
       const tenantId = "acme-corp";
-      const subject = buildPlatformSubject(PLATFORM_SKB_FILE_INGESTION, tenantId);
+      const subject = buildPlatformSubject(AGENT_ADMIN_SKB_FILE_INGESTION, tenantId);
       expect(subject).toBe(
         "evt.acme-corp.agent-admin-service.automation.platform.internal.skb_file_ingestion.v1",
       );

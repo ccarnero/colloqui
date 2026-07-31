@@ -173,10 +173,10 @@ Platform events use subject templates (call `buildPlatformSubject(template, tena
 
 | Constant | Subject pattern |
 |---|---|
-| `PLATFORM_CONFIG_SYNC` | `evt.{tenant}.agent-admin-service.automation.platform.internal.config_sync.v1` |
-| `PLATFORM_EXECUTION_REQUESTED` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_requested.v1` |
-| `PLATFORM_EXECUTION_STARTED / COMPLETED / FAILED` | same prefix, `execution_started/completed/failed.v1` |
-| `PLATFORM_CHAT_RESPOND`, `PLATFORM_AGENT_OUTBOUND`, `PLATFORM_EXECUTION_STATUS`, etc. | `evt.{tenant}.agent-admin-service.automation.platform.internal.<kind>.v1` |
+| `AGENT_ADMIN_CONFIG_SYNC` | `evt.{tenant}.agent-admin-service.automation.platform.internal.config_sync.v1` |
+| `AI_AGENT_GATEWAY_EXECUTION_REQUESTED` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_requested.v1` |
+| `AI_AGENT_GATEWAY_EXECUTION_STARTED / COMPLETED / FAILED` | same prefix, `execution_started/completed/failed.v1` |
+| `AGENT_ADMIN_CHAT_RESPOND`, `AGENT_ADMIN_AGENT_OUTBOUND`, `AGENT_ADMIN_EXECUTION_STATUS`, etc. | `evt.{tenant}.agent-admin-service.automation.platform.internal.<kind>.v1` |
 
 ## Temporal Task Queue Constants (`constants.ts`)
 

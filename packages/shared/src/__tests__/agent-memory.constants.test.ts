@@ -17,7 +17,7 @@ import {
  * These lived in `services/agent-memory-service/src/providers/nats.provider.ts`
  * — the only internal producer whose subject constants were NOT in
  * `packages/shared/src/constants.ts` next to their siblings
- * (`PLATFORM_SUBJECT_PREFIX` & co). Being service-local is what let the
+ * (`AGENT_ADMIN_SUBJECT_PREFIX` & co). Being service-local is what let the
  * subject's domain token (`agent-memory`) drift from the envelope's `domain`
  * field (`automation`, borrowed from agent-admin's `PLATFORM_DOMAIN`).
  *

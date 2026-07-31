@@ -21,8 +21,8 @@ import {
   startNatsProducerSpan,
 } from "@yoizen/observability";
 import {
-  PLATFORM_JOB_TRIGGER,
-  PLATFORM_PRODUCER,
+  AGENT_ADMIN_JOB_TRIGGER,
+  AGENT_ADMIN_PRODUCER,
   PLATFORM_DOMAIN,
   PLATFORM_CHANNEL,
   PLATFORM_PROVIDER,
@@ -155,7 +155,7 @@ export class NatsSchedulerPublisher implements OnModuleDestroy {
       causation_id: null,
       correlation_id: `job:${jobId}:execution:${executionId}`,
       tenant: tenantId,
-      producer: PLATFORM_PRODUCER,
+      producer: AGENT_ADMIN_PRODUCER,
       domain: PLATFORM_DOMAIN,
       channel: PLATFORM_CHANNEL,
       provider: PLATFORM_PROVIDER,
@@ -178,7 +178,7 @@ export class NatsSchedulerPublisher implements OnModuleDestroy {
       },
     };
 
-    const subject = buildPlatformSubject(PLATFORM_JOB_TRIGGER, tenantId);
+    const subject = buildPlatformSubject(AGENT_ADMIN_JOB_TRIGGER, tenantId);
 
     try {
       const js = await this.lazyNats.jetstream();

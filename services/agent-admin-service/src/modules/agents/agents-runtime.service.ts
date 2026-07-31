@@ -8,7 +8,7 @@ import {
 import { tracedFetch } from "@yoizen/observability";
 import {
   buildPlatformSubject,
-  PLATFORM_CHAT_RESPOND,
+  AGENT_ADMIN_CHAT_RESPOND,
   TENANT_HEADER,
   type VariableResolutionContext,
 } from "@yoizen/shared";
@@ -64,7 +64,7 @@ export class AgentsRuntimeService {
     const variables = await this.buildVariablesContext(tenantId);
     const responseData = await this.requestRuntime(
       tenantId,
-      PLATFORM_CHAT_RESPOND,
+      AGENT_ADMIN_CHAT_RESPOND,
       this.buildChatEnvelope(
         tenantId,
         agentId,

@@ -1412,7 +1412,7 @@ fixed here (the loop was docs + `scripts/checks/` only):
 6. `agent-memory-service` subject constants are service-local
    (`nats.provider.ts:62-68`) and its envelope `domain` disagrees with its subject token.
    [Both fixed 2026-07-31 by envelope-drift T08 — the constants now live in
-   `packages/shared/src/constants.ts:119-127` and the `domain` matches; the
+   `packages/shared/src/constants.ts:145-153` and the `domain` matches; the
    finding text and its original line anchor are left as recorded.]
 7. `ensureDurableConsumer` JSDoc contradicts its own constants
    (`nats-durable-consumer.ts:74,76` vs `:30,:43-48`) — high risk given the file's

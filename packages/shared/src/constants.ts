@@ -84,27 +84,53 @@ export const GATEWAY_AUDIT_SUBJECT = "audit.gateway.request";
 export const GATEWAY_AUDIT_CONSUMER_NAME = "gateway-audit-writer";
 export const GATEWAY_AUDIT_STREAM_MAX_BYTES = 128 * 1024 * 1024;
 
-export const PLATFORM_PRODUCER = "agent-admin-service";
+/**
+ * agent-admin-service's own identity and subject family.
+ *
+ * Renamed from `PLATFORM_*` on 2026-07-31 (envelope-drift post-loop item 2):
+ * the old names read as platform-generic but their VALUES name one specific
+ * service, and that mismatch caused two real bugs — agent-memory-service
+ * inherited the platform-prefixed producer and domain constants (the old
+ * names are spelled out in the loop SPEC, not here: the rename's accept sweep
+ * greps this tree for them) when its publisher was
+ * copied out of agent-admin and reported the wrong producer and domain on the
+ * wire for months (T08 + follow-up). Pure rename: every VALUE below is
+ * byte-identical to what it was, pinned by
+ * `src/__tests__/platform.constants.test.ts`.
+ */
+export const AGENT_ADMIN_PRODUCER = "agent-admin-service";
+/**
+ * The three constants below are genuinely platform-generic and keep their
+ * names: every internal producer that publishes on the `platform`/`internal`
+ * family uses them (agent-admin, agent-scheduler, agent-memory, and
+ * `execution-client`), which is exactly what their names claim.
+ *
+ * `PLATFORM_DOMAIN` is NOT agent-admin-specific either — `automation` is the
+ * domain token of the whole automation family (agent-admin, agent-scheduler
+ * and ai-agent-gateway subjects all carry it). Its name is still imprecise
+ * (`AUTOMATION_DOMAIN` would say what it means); flagged, not renamed here,
+ * because that is a different decision from this one.
+ */
 export const PLATFORM_DOMAIN = "automation";
 export const PLATFORM_CHANNEL = "platform";
 export const PLATFORM_PROVIDER = "internal";
 export const PLATFORM_ACCOUNT_ID = "platform-admin";
 
-export const PLATFORM_SUBJECT_PREFIX =
+export const AGENT_ADMIN_SUBJECT_PREFIX =
   "evt.{tenant}.agent-admin-service.automation.platform.internal";
 
-export const PLATFORM_CONFIG_SYNC = `${PLATFORM_SUBJECT_PREFIX}.config_sync.v1`;
-export const PLATFORM_JOBS_SYNC = `${PLATFORM_SUBJECT_PREFIX}.jobs_sync.v1`;
-export const PLATFORM_JOB_TRIGGER = `${PLATFORM_SUBJECT_PREFIX}.job_trigger.v1`;
-export const PLATFORM_CHAT_RESPOND = `${PLATFORM_SUBJECT_PREFIX}.chat_respond.v1`;
-export const PLATFORM_ONLINE = `${PLATFORM_SUBJECT_PREFIX}.online.v1`;
-export const PLATFORM_AGENT_OUTBOUND = `${PLATFORM_SUBJECT_PREFIX}.agent_outbound.v1`;
-export const PLATFORM_EXECUTION_STATUS = `${PLATFORM_SUBJECT_PREFIX}.execution_status.v1`;
-export const PLATFORM_AGENT_PUBLISHED = `${PLATFORM_SUBJECT_PREFIX}.agent_published.v1`;
-export const PLATFORM_AGENT_UNPUBLISHED = `${PLATFORM_SUBJECT_PREFIX}.agent_unpublished.v1`;
-export const PLATFORM_EVENT = `${PLATFORM_SUBJECT_PREFIX}.event.v1`;
-export const PLATFORM_DOCUMENT_INGESTION = `${PLATFORM_SUBJECT_PREFIX}.document_ingestion.v1`;
-export const PLATFORM_SKB_FILE_INGESTION = `${PLATFORM_SUBJECT_PREFIX}.skb_file_ingestion.v1`;
+export const AGENT_ADMIN_CONFIG_SYNC = `${AGENT_ADMIN_SUBJECT_PREFIX}.config_sync.v1`;
+export const AGENT_ADMIN_JOBS_SYNC = `${AGENT_ADMIN_SUBJECT_PREFIX}.jobs_sync.v1`;
+export const AGENT_ADMIN_JOB_TRIGGER = `${AGENT_ADMIN_SUBJECT_PREFIX}.job_trigger.v1`;
+export const AGENT_ADMIN_CHAT_RESPOND = `${AGENT_ADMIN_SUBJECT_PREFIX}.chat_respond.v1`;
+export const AGENT_ADMIN_ONLINE = `${AGENT_ADMIN_SUBJECT_PREFIX}.online.v1`;
+export const AGENT_ADMIN_AGENT_OUTBOUND = `${AGENT_ADMIN_SUBJECT_PREFIX}.agent_outbound.v1`;
+export const AGENT_ADMIN_EXECUTION_STATUS = `${AGENT_ADMIN_SUBJECT_PREFIX}.execution_status.v1`;
+export const AGENT_ADMIN_AGENT_PUBLISHED = `${AGENT_ADMIN_SUBJECT_PREFIX}.agent_published.v1`;
+export const AGENT_ADMIN_AGENT_UNPUBLISHED = `${AGENT_ADMIN_SUBJECT_PREFIX}.agent_unpublished.v1`;
+export const AGENT_ADMIN_EVENT = `${AGENT_ADMIN_SUBJECT_PREFIX}.event.v1`;
+export const AGENT_ADMIN_DOCUMENT_INGESTION = `${AGENT_ADMIN_SUBJECT_PREFIX}.document_ingestion.v1`;
+export const AGENT_ADMIN_SKB_FILE_INGESTION = `${AGENT_ADMIN_SUBJECT_PREFIX}.skb_file_ingestion.v1`;
 /**
  * agent-memory-service subject family.
  *
@@ -126,17 +152,29 @@ export const AGENT_MEMORY_PUBLISHED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_pub
 export const AGENT_MEMORY_REJECTED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_rejected.v1`;
 export const AGENT_MEMORY_EXPIRED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_expired.v1`;
 
+/**
+ * ai-agent-gateway's identity and subject family. The four execution subjects
+ * were called `PLATFORM_EXECUTION_*` until 2026-07-31 (envelope-drift
+ * post-loop item 2): same mis-naming as agent-admin's — a `PLATFORM_` prefix
+ * over values that name one service. Pure rename, values byte-identical,
+ * pinned by `src/__tests__/agent-admin.constants.test.ts`.
+ */
 export const AI_AGENT_GATEWAY_PRODUCER = "ai-agent-gateway";
 export const AI_AGENT_GATEWAY_SUBJECT_PREFIX =
   "evt.{tenant}.ai-agent-gateway.automation.platform.internal";
-export const PLATFORM_EXECUTION_REQUESTED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_requested.v1`;
-export const PLATFORM_EXECUTION_STARTED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_started.v1`;
-export const PLATFORM_EXECUTION_COMPLETED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_completed.v1`;
-export const PLATFORM_EXECUTION_FAILED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_failed.v1`;
+export const AI_AGENT_GATEWAY_EXECUTION_REQUESTED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_requested.v1`;
+export const AI_AGENT_GATEWAY_EXECUTION_STARTED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_started.v1`;
+export const AI_AGENT_GATEWAY_EXECUTION_COMPLETED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_completed.v1`;
+export const AI_AGENT_GATEWAY_EXECUTION_FAILED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_failed.v1`;
 
+/**
+ * agent-scheduler-service's subject family. `SCHEDULER_HEARTBEAT` was
+ * platform-prefixed until 2026-07-31 — same rename, same
+ * reason; its value is and was the scheduler's own subject.
+ */
 export const SCHEDULER_SUBJECT_PREFIX =
   "evt.{tenant}.agent-scheduler-service.automation.platform.internal";
-export const PLATFORM_SCHEDULER_HEARTBEAT = `${SCHEDULER_SUBJECT_PREFIX}.heartbeat.v1`;
+export const SCHEDULER_HEARTBEAT = `${SCHEDULER_SUBJECT_PREFIX}.heartbeat.v1`;
 
 export function buildPlatformSubject(
   template: string,

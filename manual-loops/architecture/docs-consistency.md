@@ -282,6 +282,8 @@ fixed in this loop):**
 3. `PLATFORM_SKILL_CHANGED` declared locally
    (`agent-admin-service/src/providers/nats.provider.ts:70`) instead of in
    `packages/shared/src/constants.ts` with its siblings.
+   [2026-07-31: renamed `AGENT_ADMIN_SKILL_CHANGED`, now at `:79` — the
+   relocation-to-shared half stays open as envelope-drift open question 2.]
 4. agent-admin-service uses literal `process.env.SERVICE_MODE !== "worker"`
    (`ingestion-worker.service.ts:76`, `skb-ingestion-worker.service.ts:84`)
    where other services use `isWorkerMode()` from `@yoizen/observability`.
@@ -472,7 +474,7 @@ code and where. Loop SPEC: `manual-loops/messaging/envelope-drift.md`.
    followed. The other two registry durables were swept and were correct.
 6. FIXED — envelope-drift T08 (`1f6fc4cd`) + producer half fixed 2026-07-31
    (envelope-drift follow-up). T08 moved the constants to
-   `packages/shared/src/constants.ts:119-127` and aligned the envelope
+   `packages/shared/src/constants.ts:145-153` and aligned the envelope
    `domain`; the follow-up aligned `producer`, which reported
    `agent-admin-service` against a subject whose producer token is
    `agent-memory-service`. A human-authorised investigation established the

@@ -56,20 +56,20 @@ design, so Knative can probe it before routing.
 
 ### Published
 
-Subjects are built from `PLATFORM_SUBJECT_PREFIX =
+Subjects are built from `AGENT_ADMIN_SUBJECT_PREFIX =
 "evt.{tenant}.agent-admin-service.automation.platform.internal"`
-(`packages/shared/src/constants.ts:93-94`), with `{tenant}` substituted by
-`buildPlatformSubject` (`constants.ts:120-125`, called at
+(`packages/shared/src/constants.ts:119-120`), with `{tenant}` substituted by
+`buildPlatformSubject` (`constants.ts:146-151`, called at
 `src/providers/nats.provider.ts:355`).
 
 | Subject suffix | Publisher method | Constant |
 |---|---|---|
-| `.agent_published.v1` | `publishAgentPublished` (`nats.provider.ts:404-442`) | `constants.ts:103` |
-| `.agent_unpublished.v1` | `publishAgentUnpublished` (`nats.provider.ts:444-468`) | `constants.ts:104` |
-| `.config_sync.v1` | `publishRuntimeConfigSync` (`nats.provider.ts:470-494`) | `constants.ts:96` |
-| `.job_trigger.v1` | `publishJobTrigger` (`nats.provider.ts:496-524`) | `constants.ts:98` |
-| `.document_ingestion.v1` | `publishDocumentIngestion` (`nats.provider.ts:526-555`) | `constants.ts:106` |
-| `.skb_file_ingestion.v1` | `publishSkbFileIngestion` (`nats.provider.ts:564-593`) | `constants.ts:107` |
+| `.agent_published.v1` | `publishAgentPublished` (`nats.provider.ts:404-442`) | `constants.ts:129` |
+| `.agent_unpublished.v1` | `publishAgentUnpublished` (`nats.provider.ts:444-468`) | `constants.ts:130` |
+| `.config_sync.v1` | `publishRuntimeConfigSync` (`nats.provider.ts:470-494`) | `constants.ts:122` |
+| `.job_trigger.v1` | `publishJobTrigger` (`nats.provider.ts:496-524`) | `constants.ts:124` |
+| `.document_ingestion.v1` | `publishDocumentIngestion` (`nats.provider.ts:526-555`) | `constants.ts:132` |
+| `.skb_file_ingestion.v1` | `publishSkbFileIngestion` (`nats.provider.ts:564-593`) | `constants.ts:133` |
 | `.skill_changed.v1` | `publishSkillChanged` (`nats.provider.ts:595-620`) | declared locally at `nats.provider.ts:70` — the only one of the seven NOT in `@yoizen/shared` |
 
 The NATS connection is lazy: it is established on the first publish so the HTTP

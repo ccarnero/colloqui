@@ -219,7 +219,8 @@ function buildEventEnvelope(
     // Same rule as `domain` below: the body must not contradict its subject.
     // The subject's producer token is `agent-memory-service`, and this service
     // is what publishes the event. It previously reported agent-admin's
-    // PLATFORM_PRODUCER — inherited when this file was renamed out of the admin
+    // the constant then named PLATFORM_PRODUCER (today AGENT_ADMIN_PRODUCER)
+    // — inherited when this file was renamed out of the admin
     // service (`R061` in `e9e3a94b`), where that value was correct.
     producer: AGENT_MEMORY_PRODUCER,
     // Subject and body must answer "which domain?" identically: the subject

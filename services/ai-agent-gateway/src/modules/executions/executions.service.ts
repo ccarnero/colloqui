@@ -18,9 +18,9 @@ import { PinoLoggerService } from "@yoizen/observability";
 import {
   buildPlatformSubject,
   buildRuntimeStreamSubject,
-  PLATFORM_EXECUTION_COMPLETED,
-  PLATFORM_EXECUTION_FAILED,
-  PLATFORM_EXECUTION_STARTED,
+  AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
+  AI_AGENT_GATEWAY_EXECUTION_FAILED,
+  AI_AGENT_GATEWAY_EXECUTION_STARTED,
   RUNTIME_TOKEN,
   RUNTIME_TOOL_CALL,
   RUNTIME_TOOL_RESULT,
@@ -164,9 +164,9 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
 
   streamExecutionEvents(tenantId: string): Observable<MessageEvent> {
     const subjects = [
-      PLATFORM_EXECUTION_STARTED,
-      PLATFORM_EXECUTION_COMPLETED,
-      PLATFORM_EXECUTION_FAILED,
+      AI_AGENT_GATEWAY_EXECUTION_STARTED,
+      AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
+      AI_AGENT_GATEWAY_EXECUTION_FAILED,
     ].map((template) => template.replace("{tenant}", tenantId));
 
     return createNatsMultiSubjectObservable(this.nc, subjects, (msg) => {
@@ -291,9 +291,9 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
       //    events, relayed here via core NATS subscribe — same pattern as
       //    streamExecutionEvents()).
       const lifecycleSubjects = [
-        PLATFORM_EXECUTION_STARTED,
-        PLATFORM_EXECUTION_COMPLETED,
-        PLATFORM_EXECUTION_FAILED,
+        AI_AGENT_GATEWAY_EXECUTION_STARTED,
+        AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
+        AI_AGENT_GATEWAY_EXECUTION_FAILED,
       ].map((template) => buildPlatformSubject(template, tenantId));
 
       for (const subject of lifecycleSubjects) {

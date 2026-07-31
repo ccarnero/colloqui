@@ -63,10 +63,11 @@ interesting one. Its guarantees, in order of the code:
    "POST, then GET stream by id".
 2. **Two subject families.** Ephemeral token/tool events ride core NATS on
    `rt.<tenant>.exec.<executionId>.<kind>` where kind is `token`, `tool_call` or
-   `tool_result` (`buildRuntimeStreamSubject`, `packages/shared/src/constants.ts:163-173`;
+   `tool_result` (`buildRuntimeStreamSubject`, `packages/shared/src/constants.ts:222-232`;
+   kind constants at `:198-203`;
    subscribed at `executions.service.ts:261-288`). These subjects deliberately do
    NOT start with `evt.`, so the per-tenant JetStream stream never captures them
-   — token deltas have no replay value (`constants.ts:128-138`). Lifecycle events
+   — token deltas have no replay value (`constants.ts:186-197`). Lifecycle events
    (`execution_started` / `execution_completed` / `execution_failed`) are
    subscribed separately over core NATS (`executions.service.ts:293-348`).
 3. **Bounded relay buffer.** Every emit checks `socket.writableLength` against

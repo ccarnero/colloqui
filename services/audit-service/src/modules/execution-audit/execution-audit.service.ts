@@ -19,9 +19,9 @@ import {
 } from "@yoizen/observability";
 import {
   type EventEnvelope,
-  PLATFORM_EXECUTION_COMPLETED,
-  PLATFORM_EXECUTION_FAILED,
-  PLATFORM_EXECUTION_STARTED,
+  AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
+  AI_AGENT_GATEWAY_EXECUTION_FAILED,
+  AI_AGENT_GATEWAY_EXECUTION_STARTED,
 } from "@yoizen/shared";
 import type { JetStreamClient, JetStreamManager, JsMsg } from "nats";
 import type {
@@ -53,9 +53,9 @@ const HANDLER_CONCURRENCY = 16;
  * this dedicated consumer closes.
  */
 const EXECUTION_LIFECYCLE_SUBJECTS = [
-  PLATFORM_EXECUTION_STARTED,
-  PLATFORM_EXECUTION_COMPLETED,
-  PLATFORM_EXECUTION_FAILED,
+  AI_AGENT_GATEWAY_EXECUTION_STARTED,
+  AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
+  AI_AGENT_GATEWAY_EXECUTION_FAILED,
 ].map((template) => template.replace("{tenant}", "*"));
 
 @Injectable()
