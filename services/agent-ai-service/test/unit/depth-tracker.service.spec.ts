@@ -19,6 +19,7 @@ mock.module("@yoizen/observability", () => ({
 }));
 
 import { Test } from "@nestjs/testing";
+import type { ProducerCategory } from "@yoizen/shared";
 import {
   DepthTrackerService,
   DepthExceededError,
@@ -31,10 +32,10 @@ import {
 function catchEnforceDepthLimit(
   service: DepthTrackerService,
   envelope: Record<string, unknown>,
-  maxDepth?: number,
+  category?: ProducerCategory,
 ): unknown {
   try {
-    service.enforceDepthLimit(envelope, maxDepth);
+    service.enforceDepthLimit(envelope, category);
     return null;
   } catch (err) {
     return err;
@@ -105,21 +106,28 @@ describe("DepthTrackerService", () => {
       ).not.toThrow();
     });
 
-    it("should not throw when depth is a non-numeric string (NaN >= 5 is false)", () => {
+    it("should not throw when depth is a non-numeric string (NaN > 5 is false)", () => {
       // The "as number" cast is a TS type-assertion only; at runtime the
-      // value stays "abc".  NaN >= 5 is false, so it falls through safely.
+      // value stays "abc".  NaN > 5 is false, so it falls through safely.
       expect(() =>
         service.enforceDepthLimit({ transport: { depth: "abc" } }),
       ).not.toThrow();
     });
 
-    // ── boundary: at max depth (≥ triggers) ──────────────────────────────
+    // ── boundary: strict `>` against MAX_DEPTH_BY_CATEGORY ────────────────
+    //
+    // These cases previously pinned the local `>=`-against-5 behavior (they
+    // asserted depth=5 THROWS). envelope-drift SPEC decision 5 makes the
+    // shared library canonical — strict `>` against MAX_DEPTH_BY_CATEGORY —
+    // so the depth==limit case is now an ACCEPT everywhere. Rewritten, not
+    // weakened: every boundary is still asserted, on both sides.
 
-    it("should throw when depth equals the default max (depth=5)", () => {
-      const err = catchEnforceDepthLimit(service, {
-        transport: { depth: 5 },
-      });
-      expect(err).toBeInstanceOf(DepthExceededError);
+    it("should NOT throw when depth equals the default-category max (depth=5)", () => {
+      // Regression pin for the removed `>=`: internal_service limit is 5 and
+      // 5 > 5 is false, so this is the level the old code rejected one early.
+      expect(() =>
+        service.enforceDepthLimit({ transport: { depth: 5 } }),
+      ).not.toThrow();
     });
 
     it("should throw when depth exceeds default max (depth=6)", () => {
@@ -136,36 +144,114 @@ describe("DepthTrackerService", () => {
       expect(err).toBeInstanceOf(DepthExceededError);
     });
 
-    it("should throw when depth is exactly a custom maxDepth", () => {
-      const err = catchEnforceDepthLimit(
-        service,
-        { transport: { depth: 3 } },
-        3,
-      );
-      expect(err).toBeInstanceOf(DepthExceededError);
+    it("should NOT throw when depth is exactly the platform_agent limit (depth=3)", () => {
+      expect(() =>
+        service.enforceDepthLimit(
+          { transport: { depth: 3 } },
+          "platform_agent",
+        ),
+      ).not.toThrow();
     });
 
-    it("should throw when depth exceeds a custom maxDepth", () => {
+    it("should throw when depth exceeds the platform_agent limit (depth=5)", () => {
       const err = catchEnforceDepthLimit(
         service,
         { transport: { depth: 5 } },
-        3,
+        "platform_agent",
       );
       expect(err).toBeInstanceOf(DepthExceededError);
     });
 
-    // ── custom maxDepth — below threshold ─────────────────────────────────
+    // ── per-category limits (MAX_DEPTH_BY_CATEGORY) ───────────────────────
 
-    it("should pass when depth is below a custom maxDepth (depth=3, max=10)", () => {
+    it("should pass when depth is below the internal_agent limit (depth=3, limit=5)", () => {
       expect(() =>
-        service.enforceDepthLimit({ transport: { depth: 3 } }, 10),
+        service.enforceDepthLimit({ transport: { depth: 3 } }, "internal_agent"),
       ).not.toThrow();
     });
 
-    it("should pass when depth equals a custom maxDepth of 1 and depth is 0", () => {
+    it("should pass when depth equals the root limit of 0 and depth is 0", () => {
       expect(() =>
-        service.enforceDepthLimit({ transport: { depth: 0 } }, 1),
+        service.enforceDepthLimit({ transport: { depth: 0 } }, "root"),
       ).not.toThrow();
+    });
+
+    it("should throw for platform_agent at depth 4 (limit 3, strict >)", () => {
+      const err = catchEnforceDepthLimit(
+        service,
+        { transport: { depth: 4 } },
+        "platform_agent",
+      );
+      expect(err).toBeInstanceOf(DepthExceededError);
+      expect((err as DepthExceededError).maxDepth).toBe(3);
+      expect((err as DepthExceededError).category).toBe("platform_agent");
+    });
+
+    it("should throw for thirdparty_agent at depth 3 (limit 2, strict >)", () => {
+      const err = catchEnforceDepthLimit(
+        service,
+        { transport: { depth: 3 } },
+        "thirdparty_agent",
+      );
+      expect(err).toBeInstanceOf(DepthExceededError);
+      expect((err as DepthExceededError).maxDepth).toBe(2);
+      expect((err as DepthExceededError).category).toBe("thirdparty_agent");
+    });
+
+    it("should NOT throw for thirdparty_agent at exactly its limit (depth=2)", () => {
+      expect(() =>
+        service.enforceDepthLimit(
+          { transport: { depth: 2 } },
+          "thirdparty_agent",
+        ),
+      ).not.toThrow();
+    });
+
+    it("should throw for root at depth 1 (limit 0, strict >)", () => {
+      const err = catchEnforceDepthLimit(
+        service,
+        { transport: { depth: 1 } },
+        "root",
+      );
+      expect(err).toBeInstanceOf(DepthExceededError);
+      expect((err as DepthExceededError).maxDepth).toBe(0);
+    });
+
+    it("should default to the internal_service category (limit 5) when none is given", () => {
+      // Same envelope, once implicit and once explicit — identical verdicts.
+      expect(() =>
+        service.enforceDepthLimit({ transport: { depth: 5 } }),
+      ).not.toThrow();
+      expect(() =>
+        service.enforceDepthLimit(
+          { transport: { depth: 5 } },
+          "internal_service",
+        ),
+      ).not.toThrow();
+      expect(
+        catchEnforceDepthLimit(service, { transport: { depth: 6 } }),
+      ).toBeInstanceOf(DepthExceededError);
+      expect(
+        catchEnforceDepthLimit(
+          service,
+          { transport: { depth: 6 } },
+          "internal_service",
+        ),
+      ).toBeInstanceOf(DepthExceededError);
+    });
+
+    it("should fall back to the internal_service limit for an unknown category", () => {
+      const bogus = "not_a_category" as ProducerCategory;
+      expect(() =>
+        service.enforceDepthLimit({ transport: { depth: 5 } }, bogus),
+      ).not.toThrow();
+      const err = catchEnforceDepthLimit(
+        service,
+        { transport: { depth: 6 } },
+        bogus,
+      );
+      expect(err).toBeInstanceOf(DepthExceededError);
+      expect((err as DepthExceededError).maxDepth).toBe(5);
     });
 
     // ── error shape ──────────────────────────────────────────────────────
@@ -199,7 +285,7 @@ describe("DepthTrackerService", () => {
       expect(err.message).toContain("5");
       expect(err.message).toContain("test-tenant");
       expect(err.message).toBe(
-        "[depth-tracker] depth=8 >= MAX_DEPTH=5 (tenant=test-tenant)",
+        "[depth-tracker] depth=8 > MAX_DEPTH=5 (category=internal_service, tenant=test-tenant)",
       );
     });
 
@@ -212,23 +298,26 @@ describe("DepthTrackerService", () => {
       expect(err.message).toContain("unknown");
     });
 
-    it("should use the custom maxDepth in the error object", () => {
+    it("should use the category limit in the error object", () => {
       const err = catchEnforceDepthLimit(
         service,
         { transport: { depth: 7 }, tenant: "t" },
-        3,
+        "platform_agent",
       ) as DepthExceededError;
 
       expect(err.depth).toBe(7);
       expect(err.maxDepth).toBe(3);
-      expect(err.message).toBe("[depth-tracker] depth=7 >= MAX_DEPTH=3 (tenant=t)");
+      expect(err.category).toBe("platform_agent");
+      expect(err.message).toBe(
+        "[depth-tracker] depth=7 > MAX_DEPTH=3 (category=platform_agent, tenant=t)",
+      );
     });
 
-    it("should coerce depth of 5 with custom maxDepth=5 into throwing", () => {
+    it("should reject depth 6 for a thirdparty_agent whose limit is 2", () => {
       const err = catchEnforceDepthLimit(
         service,
-        { transport: { depth: 5 } },
-        5,
+        { transport: { depth: 6 } },
+        "thirdparty_agent",
       );
       expect(err).toBeInstanceOf(DepthExceededError);
     });
