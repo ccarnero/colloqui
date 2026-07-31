@@ -163,9 +163,12 @@ closed, in the file's own append-only style.
    probe key on `transport` now fails `tsc` with TS2353). `DOCS/messaging/envelope.md`
    §4.1's placement rule stands as written and its §10.2 example was corrected in
    the same commit. Wire impact: none. The `webhookHeaders` option had NO caller
-   (`ingress.service.ts:155` never passed it), so no published stage-2 envelope
+   (the ingress caller never passed it), so no published stage-2 envelope
    ever carried `transport.headers` — matching this section's own 2026-07-09
    observation that fresh `transport` objects were `{method, protocol, depth}`.
+   [Addendum 2026-07-31 (post-loop item 3): the caller now DOES pass it, so
+   webhook-derived stage-2 envelopes carry the allowlist at its declared home
+   `data.headers`. `transport.headers` remains gone for good.]
    Regression pins: `services/channel-service/test/unit/envelope.factory.spec.ts`
    ("webhook header allowlist placement").
 

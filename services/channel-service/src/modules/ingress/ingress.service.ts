@@ -45,6 +45,14 @@ interface IProcessInboundOptions {
   correlationId?: string;
   causationId?: string | null;
   depth?: number;
+  /**
+   * Webhook header allowlist forwarded from the stage-1 envelope
+   * (`data.headers`). Already filtered against `WEBHOOK_FORWARDED_HEADERS` and
+   * lowercased by api-gateway (`webhook-ingress-publisher.service.ts:252-263`),
+   * so it travels verbatim from here — stage 2 never re-filters. Absent for
+   * any non-webhook flow, in which case the envelope carries no `headers` key.
+   */
+  webhookHeaders?: Record<string, string>;
 }
 
 /** Options for publishing a single inbound message to JetStream. */
@@ -57,6 +65,14 @@ interface IPublishMessageOptions {
   correlationId?: string;
   causationId?: string | null;
   depth?: number;
+  /**
+   * Webhook header allowlist forwarded from the stage-1 envelope
+   * (`data.headers`). Already filtered against `WEBHOOK_FORWARDED_HEADERS` and
+   * lowercased by api-gateway (`webhook-ingress-publisher.service.ts:252-263`),
+   * so it travels verbatim from here — stage 2 never re-filters. Absent for
+   * any non-webhook flow, in which case the envelope carries no `headers` key.
+   */
+  webhookHeaders?: Record<string, string>;
 }
 
 /**
@@ -113,7 +129,7 @@ export class IngressService {
    * Returns immediately — publishing happens asynchronously per message.
    */
   async processInbound(options: IProcessInboundOptions): Promise<void> {
-    const { tenantId, channel, provider, accountId, messages, correlationId, causationId, depth } = options;
+    const { tenantId, channel, provider, accountId, messages, correlationId, causationId, depth, webhookHeaders } = options;
     await ensureTenantIngressStream(this.jsm, tenantId);
 
     const publishPromises = messages.map((msg) =>
@@ -126,6 +142,7 @@ export class IngressService {
         correlationId,
         causationId,
         depth,
+        webhookHeaders,
       }),
     );
 
@@ -151,7 +168,7 @@ export class IngressService {
   private async publishMessage(
     options: IPublishMessageOptions,
   ): Promise<void> {
-    const { tenantId, channel, provider, accountId, message, correlationId, causationId, depth } = options;
+    const { tenantId, channel, provider, accountId, message, correlationId, causationId, depth, webhookHeaders } = options;
     const envelope = createChannelEnvelope({
       tenantId,
       channel,
@@ -162,6 +179,7 @@ export class IngressService {
       correlationId,
       causationId,
       depth,
+      webhookHeaders,
     });
     const subject = buildChannelSubject(tenantId, channel, provider, "received");
 

@@ -101,6 +101,81 @@ describe("IngressService — inline path", () => {
     expect(mocks.publish).toHaveBeenCalledTimes(1);
   });
 
+  // -------------------------------------------------------------------------
+  // envelope-drift post-loop item 3 — stage-1 header allowlist reaches stage 2.
+  //
+  // T06 typed the destination (`IChannelEventData.headers`) and routed
+  // `webhookHeaders` -> `data.headers` in the factory, but no caller ever
+  // passed it, so stage-2 envelopes shipped without the allowlist that
+  // `DOCS/messaging/envelope.md` §4.1 prescribes. The headers exist upstream:
+  // api-gateway filters them against WEBHOOK_FORWARDED_HEADERS and lowercases
+  // the keys (`webhook-ingress-publisher.service.ts:252-263`), the consumer
+  // reads them off the stage-1 envelope and normalises case
+  // (`webhook-ingress-consumer.service.ts:147`), and they are now threaded
+  // through to `createChannelEnvelope`.
+  //
+  // Contract pinned here: ONE filtering point, at stage 1. channel-service
+  // passes the allowlist through verbatim and never re-filters.
+  // -------------------------------------------------------------------------
+  it("forwards the stage-1 allowlist to data.headers, byte-identical", async () => {
+    const mocks = buildMocks();
+    const service = await compileService(mocks);
+    const webhookHeaders = {
+      "content-type": "application/json",
+      "x-hub-signature-256": "sha256=abc123",
+    };
+
+    await service.processInbound({
+      ...BASE_OPTIONS,
+      webhookHeaders,
+      messages: [
+        {
+          messageId: "m-1",
+          from: "+1",
+          timestamp: `${Date.now()}`,
+          type: "text",
+          text: "hello",
+          raw: {},
+        },
+      ],
+    });
+
+    expect(mocks.publish).toHaveBeenCalledTimes(1);
+    const [, bytes] = mocks.publish.mock.calls[0] as unknown as [string, Uint8Array];
+    const envelope = JSON.parse(new TextDecoder().decode(bytes));
+
+    expect(envelope.data.headers).toEqual(webhookHeaders);
+    // No re-filtering and no key rewriting on this hop.
+    expect(Object.keys(envelope.data.headers)).toEqual(Object.keys(webhookHeaders));
+    // The allowlist belongs under `data`, never on `transport` (T06).
+    expect("headers" in envelope.transport).toBe(false);
+  });
+
+  it("omits data.headers entirely when no stage-1 allowlist is supplied", async () => {
+    const mocks = buildMocks();
+    const service = await compileService(mocks);
+
+    await service.processInbound({
+      ...BASE_OPTIONS,
+      messages: [
+        {
+          messageId: "m-2",
+          from: "+1",
+          timestamp: `${Date.now()}`,
+          type: "text",
+          text: "hello",
+          raw: {},
+        },
+      ],
+    });
+
+    const [, bytes] = mocks.publish.mock.calls[0] as unknown as [string, Uint8Array];
+    const envelope = JSON.parse(new TextDecoder().decode(bytes));
+
+    expect("headers" in envelope.data).toBe(false);
+    expect(envelope.data.headers).toBeUndefined();
+  });
+
   it("completes with no publishes when messages is empty", async () => {
     const mocks = buildMocks();
     const service = await compileService(mocks);
@@ -116,6 +191,45 @@ describe("IngressService — inline path", () => {
 describe("IngressService — claim-check path (threshold = 256 KB)", () => {
   beforeEach(() => {
     __resetEnsuredDlqStreamCacheForTests();
+  });
+
+  it("keeps data.headers on the slim envelope when claim-check fires", async () => {
+    // The allowlist lives in `data` alongside `payload`, and claim-check nulls
+    // `payload` while keeping the rest of `data`. Pinning it here so an
+    // oversize webhook message does not silently lose its headers.
+    const mocks = buildMocks();
+    const service = await compileService(mocks);
+    const webhookHeaders = {
+      "content-type": "application/json",
+      "x-hub-signature-256": "sha256=oversize",
+    };
+
+    await service.processInbound({
+      ...BASE_OPTIONS,
+      webhookHeaders,
+      messages: [
+        {
+          messageId: "m-large-hdrs",
+          from: "+1",
+          timestamp: `${Date.now()}`,
+          type: "text",
+          text: LARGE_TEXT,
+          raw: {},
+        },
+      ],
+    });
+
+    expect(mocks.putBlob).toHaveBeenCalledTimes(1);
+    expect(mocks.publish).toHaveBeenCalledTimes(1);
+    const [, slimBytes] = mocks.publish.mock.calls[0] as unknown as [
+      string,
+      Uint8Array,
+    ];
+    const slim = JSON.parse(new TextDecoder().decode(slimBytes));
+
+    expect(slim.data.payload_inline).toBe(false);
+    expect(slim.data.payload).toBeNull();
+    expect(slim.data.headers).toEqual(webhookHeaders);
   });
 
   it("stores canonicalJson(payload) bytes and publishes a compliant slim envelope", async () => {

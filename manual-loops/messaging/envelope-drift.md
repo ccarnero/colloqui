@@ -441,7 +441,33 @@ now spans the cutover like `domain`.
    (An earlier revision of this entry said "16 constants" — that number was
    simply wrong; the enumeration above is authoritative and greppable.)
 
+**Post-loop item 3 (2026-07-31): stage-1 allowlist now reaches stage-2
+`data.headers` — DONE.** T06 typed the destination but left the option
+callerless; the headers are now threaded
+`WebhookIngressService.processEnvelope` → `scheduleIngress` →
+`IngressService.processInbound` → `publishMessage` → `createChannelEnvelope`.
+Contract pinned: ONE filtering point at api-gateway
+(`WEBHOOK_FORWARDED_HEADERS`, 7 entries, `channel.constants.ts:55-63`;
+`webhook-ingress-publisher.service.ts:252-263`); channel-service only
+lowercases keys (`webhook-ingress-consumer.service.ts:178-187`) and stage 2
+never re-filters. Non-webhook flows omit the field (optional). Wire effect:
+webhook-derived stage-2 envelopes grow by the 7-header allowlist — a few
+hundred bytes against the 256 KB claim-check threshold, so no change in
+claim-check behaviour. Five existing `processInbound` assertions were EXTENDED
+(not weakened) to pin the forwarded headers verbatim.
+
 **Remaining OPEN questions (replacing the resolved `PLATFORM_*` trap):**
+
+0. **Strip verification-secret headers after stage-1 signature use?** The
+   allowlist now forwarded to stage-2 `data.headers` includes the headers used
+   to AUTHENTICATE the webhook (`x-hub-signature-256`, `x-hub-signature`,
+   `x-telegram-bot-api-secret-token`, `x-http-channel-token`). Review ruling on
+   item 3: no NEW exposure — the identical values were already persisted at
+   stage 1 under the same tenant guard, and the forwarding is what
+   `envelope.md` §4.1 prescribes. But whether signature/secret headers should
+   be dropped once the signature has been verified is a genuine spec question
+   (it would change §4.1 and the `WEBHOOK_FORWARDED_HEADERS` contract). Own
+   decision round.
 
 1. **`PLATFORM_DOMAIN` → `AUTOMATION_DOMAIN`?** Deliberately UNTOUCHED. Its
    value `automation` is not service-specific: agent-admin

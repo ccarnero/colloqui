@@ -141,6 +141,10 @@ export class WebhookIngressService {
       account,
       messages,
       causal,
+      // Same allowlist the signature check above read: api-gateway already
+      // filtered it (WEBHOOK_FORWARDED_HEADERS) and the consumer lowercased
+      // the keys, so it goes to `data.headers` verbatim (envelope.md §4.1).
+      webhookHeaders: headers,
     });
     return { status: "accepted" };
   }
@@ -282,8 +286,11 @@ export class WebhookIngressService {
     account: IAccountWithSecret;
     messages: InboundMessage[];
     causal?: { correlationId?: string; causationId?: string | null; depth?: number };
+    /** Stage-1 header allowlist, forwarded verbatim to `data.headers`. */
+    webhookHeaders?: Record<string, string>;
   }): void {
-    const { tenantId, channelType, provider, account, messages, causal } = options;
+    const { tenantId, channelType, provider, account, messages, causal, webhookHeaders } =
+      options;
     setImmediate(() => {
       this.ingress
         .processInbound({
@@ -293,6 +300,7 @@ export class WebhookIngressService {
           accountId: account.id,
           messages,
           ...causal,
+          webhookHeaders,
         })
         .catch((err) => {
           this.logger.error(

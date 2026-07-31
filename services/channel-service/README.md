@@ -102,8 +102,8 @@ ensuring the tenant's INGRESS and DLQ streams exist
 **Claim-check**: when a serialized envelope exceeds
 `CLAIM_CHECK_THRESHOLD_BYTES` (256 KiB, `channel.constants.ts:21`) the service
 stores the payload in a per-tenant NATS Object Store bucket and publishes a slim
-envelope instead (threshold check at `ingress.service.ts:174`, bucket name via
-`buildClaimCheckBucket` at `:99` / `:239`, bucket TTL and max size at
+envelope instead (threshold check at `ingress.service.ts:192`, bucket name via
+`buildClaimCheckBucket` at `:115` / `:257`, bucket TTL and max size at
 `channel.constants.ts:24-26`).
 
 ## Storage

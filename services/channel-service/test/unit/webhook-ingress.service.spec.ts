@@ -165,6 +165,10 @@ describe("WebhookIngressService", () => {
       provider: "telegram",
       accountId: "a2",
       messages: [createInboundMessage({ text: "chocho" })],
+      // envelope-drift item 3: the stage-1 allowlist now rides along to
+      // `data.headers`; it is the same object this test handed to
+      // processEnvelope, forwarded verbatim.
+      webhookHeaders: { "x-telegram-bot-api-secret-token": "token" },
     });
   });
 
@@ -300,6 +304,10 @@ describe("WebhookIngressService", () => {
       provider: "meta",
       accountId: "wa-2",
       messages: [inbound],
+      // envelope-drift item 3: the stage-1 allowlist now rides along to
+      // `data.headers`; it is the same object this test handed to
+      // processEnvelope, forwarded verbatim.
+      webhookHeaders: { "x-hub-signature-256": "sha256=ok" },
     });
   });
 
@@ -388,6 +396,10 @@ describe("WebhookIngressService", () => {
       provider: "meta",
       accountId: "single",
       messages: [inbound],
+      // envelope-drift item 3: the stage-1 allowlist now rides along to
+      // `data.headers`; it is the same object this test handed to
+      // processEnvelope, forwarded verbatim.
+      webhookHeaders: {},
     });
   });
 
@@ -560,6 +572,10 @@ describe("WebhookIngressService", () => {
       provider: "telegram",
       accountId: "a1",
       messages: [createInboundMessage({ text: "ola" })],
+      // envelope-drift item 3: the stage-1 allowlist now rides along to
+      // `data.headers`; it is the same object this test handed to
+      // processEnvelope, forwarded verbatim.
+      webhookHeaders: { "x-telegram-bot-api-secret-token": "secret-1" },
     });
   });
 
@@ -610,6 +626,10 @@ describe("WebhookIngressService", () => {
       provider: "meta",
       accountId: "wa-1",
       messages: [inbound],
+      // envelope-drift item 3: the stage-1 allowlist now rides along to
+      // `data.headers`; it is the same object this test handed to
+      // processEnvelope, forwarded verbatim.
+      webhookHeaders: {},
     });
   });
 });

@@ -1512,11 +1512,18 @@ deleted so one builder names INGRESS streams; T08 agent-memory subject constants
 
 Findings that only surfaced during implementation:
 - **`transport.headers` never reached the wire.** The T07 finding described a live
-  untyped field, but the `webhookHeaders` option had NO caller — `ingress.service.ts:155`
+  untyped field, but the `webhookHeaders` option had NO caller — `ingress.service.ts`
   never passed it, and channel-service consumes the stage-1 allowlist only for signature
   verification. The fix closed a type hole (a probe key on `transport` now fails `tsc`
   with TS2353) with zero wire impact. The stage-2 example in `envelope.md` §10.2 is
   therefore aspirational until a caller forwards the allowlist.
+
+  [Updated 2026-07-31 — a caller now does. Post-loop item 3 threads the stage-1
+  allowlist through `WebhookIngressService.scheduleIngress` and
+  `IngressService.processInbound` into `createChannelEnvelope`, so
+  webhook-derived stage-2 envelopes carry `data.headers` and the §10.2 example
+  is as-built. Still one filtering point (api-gateway); channel-service
+  forwards verbatim.]
 - **The tracking-ingester classifies by SUBJECT only.** T05's brief assumed
   `classify.ts` matched the stage-1 `type` literal and asked for extended rules plus new
   golden rows and three K9b pin updates. It does not: `classify(subject, options)` takes a

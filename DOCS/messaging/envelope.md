@@ -445,12 +445,17 @@ Subject: `evt.acme.channel-service.messaging.telegram.telegram.received.v1`
 > published before that date carry no `headers` key at all — the option had no
 > caller, so `transport.headers` never reached the wire.
 >
-> The `headers` block above is what the factory emits WHEN a caller passes
-> `webhookHeaders`. Today none does: the ingress path
-> (`services/channel-service/src/modules/ingress/ingress.service.ts:155`) does
-> not forward the stage-1 allowlist, which it consumes only for signature
-> verification, so real stage-2 envelopes currently carry no `headers` key.
-> Forwarding it is a follow-up, not a regression.
+> The forwarding shipped on 2026-07-31 (envelope-drift post-loop item 3): the
+> webhook consumer's allowlist — which it also uses for signature verification
+> — is threaded through `WebhookIngressService.scheduleIngress` and
+> `IngressService.processInbound` to `createChannelEnvelope`, so webhook-derived
+> stage-2 envelopes now carry the block shown above. It travels VERBATIM: the
+> single filtering point is api-gateway
+> (`WEBHOOK_FORWARDED_HEADERS`, `webhook-ingress-publisher.service.ts:252-263`),
+> and channel-service only lowercases keys
+> (`webhook-ingress-consumer.service.ts:178-187`) — stage 2 never re-filters.
+> Envelopes published before that date, and any non-webhook flow, carry no
+> `headers` key at all (the option is optional and simply omitted).
 
 ### 10.3 Internal agent (agent-admin-service)
 

@@ -26,7 +26,7 @@ Convenciones:
 
 | Bucket | Owner (crea con config) | También escrito por (sin config) | Cita |
 |---|---|---|---|
-| `PAYLOAD-<tenant>` | `channel-service` `IngressService.getClaimCheckBucket` — TTL 7d, max_bytes 512MB | `packages/database/src/multi-tenant-consumer-manager.ts:311-317` (open-only); `agent-ai-service` `ClaimCheckService.storePayload` — **crea el bucket sin TTL/max_bytes si corre primero** (config drift) | `services/channel-service/src/modules/ingress/ingress.service.ts:84-109`; `services/agent-ai-service/src/modules/claim-check/claim-check.service.ts:52-77,175-182` |
+| `PAYLOAD-<tenant>` | `channel-service` `IngressService.getClaimCheckBucket` — TTL 7d, max_bytes 512MB | `packages/database/src/multi-tenant-consumer-manager.ts:311-317` (open-only); `agent-ai-service` `ClaimCheckService.storePayload` — **crea el bucket sin TTL/max_bytes si corre primero** (config drift) | `services/channel-service/src/modules/ingress/ingress.service.ts:100-125`; `services/agent-ai-service/src/modules/claim-check/claim-check.service.ts:52-77,175-182` |
 
 ⚠️ No confiar en el TTL para el reset: si el bucket fue creado por el path de `agent-ai-service`, no tiene expiración. El script debe purgar objetos explícitamente.
 

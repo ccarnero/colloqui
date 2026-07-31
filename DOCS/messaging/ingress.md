@@ -65,7 +65,7 @@ Successful response: HTTP 200 with body `{ "status": "accepted" }`, returned onl
 
 The envelope ID is a UUID v4 (`crypto.randomUUID()`).
 
-The `accountid` field is deliberately absent: at this point the request has not passed signature verification, and the provider account (WhatsApp Business ID, Telegram bot, etc.) has not been resolved. Including a placeholder would corrupt per-account billing aggregations. See the comment in `webhook-ingress-publisher.service.ts:102`.
+The `accountid` field is deliberately absent: at this point the request has not passed signature verification, and the provider account (WhatsApp Business ID, Telegram bot, etc.) has not been resolved. Including a placeholder would corrupt per-account billing aggregations. See the comment in `webhook-ingress-publisher.service.ts:103-113`.
 
 Type: `WebhookIngressEnvelope = Omit<EventEnvelope, "accountid"> & { ... }`.
 
@@ -116,7 +116,7 @@ File: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.se
 4. Verifies the provider's HMAC signature against each (possibly narrowed) active account.
 5. Resolves the concrete `accountid` (disambiguation by `phone_number_id` for WhatsApp or `ig_user_id` for Instagram when multiple accounts verify).
 6. Parses the webhook body using the corresponding provider → `InboundMessage[]`.
-7. Calls `IngressService.processInbound` via `setImmediate` (non-blocking), forwarding the causal chain (`correlationId`, `causationId`, `depth`) inherited from the stage-1 `WebhookIngressEnvelope`.
+7. Calls `IngressService.processInbound` via `setImmediate` (non-blocking), forwarding the causal chain (`correlationId`, `causationId`, `depth`) inherited from the stage-1 `WebhookIngressEnvelope`, plus the stage-1 header allowlist (`webhookHeaders`), which lands on `data.headers` of the stage-2 envelope (since 2026-07-31).
 
 **Telegram/generic-HTTP signature handling:** for `channel === "telegram"` or `channel === "http"`, the corresponding signature header (`X-Telegram-Bot-Api-Secret-Token` or `x-http-channel-token`) is the only signal that identifies the account — the payload carries no account id. If that header is absent or empty, the request is immediately rejected with `signature_mismatch`. There is no fallback to the first active account. WhatsApp and Instagram keep the legacy fallback (first active account when no signature header is present) because they can disambiguate via `phone_number_id` / `ig_user_id`.
 
@@ -133,6 +133,7 @@ File: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.se
 | `transport.method` | `"webhook"` |
 | `transport.protocol` | `"https"` |
 | `accountid` | Resolved real provider account ID |
+| `data.headers` | The stage-1 allowlist, forwarded VERBATIM (webhook-derived envelopes only, since 2026-07-31). api-gateway is the single filtering point (`WEBHOOK_FORWARDED_HEADERS`, `webhook-ingress-publisher.service.ts:252-263`); channel-service only lowercases keys and never re-filters. Absent on any non-webhook flow. |
 
 Canonical subject:
 
@@ -144,7 +145,7 @@ The **envelope ID is a new UUID v4** independent of the `WebhookIngressEnvelope`
 
 ### 3.4 Egress shadow envelopes
 
-`createChannelSentEnvelope` (`envelope.factory.ts:132`) builds shadow envelopes for egress events (`sent`, `delivered`, `send`). Difference from ingress:
+`createChannelSentEnvelope` (`envelope.factory.ts:147`) builds shadow envelopes for egress events (`sent`, `delivered`, `send`). Difference from ingress:
 
 ```
 transport.method   = "stream"
@@ -405,7 +406,15 @@ Note: `accountid` is absent — typed as `Omit<EventEnvelope, "accountid">`.
       "type": "text",
       "text": { "body": "Hola" },
       "accountId": "69bea8cd868e860918359cc7"
+    },
+    "headers": {
+      "content-type": "application/json",
+      "x-hub-signature-256": "sha256=..."
     }
   }
 }
 ```
+
+> `data.headers` carries the stage-1 allowlist verbatim on webhook-derived
+> envelopes (§3.3, envelope.md §4.1) as of 2026-07-31. Envelopes published
+> before that date, and any non-webhook flow, have no `headers` key.
