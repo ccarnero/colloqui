@@ -18,7 +18,13 @@ at the infrastructure layer. NATS runs as a **single account with no ACLs per te
 **One cluster, many tenants.** The isolation contract:
 
 1. **NATS subjects** carry a `evt.<tenant>.` prefix on every message.
-2. **NATS streams** are per-tenant: `INGRESS-<TENANT>`, `DLQ-<TENANT>`, `PAYLOAD-<TENANT>`.
+2. **NATS streams** are per-tenant: `INGRESS-<TENANT>`, `DLQ-<tenant>`, `PAYLOAD-<tenant>`.
+   Note the case asymmetry — it is real, not a typo. `getTenantStreamName`
+   upper-cases the suffix (`packages/shared/src/tenant-stream.constants.ts:44-45`),
+   while `buildDlqStreamName` (`packages/shared/src/channel.constants.ts:80-82`)
+   and `buildClaimCheckBucket` (`packages/shared/src/channel.utils.ts:37-39`)
+   interpolate the tenant id verbatim. A consumer matching the wrong case binds
+   nothing.
 3. **PostgreSQL** is per-tenant: a logical database on the shared CNPG cluster (`shared` tier)
    or a dedicated StatefulSet (`dedicated` tier). Both cases use the same DNS alias
    `postgres.<tenant>-<env>-ns` so application code is identical across tiers.
@@ -49,8 +55,8 @@ x-yoizen-tenant: beta ───▶ │ or falls back to header/query  │
 Tenant "acme"                          Tenant "beta"
 ─────────────                          ─────────────
 INGRESS-ACME stream                    INGRESS-BETA stream
-DLQ-ACME stream                        DLQ-BETA stream
-PAYLOAD-ACME object store              PAYLOAD-BETA object store
+DLQ-acme stream                        DLQ-beta stream
+PAYLOAD-acme object store              PAYLOAD-beta object store
 Namespace: acme-dev-ns (K8s)           Namespace: beta-dev-ns (K8s)
   └── postgres (ExternalName →            └── postgres (ExternalName →
        postgres-shared.support-services-dev)   postgres-shared.support-services-dev)
@@ -89,7 +95,7 @@ JWT tokens:                            JWT tokens:
 |---|---|
 | `api-gateway` | `TenantGuard` — extracts tenant from hostname or `x-yoizen-tenant` header |
 | NATS subjects | `evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v1` |
-| NATS streams | `INGRESS-<TENANT>` (filter `evt.<tenant>.>`), `DLQ-<TENANT>`, `PAYLOAD-<TENANT>` |
+| NATS streams | `INGRESS-<TENANT>` (upper-cased, filter `evt.<tenant>.>`), `DLQ-<tenant>`, `PAYLOAD-<tenant>` (both verbatim) — see the case note above |
 | `tenant-service` | Provisions K8s namespace + PostgreSQL (shared CNPG logical DB or dedicated StatefulSet) + NATS streams |
 | `channel-service` | Propagates `tenant` in all canonical envelopes |
 | `packages/shared` | `TENANT_HEADER = 'x-yoizen-tenant'` (constant used across all services) |
@@ -249,7 +255,7 @@ platform PostgreSQL instance in the `platform-services-dev` namespace.
 #### NATS Object Store per-tenant (claim-check)
 
 Large payloads (> 256 KB) are not carried inside the NATS envelope. They are stored in the
-`PAYLOAD-<TENANT>` Object Store and the envelope carries a reference `nats://objstore/<bucket>/<key>`.
+`PAYLOAD-<tenant>` Object Store and the envelope carries a reference `nats://objstore/<bucket>/<key>`.
 
 TTL: 7 days (aligned with the `INGRESS-<TENANT>` stream retention).
 
@@ -266,16 +272,22 @@ auth/gateway public-route sync. The cache keys include the tenant ID where isola
 | Stream | Subjects | Retention | Purpose |
 |---|---|---|---|
 | `INGRESS-<TENANT>` | `evt.<tenant>.>` | 7 days / 256 MB | All events for the tenant |
-| `DLQ-<TENANT>` | `dlq.<tenant>.>` | 30 days / 512 MB | Permanently-failed messages |
-| `PAYLOAD-<TENANT>` | — (Object Store) | 7 days / 512 MB | Claim-check payload blobs |
+| `DLQ-<tenant>` | `dlq.<tenant>.>` | 30 days / 512 MB | Permanently-failed messages |
+| `PAYLOAD-<tenant>` | — (Object Store) | 7 days / 512 MB | Claim-check payload blobs |
 
 Name construction functions:
 
 | Function | Returns | File |
 |---|---|---|
-| `buildIngressStreamName(tenant)` | `INGRESS-<tenant>` | `packages/shared/src/channel.utils.ts` |
-| `buildDlqStreamName(tenant)` | `DLQ-<tenant>` | `packages/shared/src/channel.constants.ts` |
-| `buildClaimCheckBucket(tenant)` | `PAYLOAD-<tenant>` | `packages/shared/src/channel.utils.ts` |
+| `getTenantStreamName(tenant)` | `INGRESS-<TENANT>` (upper-cased) | `packages/shared/src/tenant-stream.constants.ts:44-45` |
+| `buildIngressStreamName(tenant)` | `INGRESS-<tenant>` (verbatim) | `packages/shared/src/channel.utils.ts:29-30` |
+| `buildDlqStreamName(tenant)` | `DLQ-<tenant>` (verbatim) | `packages/shared/src/channel.constants.ts:80-82` |
+| `buildClaimCheckBucket(tenant)` | `PAYLOAD-<tenant>` (verbatim) | `packages/shared/src/channel.utils.ts:37-39` |
+
+> Two builders produce the INGRESS name and they disagree on casing:
+> `getTenantStreamName` upper-cases the tenant id, `buildIngressStreamName`
+> interpolates it verbatim. The names above are what each function returns;
+> the divergence itself is recorded as a T07 code finding, not resolved here.
 
 ### 6.4 ChannelAccount Interface
 

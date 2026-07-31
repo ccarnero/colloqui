@@ -86,7 +86,6 @@ Run the focused validation suite when any of these paths change:
 - `DOCS/guides/ui-flows.md`
 - `DOCS/guides/doc-code-validation-tests.md`
 - `services/workflow-service/README.md`
-- `services/workflow-service/{AGENTS,CLAUDE,CURSOR,GEMINI}.md`
 - `services/workflow-service/src/modules/workflows/**`
 - `services/workflow-service/src/temporal/workflows.ts`
 - `services/admin-console/README.md`
@@ -107,14 +106,15 @@ Run the focused validation suite when any of these paths change:
 - `packages/database/src/nats-provider.ts`
 - `services.conf`
 - `DOCS/workflows/patterns.md`
-- `packages/shared/{AGENTS,CLAUDE,CURSOR,GEMINI}.md`
-- `services/*/{AGENTS,CLAUDE,CURSOR,GEMINI}.md`
+- `packages/*/README.md`
+- `services/*/README.md`
 
-## Implemented: static doc/code guard script (K6, K7, K8)
+## Implemented: static doc/code guard script (K6, K7, K8, K9, K10, K11)
 
-`scripts/checks/doc-code-guards.sh` implements locks K6, K7, K8 from
+`scripts/checks/doc-code-guards.sh` implements locks K6, K7 and K8 from
 `cowork/DOC-VS-CODE-AUDIT.md` (see that file's "Locks" section for the full
-rationale). It is a standalone bash script — this repo has no `lefthook.yml`
+rationale), plus K9/K9b/K10/K11 and K6g added later by
+`manual-loops/architecture/docs-consistency.md` (T01-T06). It is a standalone bash script — this repo has no `lefthook.yml`
 or CI pipeline yaml yet, so there was no existing aggregate to wire it into.
 Run it manually or from a future CI job:
 
@@ -147,6 +147,11 @@ What it pins:
   explanatory prose, when extracting "implemented" alert names).
 - **K6f** — every runbook under `DOCS/runbooks/archive/` carries a
   "Status: Historical" banner in its first 10 lines.
+- **K6g** — no `services/*/AGENTS.md` or `packages/*/AGENTS.md` exists. Every
+  per-component agent file was absorbed into that component's README (T02-T04),
+  so the README is the single descriptive doc per component; the root
+  `AGENTS.md` (repo constitution) is anchored out of both globs and never
+  matches.
 - **K7** — NATS durable-consumer ackWait census: every registration via
   `MultiTenantConsumerManager`/`ensureDurableConsumer` under `services/`
   must declare an explicit `ackWaitMs`, OR be on an explicit allowlist (with
@@ -161,6 +166,24 @@ What it pins:
   (900s `AGENT_CALL_TIMEOUT_MS` + margin), and
   `knative/serving/config-defaults.yaml`'s `max-revision-timeout-seconds`
   is at least the same.
+- **K9** — constructor-injected classes are never imported type-only (Biome's
+  `useImportType` vs NestJS `emitDecoratorMetadata`: a runtime DI failure that
+  `tsc` cannot see). Delegates to `scripts/checks/check-di-imports.mjs`, scoped
+  to git-modified files.
+- **K9b** — numeric claims in docs match generated reality. Today it pins the
+  golden row count: `services/tracking-ingester-service/README.md`, the test
+  name and the `expect(rows.length).toBe(N)` assertion in
+  `test/classify.golden.spec.ts` must all equal the data-row count of
+  `golden/labeled.tsv` (non-blank lines minus the header).
+- **K10** — every relative `.md` link in `README.md`, `DOCS/**/*.md`,
+  `services/*/README.md` and `packages/*/README.md` resolves to an existing
+  file. Fenced code blocks and inline code spans are skipped to avoid
+  false positives; for `file.md#anchor` only the file part is resolved.
+  `manual-loops/**` and `cowork/**` are excluded as frozen loop history.
+- **K11** — every service whose non-test source calls `resolveStorageEngine()`
+  documents `DB_ENGINE` (or `STORAGE_ENGINE`) in its README. The service set is
+  DISCOVERED from the code rather than hardcoded, so a new dual-backend service
+  is caught without editing the script. Covers 10 services today.
 
 **Genuine finding while calibrating K7**: the audit's lock description
 assumed only `workflow-service`'s `trigger-consumer` needed allowlisting for

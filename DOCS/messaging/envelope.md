@@ -160,7 +160,7 @@ interface EventTransport {
 
 ### 4.1 Webhook header allowlist (D8)
 
-Seven headers may be copied to `transport.headers`. Defined in `WEBHOOK_FORWARDED_HEADERS`, `packages/shared/src/channel.constants.ts` (line ~55):
+Seven headers may be forwarded. Defined in `WEBHOOK_FORWARDED_HEADERS`, `packages/shared/src/channel.constants.ts:55-63`:
 
 ```
 content-type
@@ -173,6 +173,21 @@ user-agent
 ```
 
 All other headers must be discarded.
+
+**Placement.** The allowlisted headers are carried under `data`, not under
+`transport`: the typed stage-1 shape is `IWebhookIngressData.headers`
+(`packages/shared/src/webhook.interfaces.ts:18`), and `EventTransport`
+(`packages/shared/src/interfaces.ts:13-18`) declares only `method`, `protocol`,
+`agent_id?` and `depth?` — it has no header field at all. A consumer must read
+`data.headers`.
+
+> Known code divergence (T07 finding 1, 2026-07-30): the stage-2 factory
+> `createChannelEnvelope` also writes the headers into the `transport` object
+> (`services/channel-service/src/domain/envelope.factory.ts:102-107`). That
+> property is not part of `EventTransport`; it only compiles because it is
+> introduced through a conditional spread, which bypasses TypeScript's
+> excess-property check. The §10.2 example below reflects that current
+> behaviour. Recorded for the envelope-drift loop; not corrected here.
 
 ### 4.2 Pending transport fields
 
@@ -393,7 +408,10 @@ This envelope includes `accountid`, carries `causation_id` from the stage-1 webh
   "transport": {
     "method": "webhook",
     "protocol": "https",
-    "depth": 0,
+    "depth": 0
+  },
+  "data": {
+    "raw_body_b64": "...",
     "headers": { "x-telegram-bot-api-secret-token": "..." }
   }
 }
@@ -426,6 +444,10 @@ Note: `accountid` is absent — `WebhookIngressEnvelope` is typed as `Omit<Event
 ```
 
 Subject: `evt.acme.channel-service.messaging.telegram.telegram.received.v1`
+
+> The `headers` key inside `transport` above mirrors what
+> `createChannelEnvelope` emits today; per §4.1 it is not a declared
+> `EventTransport` field. See T07 finding 1.
 
 ### 10.3 Internal agent (agent-admin-service)
 

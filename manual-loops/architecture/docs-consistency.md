@@ -230,7 +230,7 @@ grep -n "docs-consistency" cowork/INDEX.md
 - [x] T04 package READMEs + K11 (K6g extended to packages/*)
 - [x] T05 one ADR channel
 - [x] T06 K10 dead-link guard + fixes
-- [ ] T07 full-corpus sweep + doc-side fixes
+- [x] T07 full-corpus sweep + doc-side fixes (9 findings recorded)
 - [ ] T08 docs + index
 
 **T01 follow-ups (recorded 2026-07-30, code bugs / doc drift found during
@@ -389,6 +389,63 @@ addition, zero links there today). One in-scope dead link found and FIXED:
 `services/workflow-service/README.md:925` (path one level short + stale
 anchor). Fenced blocks and inline code spans skipped; anchors resolved to
 the file part only.
+
+**T07 findings (recorded 2026-07-30):**
+
+1. Stage-2 `transport.headers` is an undeclared field. `createChannelEnvelope`
+   writes the webhook header allowlist into `transport`
+   (`services/channel-service/src/domain/envelope.factory.ts:102-107`) but
+   `EventTransport` (`packages/shared/src/interfaces.ts:13-18`) declares only
+   `method`/`protocol`/`agent_id?`/`depth?` — the conditional spread bypasses
+   excess-property checking. Stage 1 correctly uses `data.headers`
+   (`webhook.interfaces.ts:18`). Same data, two placements, neither
+   type-checked at stage 2. Extends DRIFT.md item 2. Doc fixed; code open.
+2. Stage-1 `type` token violates the prescriptive format:
+   `webhook-ingress-publisher.service.ts:117` hardcodes
+   `io.yoizen.messaging.webhook.received.v1` for every channel — no
+   `<channel>` token, `received` vs `webhook_received`
+   (`envelope.md:77` prescribes the format). Code is the bug (decision 5).
+3. Depth enforcement `>=` vs `>`:
+   `agent-ai-service/src/modules/depth-tracker/depth-tracker.service.ts:36`
+   rejects at `>=` against a local `DEFAULT_MAX_DEPTH = 5`, ignoring
+   `MAX_DEPTH_BY_CATEGORY`; shared lib uses strict `>`
+   (`packages/shared/src/envelope.utils.ts:172,298`).
+4. `skills/envelope-messages/assets/envelope-schema.json` needs a rewrite:
+   (a) `channel` enum omits `http`; (b) `correlation_id` description wrong
+   (`envelope.utils.ts:332` assigns fresh UUID); (c) no
+   `WebhookIngressEnvelope`; (d) `required` lists `accountid`
+   unconditionally, rejecting every real stage-1 envelope. DRIFT items
+   3/4/6/7.
+5. `transport-topology.ts:15,20,26` (admin-console) names durable
+   `channel-events-audit`; the real durable is `channel-audit`
+   (`channel-audit.service.ts:49`); stale name also in a comment at
+   `tracking-ingester-service/src/lib/consumed-by.ts:29-30`. Docs corrected;
+   the hand-maintained registry is the remaining bug.
+6. agent-memory-service subject constants are service-local
+   (`nats.provider.ts:62-68` instead of `packages/shared/src/constants.ts`)
+   and its envelope `domain: "automation"` disagrees with the subject's
+   `agent-memory` domain token. DRIFT item 9.
+7. `ensureDurableConsumer` JSDoc contradicts its constants
+   (`nats-durable-consumer.ts:74,76` vs `:30,:43-48`) — carried from T04
+   follow-up 1; high-risk given the file's duplicate-sends history.
+8. `TENANT_TIER_LIMITS` only partially wired: consumed via
+   `buildTenantStreamConfig` by two services; the primary
+   `ensureTenantIngressStream` path (`packages/database/src/nats-provider.ts:238-239`)
+   applies flat limits and ignores tier. Tier has no effect on the streams
+   carrying traffic.
+9. Two INGRESS stream-name builders disagree on casing.
+   `getTenantStreamName` upper-cases the tenant id —
+   `INGRESS-${tenantId.toUpperCase()}`
+   (`packages/shared/src/tenant-stream.constants.ts:44-45`) — while
+   `buildIngressStreamName` interpolates it verbatim — `INGRESS-${tenant}`
+   (`packages/shared/src/channel.utils.ts:29-30`). Both are exported from
+   `@yoizen/shared`, so a caller's choice of helper silently decides whether
+   it binds `INGRESS-ACME` or `INGRESS-acme`; for any non-lowercase-invariant
+   tenant id the two produce different streams. Same class as the DLQ/PAYLOAD
+   asymmetry documented in `DOCS/architecture/multi-tenancy.md` §1, but
+   worse: there the two names are genuinely different resources, whereas here
+   two helpers claim to build the SAME name. Adjacent to finding 8. Docs
+   record the divergence; the code-side reconciliation is open.
 
 **T06 follow-ups (recorded 2026-07-30):** seven dead NON-`.md` targets in
 `DOCS/runbooks/archive/{temporal-ha-migration,temporal-visibility-split}.md`

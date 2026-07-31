@@ -211,7 +211,17 @@ Code references:
 - Consumers use `MultiTenantConsumerManager` with `streamPattern: /^INGRESS-/`.
 - The manager discovers existing tenant streams and ensures a durable consumer per tenant stream.
 - Consumers do not create ingress streams; they reconcile against discovered streams.
-- Typical durable names: `audit-service`, `channel-service`, `connector-admin`, `usage-aggregator-service`, `workflow-triggers`, `agent-ai-service-consumer`, `skb-ingestion-worker`, `connector-runtime-invoke` (async `connectors.invoke()` transport, see below).
+- Durable names, as declared in code (`rg -o 'DURABLE_NAME = "([a-z-]+)"' -r '$1' services`):
+  `adapter-internal-sync`, `agent-ai-service-consumer`, `ai-agent-gateway-results`,
+  `audit-events`, `auto-reply`, `channel-audit`, `channel-egress`,
+  `channel-webhook-ingress`, `connector-runtime-invoke` (async `connectors.invoke()`
+  transport, see below), `execution-audit`, `ingestion-worker`,
+  `skb-ingestion-worker`, `workflow-projector`, `workflow-triggers`.
+  Declared elsewhere: `tenant-provisioner` (`packages/shared/src/tenant-events.ts:42`),
+  `gateway-audit-writer` (`packages/shared/src/constants.ts:84`),
+  `agg-INGRESS` / `agg-DLQ` (`services/usage-aggregator-service/src/config.ts:46-51`),
+  and the `trk-` family (`services/tracking-ingester-service/src/lib/consume-events.ts:44-48`).
+  Note these are DURABLE names, not service names — several services own more than one.
 
 ### Connector-invoke transport pair (rides `INGRESS-<tenant>`, no dedicated stream)
 

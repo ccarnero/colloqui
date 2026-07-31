@@ -117,14 +117,37 @@ Owner: **`tracking-ingester-service`** (bus→Postgres tracking ingester). Sourc
 | `occurred_at` | `timestamptz NOT NULL` | Envelope `time`. |
 | `tech` | `text NOT NULL` | Classification (`TAXONOMY.md` §2), pure function of subject. |
 | `business_fn` | `text NOT NULL` | Classification (`TAXONOMY.md` §3), producer intent. |
-| `rule` | `integer NOT NULL` | First-matching `TAXONOMY.md` §4 rule. Stored values are 1–19: rule 20 is counted-not-persisted, so it never lands in the table. |
+| `rule` | `integer NOT NULL` | First-matching `TAXONOMY.md` §4 rule. Every rule number is stored EXCEPT 20 (i.e. 1–19 and 21–25): `SKIP_PERSIST_RULES` (`services/tracking-ingester-service/src/lib/classify.ts:146`) contains only `{20}`, so rule 20 alone is counted-not-persisted. Rules 21–25 are persisted like any other (`classify.ts:288`, `:305`, `:325`, `:355`, `:382`). |
 | `consumed_by` | `text[] NOT NULL` | Durable consumers of the subject family (`TAXONOMY.md` §5). |
 | `is_claim_check` | `boolean NOT NULL` | `data.payload_inline === false` transport flag (`TAXONOMY.md` §6). |
 | `envelope` | `jsonb NOT NULL` | Raw body stored verbatim. |
 | `compliance` | `text NOT NULL DEFAULT 'full'` | `full` \| `partial` \| `none` — see item 7 above / mapper docs. |
 | `ingested_at` | `timestamptz NOT NULL DEFAULT now()` | DB-side, never part of the mapper. |
 
-18 mapper-set columns + `ingested_at` (DB-side default). Indexes: `correlation_id`, `occurred_at`, `business_fn`.
+18 mapper-set columns + `ingested_at` (DB-side default) in the base
+`CREATE TABLE` (`tracked-events.sql:24-43`).
+
+Six further columns were added later via idempotent
+`ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, because `CREATE TABLE IF NOT EXISTS`
+does not alter a live table that predates them (`tracked-events.sql:47-49`):
+
+| Column | Type | Added at |
+|---|---|---|
+| `workflow_id` | `text` | `tracked-events.sql:87` |
+| `run_id` | `text` | `tracked-events.sql:89` |
+| `connector_id` | `text` | `tracked-events.sql:91` |
+| `cache_status` | `text` | `tracked-events.sql:93` |
+| `payload_status` | `text NOT NULL DEFAULT 'inline'` | `tracked-events.sql:127` |
+| `payload_scrubbed_at` | `timestamptz` | `tracked-events.sql:156` |
+
+`compliance` also carries a matching `ADD COLUMN` for the same reason
+(`tracked-events.sql:58`). The `payload_status` lifecycle is documented in
+`services/tracking-ingester-service/README.md`.
+
+Seven indexes (`tracked-events.sql:95-190`): `correlation_id`, `occurred_at`,
+`business_fn`, `connector_id`, a partial scrub-scan index on `occurred_at`, a
+composite `(tenant, envelope->>'type', occurred_at DESC)` for the events
+read endpoint, and an expression index on the payload's `agentId`.
 
 **Dispositions:** most rules are *counted-and-persisted* (one row per event). Rule 20 (`runtime-presence` heartbeats) is `counted-not-persisted` — classified and counted via the OTel counter `tracking_ingester_skipped_total{family,tenant}` but **no row is written** (`SKIP_PERSIST_RULES` in `src/lib/classify.ts` is the single source of truth). See `TAXONOMY.md` §4 disposition note.
 
@@ -295,4 +318,4 @@ The following gaps would need to be filled for a Bun-based message-tracking inge
    Status: **IMPLEMENTED.** Shipped as `tracking.tracked_events` (owner `tracking-ingester-service`, source of truth `services/tracking-ingester-service/src/sql/tracked-events.sql`; see the dedicated inventory section below). The events table carries `tech text` and `business_fn text` (producer-intent classification, pure function of subject/envelope), plus the two orthogonal facets decided by the user: `consumed_by text[]` (multi-value — which durable consumers read the subject family; seed mapping in `TAXONOMY.md` §5) and `is_claim_check boolean` (transport flag for `data.payload_inline === false` slim envelopes; NOT a classification value). An additional `compliance text` column (`full` | `partial` | `none`) was added during implementation to record how close each stored body is to a canonical `EventEnvelope`: `full` = compliant outright; `partial` = the user-approved stage-1 `webhook_received` canonical-with-known-drift exception (compliant except the intentionally-absent `accountid`); `none` = non-envelope/drift bodies. Rules and disposition per `TAXONOMY.md` §4/§5/§6/§7 (including rule 20 `runtime-presence` heartbeats, disposition `counted-not-persisted` → counted via an OTel metric but NO row persisted).
    Where: `services/tracking-ingester-service/src/sql/tracked-events.sql` (DDL) + `src/lib/to-tracked-event-row.ts` (mapper); classification rules in `TAXONOMY.md` §4.
    Why: `business_fn` must stay a deterministic pure function ("what the event represents"), so consumer roles and transport details were split into separate columns instead of overloading the dimension.
-   Related finding: `agent-memory-service` publishes `io.yoizen.agent-memory.memory.*.v1` events on subjects built from a **service-local** `AGENT_MEMORY_SUBJECT_PREFIX` (`services/agent-memory-service/src/providers/nats.provider.ts:64-74`) — not from `packages/shared/src/constants.ts` like every other internal producer — and the envelope's `domain` field (`"automation"`) disagrees with the subject's domain token (`agent-memory`). See `DRIFT.md` discrepancy #9; the tracker classifies these by SUBJECT (`TAXONOMY.md` rule 9).
+   Related finding: `agent-memory-service` publishes `io.yoizen.agent-memory.memory.*.v1` events on subjects built from a **service-local** `AGENT_MEMORY_SUBJECT_PREFIX` (`services/agent-memory-service/src/providers/nats.provider.ts:62-68`) — not from `packages/shared/src/constants.ts` like every other internal producer — and the envelope's `domain` field (`"automation"`) disagrees with the subject's domain token (`agent-memory`). See `DRIFT.md` discrepancy #9; the tracker classifies these by SUBJECT (`TAXONOMY.md` rule 9).
