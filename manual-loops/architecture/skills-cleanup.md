@@ -103,7 +103,16 @@ grep -n "skills-cleanup" cowork/INDEX.md
   reviewer-mandated: they falsified the skill's own claims)
 - [x] T02 yz-ui ghost half removed (plus drift fixes in the surviving
   Angular half: rail sizes, token layers, route flags, KPI labels)
-- [ ] T03 gitignored decision + registry regen
+- [x] T03 gitignored decision + registry regen (human decisions 2026-07-31:
+  DELETE skills/playwright/ + fix AGENTS.md skill list; registry protocol =
+  PATHS not compact rules — resolver/judgment-day/skill-registry rewritten,
+  chain verified end-to-end)
+
+**T03 follow-up (recorded 2026-07-31):** write a small FIRST-PARTY playwright
+skill documenting THIS repo's e2e setup — sequential `workers: 1`
+(`playwright.config.ts:16`), `fillMatInput`/mat-form-field locators
+(`e2e/sales-agent-setup.spec.ts:28-40`), `E2E_*` env vars (`:16-19`),
+idempotency (`:12-13`). Separate decision per the SPEC's out-of-scope rule.
 
 ## Out of scope (explicit)
 

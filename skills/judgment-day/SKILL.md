@@ -34,19 +34,19 @@ allowed-tools: [Read, Edit, Write, Glob, Grep, Bash, Task]
 
 ### Pattern 0: Skill Resolution (BEFORE launching judges)
 
-Follow the **Skill Resolver Protocol** (`_shared/skill-resolver.md`) before launching ANY sub-agent:
+Follow the **Skill Resolver Protocol** (`skills/_shared/skill-resolver.md`) before launching ANY sub-agent. The registry is an index of paths, not a summary (`.atl/skill-registry.md:24-26`) — you pass paths, the judges read the `SKILL.md` files themselves:
 
-1. Obtain the skill registry: search engram (`mem_search(query: "skill-registry", project: "{project}")`) → fallback to `skill-registry.md` from the skills folder → skip if none
+1. Obtain the skill registry: search engram (`mem_search(query: "skill-registry", project: "{project}")`) → fallback to reading `.atl/skill-registry.md` in the project root → skip if none
 2. Identify the target files/scope — what code will the judges review?
-3. Match relevant skills from the registry's **Compact Rules** by:
-   - **Code context**: file extensions/paths of the target (e.g., `.go` → go-testing; `.tsx` → react-19, typescript)
-   - **Task context**: "review code" → framework/language skills; "create PR" → branch-pr skill
-4. Build a `## Project Standards (auto-resolved)` block with the matching compact rules
-5. Inject this block into BOTH Judge prompts AND the Fix Agent prompt (identical for all)
+3. Match relevant skills against the registry's `Trigger / description` column (`.atl/skill-registry.md:30-31`) by:
+   - **Code context**: file extensions/paths of the target (e.g. `services/admin-console/**` → `yz-ui`, `angular-*`; tenancy code → `multi-tenant`)
+   - **Task context**: "review code" → framework/domain skills; "write a commit" → `git-commit`
+4. Build a `## Skills to load before work` block listing the matching `Path` values verbatim
+5. Include this block in BOTH Judge prompts AND the Fix Agent prompt (identical for all)
 
 This ensures judges review against project-specific standards, not just generic best practices.
 
-**If no registry exists**: warn the user ("No skill registry found — judges will review without project-specific standards. Run `skill-registry` to fix this.") and proceed with generic review only.
+**If no registry exists**: warn the user ("No skill registry found — judges will review without project-specific standards. Run `gentle-ai skill-registry refresh --force` to fix this.") and proceed with generic review only.
 
 ### Pattern 1: Parallel Blind Review
 
@@ -116,9 +116,9 @@ User asks for "judgment day"
 │   └── NO → ask user to specify scope before proceeding
 │
 ▼
-Resolve skills (Pattern 0): read registry → match by code + task context → build Project Standards block
+Resolve skills (Pattern 0): read registry → match by code + task context → build "Skills to load" path list
 ▼
-Launch Judge A + Judge B in parallel (delegate, async) — with Project Standards injected
+Launch Judge A + Judge B in parallel (delegate, async) — with the skill path list included
 ▼
 Wait for both to complete (delegation_read both)
 ▼
@@ -169,9 +169,10 @@ You are an adversarial code reviewer. Your ONLY job is to find problems.
 ## Target
 {describe target: files, feature, architecture, component}
 
-{if compact rules were resolved in Pattern 0, inject the following block — otherwise OMIT this entire section}
-## Project Standards (auto-resolved)
-{paste matching compact rules blocks from the skill registry}
+{if skills were resolved in Pattern 0, include the following block — otherwise OMIT this entire section}
+## Skills to load before work
+Read these files before reviewing anything:
+{list the matching Path values from the skill registry, one per line}
 
 ## Review Criteria
 - Correctness: Does the code do what it claims? Are there logical errors?
@@ -179,7 +180,7 @@ You are an adversarial code reviewer. Your ONLY job is to find problems.
 - Error handling: Are errors caught, propagated, and logged properly?
 - Performance: Any N+1 queries, inefficient loops, unnecessary allocations?
 - Security: Any injection risks, exposed secrets, improper auth checks?
-- Naming & conventions: Does it follow the project's established patterns AND the Project Standards above?
+- Naming & conventions: Does it follow the project's established patterns AND the skills you loaded above?
 {if user provided custom criteria, add here}
 
 ## Return Format
@@ -213,9 +214,10 @@ You are a surgical fix agent. You apply ONLY the confirmed issues listed below.
 ## Confirmed Issues to Fix
 {paste the confirmed findings table from the verdict synthesis}
 
-{if compact rules were resolved in Pattern 0, inject the following block — otherwise OMIT this entire section}
-## Project Standards (auto-resolved)
-{paste matching compact rules blocks from the skill registry}
+{if skills were resolved in Pattern 0, include the following block — otherwise OMIT this entire section}
+## Skills to load before work
+Read these files before applying any fix:
+{list the matching Path values from the skill registry, one per line}
 
 ## Context
 - Original review criteria: {paste same criteria used for judges}
@@ -300,8 +302,8 @@ Recommend: human review of the remaining issues above before re-running judgment
 ## Skill Resolution Feedback
 
 After every delegation that returns a result, check the `**Skill Resolution**` field in each judge/fix-agent response:
-- `injected` → skills were passed correctly ✅
-- `fallback-registry`, `fallback-path`, or `none` → skill cache was lost (likely compaction). Re-read the registry immediately and inject compact rules in all subsequent delegations.
+- `injected` → skill paths were passed correctly ✅
+- `fallback-registry`, `fallback-path`, or `none` → skill cache was lost (likely compaction). Re-read the registry immediately and include the `## Skills to load before work` path list in all subsequent delegations.
 
 This is a self-correction mechanism. Do NOT ignore fallback reports.
 

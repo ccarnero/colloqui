@@ -1,10 +1,6 @@
 CLAUDE.md
 CURSOR.md
 
-skills/devops/
-skills/dotnet/
-skills/playwright/
-
 # Dependencies
 node_modules/
 .pnpm-store/

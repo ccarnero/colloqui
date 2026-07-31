@@ -1420,6 +1420,71 @@ fixed here (the loop was docs + `scripts/checks/` only):
    upper-cases, `buildIngressStreamName` does not; both exported from `@yoizen/shared`.
 
 
+## Change: repo skills tell the truth (skills-cleanup)
+
+Manual-loop change that applied the docs-consistency bar to the skill corpus: the
+skills that SURVIVED the 2026-07-29 deletions (`dotnet`, `devops`, `pydantic-ai`,
+`tailwind-4`) were still legislating for other codebases, so every surviving claim was
+re-derived against source or deleted. Three tasks: **T01** `multi-tenant` aligned with
+reality, **T02** `yz-ui` ghost half removed, **T03** the gitignored-skill decision plus
+the registry protocol. Full task queue, gates and human decisions:
+`manual-loops/architecture/skills-cleanup.md` (dated 2026-07-29). Commits: `1df4d653`
+(T01), `e080ee92` (T02).
+
+Decision triple:
+- **Rule**: a skill is advisory, but a WRONG skill is worse than no skill — it teaches an
+  agent to write code for a platform that does not exist. So the same bar as the
+  docs-consistency loop applies: every surviving claim carries a `file:line` citation or a
+  runnable check, and unverifiable claims are DELETED, not softened. Where a skill and
+  `AGENTS.md` disagreed, `AGENTS.md` won and the skill was fixed.
+- **Assets are claims too**: flagging a lying asset is not enough, because an agent can
+  open `assets/` directly. Both reviewers rejected T01's first attempt for exactly this,
+  and the precedent then carried into T02. Deleted: `skills/multi-tenant/assets/` (6
+  Express/`jsonwebtoken`/Mongo templates) + `references/docs.md`; `skills/yz-ui/`'s
+  `component-template.tsx`, `css-snippets.css`, `tailwind-theme-schema.json` and
+  `references/docs.md` (whose admin-console half cited 5 paths that no longer exist).
+- **Evidence**: `multi-tenant` prescribed an `X-Tenant-Id` header (real:
+  `x-yoizen-tenant`, `packages/shared/src/constants.ts:25`), Express middleware and
+  `jsonwebtoken` (real: NestJS `TenantGuard` + `@TenantId()`,
+  `packages/database/src/tenant-guard.ts:24-63`, and `jose`), a 403 tenant-mismatch rule
+  that exists nowhere, and a Mongo shared-collection `{ tenant }` model (real: one
+  database per tenant, `packages/shared/src/tenant-auth-schema.ts:6-8`). `yz-ui` was
+  worse than stale — it taught wrong VALUES for the app that does exist: 180px/48px rails
+  (real 210px/56px, `sub-nav.component.ts:85-101`), `var(--primary)` active states (real
+  `var(--rd-accent)`), and it never mentioned the `--rd-*` redesign token layer
+  (`styles.scss:153-268`) that 43 files already use.
+
+Human decisions (T03, 2026-07-31):
+- **`skills/playwright/` DELETED**, not tracked. It was real on disk but gitignored: 59
+  files / 26,363 lines of third-party generic content (`author: currents.dev`, MIT) with
+  zero references to this repo. The repo does use Playwright (`package.json:5`,
+  `playwright.config.ts`, `e2e/sales-agent-setup.spec.ts`), which is why this was a real
+  question and not an obvious delete — but tracking it would have imported 26k unaudited
+  lines legislating for Electron, WebGL, Vue, React, GitLab and 5 CI providers, i.e. the
+  exact failure mode that got `dotnet`/`devops` deleted. The three now-dead `.gitignore`
+  lines went with it, and `AGENTS.md:101-104` was corrected — it had promised a
+  `playwright` skill that no clone ever received, while omitting `judgment-day`,
+  `skill-registry` and `_shared`, which do ship.
+- **Registry protocol: PATHS, not summaries.** Two mutually exclusive protocols were
+  live: `.atl/skill-registry.md:24-26` ("an index, not a summary… pass paths so subagents
+  load the full runtime contract") versus `skill-registry`/`_shared` ("inject the COMPACT
+  RULES text… the sub-agent should NOT read any SKILL.md files"). Paths won: a summary
+  drifts from the file it summarizes, a path always resolves to current text. All three
+  consumers were rewritten to the paths protocol, and the resolver's filesystem fallback
+  now names the artifact that actually exists — it previously pointed at
+  `skill-registry.md` "from the skills folder", a file that has never existed, so hop 3
+  of the chain could never resolve. `.ywai/` (retired, `AGENTS.md:110-112`) was replaced
+  by `.atl/` throughout, and the dead `skills/skill-sync/assets/sync.sh` reference dropped.
+
+- **Engram topic**: `architecture/skills-cleanup`.
+
+Follow-up, not done here: write a small FIRST-PARTY `playwright` skill documenting THIS
+repo's e2e setup — the `workers: 1` sequential constraint (`playwright.config.ts:16`),
+the `fillMatInput`/`mat-form-field` locator problem
+(`e2e/sales-agent-setup.spec.ts:28-40`), the `E2E_BASE_URL`/`E2E_EMAIL`/`E2E_PASSWORD`/
+`E2E_TENANT` env vars (`:16-19`), and the re-runnable idempotency requirement (`:12-13`).
+Per the SPEC, writing NEW skills is a separate decision.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.
