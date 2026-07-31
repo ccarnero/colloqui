@@ -254,34 +254,34 @@ k6f_archive_banner() {
 }
 
 # ---------------------------------------------------------------------------
-# K6g — No per-service AGENTS.md may exist.
+# K6g — No per-component AGENTS.md may exist.
 #
 # Drift class: per-component agent files resurrect. Every `services/*/AGENTS.md`
-# was absorbed into that service's README (manual-loops/architecture/
-# docs-consistency.md T02/T03), so the README is now the single descriptive
-# doc per service. A re-created AGENTS.md immediately re-forks the narrative
-# and starts drifting from the code again.
+# and `packages/*/AGENTS.md` was absorbed into that component's README
+# (manual-loops/architecture/docs-consistency.md T02/T03/T04), so the README is
+# now the single descriptive doc per component. A re-created AGENTS.md
+# immediately re-forks the narrative and starts drifting from the code again.
 #
-# Scope is `services/*` ONLY, at exactly one level below `services/`:
-#   * the ROOT `AGENTS.md` is the repo constitution and MUST NOT match —
-#     the glob is anchored at `services/`, so it never can.
-#   * `packages/*/AGENTS.md` is absorbed in a later task; this guard is
-#     deliberately not extended there yet, because a guard must be green on
-#     the commit that introduces it.
+# Scope is `services/*` and `packages/*`, at exactly one level below each:
+#   * the ROOT `AGENTS.md` is the repo constitution and MUST NOT match — the
+#     globs are anchored at `services/` and `packages/`, so it never can.
+#   * `packages/*` was added in T04, once `packages/shared/AGENTS.md` was
+#     absorbed and deleted in the same commit (a guard must be green when it
+#     lands).
 # ---------------------------------------------------------------------------
-k6g_no_service_agents_md() {
-  local guard="K6g(no-service-agents-md)"
+k6g_no_component_agents_md() {
+  local guard="K6g(no-component-agents-md)"
   local found=""
   local f
-  for f in services/*/AGENTS.md; do
+  for f in services/*/AGENTS.md packages/*/AGENTS.md; do
     [[ -e "$f" ]] || continue
     found="$found $f"
   done
 
   if [[ -n "$found" ]]; then
-    fail "$guard: per-service AGENTS.md resurrected —$found. Absorb the content into the service's README.md (with file:line citations) and delete the file; the root AGENTS.md is the only agent file in this repo."
+    fail "$guard: per-component AGENTS.md resurrected —$found. Absorb the content into the component's README.md (with file:line citations) and delete the file; the root AGENTS.md is the only agent file in this repo."
   else
-    pass "$guard: no services/*/AGENTS.md on disk"
+    pass "$guard: no services/*/AGENTS.md or packages/*/AGENTS.md on disk"
   fi
 }
 
@@ -560,6 +560,60 @@ k9b_numeric_claims() {
   [[ "$ok" -eq 1 ]] && pass "$guard: golden row count ($actual) matches every stated claim"
 }
 
+# ---------------------------------------------------------------------------
+# K11 — Storage-engine documentation.
+#
+# Drift class: undocumented dual-backend support. A service that calls
+# `resolveStorageEngine()` (packages/database/src/engine.ts) silently supports
+# BOTH Postgres and Mongo and switches on `DB_ENGINE` / `STORAGE_ENGINE` at
+# bootstrap. The phase-0 audit (C9) found 11 services using it and only 2
+# documenting it — so an operator reading the README had no way to know the
+# knob existed, or that an invalid value throws at startup.
+#
+# The rule: if a service's SOURCE calls `resolveStorageEngine`, its README must
+# mention `DB_ENGINE` or `STORAGE_ENGINE`. The set of services is DISCOVERED
+# from the code (not hardcoded), so a new dual-backend service is caught the
+# moment it lands without touching this script.
+#
+# Spec files are excluded from discovery: a test that imports the helper to
+# assert its behaviour does not make its service dual-backend.
+# ---------------------------------------------------------------------------
+k11_storage_engine_documented() {
+  local guard="K11(storage-engine-documented)"
+  local ok=1
+
+  # Services whose non-test source calls resolveStorageEngine(), one per line.
+  local svc_dirs
+  svc_dirs=$(rg -l --type ts -g '!*.spec.ts' -g '!**/test/**' \
+    'resolveStorageEngine' services 2>/dev/null \
+    | sed -E 's|^services/([^/]+)/.*|\1|' \
+    | sort -u)
+
+  if [[ -z "$svc_dirs" ]]; then
+    fail "$guard: found no service calling resolveStorageEngine() — the discovery pattern broke, or the helper was renamed (packages/database/src/engine.ts)"
+    return
+  fi
+
+  local count=0
+  local s
+  while IFS= read -r s; do
+    [[ -z "$s" ]] && continue
+    count=$((count + 1))
+    local readme="services/$s/README.md"
+    if [[ ! -f "$readme" ]]; then
+      fail "$guard: services/$s calls resolveStorageEngine() but has no README.md to document DB_ENGINE in"
+      ok=0
+      continue
+    fi
+    if ! rg -q 'DB_ENGINE|STORAGE_ENGINE' "$readme"; then
+      fail "$guard: services/$s selects its storage backend at bootstrap (resolveStorageEngine) but $readme never mentions DB_ENGINE / STORAGE_ENGINE — document the variable, its default (postgres) and that an invalid value throws"
+      ok=0
+    fi
+  done <<<"$svc_dirs"
+
+  [[ "$ok" -eq 1 ]] && pass "$guard: all $count dual-backend services document DB_ENGINE"
+}
+
 main() {
   k6a_service_inventory
   k6b_no_scaledobject
@@ -567,11 +621,12 @@ main() {
   k6d_referenced_scripts_exist
   k6e_alert_names
   k6f_archive_banner
-  k6g_no_service_agents_md
+  k6g_no_component_agents_md
   k7_ack_wait_census
   k8_agent_call_timeout_ceiling
   k9_di_type_imports
   k9b_numeric_claims
+  k11_storage_engine_documented
 
   echo
   if [[ "$FAILURES" -eq 0 ]]; then

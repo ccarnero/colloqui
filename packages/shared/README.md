@@ -1,4 +1,4 @@
-# CLAUDE.md — @yoizen/shared
+# `@yoizen/shared`
 
 ## Package Overview
 
@@ -12,10 +12,11 @@
 | Version | `1.0.0` |
 | Private | `true` |
 | Entry | `./src/index.ts` |
-| Peer dependencies | `class-transformer`, `class-validator`, `nats` (all required) |
-| Dependencies | `reflect-metadata` |
+| Peer dependencies | `nats` (required); `class-transformer` and `class-validator` are declared **optional** via `peerDependenciesMeta` (`package.json:19-34`) |
+| Dependencies | `reflect-metadata`, `zod` (`package.json:35-38`) |
+| `sideEffects` | `false` (`package.json:18`) — safe to tree-shake |
 
-Named subpath exports: `./constants`, `./channel-constants`, `./permanent-error`, `./circuit-breaker`, `./dto/pagination`.
+Named subpath exports (`package.json:10-17`): `./constants`, `./channel-constants`, `./permanent-error`, `./circuit-breaker`, `./dto/pagination`.
 
 ## Repository Structure
 
@@ -128,7 +129,7 @@ src/
 
 ## NATS Stream Topology
 
-The canonical topology is **per-tenant**. See `DOCS/03-NATS-JETSTREAM.md` and `DOCS/arquitectura/02-diseño-de-mensajes.md` for the authoritative contract.
+The canonical topology is **per-tenant**. See `DOCS/messaging/envelope.md` (envelope contract), `DOCS/messaging/ingress.md` (stream topology) and `DOCS/messaging/claim-check.md` for the authoritative contract.
 
 ### Per-Tenant Helpers (`tenant-stream.constants.ts`, `channel.constants.ts`, `channel.utils.ts`)
 
@@ -195,8 +196,10 @@ The `EventEnvelope` is a CloudEvents-inspired structure. Fields: `specversion`, 
 Optional pipeline extensions: `callback_url`, `adapter_id`, `enrich_adapter`, `forward_adapter`.
 
 For the full envelope contract, field semantics, subject taxonomy, and idempotency rules, see:
-- `DOCS/arquitectura/02-diseño-de-mensajes.md` — canonical contract (as-built)
-- `DOCS/03-NATS-JETSTREAM.md` — stream topology and operational reference
+- `DOCS/messaging/envelope.md` — canonical envelope contract
+- `DOCS/messaging/ingress.md` — per-tenant stream topology
+- `DOCS/messaging/claim-check.md` — oversized-payload handling
+- `DOCS/messaging/service-bus.md` — service-bus publish semantics
 
 ## Auth Constants and Interfaces
 
@@ -236,9 +239,37 @@ Auth types exported: `JwtPayload`, `TokenResponse`, `TokenScope`, `UserRole`, `P
 |---|---|
 | `REGISTRY_KNATIVE_GROUP` | `serving.knative.dev` |
 | `REGISTRY_KNATIVE_VERSION` | `v1` |
+| `REGISTRY_KNATIVE_SERVICES_PLURAL` | `services` (`constants.ts:34`) |
+| `REGISTRY_KNATIVE_REVISIONS_PLURAL` | `revisions` (`constants.ts:35`) |
 | `REGISTRY_DEFAULT_SERVICE_PORT` | `3000` |
 | `REGISTRY_PRODUCER` | `registry-service` |
 | `PLATFORM_NON_CHANNEL_TOKEN` | `system` |
+
+## `AdapterClient` (`adapter-client.ts`)
+
+The one substantial runtime class in this package: it fetches connector config
+from connector-admin's REST API, caches it in Redis with
+**stale-while-revalidate**, manages OAuth2 client-credentials tokens, and
+resolves a full request (URL + auth headers + timeout + retries) for an
+adapter + endpoint pair.
+
+| Knob | Value | Source |
+|---|---|---|
+| Soft TTL | `60` s, overridable per instance via `cacheTtlSeconds` | `adapter-client.ts:20`, `:58` |
+| Hard (stale) TTL | soft × `5` = 300 s | `STALE_MULTIPLIER`, `adapter-client.ts:21` |
+| Negative-cache TTL | `10` s — deliberately shorter, so a newly created mirror propagates fast | `adapter-client.ts:26-27` |
+| Default base URL | `http://connector-admin-api.platform-services-dev.svc.cluster.local` (`DEFAULT_CONNECTOR_ADMIN_URL`) | `adapter.interfaces.ts:20-22` |
+
+Read path (`getAdapter`, `adapter-client.ts:66-82`): a cache entry inside its
+soft TTL is returned directly; past it, the client attempts a refresh and
+**falls back to the stale entry** when connector-admin is unreachable
+(`:62-65`). That fallback is the point of the hard TTL — a connector-admin
+outage degrades freshness, not availability.
+
+Auth header injection is split: `applyAdapterAuthHeadersSync`
+(`adapter-auth-headers.ts`) covers `none` / `api-key` / `bearer` / `basic`,
+while `AdapterClient` adds the OAuth2 bearer token, since that one needs an
+async token fetch.
 
 ## Consumer Services
 
@@ -263,16 +294,24 @@ Services that import from `@yoizen/shared` (verified via source search):
 | usage-aggregator-service |
 | workflow-service |
 | cache-service |
+| provisioning-service |
+| tracking-ingester-service |
 | admin-console (frontend) |
+
+Regenerate with:
+
+```bash
+for s in services/*/; do rg -lq '@yoizen/shared' "$s" && basename "$s"; done
+```
 
 ## Code Style and Conventions
 
 - **Types and constants are the core**: most files export only types, interfaces, and constant values with no side effects.
 - **Runtime modules**: several files contain real runtime logic — `AdapterClient`, `YoizenClawExecutionClient`, `DistributedCircuitBreaker`, `envelope.utils.ts` (idempotency, derivation, validation), `channel.utils.ts` (subject builders/parsers), `platform.utils.ts`, `tenant.utils.ts`, `phone.utils.ts`, `pagination.ts`, `permanent-error.ts`, `fifo-map.ts`, `adapter-auth-headers.ts`.
 - **Schema DDL files**: `*-schema.ts` (SQL) and `*-mongo-schema.ts` (MongoDB index descriptors) are the single source of truth for schema applied during tenant provisioning and service startup. They intentionally omit `tenant_id` columns — the DB itself is the tenant boundary.
-- **Barrel exports**: `index.ts` re-exports everything; named subpath exports exist for `constants`, `channel-constants`, `permanent-error`, `circuit-breaker`.
+- **Barrel exports are EXPLICIT, not wildcard**: `index.ts` lists every symbol by name (79 `export` statements, no `export *`). A new symbol is NOT picked up automatically — it must be added to `index.ts` by hand or it stays invisible to consumers. Named subpath exports exist for `constants`, `channel-constants`, `permanent-error`, `circuit-breaker`, `dto/pagination`.
 - **Naming**: `SCREAMING_SNAKE_CASE` for constants, `PascalCase` for interfaces and classes.
-- **Versioning**: not published to npm; consumed via workspace `file:` references.
+- **Versioning**: not published to npm; consumed as a workspace package (`"@yoizen/shared": "workspace:*"`, e.g. `services/auth-service/package.json:20`).
 - **TypeScript strict mode**: all strict checks enabled.
 
 ## Common Tasks
@@ -280,12 +319,12 @@ Services that import from `@yoizen/shared` (verified via source search):
 ### Add a new constant
 
 1. Add to the appropriate file (`constants.ts`, `auth.constants.ts`, `channel.constants.ts`, `rate-limit.constants.ts`, etc.).
-2. Confirm `index.ts` covers it (it re-exports all modules via wildcard).
+2. **Add it to `index.ts` explicitly.** The barrel has no wildcard re-export, so a constant that is not listed there cannot be imported from `@yoizen/shared`.
 
 ### Add a new interface
 
 1. Add to the appropriate file (`interfaces.ts`, `auth.interfaces.ts`, `workflow.interfaces.ts`, etc.) or create a new `<domain>.interfaces.ts`.
-2. Confirm it is exported from `index.ts`.
+2. Add it to `index.ts` explicitly (see above — no wildcard re-export). Type-only symbols go in an `export type { ... }` block.
 
 ### Add a per-tenant DB schema change
 

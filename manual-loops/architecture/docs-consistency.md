@@ -227,7 +227,7 @@ grep -n "docs-consistency" cowork/INDEX.md
 - [x] T01 lying READMEs + K9 (landed as K9b — name taken)
 - [x] T02 five service README gaps
 - [x] T03 absorb remaining AGENTS.md + resurrection guard (K6g, services/*)
-- [ ] T04 package READMEs + K11
+- [x] T04 package READMEs + K11 (K6g extended to packages/*)
 - [ ] T05 one ADR channel
 - [ ] T06 K10 dead-link guard + fixes
 - [ ] T07 full-corpus sweep + doc-side fixes
@@ -333,6 +333,44 @@ extension deferred to T04 by design):**
 5. Resurrection vector: eight gitignored `services/*/CLAUDE.md` files are
    stale copies of the deleted AGENTS.md (auto-loaded into agent context).
    Untracked → outside K6g's reach. Needs an explicit human decision.
+
+**T04 adjudications (recorded 2026-07-30 — packages/shared README verified,
+AGENTS.md absorbed+deleted; K6g extended to packages/*; K11 covers 10
+services discovered from code, straggler agent-ai-service fixed):**
+
+1. packages/shared README title was still `# CLAUDE.md — @yoizen/shared`
+   (rename leftover). Fixed.
+2. "All peer deps required" — false: `class-transformer`/`class-validator`
+   are optional in `peerDependenciesMeta`, only `nats` required
+   (`package.json:19-34`). `zod` was missing from the deps list.
+3. "Barrel re-exports everything via wildcard" — false and harmful:
+   `index.ts` is 79 explicit named exports, no `export *`. Recipes corrected.
+4. Two dead doc links (`DOCS/03-NATS-JETSTREAM.md`,
+   `DOCS/arquitectura/02-diseño-de-mensajes.md`) repointed to
+   `DOCS/messaging/*`.
+5. AGENTS.md fiction dropped: `WEBHOOK_MAX_RETRIES`/`WEBHOOK_RETRY_DELAYS`
+   and the whole Event Interfaces table (pre-CloudEvents shapes, none exist).
+6. AdapterClient cache TTLs were inverted in AGENTS.md (said TTL 300s/stale
+   60s; code: soft 60s, hard 300s, negative 10s — `adapter-client.ts:20-27`).
+
+**T04 follow-ups (recorded 2026-07-30 — code bugs, NOT fixed here):**
+
+1. `packages/database/src/nats-durable-consumer.ts` JSDoc contradicts its
+   constants: `@default 30_000` vs `DEFAULT_ACK_WAIT_MS = 60_000` (`:74` vs
+   `:30`); `@default [1s,5s,30s,2m]` vs `[60s,120s,300s,600s]` (`:76` vs
+   `:43-48`). History: stale 1s ack_wait caused duplicate Telegram sends.
+2. `serviceMode()` swallows typos — `SERVICE_MODE=wokrer` silently resolves
+   to `api` (`packages/observability/src/runtime-mode.ts:31-32`);
+   `resolveStorageEngine` throws on invalid input, this does not.
+3. `bootstrapSplitService` bypasses `resolveServiceName` for its logger name
+   (`bootstrap-split-service.ts:46`) — `OTEL_SERVICE_NAME` override invisible
+   in that log line.
+4. `createMockMongoClient().db(name)` ignores its argument
+   (`packages/testing/src/index.ts:112-114`) — cross-database isolation
+   cannot be asserted in tests.
+5. Resurrection vector (same class as T03 #5): gitignored
+   `packages/shared/CURSOR.md` and `GEMINI.md` are stale AGENTS.md siblings,
+   outside K6g's reach. Needs the same human decision.
 
 - Service source changes of any kind (follow-ups only).
 - CODE-side envelope drift (future envelope-drift loop owns it).

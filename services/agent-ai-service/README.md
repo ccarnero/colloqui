@@ -24,6 +24,46 @@ bun run start:dev
 
 Requires local NATS, Redis, and per-tenant database instances.
 
+## Storage engine
+
+Agent configuration repositories support Postgres (default) and Mongo,
+selected once at bootstrap by `DB_ENGINE`: `agentAiServiceConfig.dbEngine`
+calls `resolveStorageEngine()` (`src/config.ts:38-40`), which reads `DB_ENGINE`,
+falls back to `STORAGE_ENGINE`, defaults to `postgres`, and throws on any other
+value (`packages/database/src/engine.ts:13-23`). `ProvidersModule` branches the
+tenant connection manager and its base DI token from that single value
+(`src/providers/providers.module.ts:19-29`).
+
+**One path ignores the setting on purpose**: `SYSTEM_VARIABLES_PG`
+(`src/providers/providers.module.ts:31-40`) is ALWAYS backed by the Postgres
+manager, because `SystemVariablesProvider` queries the tenant's
+`system_variables` table as a server-side fallback when an incoming
+chat/execution payload carries no `variables.system`. This mirrors
+`workflow-service/src/providers/providers.module.ts`.
+
+## Environment Variables
+
+`src/config.ts` — lazy getters throughout.
+
+| Variable | Default | Description |
+|---|---|---|
+| `PORT` | `3000` | HTTP port (`src/config.ts:35-37`) |
+| `DB_ENGINE` | `postgres` | Storage engine: `postgres` or `mongo`; falls back to `STORAGE_ENGINE` (`src/config.ts:38-40`) |
+| `PLATFORM_ENVIRONMENT` | `dev` | Feeds in-cluster service URLs (`src/config.ts:41-43`) |
+| `NATS_URL` | `nats://localhost:4222` | (`src/config.ts:44-46`) |
+| `REDIS_URL` | `redis://localhost:6379` | (`src/config.ts:47-49`) |
+| `MEMORY_SERVICE_URL` | `http://agent-memory-service:3000` | (`src/config.ts:50-52`) |
+| `CONNECTOR_ADMIN_URL` | `http://connector-admin-api:3000` | (`src/config.ts:53-55`) |
+| `AGENT_ADMIN_SERVICE_URL` | `platformServiceUrl("agent-admin-service", env)` | (`src/config.ts:56-61`) |
+| `AGENT_TOOL_DESCRIPTION_OVERRIDES_ENABLED` | *(off)* | Enabled only on the literal `"true"` (`src/config.ts:62-64`) |
+| `AGENT_MCP_TOOL_FILTERING_ENABLED` | *(off)* | When on, MCP tools are namespaced `"<serverName>__<toolName>"` and filtered by the agent's `enabled_mcp_tools`; when off, raw tool-name keys and no allowlist (`src/config.ts:65-78`) |
+| `AGENT_AI_CONSUMER_ACK_WAIT_MS` | `900000` | Ack window for the multi-tenant NATS consumer. Handlers run `generateReply` — LLM + tool/MCP chains that routinely take minutes — so a smaller value causes mid-handler redelivery and DUPLICATE concurrent LLM executions (`src/config.ts:79-93`) |
+| `AGENT_AI_CONSUMER_WORKING_INTERVAL_MS` | `30000` | How often the consumer calls `msg.working()` to extend the server-side ack deadline without waiting for the full window (`src/config.ts:95-106`) |
+| `MCP_LIVE_CALL_TIMEOUT_MS` | `25000` | Bounded wait for live-chat MCP connect / discovery / execution (`src/config.ts:107-118`) |
+| `AGENT_BUFFERED_EXECUTION_TIMEOUT_MS` | `900000` | Wall-clock ceiling for the buffered (non-streaming) execution path (`src/config.ts:119-131`) |
+| `AGENT_TEST_DELAY_ENABLED` | *(off)* | Dev-only delay hook; off in every non-dev overlay (`src/config.ts:132-143`) |
+| `AGENT_TEST_DELAY_MAX_MS` | `600000` | Hard-clamped to `AGENT_TEST_DELAY_HARD_CAP_MS` (`src/config.ts:32`), so it can only ever LOWER the ceiling; non-numeric or non-positive values fall back to the cap (`src/config.ts:144-161`) |
+
 ## Event Publishing — standalone LLM calls (`ai.llm_call.completed.v1`)
 
 `manual-loops/connectors/connection-call-inspector.md` T04 closes a capture
