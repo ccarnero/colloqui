@@ -1341,6 +1341,85 @@ Decision cuádruple:
   webhook trigger with the delay in the action args.
 - **Engram topic**: `agents/long-running-executions`.
 
+## Change: docs/code consistency sweep + doc guards (docs-consistency)
+
+Manual-loop change that made the documentation corpus verifiable instead of merely
+written: every load-bearing claim in `DOCS/messaging/*`, `DOCS/architecture/*`,
+`SCHEMAS.md`, `TAXONOMY.md` and the guides was checked against code, the per-component
+`AGENTS.md` split-brain was collapsed into READMEs, and each drift CLASS that was found
+got a static guard so it cannot come back. 14 `AGENTS.md` files absorbed-then-deleted
+(3 in T02, 10 in T03, `packages/shared` in T04); 5 service READMEs and 4 package READMEs
+written from scratch, 13 more service READMEs rewritten or absorbed into (3 in T01,
+10 in T03) and `packages/shared/README.md` verified in place; 3 inline ADRs moved out of
+the onboarding guide into `DOCS/adr/`.
+`scripts/checks/doc-code-guards.sh` now runs **13 guards** (`K6a`–`K6g`, `K7`, `K8`, `K9`,
+`K9b`, `K10`, `K11`) and is green at every commit. Full task queue, gates, human decisions
+and the numbered T07 findings: `manual-loops/architecture/docs-consistency.md`
+(dated 2026-07-30). Commits: `15b827b0`, `f85e7b64`, `21c31a99`, `a0ba2de1`, `fa80ad45`,
+`46f2eed4`, `bf4043e1`.
+
+Decision cuádruple:
+- **Rule**: audit and guard in ONE loop — a finding that does not end in a guard is a
+  finding that recurs. Every fix is paired with the check that pins it: numeric claims
+  (`K9b`), dead links (`K10`), undocumented dual-backend support (`K11`), resurrection of
+  per-component agent files (`K6g`). Absorb-then-delete, never delete-then-rewrite: the
+  README had to carry the verified content BEFORE the `AGENTS.md` went away. And the
+  guard must be GREEN in the commit that lands it — which is why `K6g` covered
+  `services/*` in T03 and only grew to `packages/*` in T04, once the last packages
+  `AGENTS.md` was gone.
+- **Why**: the corpus had two failure modes with different remedies. Descriptive docs
+  (READMEs, inventories, as-built contracts) had drifted from code and were simply wrong
+  → the CODE decides, fix the doc. Prescriptive docs (envelope spec, security MUSTs,
+  `TAXONOMY.md` rules) record a design the code must obey → the CODE is the bug, record a
+  numbered finding and do NOT rewrite the doc. Collapsing that distinction is how a spec
+  quietly becomes a description of whatever shipped. Recorded decisions moved verbatim
+  (the 3 ADRs) with only date/status/header structure added.
+- **Evidence**: the READMEs were not edited, they were re-derived — every surviving claim
+  carries a `file:line` citation or a runnable command, and unverified claims were dropped
+  rather than softened. The headline adjudications: **audit-service** documented a single
+  `audit-writer` durable on an `EVENTS` stream writing one `events` table — neither the
+  stream nor the durable exists anywhere in `src/`; reality is four trails
+  (`audit-events`, `channel-audit`, `execution-audit` on per-tenant `INGRESS-*`, plus
+  `gateway-audit-writer` on its own `GATEWAY_AUDIT` stream) writing four tables.
+  **api-gateway** documented an events module that does not exist (`POST /api/events`,
+  `GET /api/results/:id`, an SSE stream, `src/modules/events/`) while nine real modules
+  went undocumented. **agent-admin-service**'s 551-line `AGENTS.md` described a
+  Credentials module, a Channels module and an automatic `SeedService` — none of which
+  exist in code. Guard calibration is likewise evidence-first: `K10` was verified to fire
+  on a synthetic dead link and to correctly IGNORE links inside fenced blocks and inline
+  code spans before it was accepted.
+- **Engram topic**: `architecture/docs-consistency`.
+
+Follow-ups for the future envelope-drift loop — the 9 T07 findings, all recorded with
+`file:line` evidence in `manual-loops/architecture/docs-consistency.md` Progress, none
+fixed here (the loop was docs + `scripts/checks/` only):
+
+1. Stage-2 `transport.headers` is an undeclared field — `envelope.factory.ts:102-107`
+   writes it, `EventTransport` (`interfaces.ts:13-18`) does not declare it; only compiles
+   because a conditional spread bypasses excess-property checking. Stage 1 correctly uses
+   `data.headers`. Extends `DRIFT.md` item 2 (doc side fixed in T07).
+2. Stage-1 `type` token violates the prescriptive format —
+   `webhook-ingress-publisher.service.ts:117` hardcodes
+   `io.yoizen.messaging.webhook.received.v1` for every channel.
+3. Depth enforcement `>=` vs `>` — `depth-tracker.service.ts:36` rejects one level early
+   against a local `DEFAULT_MAX_DEPTH = 5`, ignoring `MAX_DEPTH_BY_CATEGORY`
+   (`envelope.utils.ts:172,298`).
+4. `skills/envelope-messages/assets/envelope-schema.json` needs a rewrite — 4 defects
+   (`channel` enum omits `http`; wrong `correlation_id` description; no
+   `WebhookIngressEnvelope`; `required` unconditionally includes `accountid`).
+5. `transport-topology.ts:15,20,26` names a durable that does not exist
+   (`channel-events-audit`; real name `channel-audit`, `channel-audit.service.ts:49`).
+6. `agent-memory-service` subject constants are service-local
+   (`nats.provider.ts:62-68`) and its envelope `domain` disagrees with its subject token.
+7. `ensureDurableConsumer` JSDoc contradicts its own constants
+   (`nats-durable-consumer.ts:74,76` vs `:30,:43-48`) — high risk given the file's
+   duplicate-delivery history.
+8. Tenant-tier limits defined but only partially wired — `ensureTenantIngressStream`
+   ignores tier and applies flat channel constants.
+9. Two INGRESS stream-name builders disagree on casing — `getTenantStreamName`
+   upper-cases, `buildIngressStreamName` does not; both exported from `@yoizen/shared`.
+
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

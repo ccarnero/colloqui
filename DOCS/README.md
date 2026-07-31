@@ -107,6 +107,49 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 
 ## Core Documentation
 
+### Where truth lives
+
+Three tiers, one rule each:
+
+| Tier | Holds | Kind |
+|---|---|---|
+| [`AGENTS.md`](../AGENTS.md) (repo root) | The constitution — rules, binding styles, review standards. The ONLY agent file in the repo | Prescriptive |
+| `services/*/README.md`, `packages/*/README.md` | Per-component truth: purpose, contracts, env vars, architecture, with `file:line` citations back to the code | Descriptive |
+| `DOCS/**` | Cross-cutting contracts (messaging envelope, taxonomy), architecture, guides, ADRs | Mixed — see below |
+
+**Descriptive docs are derived FROM the code; the code decides.** When a README
+and the code disagree, the README is wrong. **Prescriptive docs record a design
+the code must obey** — the envelope spec, the security MUSTs, `TAXONOMY.md`'s
+classification rules. When those disagree with the code, the CODE is the bug and
+the doc is not rewritten; the divergence is recorded as a numbered finding.
+
+Per-component `AGENTS.md` files no longer exist — all 14 were absorbed into the
+corresponding README and deleted (`manual-loops/architecture/docs-consistency.md`).
+A resurrected one now fails the build.
+
+### Enforcement (G0)
+
+`scripts/checks/doc-code-guards.sh` runs 13 static guards, reports EVERY failure,
+and exits non-zero if any guard failed — it is deliberately report-all, not
+fail-fast, so one run surfaces the whole drift set (`fail()` accumulates into
+`FAILURES`; `main()` exits on the total). Beyond the original K6/K7/K8/K9 set it
+now enforces:
+
+| Guard | Pins |
+|---|---|
+| **K6g** | No `services/*/AGENTS.md` or `packages/*/AGENTS.md` exists — the per-component agent file cannot come back. The root `AGENTS.md` is anchored out of both globs |
+| **K9b** | Numeric claims in docs match generated reality (today: the golden row count stated in the tracking-ingester README and its spec vs the actual data rows of `golden/labeled.tsv`) |
+| **K10** | Every relative `.md` link in `README.md`, `DOCS/**`, `services/*/README.md` and `packages/*/README.md` resolves. Fenced blocks and inline code spans are skipped; anchors resolve to the file part |
+| **K11** | Every service whose source calls `resolveStorageEngine()` documents `DB_ENGINE`/`STORAGE_ENGINE` in its README. The service set is discovered from the code, not hardcoded |
+
+`K6a`–`K6f`, `K7`, `K8` and `K9` (type-only DI imports) are described in
+[doc-code validation tests](./guides/doc-code-validation-tests.md).
+
+```bash
+scripts/checks/doc-code-guards.sh       # quiet: failures only
+scripts/checks/doc-code-guards.sh -v    # verbose: also prints PASS lines
+```
+
 ### Service Architecture & Integration
 
 | Document | Purpose | Audience |
@@ -132,7 +175,7 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 |--------|----------|
 | [`skb/`](./skb/) | Structured Knowledge Base subsystem — [architecture](./skb/architecture.md), [API](./skb/api.md), [runbook](./skb/runbook.md), [security](./skb/security.md) |
 | [`runbooks/`](./runbooks/) | Operations — [Temporal](./runbooks/temporal.md), [storage engines](./runbooks/storage-engines.md); historical migration runbooks archived at [`runbooks/archive/`](./runbooks/archive/) |
-| [`adr/`](./adr/) | Architecture decision records — [RAG system](./adr/rag-system.md), [variable system](./adr/variable-system.md), [agent improvements](./adr/agent-architecture-improvements.md) |
+| [`adr/`](./adr/) | Architecture decision records — [RAG system](./adr/rag-system.md), [variable system](./adr/variable-system.md), [agent improvements](./adr/agent-architecture-improvements.md), [connector-runtime separation](./adr/connector-runtime-separation.md), [tenant Postgres model](./adr/tenant-postgres-model.md), [Temporal + NATS](./adr/temporal-and-nats.md). The `D<n>` ↔ ADR relationship is explained in [decision-log.md](./architecture/decision-log.md) |
 | [`reference/`](./reference/) | Technical references — [AI SDK](./reference/ai-sdk.md) |
 
 ### New Documentation Folders
@@ -153,11 +196,30 @@ nats stream rm SKB-INGESTION -f -s nats://localhost:4222
 | [Connector Runtime](../services/connector-runtime/README.md) | Standalone Temporal worker for high-concurrency HTTP execution with connector-driven config | Core service |
 | [Connector Admin](../services/connector-admin/README.md) | Multi-tenant HTTP connector configuration API (base URL, auth, headers, timeouts, retries) | Core service |
 | [Workflow Service](../services/workflow-service/README.md) | REST API + Temporal orchestrator for multi-step workflows with state management | Core service |
-| Agent Memory Service | Long-term agent memory and retrieval backend | AI service |
-| Agent Scheduler Service | Cron/interval scheduler for agent jobs | AI service |
-| Agent AI Service | AI agent runtime and LLM/tool execution | AI service |
-| AI Agent Gateway | Async execution gateway for agent runtime requests | AI service |
-| [@yoizen/shared Package](../packages/shared/src/index.ts) | Cross-service types, interfaces, constants, and `AdapterClient` | Shared library |
+| [Channel Service](../services/channel-service/README.md) | Channel accounts, ingress/egress, auto-reply, usage reads | Core service |
+| [Audit Service](../services/audit-service/README.md) | Four independent audit trails per tenant + causal-chain reads | Core service |
+| [Registry Service](../services/registry-service/README.md) | Knative service registry, routes, canary deployments | Core service |
+| [Proxy Service](../services/proxy-service/README.md) | Generic / ySocial / yFlow HTTP passthrough | Core service |
+| [Cache Service](../services/cache-service/README.md) | Two-tier L1 `Map` + L2 Redis cache API | Core service |
+| [Usage Aggregator](../services/usage-aggregator-service/README.md) | Channel + connector usage rows from the bus | Core service |
+| [Tracking Ingester](../services/tracking-ingester-service/README.md) | Bus→Postgres message tracking and chain/run/payload reads | Core service |
+| [Provisioning Service](../services/provisioning-service/README.md) | Declarative manifest apply + secrets broker | Core service |
+| [Admin Console](../services/admin-console/README.md) | Angular operator console | Frontend |
+| [Agent Admin Service](../services/agent-admin-service/README.md) | Agent/job/config, skills, MCP servers, knowledge bases, SKB | AI service |
+| [Agent Memory Service](../services/agent-memory-service/README.md) | Long-term agent memory and retrieval backend | AI service |
+| [Agent Scheduler Service](../services/agent-scheduler-service/README.md) | Cron/interval scheduler for agent jobs | AI service |
+| [Agent AI Service](../services/agent-ai-service/README.md) | AI agent runtime and LLM/tool execution | AI service |
+| [AI Agent Gateway](../services/ai-agent-gateway/README.md) | Async execution gateway for agent runtime requests | AI service |
+
+### Package READMEs
+
+| Package | Purpose |
+|---------|---------|
+| [`@yoizen/shared`](../packages/shared/README.md) | Cross-service types, constants, schema DDL, `AdapterClient`, circuit breaker |
+| [`@yoizen/database`](../packages/database/README.md) | Postgres/Mongo/Redis/NATS plumbing, per-tenant connections, durable-consumer semantics (`DEFAULT_ACK_WAIT_MS`) |
+| [`@yoizen/observability`](../packages/observability/README.md) | Logging, tracing, metrics, and the api/worker bootstrap split |
+| [`@yoizen/testing`](../packages/testing/README.md) | Shared Mongo/postgres.js test doubles |
+| [`@yoizen/angular-shared`](../packages/angular-shared/README.md) | Angular console auth layer (interceptors, guard, `BaseAuthService`) |
 
 For the build/rollout inventory, treat [`../services.conf`](../services.conf)
 as the source of truth. It includes `agent-memory-service` and

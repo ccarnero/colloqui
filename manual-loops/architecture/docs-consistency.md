@@ -231,7 +231,7 @@ grep -n "docs-consistency" cowork/INDEX.md
 - [x] T05 one ADR channel
 - [x] T06 K10 dead-link guard + fixes
 - [x] T07 full-corpus sweep + doc-side fixes (9 findings recorded)
-- [ ] T08 docs + index
+- [x] T08 docs + index
 
 **T01 follow-ups (recorded 2026-07-30, code bugs / doc drift found during
 verification — NOT fixed in this loop):**
