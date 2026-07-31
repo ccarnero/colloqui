@@ -35,9 +35,9 @@ Post-migration the cluster runs:
 | `temporal-{role}-metrics` | Service (headless) | — | — | per-role Prometheus targets |
 
 Manifests live under
-[`infrastructure/base/temporal/`](../../infrastructure/base/temporal/);
+[`infrastructure/base/temporal/`](../../../infrastructure/base/temporal/);
 overlays under
-[`infrastructure/overlays/{local,orbstack}/local-base/patches/postgres-temporal-resources.yaml`](../../infrastructure/overlays/local/local-base/patches/postgres-temporal-resources.yaml)
+[`infrastructure/overlays/{local,orbstack}/local-base/patches/postgres-temporal-resources.yaml`](../../../infrastructure/overlays/local/local-base/patches/postgres-temporal-resources.yaml)
 shrink the per-role sizing.
 
 ## 2. Why
@@ -203,7 +203,7 @@ each handling a different failure mode:
 
 #### L1 — Bootstrap rolling-restart
 
-[`bootstrap-orbstack-osx.sh`](../../bootstrap-orbstack-osx.sh) does a
+[`bootstrap-orbstack-osx.sh`](../../../bootstrap-orbstack-osx.sh) does a
 `kubectl rollout restart deployment/temporal-history` at the end of
 `apply_infrastructure()` (after the schema + namespace bootstrap
 Jobs complete). This forces a churn that distributes shards via the

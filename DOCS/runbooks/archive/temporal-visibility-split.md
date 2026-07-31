@@ -24,14 +24,14 @@ removes that contention.
 
 | File | Change |
 |------|--------|
-| [`infrastructure/base/postgres/postgres-temporal-visibility-cluster.yaml`](../../infrastructure/base/postgres/postgres-temporal-visibility-cluster.yaml) | New CNPG cluster (2 instances in base, 1 in dev overlays). |
-| [`infrastructure/base/postgres/secret.yaml`](../../infrastructure/base/postgres/secret.yaml) | New `postgres-temporal-visibility-credentials` Secret (mirrors `postgres-temporal-credentials`). |
-| [`infrastructure/base/postgres/kustomization.yaml`](../../infrastructure/base/postgres/kustomization.yaml) | Registered the new cluster manifest. |
+| [`infrastructure/base/postgres/postgres-temporal-visibility-cluster.yaml`](../../../infrastructure/base/postgres/postgres-temporal-visibility-cluster.yaml) | New CNPG cluster (2 instances in base, 1 in dev overlays). |
+| [`infrastructure/base/postgres/secret.yaml`](../../../infrastructure/base/postgres/secret.yaml) | New `postgres-temporal-visibility-credentials` Secret (mirrors `postgres-temporal-credentials`). |
+| [`infrastructure/base/postgres/kustomization.yaml`](../../../infrastructure/base/postgres/kustomization.yaml) | Registered the new cluster manifest. |
 | `infrastructure/base/temporal/deployment-autosetup.yaml` | Added `VISIBILITY_POSTGRES_SEEDS` / `VISIBILITY_POSTGRES_USER` / `VISIBILITY_POSTGRES_PWD` / `VISIBILITY_DB_PORT` env vars. In developer mode these point to the same `postgres-temporal-rw` as the default datastore. |
 | `infrastructure/overlays/local/local-base/patches/postgres-temporal-visibility-resources.yaml` | Dev-sized overlay for local. |
 | `infrastructure/overlays/orbstack/orbstack-base/patches/postgres-temporal-visibility.yaml` | Dev-sized overlay for orbstack. |
 | `infrastructure/scripts/ensure-temporal-visibility-schema.sh` (deleted from repo) | Idempotent helper that runs `temporal-sql-tool setup-schema` + `update-schema` directly against `postgres-temporal-visibility-rw`, working around an `auto-setup` bug (see "Known issue" below). |
-| [`bootstrap-orbstack-osx.sh`](../../bootstrap-orbstack-osx.sh) | Historical note only: the bootstrap used to wait for the visibility cluster and invoke `ensure-temporal-visibility-schema.sh`. Current developer-mode bootstrap no longer relies on that deleted helper. |
+| [`bootstrap-orbstack-osx.sh`](../../../bootstrap-orbstack-osx.sh) | Historical note only: the bootstrap used to wait for the visibility cluster and invoke `ensure-temporal-visibility-schema.sh`. Current developer-mode bootstrap no longer relies on that deleted helper. |
 
 ## Known issue — `temporalio/auto-setup` ignores `VISIBILITY_POSTGRES_SEEDS`
 

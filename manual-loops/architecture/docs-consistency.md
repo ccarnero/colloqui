@@ -454,6 +454,15 @@ Left as-is — historical records. OPEN QUESTION for a future guard: exempt
 archived runbooks from any non-`.md` link guard, or annotate dead paths in
 place as "removed in <commit>".
 
+> CORRECTION (2026-07-31): the T06 diagnosis above was wrong. All seven
+> targets EXIST (`infrastructure/base/temporal/`, the postgres base files,
+> `bootstrap-orbstack-osx.sh` — none died with `be62ae89`). The links were
+> dead only because their relative depth was short by one level (`../../`
+> from `DOCS/runbooks/archive/` reaches `DOCS/`, not the repo root). Fixed
+> 2026-07-31 by correcting the 7 links to `../../../`; no annotation
+> needed, no history rewritten. The open question dissolves: a future
+> non-`.md` link guard needs NO archive exemption — these files now pass.
+
 ## Out of scope (explicit)
 
 - Service source changes of any kind (follow-ups only).
