@@ -83,7 +83,7 @@ Subjects are built from `AGENT_MEMORY_SUBJECT_PREFIX =
 (`packages/shared/src/constants.ts:119-127` — moved out of this service on
 2026-07-31 by envelope-drift T08, so every internal producer's subject
 constants now live together), with `{tenant}` substituted by
-`buildPlatformSubject` (`src/providers/nats.provider.ts:327`).
+`buildPlatformSubject` (`src/providers/nats.provider.ts:337`).
 
 The envelope body reports `producer: AGENT_MEMORY_PRODUCER`
 (`agent-memory-service`) and `domain: AGENT_MEMORY_DOMAIN` (`agent-memory`) —
@@ -95,12 +95,27 @@ subject and `transport.agent_id` but left the envelope identity fields behind.
 Fixed by envelope-drift T08 (domain) and its 2026-07-31 follow-up (producer);
 rows ingested earlier keep the old values.
 
+The envelope `type` is projected from the subject constant by
+`src/providers/agent-memory-event-type.ts`, giving the prescriptive
+`io.yoizen.<domain>.<channel>.<provider>.<kind>.v1` of `DOCS/messaging/envelope.md:77`
+— e.g. `io.yoizen.agent-memory.platform.internal.memory_proposed.v1`. Deriving it
+from the subject means the kind token can never disagree with the one the event
+is published on. Before 2026-07-31 it was a hardcoded
+`io.yoizen.agent-memory.memory.proposed.v1` (no channel/provider tokens, dotted
+kind); events published earlier keep that value and stay queryable by it.
+
+`accountid` is `PLATFORM_ACCOUNT_ID` (`"platform-admin"`) by convention, not by
+accident: every internal producer on the `platform`/`internal` family uses that
+shared sentinel (agent-admin, agent-scheduler, agent-memory), because these
+events have no channel account and `accountid` means "logical account ID, not
+the tenant" (`envelope.md:88`).
+
 | Subject | Publisher | Constant |
 |---|---|---|
-| `.memory_proposed.v1` | `publishMemoryProposed` (`nats.provider.ts:376-402`) | `AGENT_MEMORY_PROPOSED` (`packages/shared/src/constants.ts:124`) |
-| `.memory_published.v1` | `publishMemoryApproved` (`nats.provider.ts:404-428`) | `AGENT_MEMORY_PUBLISHED` (`packages/shared/src/constants.ts:125`) |
-| `.memory_rejected.v1` | `publishMemoryRejected` (`nats.provider.ts:430-453`) | `AGENT_MEMORY_REJECTED` (`packages/shared/src/constants.ts:126`) |
-| `.memory_expired.v1` | `publishMemoryExpired` (`nats.provider.ts:455-477`) | `AGENT_MEMORY_EXPIRED` (`packages/shared/src/constants.ts:127`) |
+| `.memory_proposed.v1` | `publishMemoryProposed` (`nats.provider.ts:386-412`) | `AGENT_MEMORY_PROPOSED` (`packages/shared/src/constants.ts:124`) |
+| `.memory_published.v1` | `publishMemoryApproved` (`nats.provider.ts:414-438`) | `AGENT_MEMORY_PUBLISHED` (`packages/shared/src/constants.ts:125`) |
+| `.memory_rejected.v1` | `publishMemoryRejected` (`nats.provider.ts:440-463`) | `AGENT_MEMORY_REJECTED` (`packages/shared/src/constants.ts:126`) |
+| `.memory_expired.v1` | `publishMemoryExpired` (`nats.provider.ts:465-487`) | `AGENT_MEMORY_EXPIRED` (`packages/shared/src/constants.ts:127`) |
 
 `memory_proposed`'s envelope id is persisted into `metadata.proposedEventId` and
 becomes the causation anchor for the later `memory_published` /

@@ -48,6 +48,7 @@ import {
   calculateChecksum,
   serializeCanonicalPayload,
 } from "../utils/payload-utils";
+import { buildEventTypeFromSubject } from "./agent-memory-event-type";
 
 const DEFAULT_TRANSPORT: EventTransport = {
   method: "agent",
@@ -56,11 +57,20 @@ const DEFAULT_TRANSPORT: EventTransport = {
   depth: 0,
 };
 
+/**
+ * Envelope `type` per lifecycle event, projected from the subject each one is
+ * published on (`buildEventTypeFromSubject`), so type and subject can never
+ * disagree. Yields the prescriptive
+ * `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1` of envelope.md:77 —
+ * e.g. `io.yoizen.agent-memory.platform.internal.memory_proposed.v1`.
+ * Previously a hardcoded, channel-less, dotted-kind literal; see that helper's
+ * HISTORY note.
+ */
 const EVENT_TYPES = {
-  MEMORY_PROPOSED: "io.yoizen.agent-memory.memory.proposed.v1",
-  MEMORY_PUBLISHED: "io.yoizen.agent-memory.memory.published.v1",
-  MEMORY_REJECTED: "io.yoizen.agent-memory.memory.rejected.v1",
-  MEMORY_EXPIRED: "io.yoizen.agent-memory.memory.expired.v1",
+  MEMORY_PROPOSED: buildEventTypeFromSubject(AGENT_MEMORY_PROPOSED),
+  MEMORY_PUBLISHED: buildEventTypeFromSubject(AGENT_MEMORY_PUBLISHED),
+  MEMORY_REJECTED: buildEventTypeFromSubject(AGENT_MEMORY_REJECTED),
+  MEMORY_EXPIRED: buildEventTypeFromSubject(AGENT_MEMORY_EXPIRED),
 } as const;
 
 interface IBuildEventOptions {

@@ -1411,6 +1411,9 @@ fixed here (the loop was docs + `scripts/checks/` only):
    (`channel-events-audit`; real name `channel-audit`, `channel-audit.service.ts:49`).
 6. `agent-memory-service` subject constants are service-local
    (`nats.provider.ts:62-68`) and its envelope `domain` disagrees with its subject token.
+   [Both fixed 2026-07-31 by envelope-drift T08 — the constants now live in
+   `packages/shared/src/constants.ts:119-127` and the `domain` matches; the
+   finding text and its original line anchor are left as recorded.]
 7. `ensureDurableConsumer` JSDoc contradicts its own constants
    (`nats-durable-consumer.ts:74,76` vs `:30,:43-48`) — high risk given the file's
    duplicate-delivery history.
@@ -1535,6 +1538,14 @@ Findings that only surfaced during implementation:
   fields. The consumer sweep was clean. Two findings from that investigation
   remain OPEN: the agent-memory `type` grammar plus the inherited
   `accountid: "platform-admin"`, and the `PLATFORM_*` naming trap.]
+
+  [Updated 2026-07-31 — the first of those two is DONE (envelope-drift SPEC
+  post-loop item 1): the `type` now obeys `envelope.md:77` as
+  `io.yoizen.agent-memory.platform.internal.<kind>.v1`, projected from the
+  subject constant so the two cannot drift; and `accountid: "platform-admin"`
+  was ruled KEEP — it is the shared sentinel every internal `platform`/
+  `internal` producer uses (agent-admin, agent-scheduler, agent-memory), not an
+  inheritance artifact. Only the `PLATFORM_*` naming trap remains OPEN.]
 
 Two cross-cutting mechanics worth reusing: accept-gate greps like
 `rg "webhook.received.v1"` treat `.` as a wildcard and match the CORRECT token too, so

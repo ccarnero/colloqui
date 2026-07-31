@@ -338,12 +338,12 @@ grep -n "envelope-drift" cowork/INDEX.md
   — deferred by decision 4)
 
 **Post-loop follow-up (2026-07-31): agent-memory `producer` FIXED.** Human
-authorised after an investigation-only pass. `nats.provider.ts:214` now sets
+authorised after an investigation-only pass. `nats.provider.ts:224` now sets
 `producer: AGENT_MEMORY_PRODUCER`, matching its subject's producer token.
 Root cause for this AND the T08 domain half: `git log --follow` shows the
 publisher was renamed out of the admin service at 61% similarity (`R061` in
 `e9e3a94b`), where `producer`/`domain` were correct; the extraction rewrote the
-subject and `transport.agent_id` (`:55`) but not the envelope identity fields.
+subject and `transport.agent_id` (`:56`) but not the envelope identity fields.
 Ownership confirms the fix direction — agent-memory-service owns the `memories`
 table (`src/schema/memory-schema.sql:1-31`), the full REST surface and all four
 publishers, while agent-admin-service publishes NO memory events and only
@@ -354,17 +354,35 @@ subject tokens, `classify.ts:258`; the column is projected and displayed
 param is `occurred_at`, `build-events-query.ts:305`). The `producer` column
 now spans the cutover like `domain`.
 
-**Still OPEN — pending human decision (both surfaced by that investigation):**
+**Human approved the seven pending items on 2026-07-31; they run sequentially.**
 
-1. **agent-memory `type` grammar + `accountid` inheritance.** `EVENT_TYPES`
-   (`nats.provider.ts:59-63`) emits `io.yoizen.agent-memory.memory.proposed.v1`
-   — six segments, and its kind (`memory.proposed`) disagrees with the subject
-   kind (`memory_proposed`); `envelope.md:77` prescribes
-   `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`. Same class as T05's
-   stage-1 token and a T05-shaped task (historical values stay queryable).
-   `accountid: PLATFORM_ACCOUNT_ID` (`"platform-admin"`, `constants.ts:91`) is
-   inherited from the same copy and needs the same adjudication.
-2. **`PLATFORM_*` naming trap.** `PLATFORM_PRODUCER` /
+1. **agent-memory `type` grammar + `accountid` inheritance — DONE 2026-07-31
+   (item 1).** `EVENT_TYPES` (`nats.provider.ts:69-74`) now emits
+   `io.yoizen.agent-memory.platform.internal.<kind>.v1` per `envelope.md:77`,
+   PROJECTED from the shared subject constants by
+   `src/providers/agent-memory-event-type.ts` — the subject already carries
+   domain/channel/provider/kind/version in the order the type needs, so the two
+   cannot drift. It previously emitted the channel-less
+   `io.yoizen.agent-memory.memory.proposed.v1` (six segments, dotted kind
+   contradicting the subject's `memory_proposed`). Consumer sweep clean: no
+   code matches the old literals; the ingester classifies by SUBJECT
+   (`classify.ts:160`), and `AGENT_MEMORY_KINDS` (`classify.ts:102-105`) holds
+   subject kind tokens, unaffected. Mixed-value consequence, as in T05: rows
+   ingested earlier keep the old `type`, and `GET /events?type=` filters
+   `envelope->>'type'` verbatim (`build-events-query.ts:282`), so a caller
+   querying agent-memory by type must accept both spellings.
+   **`accountid` VERDICT: KEEP `PLATFORM_ACCOUNT_ID` (`"platform-admin"`).**
+   Not an inheritance artifact — it is the platform convention for
+   internal-producer events, shared by all three services that publish on the
+   `platform`/`internal` channel/provider family: agent-admin
+   (`nats.provider.ts:242`), agent-scheduler (`nats.provider.ts:162`) and
+   agent-memory (`nats.provider.ts:232`), from one shared constant
+   (`constants.ts:91`). `accountid` means "logical account ID (not the tenant)"
+   (`envelope.md:88`); these events have no channel account, so the sentinel is
+   correct. (Services outside that family use ad-hoc values — `""`, `"system"`,
+   the tenant id — which disagree with each other; that inconsistency is a
+   separate, wider question and is NOT evidence against the sentinel.)
+2. **`PLATFORM_*` naming trap — still OPEN.** `PLATFORM_PRODUCER` /
    `PLATFORM_SUBJECT_PREFIX` read as generic but MEAN `agent-admin-service`
    (`constants.ts:87`) — precisely what invited this bug. Rename candidate:
    `AGENT_ADMIN_PRODUCER`. Note `agent-scheduler-service` also publishes with

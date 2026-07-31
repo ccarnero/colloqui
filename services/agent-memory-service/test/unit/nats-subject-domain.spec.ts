@@ -24,7 +24,7 @@ import { NatsPublisher } from "../../src/providers/nats.provider";
  * Both were one leftover: `git log --follow` shows this file was renamed out of
  * the admin service at 61% similarity (`R061` in `e9e3a94b`), where those
  * constants were correct. The extraction rewrote the SUBJECT and
- * `transport.agent_id` (`nats.provider.ts:55`) for the new service but left the
+ * `transport.agent_id` (`nats.provider.ts:56`) for the new service but left the
  * envelope identity fields pointing at the old one. T08 fixed the domain half;
  * the producer half followed on 2026-07-31.
  *
@@ -138,6 +138,27 @@ describe("NatsPublisher subject/envelope agreement", () => {
       // The inherited value: this file was renamed out of the admin service
       // (R061 in `e9e3a94b`), which is where `agent-admin-service` came from.
       expect(envelope["producer"]).not.toBe("agent-admin-service");
+    });
+
+    it(`${kind}: envelope.type obeys the grammar and matches the subject`, async () => {
+      await publish();
+      const { subject, envelope } = published();
+      const subjectSegments = subject.split(".");
+      const typeSegments = String(envelope["type"]).split(".");
+
+      // envelope.md:77 — io.yoizen.<domain>.<channel>.<provider>.<kind>.v1
+      expect(typeSegments.length).toBe(7);
+      expect(typeSegments.slice(0, 2)).toEqual(["io", "yoizen"]);
+      expect(typeSegments[2]).toBe(subjectSegments[3]); // domain
+      expect(typeSegments[3]).toBe(subjectSegments[4]); // channel
+      expect(typeSegments[4]).toBe(subjectSegments[5]); // provider
+      expect(typeSegments[5]).toBe(subjectSegments[6]); // kind
+      expect(typeSegments[6]).toBe(subjectSegments[7]); // version
+      expect(typeSegments[5]).toBe(kind);
+      // The old form: `io.yoizen.agent-memory.memory.<verb>.v1`.
+      expect(String(envelope["type"]).startsWith("io.yoizen.agent-memory.memory.")).toBe(
+        false
+      );
     });
 
     it(`${kind}: envelope channel/provider also match their subject tokens`, async () => {
