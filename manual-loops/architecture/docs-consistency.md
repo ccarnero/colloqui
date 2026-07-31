@@ -228,7 +228,7 @@ grep -n "docs-consistency" cowork/INDEX.md
 - [x] T02 five service README gaps
 - [x] T03 absorb remaining AGENTS.md + resurrection guard (K6g, services/*)
 - [x] T04 package READMEs + K11 (K6g extended to packages/*)
-- [ ] T05 one ADR channel
+- [x] T05 one ADR channel
 - [ ] T06 K10 dead-link guard + fixes
 - [ ] T07 full-corpus sweep + doc-side fixes
 - [ ] T08 docs + index
@@ -371,6 +371,19 @@ services discovered from code, straggler agent-ai-service fixed):**
 5. Resurrection vector (same class as T03 #5): gitignored
    `packages/shared/CURSOR.md` and `GEMINI.md` are stale AGENTS.md siblings,
    outside K6g's reach. Needs the same human decision.
+
+**T05 follow-ups (recorded 2026-07-30 — ADR content vs code, recorded in the
+ADRs' "Later observations", decision bodies kept verbatim per decision 5):**
+
+1. `DOCS/adr/connector-runtime-separation.md`: rationale cites "200 parallel"
+   activities; code is 400 (`services/connector-runtime/src/worker.ts:35`).
+   Decision unaffected.
+2. Same ADR: the cited KEDA scaling mechanism no longer exists (guard K6b
+   fails on any live ScaledObject); independent scalability holds via replica
+   count. `onboarding.md:565-566` still describes KEDA as the future
+   production path — consistent with the ADR, equally aspirational.
+
+## Out of scope (explicit)
 
 - Service source changes of any kind (follow-ups only).
 - CODE-side envelope drift (future envelope-drift loop owns it).

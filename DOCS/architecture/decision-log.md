@@ -1,11 +1,52 @@
 # Architecture Decision Log
 
-> Granular ADRs live in `../adr/`.
 > This file captures cross-cutting closed decisions, open points, milestones, and
 > the historical migration record for the messaging bus.
+> Granular, single-topic decision records live in [`../adr/`](../adr/).
 
 **Status:** Operational reference
-**Last updated:** 2026-06-11
+**Last updated:** 2026-07-30
+
+---
+
+## This log vs. `DOCS/adr/`
+
+Two channels, one rule for choosing between them:
+
+| | This log (`D<n>` / `O<n>` / `M<n>`) | `DOCS/adr/<topic>.md` |
+|---|---|---|
+| Granularity | One table ROW per decision — a single line, cross-referenced to the document that specifies it | One FILE per decision, with its own context, rationale, tradeoff and mitigation |
+| Scope | Cross-cutting decisions that constrain several documents or services at once, mostly bus/messaging | A single topic, usually one service boundary or one subsystem |
+| Identifier | `D<n>` is the stable handle; cite it in code comments and PRs | The filename is the handle; there is no number |
+| Lifecycle | Rows are amended in place as status changes (`Implemented`, `Superseded`, …) | The decision body is immutable once recorded; later reality goes in a "Later observations" section |
+
+**The two numbering schemes are independent.** A `D<n>` is not an ADR index and
+an ADR file does not consume a `D` number. Most ADRs have no corresponding
+`D<n>` at all; where one exists, both sides link to each other explicitly.
+
+### Current ADR files
+
+| ADR | Corresponding decision-log entry |
+|---|---|
+| [`../adr/connector-runtime-separation.md`](../adr/connector-runtime-separation.md) | none |
+| [`../adr/tenant-postgres-model.md`](../adr/tenant-postgres-model.md) | none — closest context is the [Historical migration](#historical-single-tenant--multi-tenant-migration) data-isolation row |
+| [`../adr/temporal-and-nats.md`](../adr/temporal-and-nats.md) | **D2** (adjacent, narrower — see below), topology governed by **D5** |
+| [`../adr/agent-architecture-improvements.md`](../adr/agent-architecture-improvements.md) | none |
+| [`../adr/rag-system.md`](../adr/rag-system.md) | none |
+| [`../adr/variable-system.md`](../adr/variable-system.md) | none |
+
+The first three were extracted from `DOCS/guides/onboarding.md` on 2026-07-30
+so that architecture decisions have exactly one home
+(`manual-loops/architecture/docs-consistency.md` T05).
+
+### Convention for new ADRs
+
+Filename is a kebab-case topic slug with no numeric or date prefix, matching the
+files already in `../adr/`. The body opens with YAML frontmatter
+(`status`, `date`, `decision-makers`, `consulted`, `informed`) as in
+`agent-architecture-improvements.md`, followed by an `# ADR: <Title>` heading as
+in `rag-system.md` and `variable-system.md`. If the decision maps to a `D<n>`,
+name it in the ADR header and add the row to the table above.
 
 ---
 
@@ -16,10 +57,10 @@ These decisions are final and apply across all bus/messaging documents.
 | # | Decision | Document | Status |
 |---|---|---|---|
 | D1 | Generic envelope + raw payload kept intact | messaging/envelope | Implemented |
-| D2 | JetStream, not Core NATS | messaging/service-bus | Implemented |
+| D2 | JetStream, not Core NATS | messaging/service-bus | Implemented — broader context in [`../adr/temporal-and-nats.md`](../adr/temporal-and-nats.md) |
 | D3 | 1 event per raw POST received (no splitting) | messaging/envelope | Implemented |
 | D4 | Routing by NATS subject, not by body fields | messaging/envelope | Implemented |
-| D5 | One stream per tenant with explicit limits | messaging/service-bus | Implemented |
+| D5 | One stream per tenant with explicit limits | messaging/service-bus | Implemented — topology consequence of [`../adr/temporal-and-nats.md`](../adr/temporal-and-nats.md) |
 | D6 | Full raw + per-tenant ACL for PII | security | Implemented (ACLs pending) |
 | D7 | Initial shadow publish — replaced by primary path | messaging/service-bus | Superseded: NATS is the primary path |
 | D8 | Explicit allowlist of HTTP headers | messaging/envelope | Implemented (7 headers; see `WEBHOOK_FORWARDED_HEADERS`) |
@@ -91,7 +132,7 @@ complete; this is historical context.
 | Aspect | Previous System | Current System |
 |---|---|---|
 | Platform | Express monorepo + MongoDB | NestJS microservices + Kubernetes |
-| Data isolation | `tenant` field in shared MongoDB collections | Per-tenant PostgreSQL: shared CNPG (tier `shared`) or dedicated StatefulSet (tier `dedicated`) |
+| Data isolation | `tenant` field in shared MongoDB collections | Per-tenant PostgreSQL: shared CNPG (tier `shared`) or dedicated StatefulSet (tier `dedicated`) — recorded in [`../adr/tenant-postgres-model.md`](../adr/tenant-postgres-model.md) |
 | Event bus | NATS Core (at-most-once) | NATS JetStream with per-tenant streams |
 | Tenant resolution | Subdomain `acme.coexistance.io` or header `x-tenant-id` | Hostname `acme.dev.local` (OrbStack) or header `x-yoizen-tenant` |
 | Provisioning | Manual / seed script | Automatic via `tenant-service` + Kubernetes API |

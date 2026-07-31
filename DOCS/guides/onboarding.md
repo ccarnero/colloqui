@@ -567,47 +567,18 @@ For future production deployments:
 
 ---
 
-## Architecture Decision Records (ADRs)
+## Design decisions
 
-### Why connector-runtime is separate
+The three decision records that used to be inlined here now live in `DOCS/adr/`,
+so there is one channel for architecture decisions instead of two:
 
-**Decision**: Split connector configuration (`connector-admin`) from connector execution (`connector-runtime`).
+- [`../adr/connector-runtime-separation.md`](../adr/connector-runtime-separation.md) — why connector configuration (`connector-admin`) and connector execution (`connector-runtime`) are separate services.
+- [`../adr/tenant-postgres-model.md`](../adr/tenant-postgres-model.md) — the two-tier (`shared` / `dedicated`) tenant Postgres isolation model.
+- [`../adr/temporal-and-nats.md`](../adr/temporal-and-nats.md) — why the platform runs Temporal for orchestration alongside NATS for events.
 
-**Rationale**:
-- Configuration ownership and execution have very different scaling profiles: `connector-admin` is a low-volume CRUD API, while `connector-runtime` is a network-bound, high-concurrency Temporal worker (200 parallel).
-- Separate task queues allow `connector-runtime` to scale independently via KEDA without affecting the admin API.
-- The runtime exposes generic HTTP execution activities (`endpointCall`, `serviceCall`) that are reusable by any Temporal client, not just the workflow service.
-- `connector-admin` owns multi-tenant config + credentials and the registry-driven internal-sync surface; keeping that out of the worker minimises blast radius for execution-side incidents.
-
-**Tradeoff**: Two-hop dispatch (workflow → `connector-runtime` → external HTTP) adds latency vs. inline HTTP calls.
-
-**Mitigation**: For latency-sensitive integrations, call `connector-runtime` directly via Temporal client instead of going through `workflow-service`.
-
-### Tenant Postgres Model
-
-**Decision**: Two-tier isolation model — `shared` tier uses a logical database on the shared CloudNativePG cluster (`postgres-shared`), accessed via an `ExternalName` Service in the tenant namespace; `dedicated` tier gets a per-tenant Postgres StatefulSet.
-
-**Rationale**:
-- `shared` tier: low operational overhead for most tenants; connection pooling via CNPG's built-in pooler
-- `dedicated` tier: full physical isolation for tenants that require it (compliance, scaling, custom extensions)
-- In both cases each tenant sees a `postgres` ExternalName or direct Service in their own namespace — application code is identical
-
-**Tradeoff**: Dedicated-tier tenants add a StatefulSet per tenant; shared-tier tenants have logical (not physical) isolation
-
-**Mitigation**: Connection management via `TenantConnectionManager`; provisioning orchestrated by `tenant-service`
-
-### Why Temporal + NATS (not just Kafka/Event Bus)
-
-**Decision**: Use Temporal for orchestration + NATS for events (not a single message queue).
-
-**Rationale**:
-- Temporal provides durable orchestration, retries, timeouts
-- NATS provides low-latency event distribution
-- Clean separation: Temporal = control flow, NATS = data flow
-
-**Tradeoff**: Two systems to operate and monitor
-
-**Mitigation**: Standard topology, automated via bootstrap scripts
+Cross-cutting decisions carrying a `D<n>` identifier are tracked in
+[`../architecture/decision-log.md`](../architecture/decision-log.md), which also
+explains how the two channels relate.
 
 ---
 
