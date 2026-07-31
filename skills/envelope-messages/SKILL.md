@@ -1,6 +1,10 @@
 ---
 name: envelope-messages
-description: "Manejo de envelopes de mensajes siguiendo el diseño CloudEvents adaptado para NATS. Trigger: Cuando se trabaja con mensajería, eventos NATS, envelopes, subjects, o transporte de eventos."
+description: >
+  Message envelope handling for THIS platform (platform-cluster): the CloudEvents-inspired
+  `EventEnvelope` contract adapted for NATS, 8-token subjects, idempotency, the causal
+  chain, and the claim-check pattern.
+  Trigger: When working with messaging, NATS events, envelopes, subjects, or event transport.
 license: Apache-2.0
 metadata:
   author: Yoizen
@@ -13,59 +17,59 @@ metadata:
     - "nats"
 ---
 
-> **Fuentes de verdad as-built:**
-> - `DOCS/messaging/envelope.md` — contrato de envelope, subjects, idempotencia, cadena causal, claim-check (referencia canónica del sistema implementado).
-> - `DOCS/messaging/claim-check.md` — protocolo completo de claim-check (producer + consumer).
-> - `DOCS/messaging/service-bus.md` — topología de streams, taxonomía de subjects y referencia operativa de NATS/JetStream.
+> **As-built sources of truth:**
+> - `DOCS/messaging/envelope.md` — envelope contract, subjects, idempotency, causal chain, claim-check (canonical reference for the implemented system).
+> - `DOCS/messaging/claim-check.md` — full claim-check protocol (producer + consumer).
+> - `DOCS/messaging/service-bus.md` — stream topology, subject taxonomy and NATS/JetStream operational reference.
 >
-> Ante cualquier discrepancia entre los documentos y el código, prevalece el código.
-> Fuente de verdad de tipos: `packages/shared/src/interfaces.ts` (`EventEnvelope`, `EventTransport`, `EventData`).
+> Whenever the documents and the code disagree, the code wins.
+> Source of truth for types: `packages/shared/src/interfaces.ts` (`EventEnvelope`, `EventTransport`, `EventData`).
 
 ## Activation Contract
 
-Aplicar esta skill al crear, consumir o auditar mensajes del bus de eventos NATS, diseñar subjects, construir envelopes, implementar idempotencia, o manejar el patrón claim check.
+Apply this skill when creating, consuming or auditing messages on the NATS event bus, designing subjects, building envelopes, implementing idempotency, or handling the claim-check pattern.
 
 ## Hard Rules
 
-- Todo mensaje DEBE seguir el contrato canónico `EventEnvelope` definido en `packages/shared/src/interfaces.ts`.
-- Los IDs de envelope se generan con `crypto.randomUUID()`. No usar ULIDs ni ningún otro esquema.
-- Formato del campo `type` para mensajería: `io.yoizen.messaging.<channel>.<provider>.<kind>.v1`. Para otros dominios el segundo token varía (e.g. `io.yoizen.ai-agent-gateway.automation...`).
-- Productores reales del bus: `api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway`. Constante de canal: `CHANNEL_PRODUCER = "channel-service"`.
-- `source` sigue el formato `//channel-service/accounts/<accountId>` o `//api-gateway/webhooks`. No inventar formatos nuevos.
-- `correlation_id` defaults al propio `id` del envelope cuando no se propaga explícitamente (`createChannelEnvelope`). Atención: `buildEventEnvelope` en `@yoizen/shared` usa `randomUUID()` como fallback — pasar `correlationId` explícito en ese camino. Se copia sin modificar en `deriveEnvelope`.
-- El `idempotencykey` es `sha256(canonicalJson(payload))` — usar `computeIdempotencyKey` de `@yoizen/shared`. Mapear al header NATS `Nats-Msg-Id` al publicar.
-- El flujo de ingreso es un puente de dos etapas: `api-gateway` publica un `WebhookIngressEnvelope` (kind `webhook_received`, sin `accountid`), luego `channel-service` lo consume, verifica la firma, y emite el `ChannelEnvelope` canónico con `accountid` real.
-- Nunca duplicar lógica de subject o envelope. Usar siempre las funciones de `@yoizen/shared` (`buildChannelSubject`, `buildWebhookIngressSubject`, `computeIdempotencyKey`, `deriveEnvelope`, `isCompliantEnvelope`, etc.).
-- El claim check se activa cuando `JSON.stringify(envelope).byteLength > CLAIM_CHECK_THRESHOLD_BYTES` (256 KB). Bucket: `PAYLOAD-<tenant>` (TTL 7 días, max 512 MB). URI: `nats://objstore/PAYLOAD-<tenant>/<envelope.id>-payload`. Invariante: `sha256(storedBytes) === computePayloadChecksum(payload)`.
-- Stream canónico por tenant: `INGRESS-<TENANT>` (subjects `evt.<tenant>.>`). No usar los streams legacy `EVENTS` o `RESULTS`.
+- Every message MUST follow the canonical `EventEnvelope` contract defined in `packages/shared/src/interfaces.ts`.
+- Envelope IDs are generated with `crypto.randomUUID()`. Do not use ULIDs or any other scheme.
+- Format of the `type` field for messaging: `io.yoizen.messaging.<channel>.<provider>.<kind>.v1`. For other domains the second token varies (e.g. `io.yoizen.ai-agent-gateway.automation...`).
+- Real bus producers: `api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway`. Channel constant: `CHANNEL_PRODUCER = "channel-service"`.
+- `source` follows the format `//channel-service/accounts/<accountId>` or `//api-gateway/webhooks`. Do not invent new formats.
+- `correlation_id` defaults to the envelope's own `id` when it is not propagated explicitly (`createChannelEnvelope`). Careful: `buildEventEnvelope` in `@yoizen/shared` uses `randomUUID()` as its fallback — pass an explicit `correlationId` on that path. It is copied unchanged by `deriveEnvelope`.
+- The `idempotencykey` is `sha256(canonicalJson(payload))` — use `computeIdempotencyKey` from `@yoizen/shared`. Map it to the NATS `Nats-Msg-Id` header when publishing.
+- The ingress flow is a two-stage bridge: `api-gateway` publishes a `WebhookIngressEnvelope` (kind `webhook_received`, no `accountid`), then `channel-service` consumes it, verifies the signature, and emits the canonical `ChannelEnvelope` with the real `accountid`.
+- Never duplicate subject or envelope logic. Always use the functions from `@yoizen/shared` (`buildChannelSubject`, `buildWebhookIngressSubject`, `computeIdempotencyKey`, `deriveEnvelope`, `isCompliantEnvelope`, etc.).
+- Claim check kicks in when `JSON.stringify(envelope).byteLength > CLAIM_CHECK_THRESHOLD_BYTES` (256 KB). Bucket: `PAYLOAD-<tenant>` (TTL 7 days, max 512 MB). URI: `nats://objstore/PAYLOAD-<tenant>/<envelope.id>-payload`. Invariant: `sha256(storedBytes) === computePayloadChecksum(payload)`.
+- Canonical per-tenant stream: `INGRESS-<TENANT>` (subjects `evt.<tenant>.>`). Do not use the legacy `EVENTS` or `RESULTS` streams.
 
 ## Decision Gates
 
-| Situación | Acción |
+| Situation | Action |
 |---|---|
-| Necesito generar un ID de evento | `crypto.randomUUID()` — nunca ULID |
-| Necesito el nombre del producer (canal) | `CHANNEL_PRODUCER` = `"channel-service"` |
-| Necesito construir el campo `type` (canal) | `io.yoizen.messaging.${channel}.${provider}.${kind}.v1` — ver `envelope.factory.ts` línea 86 |
+| I need to generate an event ID | `crypto.randomUUID()` — never a ULID |
+| I need the producer name (channel) | `CHANNEL_PRODUCER` = `"channel-service"` |
+| I need to build the `type` field (channel) | `io.yoizen.messaging.${channel}.${provider}.${kind}.v1` — see `envelope.factory.ts:98` |
 | I need the header allowlist | `WEBHOOK_FORWARDED_HEADERS` in `channel.constants.ts` — 7 entries |
-| Necesito construir un subject de canal | `buildChannelSubject(tenant, channel, provider, kind)` de `@yoizen/shared` |
-| Necesito construir un subject genérico | `buildSubject(params)` de `@yoizen/shared/envelope.utils` |
-| Necesito un envelope raíz (no canal) | `buildEventEnvelope(options)` de `@yoizen/shared/envelope.utils` |
-| Necesito un envelope derivado | `deriveEnvelope(incoming, overrides)` de `@yoizen/shared/envelope.utils` |
-| Necesito verificar que un objeto es un envelope | `isCompliantEnvelope(value)` de `@yoizen/shared` |
-| Necesito la checksum del payload | `computePayloadChecksum(payload)` de `@yoizen/shared` — igual que `computeIdempotencyKey` |
-| Envelope serializado > 256 KB | Claim check: almacenar `UTF8(canonicalJson(payload))` en Object Store, publicar slim envelope con `payload_inline: false` |
-| Soy consumidor y veo `payload_inline: false` | Resolución transparente vía `MultiTenantConsumerManager.wrapHandler` — usa `resolveClaimCheckEnvelope` de `packages/database/src/claim-check.ts` |
-| Claim-check falla en lectura | `ClaimCheckResolveError` (no `PermanentError`) → nak → backoff → DLQ tras `MAX_DELIVER` |
+| I need to build a channel subject | `buildChannelSubject(tenant, channel, provider, kind)` from `@yoizen/shared` |
+| I need to build a generic subject | `buildSubject(params)` from `@yoizen/shared/envelope.utils` |
+| I need a root envelope (non-channel) | `buildEventEnvelope(options)` from `@yoizen/shared/envelope.utils` |
+| I need a derived envelope | `deriveEnvelope(incoming, overrides)` from `@yoizen/shared/envelope.utils` |
+| I need to check that an object is an envelope | `isCompliantEnvelope(value)` from `@yoizen/shared` |
+| I need the payload checksum | `computePayloadChecksum(payload)` from `@yoizen/shared` — same as `computeIdempotencyKey` |
+| Serialized envelope > 256 KB | Claim check: store `UTF8(canonicalJson(payload))` in the Object Store, publish a slim envelope with `payload_inline: false` |
+| I am a consumer and I see `payload_inline: false` | Transparent resolution via `MultiTenantConsumerManager.wrapHandler` — uses `resolveClaimCheckEnvelope` from `packages/database/src/claim-check.ts` |
+| Claim-check fails on read | `ClaimCheckResolveError` (not `PermanentError`) → nak → backoff → DLQ after `MAX_DELIVER` |
 
 ---
 
 ## Critical Patterns
 
-### 1. Estructura del Envelope (CloudEvents-inspired)
+### 1. Envelope Structure (CloudEvents-inspired)
 
-El contrato canónico está en `packages/shared/src/interfaces.ts` (`EventEnvelope`, `EventTransport`, `EventData`).
+The canonical contract lives in `packages/shared/src/interfaces.ts` (`EventEnvelope`, `EventTransport`, `EventData`).
 
-Ejemplo de un envelope producido por `channel-service` (etapa 2 del ingress):
+Example of an envelope produced by `channel-service` (stage 2 of the ingress):
 
 ```json
 {
@@ -97,99 +101,99 @@ Ejemplo de un envelope producido por `channel-service` (etapa 2 del ingress):
 }
 ```
 
-**Campos obligatorios** (todos requeridos en `isCompliantEnvelope`):
+**Mandatory fields** (all required by `isCompliantEnvelope`):
 
-| Campo | Tipo | Notas |
+| Field | Type | Notes |
 |---|---|---|
-| `specversion` | string | Siempre `"1.0"` |
+| `specversion` | string | Always `"1.0"` |
 | `id` | string | UUID v4 (`crypto.randomUUID()`) |
-| `source` | string | URI del servicio. Ej: `//channel-service/accounts/<id>` o `//api-gateway/webhooks` |
-| `type` | string | `io.yoizen.messaging.<channel>.<provider>.<kind>.v1` para mensajería |
-| `resource` | string | Resource path del recurso afectado |
+| `source` | string | Service URI. E.g. `//channel-service/accounts/<id>` or `//api-gateway/webhooks` |
+| `type` | string | `io.yoizen.messaging.<channel>.<provider>.<kind>.v1` for messaging |
+| `resource` | string | Resource path of the affected resource |
 | `time` | string | ISO 8601 UTC |
-| `traceid` | string | OpenTelemetry traceId (32 hex chars vía `activeOrRandomTraceId()`) |
-| `causation_id` | string \| null | ID del evento causante. `null` si es raíz |
+| `traceid` | string | OpenTelemetry traceId (32 hex chars via `activeOrRandomTraceId()`) |
+| `causation_id` | string \| null | ID of the causing event. `null` when it is a root |
 | `correlation_id` | string | Business flow ID; propagated unchanged. `createChannelEnvelope` and `api-gateway` self-correlate with their own `id`; `buildEventEnvelope` mints a NEW `randomUUID()` when `correlationId` is not passed (`envelope.utils.ts:332`) |
 | `tenant` | string | Tenant ID |
-| `producer` | string | Servicio publicador. Reales: `api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway` |
+| `producer` | string | Publishing service. Real ones: `api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway` |
 | `domain` | string | `messaging`, `automation`, `platform` |
 | `channel` | string | `whatsapp`, `telegram`, `instagram`, `http`, `platform`. The `Channel` type (`channel.interfaces.ts:3`) is `whatsapp \| instagram \| telegram \| http`; `EventEnvelope.channel` is a free `string` (`interfaces.ts:42`) because internal producers use `platform` |
 | `provider` | string | `meta`, `telegram`, `http`, `internal`, `webhook`. `ChannelProvider` (`channel.interfaces.ts:4`) is `meta \| telegram \| http` |
-| `accountid` | string | ID de la cuenta lógica (omitido en `WebhookIngressEnvelope`) |
+| `accountid` | string | Logical account ID (omitted in `WebhookIngressEnvelope`) |
 | `idempotencykey` | string | `sha256:<hex>(canonicalJson(payload))` |
-| `transport` | EventTransport | Ver §6 |
-| `data` | EventData | Ver §7 |
+| `transport` | EventTransport | See §6 |
+| `data` | EventData | See §7 |
 
-Extensiones opcionales de pipeline: `callback_url`, `adapter_id`, `enrich_adapter`, `forward_adapter`.
+Optional pipeline extensions: `callback_url`, `adapter_id`, `enrich_adapter`, `forward_adapter`.
 
-### 2. Subjects NATS
+### 2. NATS Subjects
 
-Formato canónico (8 tokens):
+Canonical format (8 tokens):
 
 ```
 evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>
 ```
 
-| Token | Descripción | Ejemplos |
+| Token | Description | Examples |
 |---|---|---|
-| `evt` | Prefijo fijo | siempre `evt` |
+| `evt` | Fixed prefix | always `evt` |
 | `tenant` | Tenant ID | `acme`, `globex` |
-| `producer` | Servicio publicador | `channel-service`, `api-gateway`, `agent-admin-service` |
-| `domain` | Dominio de negocio | `messaging`, `automation`, `platform` |
+| `producer` | Publishing service | `channel-service`, `api-gateway`, `agent-admin-service` |
+| `domain` | Business domain | `messaging`, `automation`, `platform` |
 | `channel` | Channel | `whatsapp`, `instagram`, `telegram`, `http`, `platform` |
 | `provider` | Provider | `meta`, `telegram`, `http`, `internal`, `webhook` |
-| `kind` | Tipo de evento | `webhook_received`, `received`, `sent`, `delivered`, `send`, `execution_requested` |
-| `v1` | Versión | `v1` |
+| `kind` | Event kind | `webhook_received`, `received`, `sent`, `delivered`, `send`, `execution_requested` |
+| `v1` | Version | `v1` |
 
 **Wildcards:**
-- `*` — match de un token exacto
-- `>` — match de uno o más tokens (solo al final)
+- `*` — matches exactly one token
+- `>` — matches one or more tokens (only at the end)
 
 ```
-evt.acme.*.messaging.>                                           -- todo messaging del tenant acme (cualquier producer)
-evt.acme.channel-service.messaging.whatsapp.>                   -- todo whatsapp del tenant acme
-evt.*.channel-service.messaging.>                               -- todo messaging, todos los tenants
-evt.*.api-gateway.messaging.*.webhook.webhook_received.v1       -- todos los pre-ingress (etapa 1)
-evt.*.channel-service.messaging.telegram.*.received.v1          -- todos los mensajes recibidos de telegram
+evt.acme.*.messaging.>                                           -- all messaging for tenant acme (any producer)
+evt.acme.channel-service.messaging.whatsapp.>                   -- all whatsapp for tenant acme
+evt.*.channel-service.messaging.>                               -- all messaging, all tenants
+evt.*.api-gateway.messaging.*.webhook.webhook_received.v1       -- all pre-ingress (stage 1)
+evt.*.channel-service.messaging.telegram.*.received.v1          -- all received telegram messages
 ```
 
-Constantes en `channel.constants.ts`:
+Constants in `channel.constants.ts`:
 - `CHANNEL_STREAM_SUBJECTS_PATTERN` = `"evt.*.channel-service.messaging.>"`
 - `WEBHOOK_INGRESS_SUBJECT_FILTER` = `"evt.*.api-gateway.messaging.*.webhook.webhook_received.v1"`
 
-### 3. Topología de Streams
+### 3. Stream Topology
 
-| Stream / Bucket | Tipo | Subjects | Propósito |
+| Stream / Bucket | Type | Subjects | Purpose |
 |---|---|---|---|
-| `INGRESS-<TENANT>` | JetStream stream | `evt.<tenant>.>` | Bus de eventos canónico por tenant |
-| `DLQ-<tenant>` | JetStream stream | `dlq.<tenant>.>` | Dead letters por tenant |
-| `PAYLOAD-<tenant>` | JetStream Object Store | keys `<event-id>-payload` | Claim-check para payloads grandes |
-| `GATEWAY_AUDIT` | JetStream stream | `audit.gateway.>` | Audit trail cross-tenant del gateway |
-| `PLATFORM_TENANTS` | JetStream stream | `platform.tenant.>` | Lifecycle de tenants |
+| `INGRESS-<TENANT>` | JetStream stream | `evt.<tenant>.>` | Canonical per-tenant event bus |
+| `DLQ-<tenant>` | JetStream stream | `dlq.<tenant>.>` | Per-tenant dead letters |
+| `PAYLOAD-<tenant>` | JetStream Object Store | keys `<event-id>-payload` | Claim-check for large payloads |
+| `GATEWAY_AUDIT` | JetStream stream | `audit.gateway.>` | Cross-tenant gateway audit trail |
+| `PLATFORM_TENANTS` | JetStream stream | `platform.tenant.>` | Tenant lifecycle |
 
-Los streams legacy `EVENTS` y `RESULTS` están deprecados — no usarlos en código nuevo.
+The legacy `EVENTS` and `RESULTS` streams are deprecated — do not use them in new code.
 
 Canonical helpers (all in `@yoizen/shared`): `getTenantStreamName(tenant)` → `INGRESS-<TENANT>` (upper-cased, `tenant-stream.constants.ts:44-45`), `buildClaimCheckBucket(tenant)` → `PAYLOAD-<tenant>`, `buildDlqStreamName(tenant)` → `DLQ-<tenant>` (both verbatim). Mind the case asymmetry: only the ingress stream upper-cases. A second, verbatim ingress builder was removed on 2026-07-31 (envelope-drift T07) — `getTenantStreamName` is the only one.
 
-### 4. Kinds de Evento
+### 4. Event Kinds
 
-| Kind | Quién publica | Descripción |
+| Kind | Who publishes | Description |
 |---|---|---|
-| `webhook_received` | `api-gateway` | Pre-ingress — webhook recibido antes de verificar firma |
-| `received` | `channel-service` | Mensaje entrante del provider (post-verificación) |
-| `sent` | `channel-service` | Confirmación de envío del provider |
-| `delivered` | `channel-service` | Confirmación de entrega |
-| `read` | `channel-service` | Confirmación de lectura |
-| `failed` | `channel-service` | Fallo en envío |
-| `send` | `channel-service` / workflow | Comando de envío saliente |
-| `execution_requested` | `ai-agent-gateway` | Solicitud de ejecución de agente |
-| `config_sync` | `agent-admin-service` | Sincronización de configuración de agente |
+| `webhook_received` | `api-gateway` | Pre-ingress — webhook received before the signature is verified |
+| `received` | `channel-service` | Inbound provider message (post-verification) |
+| `sent` | `channel-service` | Provider send confirmation |
+| `delivered` | `channel-service` | Delivery confirmation |
+| `read` | `channel-service` | Read confirmation |
+| `failed` | `channel-service` | Send failure |
+| `send` | `channel-service` / workflow | Outbound send command |
+| `execution_requested` | `ai-agent-gateway` | Agent execution request |
+| `config_sync` | `agent-admin-service` | Agent configuration sync |
 
-Tipo canónico `MessageKind` en `packages/shared/src/channel.interfaces.ts`: `"received" | "sent" | "delivered" | "read" | "failed" | "send"`.
+Canonical `MessageKind` type in `packages/shared/src/channel.interfaces.ts`: `"received" | "sent" | "delivered" | "read" | "failed" | "send"`.
 
-El kind `webhook_received` es exclusivo de `WebhookIngressEnvelope` (pre-ingress de `api-gateway`).
+The `webhook_received` kind is exclusive to `WebhookIngressEnvelope` (`api-gateway` pre-ingress).
 
-### 5. Flujo de Dos Etapas (Webhook Bridge)
+### 5. Two-Stage Flow (Webhook Bridge)
 
 ```
 Provider HTTP POST
@@ -197,10 +201,10 @@ Provider HTTP POST
       ▼
 api-gateway  ──── publishWebhook() ────►  INGRESS-<tenant>
   producer: "api-gateway"                  subject: evt.<t>.api-gateway.messaging.<ch>.webhook.webhook_received.v1
-  kind: "webhook_received"                 (WebhookIngressEnvelope — sin accountid)
+  kind: "webhook_received"                 (WebhookIngressEnvelope — no accountid)
   data.raw_body_b64: base64(rawBody)
-  data.headers: allowlist filtrado
-  causation_id: null, correlation_id: <id_propio>
+  data.headers: filtered allowlist
+  causation_id: null, correlation_id: <own id>
       │
       ▼
 channel-service (WebhookIngressConsumerService)
@@ -208,48 +212,49 @@ channel-service (WebhookIngressConsumerService)
   durableName: "channel-webhook-ingress"
       │
       ▼
-  verifica firma HMAC, resuelve accountId
+  verifies the HMAC signature, resolves accountId
       │
       ▼
   createChannelEnvelope() → IngressService.publish() ──► INGRESS-<tenant>
     producer: "channel-service"                           subject: evt.<t>.channel-service.messaging.<ch>.<prov>.received.v1
-    source: "//channel-service/accounts/<accountId>"      (ChannelEnvelope — con accountid real)
-    causation_id: <id_webhook_envelope>
-    correlation_id: <propagado del webhook envelope>
+    source: "//channel-service/accounts/<accountId>"      (ChannelEnvelope — with the real accountid)
+    causation_id: <webhook envelope id>
+    correlation_id: <propagated from the webhook envelope>
     transport.depth: 1
+    data.headers: <stage-1 allowlist, forwarded verbatim>
 ```
 
-Archivos clave:
-- Publisher etapa 1: `services/api-gateway/src/modules/channels/webhook-ingress-publisher.service.ts`
-- Consumer etapa 2: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.service.ts`
-- Factory canónica: `services/channel-service/src/domain/envelope.factory.ts` (`createChannelEnvelope`)
+Key files:
+- Stage-1 publisher: `services/api-gateway/src/modules/channels/webhook-ingress-publisher.service.ts`
+- Stage-2 consumer: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.service.ts`
+- Canonical factory: `services/channel-service/src/domain/envelope.factory.ts` (`createChannelEnvelope`)
 - Ingress publish + claim-check: `services/channel-service/src/modules/ingress/ingress.service.ts`
 
-### 6. Transporte
+### 6. Transport
 
-Campo `transport` (tipo `EventTransport` en `packages/shared/src/interfaces.ts`):
+The `transport` field (type `EventTransport` in `packages/shared/src/interfaces.ts`):
 
-| Campo | Tipo | Descripción |
+| Field | Type | Description |
 |---|---|---|
 | `method` | string | `"webhook"`, `"poll"`, `"stream"`, `"queue_bridge"`, `"agent"` |
 | `protocol` | string | `"https"`, `"wss"`, `"amqp"`, `"internal"` |
-| `agent_id` | string? | ID del agente (solo para `method: "agent"`) |
-| `depth` | number? | Profundidad causal para anti-loop (ver §10) |
+| `agent_id` | string? | Agent ID (only for `method: "agent"`) |
+| `depth` | number? | Causal depth for anti-loop enforcement (see §10) |
 
-The webhook header allowlist (§8) lives under `data.headers`, NOT under `transport` — `IWebhookIngressData.headers` on stage 1 (`webhook.interfaces.ts:18`) and `IChannelEventData.headers` on stage 2 (`channel.interfaces.ts`). `EventTransport` declares exactly the four fields above. Until 2026-07-31 `createChannelEnvelope` spread an undeclared `headers` key into `transport` (envelope-drift T06); it had no caller, so no published envelope carries it.
+The webhook header allowlist (§8) lives under `data.headers`, NOT under `transport` — `IWebhookIngressData.headers` on stage 1 (`webhook.interfaces.ts:18`) and `IChannelEventData.headers` on stage 2 (`channel.interfaces.ts`). `EventTransport` declares exactly the four fields above. Until 2026-07-31 `createChannelEnvelope` spread an undeclared `headers` key into `transport` (envelope-drift T06); that spread had no caller, so `transport.headers` never reached the wire. Since 2026-07-31 the stage-1 allowlist IS forwarded to stage-2 `data.headers` on webhook-derived envelopes (envelope-drift post-loop item 3) — verbatim, with api-gateway as the single filtering point.
 
 ### 7. Data Payload
 
-Campo `data` (tipo `EventData` en `packages/shared/src/interfaces.ts`):
+The `data` field (type `EventData` in `packages/shared/src/interfaces.ts`):
 
-| Campo | Tipo | Descripción |
+| Field | Type | Description |
 |---|---|---|
-| `received_at` | string | Timestamp ISO 8601; coincide con `envelope.time` |
-| `payload_inline` | boolean | `true` si el payload viaja en el mensaje; `false` si se aplicó claim-check |
-| `payload_ref` | string \| null | URI al Object Store cuando `payload_inline = false`. Formato: `nats://objstore/PAYLOAD-<tenant>/<event_id>-payload` |
-| `payload_bytes` | number | Longitud en bytes del canonical JSON del payload (`canonicalByteLength`) |
-| `payload_checksum` | string | `sha256:<hex>` sobre los bytes exactos almacenados en Object Store |
-| `payload` | object \| null | Raw del provider, intacto. `null` cuando `payload_inline = false` |
+| `received_at` | string | ISO 8601 timestamp; matches `envelope.time` |
+| `payload_inline` | boolean | `true` when the payload travels in the message; `false` when claim-check was applied |
+| `payload_ref` | string \| null | Object Store URI when `payload_inline = false`. Format: `nats://objstore/PAYLOAD-<tenant>/<event_id>-payload` |
+| `payload_bytes` | number | Byte length of the payload's canonical JSON (`canonicalByteLength`) |
+| `payload_checksum` | string | `sha256:<hex>` over the exact bytes stored in the Object Store |
+| `payload` | object \| null | Raw provider body, untouched. `null` when `payload_inline = false` |
 
 ### 8. Headers Allowlist (Webhook)
 
@@ -265,72 +270,72 @@ x-request-id
 user-agent
 ```
 
-Lookup O(1) disponible como `WEBHOOK_FORWARDED_HEADERS_SET` (Set). Cualquier otro header debe descartarse.
+An O(1) lookup is available as `WEBHOOK_FORWARDED_HEADERS_SET` (a Set). Every other header must be discarded.
 
-### 9. Idempotencia
+### 9. Idempotency
 
 - `idempotencykey = "sha256:" + hex(sha256(canonicalJson(rawPayload)))`.
-- `canonicalJson` ordena claves alfabéticamente en todos los niveles — implementado en `canonicalJson` de `packages/shared/src/envelope.utils.ts`.
-- Al publicar a JetStream se mapea a `Nats-Msg-Id` header. JetStream deduplica por `duplicate_window` (default del servidor NATS: 2 minutos).
-- `computeIdempotencyKey(payload)` y `computePayloadChecksum(payload)` son alias — mismo resultado, distintos propósitos semánticos.
+- `canonicalJson` sorts keys alphabetically at every level — implemented in `canonicalJson` in `packages/shared/src/envelope.utils.ts`.
+- On publish to JetStream it maps to the `Nats-Msg-Id` header. JetStream deduplicates within `duplicate_window` (NATS server default: 2 minutes).
+- `computeIdempotencyKey(payload)` and `computePayloadChecksum(payload)` are aliases — same result, different semantic purposes.
 
-**Violaciones comunes (evitar):**
-- Incluir `Date.now()`, `randomUUID()` u otros valores no determinísticos en la key.
-- Usar `envelope.id` como `idempotencykey`.
-- Omitir el prefijo `sha256:`.
+**Common violations (avoid):**
+- Including `Date.now()`, `randomUUID()` or any other non-deterministic value in the key.
+- Using `envelope.id` as the `idempotencykey`.
+- Omitting the `sha256:` prefix.
 
 ### 10. Claim Check
 
-Activado cuando `JSON.stringify(envelope).byteLength > CLAIM_CHECK_THRESHOLD_BYTES` (256 KB). La medida se toma sobre el **envelope completo serializado**, no solo el payload.
+Triggered when `JSON.stringify(envelope).byteLength > CLAIM_CHECK_THRESHOLD_BYTES` (256 KB). The measurement is taken over the **fully serialized envelope**, not just the payload.
 
-**Invariante central:**
+**Central invariant:**
 
 ```
-Producer almacena: rawBytes = UTF8(canonicalJson(envelope.data.payload))
-Consumer verifica: sha256(rawBytes) === envelope.data.payload_checksum
+Producer stores:   rawBytes = UTF8(canonicalJson(envelope.data.payload))
+Consumer verifies: sha256(rawBytes) === envelope.data.payload_checksum
 ```
 
-No re-canonicalizar en el consumer — los bytes almacenados son el resultado canónico; un round-trip parse→stringify puede alterar el orden de claves y romper la verificación.
+Do not re-canonicalize in the consumer — the stored bytes are the canonical result; a parse→stringify round-trip can change key order and break verification.
 
-**Productor** (`services/channel-service/src/modules/ingress/ingress.service.ts`):
+**Producer** (`services/channel-service/src/modules/ingress/ingress.service.ts`):
 
 ```typescript
-// 1. Serializar el payload a bytes canónicos
+// 1. Serialize the payload to canonical bytes
 const rawBytes = Buffer.from(canonicalJson(envelope.data.payload), "utf8");
-// 2. Almacenar en Object Store (ANTES de publicar al bus)
+// 2. Store it in the Object Store (BEFORE publishing to the bus)
 await os.putBlob(`${envelope.id}-payload`, rawBytes);
-// 3. Publicar slim envelope
+// 3. Publish the slim envelope
 publish({ ...envelope, data: { ...envelope.data, payload_inline: false, payload: null,
   payload_ref: `nats://objstore/PAYLOAD-${tenant}/${envelope.id}-payload` } });
 ```
 
-Bucket `PAYLOAD-<tenant>`: TTL = 7 días (`CLAIM_CHECK_BUCKET_TTL_NS`), max_bytes = 512 MB (`CLAIM_CHECK_BUCKET_MAX_BYTES`). Creado por `IngressService.getClaimCheckBucket` vía `buildClaimCheckBucket(tenant)`.
+Bucket `PAYLOAD-<tenant>`: TTL = 7 days (`CLAIM_CHECK_BUCKET_TTL_NS`), max_bytes = 512 MB (`CLAIM_CHECK_BUCKET_MAX_BYTES`). Created by `IngressService.getClaimCheckBucket` via `buildClaimCheckBucket(tenant)`.
 
-En caso de fallo al escribir al Object Store: se publica un mensaje al DLQ (`dlq.<tenant>.<subject>`) con header `X-Dlq-Reason: claim_check_store_failed`, y luego se relanza el error (el publish al bus nunca ocurre).
+If the Object Store write fails: a message is published to the DLQ (`dlq.<tenant>.<subject>`) with the header `X-Dlq-Reason: claim_check_store_failed`, and the error is then rethrown (the publish to the bus never happens).
 
-**Consumidor** (`packages/database/src/claim-check.ts` + `MultiTenantConsumerManager`):
+**Consumer** (`packages/database/src/claim-check.ts` + `MultiTenantConsumerManager`):
 
-La resolución es transparente para el handler — `wrapHandler` en `MultiTenantConsumerManager` la maneja automáticamente:
+Resolution is transparent to the handler — `wrapHandler` in `MultiTenantConsumerManager` handles it automatically:
 
-1. Pre-check de bytes: `looksLikeClaimCheck(msg.data)` busca `'"payload_inline":false'` en raw bytes (sin parsear). Passthrough en el 99% de los casos.
-2. Si detectado: `JSON.parse` + `isCompliantEnvelope` + `payload_inline === false`.
-3. `resolveClaimCheckEnvelope(envelope, getStore)` → fetch blob → `sha256(rawBytes)` verificado contra `payload_checksum` → `JSON.parse` → envelope inflado.
-4. Handler recibe `JsMsg` proxeado con el envelope inflado. `ack/nak/term` delegan al mensaje original (via `Proxy` para preservar el `this` interno de NATS).
-5. Fallo → `ClaimCheckResolveError` (no `PermanentError`) → nak → backoff → DLQ tras `MAX_DELIVER`.
+1. Byte pre-check: `looksLikeClaimCheck(msg.data)` looks for `'"payload_inline":false'` in the raw bytes (without parsing). Passthrough in 99% of cases.
+2. If detected: `JSON.parse` + `isCompliantEnvelope` + `payload_inline === false`.
+3. `resolveClaimCheckEnvelope(envelope, getStore)` → fetch blob → `sha256(rawBytes)` verified against `payload_checksum` → `JSON.parse` → inflated envelope.
+4. The handler receives a proxied `JsMsg` carrying the inflated envelope. `ack/nak/term` delegate to the original message (via `Proxy`, to preserve NATS's internal `this`).
+5. Failure → `ClaimCheckResolveError` (not `PermanentError`) → nak → backoff → DLQ after `MAX_DELIVER`.
 
-Códigos de error (`ClaimCheckErrorCode`): `ref_missing`, `ref_malformed`, `blob_not_found`, `checksum_mismatch`.
+Error codes (`ClaimCheckErrorCode`): `ref_missing`, `ref_malformed`, `blob_not_found`, `checksum_mismatch`.
 
-### 11. Cadena Causal
+### 11. Causal Chain
 
-- **`causation_id`**: ID del evento que causó este. `null` si es raíz.
+- **`causation_id`**: ID of the event that caused this one. `null` when it is a root.
 - **`correlation_id`**: business flow ID. Propagated unchanged (`deriveEnvelope`, `envelope.utils.ts:197`). The default is producer-specific: `createChannelEnvelope` and `api-gateway` use the root envelope's own `id`; `buildEventEnvelope` falls back to a fresh `randomUUID()` when `correlationId` is not passed (`envelope.utils.ts:332`).
-- **`transport.depth`**: profundidad incremental para anti-loop.
+- **`transport.depth`**: incremental depth for anti-loop enforcement.
 
-`deriveEnvelope` (en `@yoizen/shared`) propaga automáticamente `causation_id`, `correlation_id`, `traceid` y `depth`. `buildEventEnvelope` crea envelopes raíz con `depth: 0`.
+`deriveEnvelope` (in `@yoizen/shared`) automatically propagates `causation_id`, `correlation_id`, `traceid` and `depth`. `buildEventEnvelope` creates root envelopes with `depth: 0`.
 
-`MAX_DEPTH_BY_CATEGORY` en `packages/shared/src/envelope.utils.ts`:
+`MAX_DEPTH_BY_CATEGORY` in `packages/shared/src/envelope.utils.ts`:
 
-| Categoría (`ProducerCategory`) | MAX_DEPTH |
+| Category (`ProducerCategory`) | MAX_DEPTH |
 |---|---|
 | `root` | 0 |
 | `internal_service` (default) | 5 |
@@ -338,9 +343,9 @@ Códigos de error (`ClaimCheckErrorCode`): `ref_missing`, `ref_malformed`, `blob
 | `platform_agent` | 3 |
 | `thirdparty_agent` | 2 |
 
-`deriveEnvelope` lanza `DepthExceededError` cuando `newDepth > maxDepth`. La categoría default es `internal_service`.
+`deriveEnvelope` throws `DepthExceededError` when `newDepth > maxDepth`. The default category is `internal_service`.
 
-Ejemplo de cadena:
+Example chain:
 
 ```
 WebhookIngressEnvelope (api-gateway)
@@ -349,7 +354,7 @@ WebhookIngressEnvelope (api-gateway)
 ChannelEnvelope received (channel-service)         ← deriveEnvelope
   id = evt_B, causation_id = evt_A, correlation_id = evt_A, depth = 1
 
-Evento derivado (workflow/agente)                  ← deriveEnvelope
+Derived event (workflow/agent)                     ← deriveEnvelope
   id = evt_C, causation_id = evt_B, correlation_id = evt_A, depth = 2
 ```
 
@@ -357,16 +362,16 @@ Evento derivado (workflow/agente)                  ← deriveEnvelope
 
 ## References
 
-- `DOCS/messaging/envelope.md` — contrato canónico de envelope, subjects, idempotencia, cadena causal, claim-check (as-built)
-- `DOCS/messaging/claim-check.md` — protocolo completo de claim-check: producer, consumer middleware, Object Store, métricas (as-built)
-- `DOCS/messaging/service-bus.md` — topología de streams, taxonomía de subjects y referencia operativa de NATS/JetStream
-- `packages/shared/src/interfaces.ts` — tipos `EventEnvelope`, `EventTransport`, `EventData`
+- `DOCS/messaging/envelope.md` — canonical envelope contract, subjects, idempotency, causal chain, claim-check (as-built)
+- `DOCS/messaging/claim-check.md` — full claim-check protocol: producer, consumer middleware, Object Store, metrics (as-built)
+- `DOCS/messaging/service-bus.md` — stream topology, subject taxonomy and NATS/JetStream operational reference
+- `packages/shared/src/interfaces.ts` — `EventEnvelope`, `EventTransport`, `EventData` types
 - `packages/shared/src/channel.interfaces.ts` — `Channel`, `ChannelProvider`, `MessageKind`, `ChannelEnvelope`
 - `packages/shared/src/channel.constants.ts` — `CHANNEL_PRODUCER`, `WEBHOOK_FORWARDED_HEADERS`, `CLAIM_CHECK_THRESHOLD_BYTES`, `CLAIM_CHECK_BUCKET_TTL_NS`, `CLAIM_CHECK_BUCKET_MAX_BYTES`
 - `packages/shared/src/channel.utils.ts` — `buildChannelSubject`, `buildWebhookIngressSubject`, `buildClaimCheckBucket`, `parseChannelSubject`
 - `packages/shared/src/envelope.utils.ts` — `computeIdempotencyKey`, `computePayloadChecksum`, `canonicalJson`, `buildSubject`, `deriveEnvelope`, `buildEventEnvelope`, `isCompliantEnvelope`, `MAX_DEPTH_BY_CATEGORY`
 - `packages/shared/src/webhook.interfaces.ts` — `WebhookIngressEnvelope`, `IWebhookIngressData`
-- `services/channel-service/src/domain/envelope.factory.ts` — `createChannelEnvelope` (producer canónico)
-- `services/channel-service/src/modules/ingress/ingress.service.ts` — lógica de claim check (producer)
+- `services/channel-service/src/domain/envelope.factory.ts` — `createChannelEnvelope` (canonical producer)
+- `services/channel-service/src/modules/ingress/ingress.service.ts` — claim-check logic (producer)
 - `packages/database/src/claim-check.ts` — `resolveClaimCheckEnvelope`, `looksLikeClaimCheck`, `ClaimCheckResolveError`, `ClaimCheckErrorCode`
-- `references/diseno-mensajes.md` — índice de fuentes de verdad as-built
+- `references/diseno-mensajes.md` — index of as-built sources of truth

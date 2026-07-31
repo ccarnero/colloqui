@@ -1,18 +1,22 @@
-## Fuentes de verdad as-built — Diseño de mensajes
+## As-built sources of truth — Message design
 
-Este archivo es un índice de las fuentes de verdad del sistema de mensajería implementado.
-El código prevalece sobre cualquier documento ante divergencias.
+This file is an index of the sources of truth for the implemented messaging system.
+The code wins over any document when they diverge.
 
-### Documentación de arquitectura (as-built)
+> Filename note: this file keeps its original Spanish name (`diseno-mensajes.md`)
+> because it is referenced by path from `SKILL.md`; only the content was
+> translated (envelope-drift post-loop item 4, 2026-07-31).
 
-| Documento | Contenido |
+### Architecture documentation (as-built)
+
+| Document | Contents |
 |---|---|
-| `DOCS/messaging/envelope.md` | Contrato canónico de envelope (CloudEvents-inspired), formato de subjects de 8 tokens, allowlist de headers, idempotencia, cadena causal (causation/correlation/depth), claim-check (resumen), ejemplos por tipo de producer |
-| `DOCS/messaging/ingress.md` | Flujo de ingress de dos etapas (webhook bridge api-gateway → channel-service), ciclo de vida de agentes AI as-built |
-| `DOCS/messaging/claim-check.md` | Protocolo completo de claim-check: producer (IngressService), consumer middleware (MultiTenantConsumerManager), Object Store (PAYLOAD-<tenant>), invariante de checksum sha256, códigos de error, métricas, diagramas de secuencia |
-| `DOCS/messaging/service-bus.md` | Topología de streams (INGRESS-<tenant>, DLQ-<tenant>, PAYLOAD-<tenant>, GATEWAY_AUDIT, PLATFORM_TENANTS), taxonomía de subjects (8 tokens), ciclo de vida de provisioning, claim-check pattern (as-built) |
+| `DOCS/messaging/envelope.md` | Canonical envelope contract (CloudEvents-inspired), 8-token subject format, header allowlist, idempotency, causal chain (causation/correlation/depth), claim-check (summary), examples per producer type |
+| `DOCS/messaging/ingress.md` | Two-stage ingress flow (webhook bridge api-gateway → channel-service), as-built AI agent lifecycle |
+| `DOCS/messaging/claim-check.md` | Full claim-check protocol: producer (IngressService), consumer middleware (MultiTenantConsumerManager), Object Store (PAYLOAD-<tenant>), sha256 checksum invariant, error codes, metrics, sequence diagrams |
+| `DOCS/messaging/service-bus.md` | Stream topology (INGRESS-<tenant>, DLQ-<tenant>, PAYLOAD-<tenant>, GATEWAY_AUDIT, PLATFORM_TENANTS), subject taxonomy (8 tokens), provisioning lifecycle, claim-check pattern (as-built) |
 
-### Fuente de verdad de tipos y helpers
+### Source of truth for types and helpers
 
 ```
 packages/shared/src/interfaces.ts
@@ -28,7 +32,7 @@ packages/shared/src/envelope.utils.ts
 
 packages/shared/src/channel.constants.ts
   → CHANNEL_PRODUCER ("channel-service")
-  → WEBHOOK_FORWARDED_HEADERS (6 entradas)
+  → WEBHOOK_FORWARDED_HEADERS (7 entries, :55-63)
   → CLAIM_CHECK_THRESHOLD_BYTES (256 KB)
   → CLAIM_CHECK_BUCKET_TTL_NS, CLAIM_CHECK_BUCKET_MAX_BYTES
   → buildDlqStreamName, buildDlqSubjectPattern
@@ -41,18 +45,18 @@ packages/shared/src/tenant-stream.constants.ts
   → getTenantStreamName (INGRESS-<TENANT>, upper-cased — the only ingress-name builder)
 
 packages/shared/src/webhook.interfaces.ts
-  → WebhookIngressEnvelope (tipo pre-ingress de api-gateway — sin accountid)
-  → IWebhookIngressData (incluye raw_body_b64 y headers)
+  → WebhookIngressEnvelope (api-gateway pre-ingress type — no accountid)
+  → IWebhookIngressData (includes raw_body_b64 and headers)
 
 services/channel-service/src/domain/envelope.factory.ts
-  → createChannelEnvelope — producer canónico
+  → createChannelEnvelope — canonical producer
     id: crypto.randomUUID()
     type: io.yoizen.messaging.${channel}.${provider}.${kind}.v1
     source: //channel-service/accounts/${accountId}
     idempotencykey: computeIdempotencyKey(rawPayload)
 
 services/channel-service/src/modules/ingress/ingress.service.ts
-  → lógica de claim-check (producer): umbral, putBlob, slim envelope, DLQ on failure
+  → claim-check logic (producer): threshold, putBlob, slim envelope, DLQ on failure
 
 packages/database/src/claim-check.ts
   → looksLikeClaimCheck, parseClaimCheckRef, resolveClaimCheckEnvelope

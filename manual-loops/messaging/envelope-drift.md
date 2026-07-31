@@ -313,7 +313,8 @@ grep -n "envelope-drift" cowork/INDEX.md
 - [x] T03 durable-name registry fixed
 - [x] T04 envelope-schema.json rewrite (pin test lives in packages/shared
   test/unit; follow-up flagged: full envelope-messages SKILL.md translation
-  to English incl. frontmatter description)
+  to English incl. frontmatter description — DONE 2026-07-31, post-loop item 4,
+  together with `references/diseno-mensajes.md`)
 - [x] T05 stage-1 type token (premise correction: ingester classify is
   SUBJECT-only — no rule/golden change needed; type-agnosticism pinned by
   stage1-type-migration.spec.ts. Follow-ups: hoist WEBHOOK_INGRESS_PROVIDER
