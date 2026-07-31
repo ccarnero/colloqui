@@ -1,111 +1,145 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$comment": "Informational schema — canonical source is packages/shared/src/interfaces.ts (EventEnvelope, EventTransport, EventData). This file exists only to aid IDE tooling and documentation. Do not use as validation authority.",
-  "title": "EventEnvelope",
-  "description": "CloudEvents-inspired envelope for NATS JetStream messaging. Producers: api-gateway, channel-service, registry-service, agent-admin-service, ai-agent-gateway. IDs are crypto.randomUUID() (UUID v4). Type format for messaging: io.yoizen.messaging.<channel>.<provider>.<kind>.v1. correlation_id defaults to envelope id when not propagated.",
-  "type": "object",
-  "required": [
-    "specversion",
-    "id",
-    "source",
-    "type",
-    "resource",
-    "time",
-    "traceid",
-    "causation_id",
-    "correlation_id",
-    "tenant",
-    "producer",
-    "domain",
-    "channel",
-    "provider",
-    "accountid",
-    "idempotencykey",
-    "transport",
-    "data"
+  "$comment": "Informational schema — canonical source is packages/shared/src/interfaces.ts (EventEnvelope, EventTransport, EventData), packages/shared/src/webhook.interfaces.ts (WebhookIngressEnvelope, IWebhookIngressData) and packages/shared/src/channel.interfaces.ts (Channel, ChannelProvider, MessageKind, ChannelEnvelope). This file exists only to aid IDE tooling and documentation. Do not use as validation authority. Every property, enum and required list below mirrors those TypeScript declarations; it is pinned against typed samples by packages/shared/test/unit/envelope-schema.spec.ts.",
+  "title": "Yoizen messaging envelopes",
+  "description": "CloudEvents-inspired envelopes for NATS JetStream. Two shapes travel the bus: the stage-1 WebhookIngressEnvelope published by api-gateway before signature verification (no accountid), and the stage-2 EventEnvelope/ChannelEnvelope published by channel-service and every other internal producer (accountid resolved). Producers: api-gateway, channel-service, registry-service, agent-admin-service, ai-agent-gateway. IDs are crypto.randomUUID() (UUID v4). Type format: io.yoizen.<domain>.<channel>.<provider>.<kind>.v1 (DOCS/messaging/envelope.md:77).",
+  "oneOf": [
+    { "$ref": "#/definitions/EventEnvelope" },
+    { "$ref": "#/definitions/WebhookIngressEnvelope" }
   ],
-  "properties": {
-    "specversion": {
+  "definitions": {
+    "Channel": {
+      "$comment": "packages/shared/src/channel.interfaces.ts:3 — type Channel.",
       "type": "string",
-      "enum": ["1.0"],
-      "description": "CloudEvents spec version"
+      "enum": ["whatsapp", "instagram", "telegram", "http"],
+      "description": "Logical communication channel. The `http` channel is implemented (generic HTTP channel, authenticated with the x-http-channel-token header from WEBHOOK_FORWARDED_HEADERS)."
     },
-    "id": {
+    "ChannelProvider": {
+      "$comment": "packages/shared/src/channel.interfaces.ts:4 — type ChannelProvider.",
       "type": "string",
-      "description": "Unique event ID — crypto.randomUUID() (UUID v4)",
-      "example": "550e8400-e29b-41d4-a716-446655440000"
+      "enum": ["meta", "telegram", "http"],
+      "description": "Infrastructure provider backing a Channel."
     },
-    "source": {
+    "MessageKind": {
+      "$comment": "packages/shared/src/channel.interfaces.ts:5-11 — type MessageKind.",
       "type": "string",
-      "description": "URI of the service that produced the event",
-      "example": "//channel-service/accounts/69bea8cd868e860918359cc7"
+      "enum": ["received", "sent", "delivered", "read", "failed", "send"],
+      "description": "Channel message kind. Note `webhook_received` is NOT here — it is exclusive to WebhookIngressEnvelope."
     },
-    "type": {
-      "type": "string",
-      "description": "Reverse-domain event type. Messaging format: io.yoizen.messaging.<channel>.<provider>.<kind>.v1. Other producers use their own domain token.",
-      "example": "io.yoizen.messaging.whatsapp.meta.received.v1"
+    "EnvelopeCommon": {
+      "$comment": "Properties shared by every envelope shape (packages/shared/src/interfaces.ts:29-57). Carries NO `required` list and NO `accountid`/`data`: those differ per shape and are declared by each concrete definition below.",
+      "type": "object",
+      "properties": {
+        "specversion": {
+          "type": "string",
+          "enum": ["1.0"],
+          "description": "CloudEvents spec version. Declared as `string`; every producer sets \"1.0\"."
+        },
+        "id": {
+          "type": "string",
+          "description": "Unique event ID — crypto.randomUUID() (UUID v4)",
+          "examples": ["550e8400-e29b-41d4-a716-446655440000"]
+        },
+        "source": {
+          "type": "string",
+          "description": "URI of the service that produced the event",
+          "examples": [
+            "//channel-service/accounts/69bea8cd868e860918359cc7",
+            "//api-gateway/webhooks"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "description": "Reverse-domain event type: io.yoizen.<domain>.<channel>.<provider>.<kind>.v1 (DOCS/messaging/envelope.md:77). CAVEAT — the stage-1 WebhookIngressEnvelope does NOT follow that format today: api-gateway publishes the 5-token io.yoizen.messaging.webhook.received.v1 (services/api-gateway/src/modules/channels/webhook-ingress-publisher.service.ts:117), with no channel token.",
+          "examples": ["io.yoizen.messaging.whatsapp.meta.received.v1"]
+        },
+        "resource": {
+          "type": "string",
+          "description": "Resource this event applies to",
+          "examples": [
+            "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta"
+          ]
+        },
+        "time": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 creation timestamp"
+        },
+        "traceid": {
+          "type": "string",
+          "description": "OpenTelemetry trace ID (32 hex chars via activeOrRandomTraceId())"
+        },
+        "causation_id": {
+          "type": ["string", "null"],
+          "description": "ID of the event that caused this one. null for root events."
+        },
+        "correlation_id": {
+          "type": "string",
+          "description": "End-to-end business flow ID. deriveEnvelope copies it unchanged (envelope.utils.ts:197). Defaults are producer-specific: createChannelEnvelope and api-gateway self-correlate with the envelope's own id, while buildEventEnvelope falls back to a FRESH randomUUID() when `correlationId` is not passed (envelope.utils.ts:332) — pass it explicitly on that path."
+        },
+        "tenant": {
+          "type": "string",
+          "description": "Tenant identifier",
+          "examples": ["acme"]
+        },
+        "producer": {
+          "type": "string",
+          "description": "Service that published the event. Real producers: api-gateway, channel-service, registry-service, agent-admin-service, ai-agent-gateway.",
+          "examples": ["channel-service"]
+        },
+        "domain": {
+          "type": "string",
+          "description": "Business domain",
+          "examples": ["messaging", "automation", "platform"]
+        },
+        "channel": {
+          "type": "string",
+          "description": "Logical communication channel. EventEnvelope declares this as a free `string` (interfaces.ts:42) because internal producers use non-channel values such as \"platform\"; ChannelEnvelope narrows it to Channel (whatsapp | instagram | telegram | http, channel.interfaces.ts:3,23).",
+          "examples": ["whatsapp", "telegram", "instagram", "http", "platform"]
+        },
+        "provider": {
+          "type": "string",
+          "description": "Infrastructure provider. EventEnvelope declares a free `string` (interfaces.ts:43); ChannelEnvelope narrows it to ChannelProvider (channel.interfaces.ts:4,24).",
+          "examples": ["meta", "telegram", "http", "internal", "webhook"]
+        },
+        "idempotencykey": {
+          "type": "string",
+          "description": "Deterministic dedupe key: \"sha256:\" + hex(sha256(canonicalJson(payload))). Mapped to the NATS Nats-Msg-Id header on publish.",
+          "examples": ["sha256:a1b2c3d4"]
+        },
+        "transport": { "$ref": "#/definitions/EventTransport" },
+        "callback_url": {
+          "type": "string",
+          "description": "Optional pipeline extension: URL to POST completion results to (interfaces.ts:50)"
+        },
+        "adapter_id": {
+          "type": "string",
+          "description": "Optional pipeline extension: adapter ID for webhook delivery auth (interfaces.ts:52)"
+        },
+        "enrich_adapter": {
+          "$ref": "#/definitions/AdapterRef",
+          "description": "Optional pipeline extension: adapter ref for pre-handler enrichment (interfaces.ts:54)"
+        },
+        "forward_adapter": {
+          "$ref": "#/definitions/AdapterRef",
+          "description": "Optional pipeline extension: adapter ref for post-handler forwarding (interfaces.ts:56)"
+        }
+      }
     },
-    "resource": {
-      "type": "string",
-      "description": "Resource this event applies to",
-      "example": "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta"
+    "AdapterRef": {
+      "$comment": "packages/shared/src/interfaces.ts:54,56 — { adapterId: string; endpointId: string }.",
+      "type": "object",
+      "required": ["adapterId", "endpointId"],
+      "properties": {
+        "adapterId": { "type": "string" },
+        "endpointId": { "type": "string" }
+      }
     },
-    "time": {
-      "type": "string",
-      "format": "date-time",
-      "description": "ISO 8601 creation timestamp"
-    },
-    "traceid": {
-      "type": "string",
-      "description": "OpenTelemetry trace ID"
-    },
-    "causation_id": {
-      "type": ["string", "null"],
-      "description": "ID of the event that caused this one. null for root events."
-    },
-    "correlation_id": {
-      "type": "string",
-      "description": "End-to-end business flow ID. Propagated unchanged via deriveEnvelope. Defaults to the envelope's own id when not explicitly passed (buildEventEnvelope / createChannelEnvelope)."
-    },
-    "tenant": {
-      "type": "string",
-      "description": "Tenant identifier",
-      "example": "acme"
-    },
-    "producer": {
-      "type": "string",
-      "description": "Service that published the event. Real producers: api-gateway, channel-service, registry-service, agent-admin-service, ai-agent-gateway.",
-      "example": "channel-service"
-    },
-    "domain": {
-      "type": "string",
-      "description": "Business domain",
-      "example": "messaging"
-    },
-    "channel": {
-      "type": "string",
-      "description": "Logical communication channel",
-      "enum": ["whatsapp", "instagram", "telegram"],
-      "example": "whatsapp"
-    },
-    "provider": {
-      "type": "string",
-      "description": "Infrastructure provider",
-      "example": "meta"
-    },
-    "accountid": {
-      "type": "string",
-      "description": "Provider account ID within the tenant. Absent in WebhookIngressEnvelope (unknown before signature verification)."
-    },
-    "idempotencykey": {
-      "type": "string",
-      "description": "Deterministic dedupe key: sha256(canonicalJson(payload)). Mapped to NATS Nats-Msg-Id header.",
-      "example": "sha256:a1b2c3d4..."
-    },
-    "transport": {
+    "EventTransport": {
+      "$comment": "packages/shared/src/interfaces.ts:13-18. NOTE: `headers` is NOT declared on EventTransport, yet createChannelEnvelope attaches one de facto (services/channel-service/src/domain/envelope.factory.ts:106). It is therefore absent from `properties` below and tolerated only because this object does not set additionalProperties:false. Stage-1 headers DO have a declared home: IWebhookIngressData.headers.",
       "type": "object",
       "required": ["method", "protocol"],
-      "description": "How the event arrived. Canonical type: EventTransport in packages/shared/src/interfaces.ts.",
+      "description": "How the event arrived. Canonical type: EventTransport.",
       "properties": {
         "method": {
           "type": "string",
@@ -119,18 +153,26 @@
         },
         "agent_id": {
           "type": "string",
-          "description": "Agent ID (method=agent only)"
+          "description": "Agent ID (method=agent only). Optional."
         },
         "depth": {
           "type": "number",
-          "description": "Causal chain depth for anti-loop enforcement (see MAX_DEPTH_BY_CATEGORY in envelope.utils.ts)"
+          "description": "Causal chain depth for anti-loop enforcement. Optional. Enforced with a strict `>` against MAX_DEPTH_BY_CATEGORY (envelope.utils.ts:15-22)."
         }
       }
     },
-    "data": {
+    "EventData": {
+      "$comment": "packages/shared/src/interfaces.ts:20-27.",
       "type": "object",
-      "required": ["received_at", "payload_inline", "payload_ref", "payload_bytes", "payload_checksum", "payload"],
-      "description": "Payload metadata and content. Canonical type: EventData in packages/shared/src/interfaces.ts.",
+      "required": [
+        "received_at",
+        "payload_inline",
+        "payload_ref",
+        "payload_bytes",
+        "payload_checksum",
+        "payload"
+      ],
+      "description": "Payload metadata and content. Canonical type: EventData.",
       "properties": {
         "received_at": {
           "type": "string",
@@ -151,7 +193,7 @@
         },
         "payload_checksum": {
           "type": "string",
-          "description": "sha256 of canonicalJson(payload) bytes. Used by claim-check consumer for integrity verification."
+          "description": "sha256 of canonicalJson(payload) bytes. Used by the claim-check consumer for integrity verification."
         },
         "payload": {
           "type": ["object", "null"],
@@ -159,30 +201,123 @@
         }
       }
     },
-    "callback_url": {
-      "type": "string",
-      "description": "Optional pipeline extension: URL to POST completion results to"
-    },
-    "adapter_id": {
-      "type": "string",
-      "description": "Optional pipeline extension: adapter ID for webhook delivery auth"
-    },
-    "enrich_adapter": {
+    "IWebhookIngressData": {
+      "$comment": "packages/shared/src/webhook.interfaces.ts:15-28 — extends EventData, narrows `payload` to a non-null object and adds raw_body_b64 + headers (+ optional instance).",
       "type": "object",
-      "required": ["adapterId", "endpointId"],
-      "description": "Optional pipeline extension: adapter ref for pre-handler enrichment",
+      "required": [
+        "received_at",
+        "payload_inline",
+        "payload_ref",
+        "payload_bytes",
+        "payload_checksum",
+        "payload",
+        "raw_body_b64",
+        "headers"
+      ],
       "properties": {
-        "adapterId": { "type": "string" },
-        "endpointId": { "type": "string" }
+        "received_at": { "type": "string", "format": "date-time" },
+        "payload_inline": { "type": "boolean" },
+        "payload_ref": { "type": ["string", "null"] },
+        "payload_bytes": { "type": "number" },
+        "payload_checksum": { "type": "string" },
+        "payload": {
+          "type": "object",
+          "description": "Parsed provider body. Narrowed to non-null on this shape (webhook.interfaces.ts:16)."
+        },
+        "raw_body_b64": {
+          "type": "string",
+          "description": "base64 of the exact raw request body — required for HMAC signature verification in stage 2."
+        },
+        "headers": {
+          "type": "object",
+          "description": "Allowlisted request headers (WEBHOOK_FORWARDED_HEADERS, channel.constants.ts). Record<string, string>.",
+          "additionalProperties": { "type": "string" }
+        },
+        "instance": {
+          "type": "string",
+          "description": "Optional channel-account instance selector from the ingress URL path (account externalId). Absent on the legacy token-only path."
+        }
       }
     },
-    "forward_adapter": {
+    "EventEnvelope": {
+      "$comment": "packages/shared/src/interfaces.ts:29-57 — the stage-2 / internal-producer shape. `accountid` is required HERE only; the stage-1 shape below omits it by design.",
       "type": "object",
-      "required": ["adapterId", "endpointId"],
-      "description": "Optional pipeline extension: adapter ref for post-handler forwarding",
+      "allOf": [{ "$ref": "#/definitions/EnvelopeCommon" }],
+      "required": [
+        "specversion",
+        "id",
+        "source",
+        "type",
+        "resource",
+        "time",
+        "traceid",
+        "causation_id",
+        "correlation_id",
+        "tenant",
+        "producer",
+        "domain",
+        "channel",
+        "provider",
+        "accountid",
+        "idempotencykey",
+        "transport",
+        "data"
+      ],
       "properties": {
-        "adapterId": { "type": "string" },
-        "endpointId": { "type": "string" }
+        "accountid": {
+          "type": "string",
+          "description": "Logical account ID within the tenant (interfaces.ts:44). Required on this shape; see WebhookIngressEnvelope for the stage-1 shape that deliberately has no account yet.",
+          "examples": ["69bea8cd868e860918359cc7"]
+        },
+        "data": { "$ref": "#/definitions/EventData" }
+      }
+    },
+    "ChannelEnvelope": {
+      "$comment": "packages/shared/src/channel.interfaces.ts:22-26 — EventEnvelope narrowed with the channel taxonomy. Not part of the root oneOf because every ChannelEnvelope is already a valid EventEnvelope; reference it explicitly when you need the narrowed enums.",
+      "type": "object",
+      "allOf": [{ "$ref": "#/definitions/EventEnvelope" }],
+      "required": ["kind"],
+      "properties": {
+        "channel": { "$ref": "#/definitions/Channel" },
+        "provider": { "$ref": "#/definitions/ChannelProvider" },
+        "kind": { "$ref": "#/definitions/MessageKind" }
+      }
+    },
+    "WebhookIngressEnvelope": {
+      "$comment": "packages/shared/src/webhook.interfaces.ts:44-51 — Omit<EventEnvelope, \"accountid\"> plus pinned producer/domain/provider/kind and IWebhookIngressData. Stage 1 of the webhook bridge: published by api-gateway BEFORE signature verification, when the account is still unknown. Using the tenant id as an accountid placeholder corrupts per-account aggregations (billing), which is why the field is absent rather than empty.",
+      "type": "object",
+      "allOf": [{ "$ref": "#/definitions/EnvelopeCommon" }],
+      "required": [
+        "specversion",
+        "id",
+        "source",
+        "type",
+        "resource",
+        "time",
+        "traceid",
+        "causation_id",
+        "correlation_id",
+        "tenant",
+        "producer",
+        "domain",
+        "channel",
+        "provider",
+        "kind",
+        "idempotencykey",
+        "transport",
+        "data"
+      ],
+      "not": {
+        "required": ["accountid"],
+        "$comment": "Intentionally carries no accountid (webhook.interfaces.ts:34-43)."
+      },
+      "properties": {
+        "producer": { "type": "string", "const": "api-gateway" },
+        "domain": { "type": "string", "const": "messaging" },
+        "provider": { "type": "string", "const": "webhook" },
+        "channel": { "$ref": "#/definitions/Channel" },
+        "kind": { "type": "string", "const": "webhook_received" },
+        "data": { "$ref": "#/definitions/IWebhookIngressData" }
       }
     }
   }

@@ -311,7 +311,9 @@ grep -n "envelope-drift" cowork/INDEX.md
 - [x] T01 consumer JSDoc + constant pin
 - [x] T02 depth conforms to shared spec
 - [x] T03 durable-name registry fixed
-- [ ] T04 envelope-schema.json rewrite
+- [x] T04 envelope-schema.json rewrite (pin test lives in packages/shared
+  test/unit; follow-up flagged: full envelope-messages SKILL.md translation
+  to English incl. frontmatter description)
 - [ ] T05 stage-1 type token
 - [ ] T06 stage-2 headers → data.headers
 - [ ] T07 one INGRESS builder

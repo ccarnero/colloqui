@@ -46,7 +46,7 @@ Aplicar esta skill al crear, consumir o auditar mensajes del bus de eventos NATS
 | Necesito generar un ID de evento | `crypto.randomUUID()` — nunca ULID |
 | Necesito el nombre del producer (canal) | `CHANNEL_PRODUCER` = `"channel-service"` |
 | Necesito construir el campo `type` (canal) | `io.yoizen.messaging.${channel}.${provider}.${kind}.v1` — ver `envelope.factory.ts` línea 86 |
-| Necesito el allowlist de headers | `WEBHOOK_FORWARDED_HEADERS` en `channel.constants.ts` — 6 entradas |
+| I need the header allowlist | `WEBHOOK_FORWARDED_HEADERS` in `channel.constants.ts` — 7 entries |
 | Necesito construir un subject de canal | `buildChannelSubject(tenant, channel, provider, kind)` de `@yoizen/shared` |
 | Necesito construir un subject genérico | `buildSubject(params)` de `@yoizen/shared/envelope.utils` |
 | Necesito un envelope raíz (no canal) | `buildEventEnvelope(options)` de `@yoizen/shared/envelope.utils` |
@@ -109,12 +109,12 @@ Ejemplo de un envelope producido por `channel-service` (etapa 2 del ingress):
 | `time` | string | ISO 8601 UTC |
 | `traceid` | string | OpenTelemetry traceId (32 hex chars vía `activeOrRandomTraceId()`) |
 | `causation_id` | string \| null | ID del evento causante. `null` si es raíz |
-| `correlation_id` | string | ID del flujo; se propaga sin modificar; defaults al `id` del envelope raíz |
+| `correlation_id` | string | Business flow ID; propagated unchanged. `createChannelEnvelope` and `api-gateway` self-correlate with their own `id`; `buildEventEnvelope` mints a NEW `randomUUID()` when `correlationId` is not passed (`envelope.utils.ts:332`) |
 | `tenant` | string | Tenant ID |
 | `producer` | string | Servicio publicador. Reales: `api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway` |
 | `domain` | string | `messaging`, `automation`, `platform` |
-| `channel` | string | `whatsapp`, `telegram`, `instagram`, `platform` |
-| `provider` | string | `meta`, `telegram`, `internal`, `webhook` |
+| `channel` | string | `whatsapp`, `telegram`, `instagram`, `http`, `platform`. The `Channel` type (`channel.interfaces.ts:3`) is `whatsapp \| instagram \| telegram \| http`; `EventEnvelope.channel` is a free `string` (`interfaces.ts:42`) because internal producers use `platform` |
+| `provider` | string | `meta`, `telegram`, `http`, `internal`, `webhook`. `ChannelProvider` (`channel.interfaces.ts:4`) is `meta \| telegram \| http` |
 | `accountid` | string | ID de la cuenta lógica (omitido en `WebhookIngressEnvelope`) |
 | `idempotencykey` | string | `sha256:<hex>(canonicalJson(payload))` |
 | `transport` | EventTransport | Ver §6 |
@@ -136,8 +136,8 @@ evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>
 | `tenant` | Tenant ID | `acme`, `globex` |
 | `producer` | Servicio publicador | `channel-service`, `api-gateway`, `agent-admin-service` |
 | `domain` | Dominio de negocio | `messaging`, `automation`, `platform` |
-| `channel` | Canal | `whatsapp`, `instagram`, `telegram`, `platform` |
-| `provider` | Proveedor | `meta`, `telegram`, `internal`, `webhook` |
+| `channel` | Channel | `whatsapp`, `instagram`, `telegram`, `http`, `platform` |
+| `provider` | Provider | `meta`, `telegram`, `http`, `internal`, `webhook` |
 | `kind` | Tipo de evento | `webhook_received`, `received`, `sent`, `delivered`, `send`, `execution_requested` |
 | `v1` | Versión | `v1` |
 
@@ -253,13 +253,14 @@ Campo `data` (tipo `EventData` en `packages/shared/src/interfaces.ts`):
 
 ### 8. Headers Allowlist (Webhook)
 
-Constante `WEBHOOK_FORWARDED_HEADERS` en `packages/shared/src/channel.constants.ts` — 6 entradas:
+`WEBHOOK_FORWARDED_HEADERS` constant in `packages/shared/src/channel.constants.ts:55-63` — 7 entries:
 
 ```
 content-type
 x-hub-signature-256
 x-hub-signature
 x-telegram-bot-api-secret-token
+x-http-channel-token
 x-request-id
 user-agent
 ```
@@ -322,7 +323,7 @@ Códigos de error (`ClaimCheckErrorCode`): `ref_missing`, `ref_malformed`, `blob
 ### 11. Cadena Causal
 
 - **`causation_id`**: ID del evento que causó este. `null` si es raíz.
-- **`correlation_id`**: ID del flujo de negocio. Se propaga sin modificar. Defaults al `id` del envelope raíz.
+- **`correlation_id`**: business flow ID. Propagated unchanged (`deriveEnvelope`, `envelope.utils.ts:197`). The default is producer-specific: `createChannelEnvelope` and `api-gateway` use the root envelope's own `id`; `buildEventEnvelope` falls back to a fresh `randomUUID()` when `correlationId` is not passed (`envelope.utils.ts:332`).
 - **`transport.depth`**: profundidad incremental para anti-loop.
 
 `deriveEnvelope` (en `@yoizen/shared`) propaga automáticamente `causation_id`, `correlation_id`, `traceid` y `depth`. `buildEventEnvelope` crea envelopes raíz con `depth: 0`.
