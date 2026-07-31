@@ -101,7 +101,8 @@ grep -n "skills-cleanup" cowork/INDEX.md
 
 - [x] T01 multi-tenant skill aligned (legacy assets/ + references/ deleted —
   reviewer-mandated: they falsified the skill's own claims)
-- [ ] T02 yz-ui ghost half removed
+- [x] T02 yz-ui ghost half removed (plus drift fixes in the surviving
+  Angular half: rail sizes, token layers, route flags, KPI labels)
 - [ ] T03 gitignored decision + registry regen
 
 ## Out of scope (explicit)
