@@ -91,10 +91,10 @@ agent-admin's `PLATFORM_DOMAIN` (`automation`), contradicting its own subject.
 
 | Subject | Publisher | Constant |
 |---|---|---|
-| `.memory_proposed.v1` | `publishMemoryProposed` (`nats.provider.ts:371-394`) | `:65` |
-| `.memory_published.v1` | `publishMemoryApproved` (`nats.provider.ts:399-424`) | `:66` |
-| `.memory_rejected.v1` | `publishMemoryRejected` (`nats.provider.ts:425-448`) | `:67` |
-| `.memory_expired.v1` | `publishMemoryExpired` (`nats.provider.ts:450-472`) | `:68` |
+| `.memory_proposed.v1` | `publishMemoryProposed` (`nats.provider.ts:371-397`) | `AGENT_MEMORY_PROPOSED` (`packages/shared/src/constants.ts:124`) |
+| `.memory_published.v1` | `publishMemoryApproved` (`nats.provider.ts:399-423`) | `AGENT_MEMORY_PUBLISHED` (`packages/shared/src/constants.ts:125`) |
+| `.memory_rejected.v1` | `publishMemoryRejected` (`nats.provider.ts:425-448`) | `AGENT_MEMORY_REJECTED` (`packages/shared/src/constants.ts:126`) |
+| `.memory_expired.v1` | `publishMemoryExpired` (`nats.provider.ts:450-472`) | `AGENT_MEMORY_EXPIRED` (`packages/shared/src/constants.ts:127`) |
 
 `memory_proposed`'s envelope id is persisted into `metadata.proposedEventId` and
 becomes the causation anchor for the later `memory_published` /

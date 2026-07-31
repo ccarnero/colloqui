@@ -279,15 +279,14 @@ Event C  (workflow completion)
 
 `deriveEnvelope` and `buildEventEnvelope` throw `DepthExceededError` when `newDepth > maxDepth`.
 
-> **Status: partial implementation — inconsistent behavior**
+> **Status: enforcement unified; DLQ/metric still pending**
 >
-> - `deriveEnvelope` / `buildEventEnvelope` in `@yoizen/shared` use `MAX_DEPTH_BY_CATEGORY` correctly (strict `>` comparison).
-> - `DepthTrackerService` in `agent-ai-service` (`services/agent-ai-service/src/modules/depth-tracker/depth-tracker.service.ts`) uses its own hardcoded `DEFAULT_MAX_DEPTH = 5` and rejects when `depth >= DEFAULT_MAX_DEPTH` — a `>=` comparison, not `>`. This means it rejects one level earlier than the shared library.
-> - The documented original behavior (on depth exceeded: write to DLQ with reason `depth_exceeded` and emit metric `agent.depth_exceeded`) is **not implemented**. Errors are thrown as exceptions without automatic DLQ routing or metric emission.
+> - `deriveEnvelope` / `buildEventEnvelope` in `@yoizen/shared` use `MAX_DEPTH_BY_CATEGORY` with a strict `>` comparison.
+> - `DepthTrackerService` in `agent-ai-service` (`services/agent-ai-service/src/modules/depth-tracker/depth-tracker.service.ts`) does the same as of 2026-07-31 (envelope-drift T02, commit `e0c2e42f`). It previously used its own hardcoded `DEFAULT_MAX_DEPTH = 5` with `>=`, rejecting one level earlier than the shared library and ignoring the per-category limits. The category is a parameter defaulting to `internal_service`, mirroring the shared default. No other service enforces depth locally — every other producer goes through the shared helpers.
+> - Still **not implemented**: the documented original behavior on depth exceeded (write to DLQ with reason `depth_exceeded` and emit metric `agent.depth_exceeded`). The two thrower families differ, and neither does it: agent-ai's LOCAL `DepthExceededError extends PermanentError` (`depth-tracker.service.ts`) is routed to the DLQ by the consumer runner, but with no `depth_exceeded` reason header; the SHARED `DepthExceededError` thrown by `deriveEnvelope`/`buildEventEnvelope` extends plain `Error` (`packages/shared/src/envelope.utils.ts:226`), so it is NAK'd and retried like any other failure rather than dead-lettered. No targeted metric exists on either path.
 >
 > **Objective design (pending):**
-> - Unify enforcement using `MAX_DEPTH_BY_CATEGORY` across all services.
-> - On depth exceeded: publish to `DLQ-<tenant>` with `X-Dlq-Reason: depth_exceeded` and emit the corresponding metric, instead of throwing an exception that may lose the message.
+> - On depth exceeded: publish to `DLQ-<tenant>` with `X-Dlq-Reason: depth_exceeded` and emit the corresponding metric.
 
 ---
 
@@ -445,6 +444,13 @@ Subject: `evt.acme.channel-service.messaging.telegram.telegram.received.v1`
 > `IChannelEventData` (`packages/shared/src/channel.interfaces.ts`). Envelopes
 > published before that date carry no `headers` key at all — the option had no
 > caller, so `transport.headers` never reached the wire.
+>
+> The `headers` block above is what the factory emits WHEN a caller passes
+> `webhookHeaders`. Today none does: the ingress path
+> (`services/channel-service/src/modules/ingress/ingress.service.ts:155`) does
+> not forward the stage-1 allowlist, which it consumes only for signature
+> verification, so real stage-2 envelopes currently carry no `headers` key.
+> Forwarding it is a follow-up, not a regression.
 
 ### 10.3 Internal agent (agent-admin-service)
 

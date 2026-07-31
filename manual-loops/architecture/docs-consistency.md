@@ -447,6 +447,44 @@ the file part only.
    two helpers claim to build the SAME name. Adjacent to finding 8. Docs
    record the divergence; the code-side reconciliation is open.
 
+**T07 findings — code-fix log (appended 2026-07-31, envelope-drift loop):**
+The findings above are left verbatim; this log records which were closed in
+code and where. Loop SPEC: `manual-loops/messaging/envelope-drift.md`.
+
+1. FIXED — envelope-drift T06 (`ab36a970`). The allowlist moved to
+   `data.headers`, typed via the new `IChannelEventData`
+   (`packages/shared/src/channel.interfaces.ts`); `transport` is a plain
+   literal again, so the excess-property check is active (verified: a probe
+   key now fails `tsc` with TS2353). Wire impact nil — the `webhookHeaders`
+   option had no caller, so `transport.headers` never reached the wire.
+2. FIXED — envelope-drift T05 (`519594b8`). Stage 1 now builds
+   `io.yoizen.messaging.<channel>.webhook.webhook_received.v1` via
+   `services/api-gateway/src/modules/channels/webhook-ingress-type.ts`.
+   Historical envelopes keep the old token and stay classifiable.
+3. FIXED — envelope-drift T02 (`e0c2e42f`). `DepthTrackerService` enforces a
+   strict `>` against the shared `MAX_DEPTH_BY_CATEGORY`, category
+   defaulting to `internal_service`; the local `DEFAULT_MAX_DEPTH` is gone.
+4. FIXED — envelope-drift T04 (`910f55fc`). All four defects corrected and
+   the schema is now pinned against typed fixtures by
+   `packages/shared/test/unit/envelope-schema.spec.ts`.
+5. FIXED — envelope-drift T03 (`5db90ac5`). The registry names `channel-audit`
+   in all three rows; the `consumed-by.ts` comment and the trace README
+   followed. The other two registry durables were swept and were correct.
+6. PARTIALLY FIXED — envelope-drift T08 (`1f6fc4cd`). The constants moved to
+   `packages/shared/src/constants.ts:119-127` and the envelope `domain` now
+   reads `agent-memory`, matching its subject. STILL OPEN: the same envelope
+   sets `producer: PLATFORM_PRODUCER` (`agent-admin-service`) while its
+   subject's producer token is `agent-memory-service` — the identical defect
+   one field over, found during T08 and deliberately left for its own
+   consumer sweep.
+7. FIXED — envelope-drift T01 (`971ad0c3`). The `@default` tags match the
+   constants, and both are pinned by a constant test.
+8. OPEN — deferred by envelope-drift decision 4 (tier wiring is a design
+   change, not drift). Stands as recorded.
+9. FIXED — envelope-drift T07 (`9b6dd4e3`). `buildIngressStreamName` deleted;
+   `getTenantStreamName` is the only ingress-name builder. It had no callers,
+   so nothing was binding `INGRESS-acme`.
+
 **T06 follow-ups (recorded 2026-07-30):** seven dead NON-`.md` targets in
 `DOCS/runbooks/archive/{temporal-ha-migration,temporal-visibility-split}.md`
 (infrastructure paths that died with the dev-mode collapse `be62ae89`).

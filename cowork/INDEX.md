@@ -1485,6 +1485,59 @@ the `fillMatInput`/`mat-form-field` locator problem
 `E2E_TENANT` env vars (`:16-19`), and the re-runnable idempotency requirement (`:12-13`).
 Per the SPEC, writing NEW skills is a separate decision.
 
+## Change: envelope contract drift closed in code (envelope-drift)
+
+Manual-loop change that took the nine numbered T07 findings the docs-consistency loop
+RECORDED (it fixed docs only) and closed them in CODE, one commit per task, each with a
+regression test that fails on the old behaviour. Eight of the nine are now fixed; finding
+8 (tier wiring) stands deferred by decision 4 as a design change rather than drift. Full
+queue, gates, decisions and the per-finding code-fix log:
+`manual-loops/messaging/envelope-drift.md` and the appended log in
+`manual-loops/architecture/docs-consistency.md` (dated 2026-07-31).
+
+What changed, by task: T01 consumer JSDoc now matches its constants (`60_000` /
+`[60s, 120s, 300s, 600s]`) with a constant pin; T02 `DepthTrackerService` enforces strict
+`>` against the shared `MAX_DEPTH_BY_CATEGORY` instead of a local `>= 5`; T03 the console's
+hand-maintained durable registry names the real `channel-audit`; T04
+`envelope-schema.json` rewritten from the real interfaces (adds `http`, models
+`WebhookIngressEnvelope`, stops requiring `accountid` on stage 1) and pinned against typed
+fixtures by a hand-rolled validator, since the repo has no JSON-schema validator; T05
+stage-1 `type` obeys the prescriptive per-channel format; T06 the webhook allowlist moved
+from an untyped `transport` spread to a typed `data.headers`; T07 `buildIngressStreamName`
+deleted so one builder names INGRESS streams; T08 agent-memory subject constants moved to
+`packages/shared` and its envelope `domain` aligned with its subject; T09 this docs sweep.
+
+Findings that only surfaced during implementation:
+- **`transport.headers` never reached the wire.** The T07 finding described a live
+  untyped field, but the `webhookHeaders` option had NO caller — `ingress.service.ts:155`
+  never passed it, and channel-service consumes the stage-1 allowlist only for signature
+  verification. The fix closed a type hole (a probe key on `transport` now fails `tsc`
+  with TS2353) with zero wire impact. The stage-2 example in `envelope.md` §10.2 is
+  therefore aspirational until a caller forwards the allowlist.
+- **The tracking-ingester classifies by SUBJECT only.** T05's brief assumed
+  `classify.ts` matched the stage-1 `type` literal and asked for extended rules plus new
+  golden rows and three K9b pin updates. It does not: `classify(subject, options)` takes a
+  subject and every call site passes `msg.subject`. No rule, golden row or pin needed
+  changing; the invariant is now pinned instead by
+  `services/tracking-ingester-service/test/stage1-type-migration.spec.ts`, which proves
+  old- and new-type envelopes on one subject produce identical rows.
+- **NEW, still open: agent-memory `producer` mismatch.** The same envelope T08 fixed sets
+  `producer: PLATFORM_PRODUCER` (`agent-admin-service`) while its subject's producer token
+  is `agent-memory-service` — the identical defect one field over. Left for its own
+  consumer sweep rather than folded in silently.
+
+Two cross-cutting mechanics worth reusing: accept-gate greps like
+`rg "webhook.received.v1"` treat `.` as a wildcard and match the CORRECT token too, so
+regression tests that must assert a removed literal's absence assemble it
+(`["build","Ingress","Stream","Name"].join("")`) rather than spelling it; and the Biome
+format-on-edit hook rewrites whole files, so edits to formatter-dirty files were applied
+by script to keep diffs surgical and doc-cited line anchors stable.
+
+Commits: `971ad0c3` (T01), `e0c2e42f` (T02), `5db90ac5` (T03), `910f55fc` (T04),
+`519594b8` (T05), `ab36a970` (T06), `9b6dd4e3` (T07), `1f6fc4cd` (T08).
+
+- **Engram topic**: `messaging/envelope-drift`.
+
 ## Overall status
 
 - **Full traceability shipped and committed** (`6292520` + earlier): root ingress fix, persistence in `audit` + `channel_events` + `gateway_audit_events`, endpoints `GET /audit/events/chain/:correlationId` and `GET /audit/channel-events/chain/:correlationId`.

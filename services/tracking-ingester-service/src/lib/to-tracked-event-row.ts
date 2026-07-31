@@ -12,10 +12,12 @@
 //
 // Authority for each column (SPEC.md T04 + TAXONOMY.md §4):
 //   - Classification columns are ALWAYS derived from the subject, never the
-//     envelope. TAXONOMY.md §4 note + DRIFT#9: `envelope.domain` can lie (the
-//     agent-memory envelope reports `automation` while the subject domain token
-//     is `agent-memory`), so the subject tokens are authoritative for
-//     classification. `classify` already reads the subject exclusively.
+//     envelope. TAXONOMY.md §4 note + DRIFT#9: `envelope.domain` can lie —
+//     agent-memory envelopes published before 2026-07-31 report `automation`
+//     while their subject domain token is `agent-memory` (envelope-drift T08
+//     aligned the body; those rows are still in the store). The subject tokens
+//     are authoritative for classification regardless, and `classify` already
+//     reads the subject exclusively.
 //   - Descriptive dimension columns `tenant`/`producer`/`domain` prefer the
 //     envelope field (guaranteed present by `isCompliantEnvelope`), matching the
 //     SPEC.md T04 rule "prefer envelope fields where the envelope carries them".

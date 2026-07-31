@@ -332,7 +332,10 @@ grep -n "envelope-drift" cowork/INDEX.md
   NEW FINDING flagged: envelope `producer: "agent-admin-service"` vs subject
   token `agent-memory-service` — same class one field over, needs its own
   sweep + decision round)
-- [ ] T09 docs + index
+- [x] T09 docs + index (open items recorded in three places: agent-memory
+  `producer` mismatch — new finding, own decision round; stage-1 allowlist
+  forwarding into stage-2 `data.headers` — follow-up; finding 8 tier wiring
+  — deferred by decision 4)
 
 ## Out of scope (explicit)
 

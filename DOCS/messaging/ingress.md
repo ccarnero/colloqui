@@ -191,12 +191,11 @@ The default category when not specified is `internal_service` (MAX_DEPTH = 5).
 
 ### 4.3 As-built implementation in agent-ai-service
 
-`DepthTrackerService` (`services/agent-ai-service/src/modules/depth-tracker/depth-tracker.service.ts`) has its own `DEFAULT_MAX_DEPTH = 5` and rejects when `currentDepth >= maxDepth` (greater-or-equal, not strictly greater). It throws `DepthExceededError extends PermanentError`, which the consumer runner routes to the DLQ.
+`DepthTrackerService` (`services/agent-ai-service/src/modules/depth-tracker/depth-tracker.service.ts`) enforces the shared contract: a strict `>` against `MAX_DEPTH_BY_CATEGORY`, with the producer category as a parameter defaulting to `internal_service`. It throws `DepthExceededError extends PermanentError`, which the consumer runner routes to the DLQ.
 
-> **Status: pending — not fully implemented**
+> **Status: enforcement conformant since 2026-07-31; metric still pending**
 >
-> - Per-category dispatch (different MAX_DEPTH depending on whether the agent is internal, platform, or third-party) is **not implemented** in `DepthTrackerService`. The service uses only the flat `DEFAULT_MAX_DEPTH = 5`.
-> - The comparison operator is `>=` not `>` — `DepthTrackerService` rejects one level earlier than the shared library for the same max value.
+> - Per-category limits and the strict `>` comparison landed with envelope-drift T02 (commit `e0c2e42f`). Until then the service used a flat local `DEFAULT_MAX_DEPTH = 5` with `>=`, rejecting one level earlier than the shared library and ignoring `platform_agent: 3` / `thirdparty_agent: 2`.
 > - A dedicated `depth_exceeded` metric does not exist. The DLQ routing works via the `PermanentError` mechanism, but without a targeted metric.
 
 ### 4.4 Full flow diagram (as-built)
@@ -310,8 +309,16 @@ callPlatformApi
 | Authentication | HMAC webhook in channel-service | Service token | API key + tenant auth | OAuth2 / callback signature |
 | Endpoint | `POST /webhooks/:channel/:tenantId` | `POST /api/agents/publish` | `POST /api/agents/publish` | webhook callback or poll |
 | Implemented | ✅ | ❌ | ❌ | ❌ |
-| MAX_DEPTH | 0 (root, depth=0) | 5 (objective) | 2 (objective) | 3 (objective) |
-| Depth enforcement | — | `DepthTrackerService` (flat 5, `>=`) | — | — |
+| MAX_DEPTH | 0 (`root`) | 5 (`internal_agent`) | 2 (`thirdparty_agent`) | 3 (`platform_agent`) |
+| Depth enforcement | — | `DepthTrackerService` (strict `>`, `MAX_DEPTH_BY_CATEGORY`) | — | — |
+
+The MAX_DEPTH row names the `ProducerCategory` whose limit applies; the values are
+the enforced `MAX_DEPTH_BY_CATEGORY` constants (`packages/shared/src/envelope.utils.ts:15-22`),
+not aspirations — what stays pending in those columns is the ingress PATH, not the
+ceiling. Since 2026-07-31 (envelope-drift T02) `DepthTrackerService`
+(`services/agent-ai-service/src/modules/depth-tracker/depth-tracker.service.ts:68-78`)
+enforces every category through its `category` parameter, so the single populated
+cell is about which path exists today, not about which categories it can enforce.
 
 ---
 

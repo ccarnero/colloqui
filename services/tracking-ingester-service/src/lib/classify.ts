@@ -250,7 +250,10 @@ export function classify(
     }
 
     // Rule 9 — agent-memory lifecycle. Classified by SUBJECT (domain token
-    // `agent-memory`), not envelope.domain (which is `automation`). TAXONOMY.md §4 rule 9.
+    // `agent-memory`), never envelope.domain. TAXONOMY.md §4 rule 9.
+    // Pre-2026-07-31 envelopes reported `domain: "automation"` and contradicted
+    // this subject; envelope-drift T08 aligned the body, but the subject stays
+    // authoritative either way, so old and new rows classify identically.
     if (
       producer === "agent-memory-service" &&
       domain === "agent-memory" &&

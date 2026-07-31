@@ -23,7 +23,7 @@ import { NatsPublisher } from "../../src/providers/nats.provider";
  * Nothing classified on the envelope field — `tracking-ingester`'s rule 9
  * reads the SUBJECT and says so explicitly (`classify.ts:252-253`) — but the
  * ingester DOES persist `envelope.domain` verbatim into the descriptive
- * `domain` column (`to-tracked-event-row.ts:400`), so the lie was landing in
+ * `domain` column (`to-tracked-event-row.ts:402`), so the lie was landing in
  * the store. Rows written before this change keep `automation`.
  *
  * These tests derive the expectation from the subject the publisher actually
@@ -104,7 +104,7 @@ describe("NatsPublisher subject/envelope agreement", () => {
     ],
     [
       "memory_expired",
-      () => publisher.publishMemoryExpired("tenant-1", createMemory()),
+      () => publisher.publishMemoryExpired("tenant-1", createMemory().id),
     ],
   ];
 
