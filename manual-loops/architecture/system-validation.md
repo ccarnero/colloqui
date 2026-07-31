@@ -128,11 +128,20 @@ grep -n "T03 findings" manual-loops/architecture/system-validation.md
 
 ## Progress
 
-- [ ] PENDING REPAIR (recorded 2026-07-29): PRECONDITION
+- [x] PENDING REPAIR (recorded 2026-07-29, CLOSED 2026-07-31): PRECONDITION
   `./scripts/validate-dev-mode.sh --with-e2e` failed at stage 1/7 preflight —
   "deps PVC missing — run ./dev-mode.sh deps first". Iteration dev-mode use
   skipped per Gates rule; relying on G3b. See
   `manual-loops/architecture/dev-mode-validator-fix.md`.
+  RESOLUTION: the failure was a sandbox artifact, not a missing PVC — the
+  orchestrator's sandboxed shell could not reach the cluster API
+  (127.0.0.1:26443, "operation not permitted"), so the preflight's PVC probe
+  came back empty. The PVC existed all along (`./dev-mode.sh deps` on
+  2026-07-30: "persistentvolumeclaim/dev-mode-deps unchanged … node_modules
+  in PVC are up to date"). Validator run outside the sandbox is fully green:
+  2026-07-30 (twice, as the long-running-agent-executions loop PRECONDITION)
+  and 2026-07-31 (7/7 stages PASS, this closeout). No repair was needed;
+  dev-mode iteration is safe to use.
 - [x] T01 shared caps + DTO enforcement
 - [x] T02 cross-service invariant test
 - [x] T03 docs + validation report
