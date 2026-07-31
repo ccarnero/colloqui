@@ -327,7 +327,11 @@ grep -n "envelope-drift" cowork/INDEX.md
   typechecked post-removal; pin scans 4 construction forms. Follow-up
   flagged: lowercase INGRESS-acme examples in packages/database doc
   comments)
-- [ ] T08 agent-memory constants + domain
+- [x] T08 agent-memory constants + domain (sweep clean — no reader branches
+  on the old value; descriptive `domain` column mixed by design, documented.
+  NEW FINDING flagged: envelope `producer: "agent-admin-service"` vs subject
+  token `agent-memory-service` — same class one field over, needs its own
+  sweep + decision round)
 - [ ] T09 docs + index
 
 ## Out of scope (explicit)

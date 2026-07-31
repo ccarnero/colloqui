@@ -80,8 +80,14 @@ Both controllers are guarded by `TenantGuard`, and the tenant comes from the
 
 Subjects are built from `AGENT_MEMORY_SUBJECT_PREFIX =
 "evt.{tenant}.agent-memory-service.agent-memory.platform.internal"`
-(`src/providers/nats.provider.ts:62-63`), with `{tenant}` substituted by
-`buildPlatformSubject` (`nats.provider.ts:322`).
+(`packages/shared/src/constants.ts:119-127` — moved out of this service on
+2026-07-31 by envelope-drift T08, so every internal producer's subject
+constants now live together), with `{tenant}` substituted by
+`buildPlatformSubject` (`src/providers/nats.provider.ts:322`).
+
+The envelope body reports `domain: AGENT_MEMORY_DOMAIN` (`agent-memory`) —
+the same value as the subject's domain token. It previously carried
+agent-admin's `PLATFORM_DOMAIN` (`automation`), contradicting its own subject.
 
 | Subject | Publisher | Constant |
 |---|---|---|

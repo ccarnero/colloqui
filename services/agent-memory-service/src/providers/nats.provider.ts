@@ -15,6 +15,11 @@ import {
 } from "@yoizen/observability";
 import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
 import {
+  AGENT_MEMORY_DOMAIN,
+  AGENT_MEMORY_EXPIRED,
+  AGENT_MEMORY_PROPOSED,
+  AGENT_MEMORY_PUBLISHED,
+  AGENT_MEMORY_REJECTED,
   buildPlatformSubject,
   buildTenantStreamConfig,
   checkJetStreamCapacity,
@@ -22,7 +27,6 @@ import {
   MAX_DEPTH_BY_CATEGORY,
   PLATFORM_ACCOUNT_ID,
   PLATFORM_CHANNEL,
-  PLATFORM_DOMAIN,
   PLATFORM_PRODUCER,
   PLATFORM_PROVIDER,
   type TenantTier,
@@ -58,14 +62,6 @@ const EVENT_TYPES = {
   MEMORY_REJECTED: "io.yoizen.agent-memory.memory.rejected.v1",
   MEMORY_EXPIRED: "io.yoizen.agent-memory.memory.expired.v1",
 } as const;
-
-export const AGENT_MEMORY_SUBJECT_PREFIX =
-  "evt.{tenant}.agent-memory-service.agent-memory.platform.internal";
-
-export const AGENT_MEMORY_PROPOSED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_proposed.v1`;
-export const AGENT_MEMORY_PUBLISHED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_published.v1`;
-export const AGENT_MEMORY_REJECTED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_rejected.v1`;
-export const AGENT_MEMORY_EXPIRED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_expired.v1`;
 
 interface IBuildEventOptions {
   eventType: string;
@@ -211,7 +207,11 @@ function buildEventEnvelope(
     correlation_id: options.correlationId,
     tenant: tenantId,
     producer: PLATFORM_PRODUCER,
-    domain: PLATFORM_DOMAIN,
+    // Subject and body must answer "which domain?" identically: the subject
+    // token is `agent-memory` (AGENT_MEMORY_SUBJECT_PREFIX), so the envelope
+    // says the same. It used to report agent-admin's PLATFORM_DOMAIN
+    // ("automation") and contradict its own subject (envelope-drift T08).
+    domain: AGENT_MEMORY_DOMAIN,
     channel: PLATFORM_CHANNEL,
     provider: PLATFORM_PROVIDER,
     accountid: PLATFORM_ACCOUNT_ID,

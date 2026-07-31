@@ -105,6 +105,27 @@ export const PLATFORM_AGENT_UNPUBLISHED = `${PLATFORM_SUBJECT_PREFIX}.agent_unpu
 export const PLATFORM_EVENT = `${PLATFORM_SUBJECT_PREFIX}.event.v1`;
 export const PLATFORM_DOCUMENT_INGESTION = `${PLATFORM_SUBJECT_PREFIX}.document_ingestion.v1`;
 export const PLATFORM_SKB_FILE_INGESTION = `${PLATFORM_SUBJECT_PREFIX}.skb_file_ingestion.v1`;
+/**
+ * agent-memory-service subject family.
+ *
+ * Unlike every other internal producer, this family's domain token is
+ * `agent-memory`, NOT `automation` — the subject grammar (AGENTS.md:64-65) is
+ * the spec, and `tracking-ingester` classifies these events by matching these
+ * exact tokens (rule 9, TAXONOMY.md §4). The envelope's `domain` field is built
+ * from `AGENT_MEMORY_DOMAIN` too, so body and subject cannot disagree; before
+ * envelope-drift T08 the envelope borrowed agent-admin's `PLATFORM_DOMAIN`
+ * (`automation`) and contradicted its own subject.
+ */
+export const AGENT_MEMORY_PRODUCER = "agent-memory-service";
+export const AGENT_MEMORY_DOMAIN = "agent-memory";
+
+export const AGENT_MEMORY_SUBJECT_PREFIX = `evt.{tenant}.${AGENT_MEMORY_PRODUCER}.${AGENT_MEMORY_DOMAIN}.${PLATFORM_CHANNEL}.${PLATFORM_PROVIDER}`;
+
+export const AGENT_MEMORY_PROPOSED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_proposed.v1`;
+export const AGENT_MEMORY_PUBLISHED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_published.v1`;
+export const AGENT_MEMORY_REJECTED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_rejected.v1`;
+export const AGENT_MEMORY_EXPIRED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_expired.v1`;
+
 export const AI_AGENT_GATEWAY_PRODUCER = "ai-agent-gateway";
 export const AI_AGENT_GATEWAY_SUBJECT_PREFIX =
   "evt.{tenant}.ai-agent-gateway.automation.platform.internal";
