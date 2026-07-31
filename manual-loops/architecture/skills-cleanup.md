@@ -99,7 +99,8 @@ grep -n "skills-cleanup" cowork/INDEX.md
 
 ## Progress
 
-- [ ] T01 multi-tenant skill aligned
+- [x] T01 multi-tenant skill aligned (legacy assets/ + references/ deleted —
+  reviewer-mandated: they falsified the skill's own claims)
 - [ ] T02 yz-ui ghost half removed
 - [ ] T03 gitignored decision + registry regen
 
