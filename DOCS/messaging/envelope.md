@@ -181,14 +181,6 @@ All other headers must be discarded.
 `agent_id?` and `depth?` — it has no header field at all. A consumer must read
 `data.headers`.
 
-> Known code divergence (T07 finding 1, 2026-07-30): the stage-2 factory
-> `createChannelEnvelope` also writes the headers into the `transport` object
-> (`services/channel-service/src/domain/envelope.factory.ts:102-107`). That
-> property is not part of `EventTransport`; it only compiles because it is
-> introduced through a conditional spread, which bypasses TypeScript's
-> excess-property check. The §10.2 example below reflects that current
-> behaviour. Recorded for the envelope-drift loop; not corrected here.
-
 ### 4.2 Pending transport fields
 
 > **Status: pending — not implemented**
@@ -437,7 +429,9 @@ Note: `accountid` is absent — `WebhookIngressEnvelope` is typed as `Omit<Event
   "transport": {
     "method": "webhook",
     "protocol": "https",
-    "depth": 1,
+    "depth": 1
+  },
+  "data": {
     "headers": { "x-telegram-bot-api-secret-token": "..." }
   }
 }
@@ -445,9 +439,12 @@ Note: `accountid` is absent — `WebhookIngressEnvelope` is typed as `Omit<Event
 
 Subject: `evt.acme.channel-service.messaging.telegram.telegram.received.v1`
 
-> The `headers` key inside `transport` above mirrors what
-> `createChannelEnvelope` emits today; per §4.1 it is not a declared
-> `EventTransport` field. See T07 finding 1.
+> The allowlist sits under `data.headers`, the same home it has on stage 1
+> (§4.1). `createChannelEnvelope` emits it there as of 2026-07-31
+> (envelope-drift T06); the stage-2 `data` block is typed as
+> `IChannelEventData` (`packages/shared/src/channel.interfaces.ts`). Envelopes
+> published before that date carry no `headers` key at all — the option had no
+> caller, so `transport.headers` never reached the wire.
 
 ### 10.3 Internal agent (agent-admin-service)
 

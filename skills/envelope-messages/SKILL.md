@@ -236,7 +236,7 @@ Campo `transport` (tipo `EventTransport` en `packages/shared/src/interfaces.ts`)
 | `agent_id` | string? | ID del agente (solo para `method: "agent"`) |
 | `depth` | number? | Profundidad causal para anti-loop (ver §10) |
 
-El campo `transport.headers` es usado en práctica para el allowlist de webhook headers (ver §8) pero no está declarado en `EventTransport` — es una extensión de facto del factory.
+The webhook header allowlist (§8) lives under `data.headers`, NOT under `transport` — `IWebhookIngressData.headers` on stage 1 (`webhook.interfaces.ts:18`) and `IChannelEventData.headers` on stage 2 (`channel.interfaces.ts`). `EventTransport` declares exactly the four fields above. Until 2026-07-31 `createChannelEnvelope` spread an undeclared `headers` key into `transport` (envelope-drift T06); it had no caller, so no published envelope carries it.
 
 ### 7. Data Payload
 

@@ -318,7 +318,11 @@ grep -n "envelope-drift" cowork/INDEX.md
   SUBJECT-only — no rule/golden change needed; type-agnosticism pinned by
   stage1-type-migration.spec.ts. Follow-ups: hoist WEBHOOK_INGRESS_PROVIDER
   to channel.constants.ts; move buildWebhookIngressType to shared)
-- [ ] T06 stage-2 headers → data.headers
+- [x] T06 stage-2 headers → data.headers (finding: `webhookHeaders` had NO
+  caller — transport.headers never reached the wire; change is wire-neutral,
+  closes the type hole. T09 note: add the "ingress caller does not yet
+  forward the stage-1 allowlist" clause to envelope.md §10.2 to prevent the
+  next implicature drift)
 - [ ] T07 one INGRESS builder
 - [ ] T08 agent-memory constants + domain
 - [ ] T09 docs + index

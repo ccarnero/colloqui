@@ -419,17 +419,48 @@ describe("envelope-schema.json (skills/envelope-messages asset)", () => {
     expect(validate(schema, STAGE_2_CLAIM_CHECK_SAMPLE)).toEqual([]);
   });
 
-  it("tolerates the de-facto transport.headers that envelope.factory.ts attaches", () => {
-    // Not declared on EventTransport (interfaces.ts:13-18); the schema documents
-    // this in a $comment and must not reject it.
-    const withTransportHeaders = {
+  it("accepts the stage-2 webhook allowlist at its declared home, data.headers", () => {
+    // envelope-drift T06: createChannelEnvelope writes the allowlist to
+    // `data.headers` (typed IChannelEventData), the same home stage 1 uses.
+    const withDataHeaders: ChannelEnvelope = {
       ...STAGE_2_SAMPLE,
-      transport: {
-        ...STAGE_2_SAMPLE.transport,
-        headers: { "content-type": "application/json" },
+      data: {
+        ...STAGE_2_SAMPLE.data,
+        headers: { "x-telegram-bot-api-secret-token": "tok" },
       },
     };
-    expect(validate(schema, withTransportHeaders)).toEqual([]);
+    expect(validate(schema, withDataHeaders)).toEqual([]);
+    expect(validate(definition("ChannelEnvelope"), withDataHeaders)).toEqual([]);
+    expect(validate(definition("IChannelEventData"), withDataHeaders.data)).toEqual(
+      [],
+    );
+  });
+
+  it("rejects non-string values inside data.headers", () => {
+    const bogus = {
+      ...STAGE_2_SAMPLE,
+      data: { ...STAGE_2_SAMPLE.data, headers: { "content-type": 42 } },
+    };
+    expect(
+      validate(definition("IChannelEventData"), bogus.data).length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("models transport with exactly its four declared fields", () => {
+    // The old schema $comment documented a de-facto `transport.headers` that
+    // envelope.factory.ts spread in untyped. T06 removed it, so `headers` must
+    // NOT be a declared transport property here either.
+    const transportProps = Object.keys(
+      definition("EventTransport")["properties"] as Record<string, ISchema>,
+    );
+    expect(transportProps.sort()).toEqual(
+      ["agent_id", "depth", "method", "protocol"].sort(),
+    );
+    expect(transportProps).not.toContain("headers");
+
+    const comment = definition("EventTransport")["$comment"] as string;
+    expect(comment).toContain("exactly four declared fields");
+    expect(comment).toContain("IChannelEventData.headers");
   });
 
   // ── negative cases: the pin has teeth ───────────────────────────────────

@@ -28,7 +28,16 @@ interface ICreateChannelEnvelopeOptions {
   causationId?: string | null;
   /** Causal depth propagated from the incoming event. Defaults to 0. */
   depth?: number;
-  /** Webhook headers allowlist (§4.1). */
+  /**
+   * Webhook header allowlist (`DOCS/messaging/envelope.md` §4.1), forwarded
+   * from the stage-1 envelope. Lands on `data.headers` — the same home it has
+   * on stage 1 (`IWebhookIngressData.headers`) — and is passed through
+   * verbatim: api-gateway already applied `WEBHOOK_FORWARDED_HEADERS` and
+   * channel-service lowercased the keys, so this factory adds no filtering.
+   *
+   * Before envelope-drift T06 it was spread into `transport` instead, where
+   * `EventTransport` never declared it (the spread hid that from tsc).
+   */
   webhookHeaders?: Record<string, string>;
 }
 
@@ -103,7 +112,6 @@ export function createChannelEnvelope(
       method: "webhook",
       protocol: "https",
       depth,
-      ...(webhookHeaders && { headers: webhookHeaders }),
     },
     data: {
       received_at: now,
@@ -125,6 +133,7 @@ export function createChannelEnvelope(
         }),
         accountId,
       },
+      ...(webhookHeaders && { headers: webhookHeaders }),
     },
     kind,
   };

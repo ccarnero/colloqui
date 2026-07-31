@@ -101,6 +101,7 @@ export type {
   ChannelAccount,
   ChannelEnvelope,
   ChannelProvider,
+  IChannelEventData,
   IChannelProvider,
   InboundMessage,
   MessageKind,

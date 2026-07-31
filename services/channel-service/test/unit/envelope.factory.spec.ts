@@ -54,4 +54,97 @@ describe("createChannelEnvelope", () => {
     const b = createChannelEnvelope(base);
     expect(a.idempotencykey).toBe(b.idempotencykey);
   });
+
+  // =========================================================================
+  // envelope-drift T06 (SPEC decision 1, human-approved CLEAN cutover).
+  //
+  // The webhook header allowlist used to enter the envelope through an
+  // UNTYPED conditional spread into `transport`:
+  //     transport: { method, protocol, depth, ...(webhookHeaders && { headers }) }
+  // A spread bypasses TypeScript's excess-property check, so `headers` landed
+  // on `EventTransport` even though that interface declares only
+  // method/protocol/agent_id?/depth? (packages/shared/src/interfaces.ts:13-18).
+  // DOCS/messaging/envelope.md §4.1 says the allowlist belongs under `data`,
+  // and the stage-1 shape already has it there (IWebhookIngressData.headers,
+  // webhook.interfaces.ts:18). Stage 2 now matches, typed.
+  // =========================================================================
+  describe("webhook header allowlist placement", () => {
+    const baseOptions = {
+      tenantId: "tenant-a",
+      channel: "whatsapp" as const,
+      provider: "meta" as const,
+      kind: "received" as const,
+      accountId: "acc-1",
+      message: {
+        messageId: "m1",
+        from: "+1",
+        timestamp: "123",
+        type: "text",
+        text: "hi",
+        raw: {},
+      },
+    };
+
+    it("puts the allowlist under data.headers, never on transport", () => {
+      const headers = {
+        "content-type": "application/json",
+        "x-hub-signature-256": "sha256=abc",
+      };
+      const env = createChannelEnvelope({ ...baseOptions, webhookHeaders: headers });
+
+      expect(env.data.headers).toEqual(headers);
+      expect("headers" in env.transport).toBe(false);
+    });
+
+    it("passes the allowlist through byte-identically (no filtering, no renaming)", () => {
+      // The factory has never filtered — api-gateway applies
+      // WEBHOOK_FORWARDED_HEADERS and channel-service lowercases keys before
+      // this point. Pinning pass-through keeps that division of labour honest.
+      const headers = {
+        "content-type": "application/json",
+        "x-telegram-bot-api-secret-token": "tok",
+        "x-http-channel-token": "abc123",
+      };
+      const env = createChannelEnvelope({ ...baseOptions, webhookHeaders: headers });
+      expect(env.data.headers).toEqual(headers);
+      expect(Object.keys(env.data.headers ?? {})).toEqual(Object.keys(headers));
+    });
+
+    it("omits data.headers entirely when no allowlist is supplied", () => {
+      const env = createChannelEnvelope(baseOptions);
+      expect("headers" in env.data).toBe(false);
+      expect(env.data.headers).toBeUndefined();
+    });
+
+    it("emits transport with EXACTLY its four declared fields", () => {
+      // Regression pin for the conditional-spread hole: any key beyond the
+      // EventTransport declaration fails here, whether or not tsc catches it.
+      const declared = ["method", "protocol", "agent_id", "depth"];
+
+      for (const options of [
+        baseOptions,
+        { ...baseOptions, webhookHeaders: { "content-type": "application/json" } },
+      ]) {
+        const env = createChannelEnvelope(options);
+        const unexpected = Object.keys(env.transport).filter(
+          (key) => !declared.includes(key)
+        );
+        expect(unexpected).toEqual([]);
+      }
+    });
+
+    it("keeps transport's own values unchanged by the move", () => {
+      const env = createChannelEnvelope({
+        ...baseOptions,
+        depth: 2,
+        webhookHeaders: { "content-type": "application/json" },
+      });
+      expect(env.transport.method).toBe("webhook");
+      expect(env.transport.protocol).toBe("https");
+      expect(env.transport.depth).toBe(2);
+      expect(Object.keys(env.transport).sort()).toEqual(
+        ["depth", "method", "protocol"].sort()
+      );
+    });
+  });
 });

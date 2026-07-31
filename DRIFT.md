@@ -145,3 +145,27 @@ while the no-agent echo workflow's `send` correctly keeps `received` as its caus
 (seq1443, depth 2 — legacy fallback intact). Depth chain closes 0→1→2→3→4→5.
 Note: the `golden/` 72-event sample predates fix 3, so its raw events still show the
 residual — the sample remains valid for classification labeling.
+
+---
+
+## Code-fix log (envelope-drift loop, 2026-07-31)
+
+Findings above are never rewritten (see the Method note: "No DRIFT finding text
+above was altered"); this section records which of them the code side has since
+closed, in the file's own append-only style.
+
+2. **`EventTransport.headers` vs `EventData.headers` — FIXED in code
+   (envelope-drift T06, SPEC decision 1).** `createChannelEnvelope` now places
+   the webhook allowlist on `data.headers`, typed as `IChannelEventData`
+   (`packages/shared/src/channel.interfaces.ts`), and `transport` is a plain
+   object literal carrying exactly its declared fields — so the excess-property
+   check that the old conditional spread bypassed is active again (verified: a
+   probe key on `transport` now fails `tsc` with TS2353). `DOCS/messaging/envelope.md`
+   §4.1's placement rule stands as written and its §10.2 example was corrected in
+   the same commit. Wire impact: none. The `webhookHeaders` option had NO caller
+   (`ingress.service.ts:155` never passed it), so no published stage-2 envelope
+   ever carried `transport.headers` — matching this section's own 2026-07-09
+   observation that fresh `transport` objects were `{method, protocol, depth}`.
+   Regression pins: `services/channel-service/test/unit/envelope.factory.spec.ts`
+   ("webhook header allowlist placement").
+

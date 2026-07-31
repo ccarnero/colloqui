@@ -1,4 +1,4 @@
-import type { EventEnvelope } from "./interfaces";
+import type { EventData, EventEnvelope } from "./interfaces";
 
 export type Channel = "whatsapp" | "instagram" | "telegram" | "http";
 export type ChannelProvider = "meta" | "telegram" | "http";
@@ -19,10 +19,29 @@ export type MessageKind =
  * NATS message metadata. All identity / causal fields live in the
  * canonical snake_case properties of `EventEnvelope`.
  */
+/**
+ * Stage-2 `data` block: canonical `EventData` plus the webhook header
+ * allowlist forwarded from stage 1.
+ *
+ * `headers` mirrors `IWebhookIngressData.headers`
+ * (`webhook.interfaces.ts:18`) so the allowlist keeps the same shape and the
+ * same home (`data`) on both sides of the webhook bridge, as
+ * `DOCS/messaging/envelope.md` §4.1 prescribes.
+ *
+ * Optional: only envelopes derived from a provider webhook carry it. Before
+ * envelope-drift T06 the allowlist was spread into `transport` instead —
+ * untyped, since a conditional spread bypasses the excess-property check, and
+ * `EventTransport` never declared a `headers` field.
+ */
+export interface IChannelEventData extends EventData {
+  headers?: Record<string, string>;
+}
+
 export interface ChannelEnvelope extends EventEnvelope {
   channel: Channel;
   provider: ChannelProvider;
   kind: MessageKind;
+  data: IChannelEventData;
 }
 
 export interface ChannelAccount {

@@ -136,7 +136,7 @@
       }
     },
     "EventTransport": {
-      "$comment": "packages/shared/src/interfaces.ts:13-18. NOTE: `headers` is NOT declared on EventTransport, yet createChannelEnvelope attaches one de facto (services/channel-service/src/domain/envelope.factory.ts:106). It is therefore absent from `properties` below and tolerated only because this object does not set additionalProperties:false. Stage-1 headers DO have a declared home: IWebhookIngressData.headers.",
+      "$comment": "packages/shared/src/interfaces.ts:13-18 — exactly four declared fields. `headers` is NOT one of them and no producer writes it: until 2026-07-31 createChannelEnvelope spread a `headers` key in here (untyped — a conditional spread bypasses the excess-property check), but the option had no caller so it never reached the wire, and envelope-drift T06 moved it to its declared home under `data` (IChannelEventData.headers for stage 2, IWebhookIngressData.headers for stage 1). Historical envelopes carry no transport.headers either.",
       "type": "object",
       "required": ["method", "protocol"],
       "description": "How the event arrived. Canonical type: EventTransport.",
@@ -272,15 +272,28 @@
         "data": { "$ref": "#/definitions/EventData" }
       }
     },
+    "IChannelEventData": {
+      "$comment": "packages/shared/src/channel.interfaces.ts — extends EventData with the webhook header allowlist forwarded from stage 1. Same shape and same home as IWebhookIngressData.headers, per DOCS/messaging/envelope.md §4.1. Optional: only envelopes derived from a provider webhook carry it.",
+      "type": "object",
+      "allOf": [{ "$ref": "#/definitions/EventData" }],
+      "properties": {
+        "headers": {
+          "type": "object",
+          "description": "Allowlisted request headers (WEBHOOK_FORWARDED_HEADERS, channel.constants.ts). Record<string, string>.",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
     "ChannelEnvelope": {
-      "$comment": "packages/shared/src/channel.interfaces.ts:22-26 — EventEnvelope narrowed with the channel taxonomy. Not part of the root oneOf because every ChannelEnvelope is already a valid EventEnvelope; reference it explicitly when you need the narrowed enums.",
+      "$comment": "packages/shared/src/channel.interfaces.ts — EventEnvelope narrowed with the channel taxonomy and the stage-2 data block. Not part of the root oneOf because every ChannelEnvelope is already a valid EventEnvelope; reference it explicitly when you need the narrowed enums.",
       "type": "object",
       "allOf": [{ "$ref": "#/definitions/EventEnvelope" }],
       "required": ["kind"],
       "properties": {
         "channel": { "$ref": "#/definitions/Channel" },
         "provider": { "$ref": "#/definitions/ChannelProvider" },
-        "kind": { "$ref": "#/definitions/MessageKind" }
+        "kind": { "$ref": "#/definitions/MessageKind" },
+        "data": { "$ref": "#/definitions/IChannelEventData" }
       }
     },
     "WebhookIngressEnvelope": {
