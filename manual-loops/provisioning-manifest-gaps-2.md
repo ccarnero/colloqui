@@ -775,6 +775,11 @@ mcp (mcp-connections — the first REAL mcp canary, human-chosen). All four:
 VALID + two applies each with appliedCount=0 (all-noop both passes).
 The declarative provisioning showcase now covers every group.
 
+HUMAN DECISION (2026-07-31): the `skills` fifth-resource-kind round is
+DEFERRED until after the branch merges to main — `ai-skill-support-agent`
+stays in its sanctioned stand-by; the section lands as its own mini-loop on
+a clean base, sequenced with/before the envelope-drift loop.
+
 LOOP END STATE: T01-T06 + T08 complete; T07 8/9 with one sanctioned
 escalation. OPEN ITEMS FOR FUTURE DECISION ROUNDS: (a) `skills` manifest
 section (fifth resource kind — ai-skill-support-agent); (b) k8s-native
