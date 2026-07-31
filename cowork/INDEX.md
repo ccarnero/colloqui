@@ -362,6 +362,15 @@ once a multipart parser dependency is vendored.
 
 > **SUPERSEDED**: `manual-loops/provisioning-manifest-gaps-2.md`/`-3.md` later migrated all 12
 > samples to `manifest.yaml`; none remain stand-by.
+>
+> [Detail added 2026-07-31: the last one, `ai-skill-support-agent`, shipped in
+> gaps-3 T04 (`00ec5487`, 2026-07-17) together with the `skills` fifth resource
+> kind — schema section, writer, `skillRef` substitution and SDK surface. A
+> follow-up SPEC (`manual-loops/provisioning-skills-section.md`) was authored on
+> 2026-07-31 to build that kind and was found SUPERSEDED AT AUTHORING; it is kept
+> as the record of the decision round and the adjudication. Note gaps-2 and
+> gaps-3 have no `## Change:` entries of their own — a pre-existing bookkeeping
+> gap flagged, not fixed here.]
 
 Manual-loop change (not SDD) reorganizing the old flat SDK samples tree (one true SDK example plus
 twelve platform integration examples) into three tiers, each with one reason to

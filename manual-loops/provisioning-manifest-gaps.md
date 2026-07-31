@@ -444,6 +444,10 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
   closure ruling to `provisioning-manifest-gaps-2.md`, whose T07 migrated
   8/9 on 2026-07-17 — the 9th, `ai-skill-support-agent`, stays in sanctioned
   stand-by pending the `skills` fifth-resource-kind decision)
+  [Superseded 2026-07-31: the stand-by claim was already false when this
+  note was written — the 9th sample had shipped 2026-07-17 via
+  `provisioning-manifest-gaps-3.md` T04 (`00ec5487`); see
+  `provisioning-skills-section.md`'s header for the adjudication.]
 - [x] T09 restore the full G4 canary set (CLOSED-SUPERSEDED 2026-07-31:
   never ran here; its intent shipped as `provisioning-manifest-gaps-2.md`
   T08 on 2026-07-17 — full canary set restored, one per group, with the

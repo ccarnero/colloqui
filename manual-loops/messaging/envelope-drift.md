@@ -526,6 +526,9 @@ only, and the default ensure sits on every publish path).
 - Per-tenant stream migrations/renames — decision 3 keeps the live names
   exactly as they are; only the dead builder is removed.
 - The `skills` manifest fifth-resource-kind (deferred, provisioning-manifest-gaps-2).
+  [Shipped 2026-07-17 by `provisioning-manifest-gaps-3.md` T04 (`00ec5487`);
+  discovered 2026-07-31 while scoping `provisioning-skills-section.md`, which
+  was superseded at authoring. Still out of scope for THIS loop.]
 
 ## Human boundaries for this change
 

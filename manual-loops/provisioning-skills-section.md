@@ -1,5 +1,25 @@
 # SPEC — Manifest `skills` section: the fifth resource kind
 
+> **SUPERSEDED AT AUTHORING (2026-07-31).** Every deliverable in this SPEC had
+> already shipped on 2026-07-17 as `manual-loops/provisioning-manifest-gaps-3.md`
+> T01-T05 (commit `00ec5487`, "gaps-3 T04 skills writer and
+> ai-skill-support-agent final migration"). Verified at implementation time:
+> the `skills[]` schema section (`packages/shared/src/provisioning/manifest.schema.ts:941`,
+> `skillSchema` `:450-467`), `skillRef` in the substitution allowlist (`:63`, `:72`),
+> the writer (`services/provisioning-service/src/modules/apply/infrastructure/skills-writer.ts`),
+> the `case "skill"` comparable (`plan/lib/desired-fields-of-resource.ts:51-52`),
+> the SDK surface (`sdk/src/infrastructure/create-client.ts:72`), and the migrated
+> sample (`integrations/ai/ai-skill-support-agent/manifest.yaml:53,244-245`) with
+> no `STANDBY.md` left in the repo.
+>
+> Kept, not deleted: this is the record of the decision round gaps-2 decision 10
+> required, of the human approval that granted it, and of this adjudication.
+>
+> ROOT CAUSE: authored from gaps-2's escalation text without running `git log`
+> on the sample directory, so a record that was true on 2026-07-17 was read as
+> still-open on 2026-07-31. Cheap prevention: before scoping a SPEC from another
+> loop's open item, `git log --oneline -- <the artifact the item names>`.
+
 > Task queue for the `/manual-loop` command. One task at a time, gated by
 > tests and dual review.
 > Depends on: `manual-loops/provisioning-manifest-gaps-2.md` (shipped; its
@@ -141,9 +161,12 @@ grep -n "provisioning-skills-section" cowork/INDEX.md
 
 ## Progress
 
-- [ ] T01 schema + writer + substitution + validator + SDK
-- [ ] T02 sample migration
-- [ ] T03 docs + closeout
+- [x] T01 schema + writer + substitution + validator + SDK (already shipped, gaps-3 T01-T04)
+- [x] T02 sample migration (already shipped, gaps-3 T04 — `00ec5487`)
+- [x] T03 docs + closeout (verified 2026-07-31: provisioning README already
+  documents `skills`/`skillRef`; `cowork/INDEX.md:363-364` already records the
+  12/12 end state; SCHEMAS.md documents no manifest sections at all, so it has
+  nothing to extend — no genuine gap found)
 
 ## Out of scope (explicit)
 

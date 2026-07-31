@@ -481,7 +481,9 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T04 agent per-tool MCP fields (gap 4)
 - [x] T05 service `env` vars (gap 5)
 - [x] T06 low-priority cleanup fold-in (optional)
-- [ ] T07 migrate the 9 remaining stand-by samples
+- [x] T07 migrate the 9 remaining stand-by samples (CLOSED-SUPERSEDED
+  2026-07-31: 8/9 here, the 9th — `ai-skill-support-agent` — shipped via
+  `provisioning-manifest-gaps-3.md` T04, commit `00ec5487`, 2026-07-17)
 - [x] T08 restore the full G8 canary set (mcp included for real)
 
 ## Out of scope (explicit)
@@ -777,14 +779,21 @@ The declarative provisioning showcase now covers every group.
 
 HUMAN DECISION (2026-07-31): the `skills` fifth-resource-kind round is
 DEFERRED — `ai-skill-support-agent` stays in its sanctioned stand-by; the
-section lands later as its own mini-loop. (Same day, superseding the
+section lands later as its own mini-loop.
+[SUPERSEDED 2026-07-31 (discovered while scoping `provisioning-skills-section.md`):
+this deferral was already moot when written — `provisioning-manifest-gaps-3.md`
+T04 shipped the `skills` section AND migrated the sample on 2026-07-17
+(`00ec5487`). No sample remains in stand-by.] (Same day, superseding the
 original post-merge condition: the human ruled the branch continues as the
 working line with no PR-to-main for now, so the deferral is unconditional,
 not merge-gated.)
 
 LOOP END STATE: T01-T06 + T08 complete; T07 8/9 with one sanctioned
-escalation. OPEN ITEMS FOR FUTURE DECISION ROUNDS: (a) `skills` manifest
-section (fifth resource kind — ai-skill-support-agent); (b) k8s-native
+escalation. [Updated 2026-07-31: T07 is 9/9 — the escalated sample shipped in
+gaps-3 T04 (`00ec5487`), and open item (a) below is CLOSED by the same commit.]
+OPEN ITEMS FOR FUTURE DECISION ROUNDS: (a) ~~`skills` manifest
+section (fifth resource kind — ai-skill-support-agent)~~ CLOSED 2026-07-17
+(gaps-3 T04), recorded 2026-07-31; (b) k8s-native
 secretKeyRef service env values (T05 ruling deferral); (c) secret-typed
 systemVariables (parent T04 deferral); (d) trigger accountIds pinning
 (plural-key substitution).
