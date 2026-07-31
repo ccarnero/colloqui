@@ -27,7 +27,7 @@ const DEFAULT_MAX_ACK_PENDING = 1000;
  * current default so fixes in this file actually propagate to running
  * clusters without a manual migration.
  */
-const DEFAULT_ACK_WAIT_MS = 60_000;
+export const DEFAULT_ACK_WAIT_MS = 60_000;
 /**
  * NATS server semantics: when a `backoff` array is set on a consumer
  * it OVERRIDES `ack_wait`. The effective ack-wait window for the i-th
@@ -40,7 +40,7 @@ const DEFAULT_ACK_WAIT_MS = 60_000;
  * two values stay consistent, and let subsequent retries back off
  * progressively for genuinely failing handlers.
  */
-const DEFAULT_BACKOFF_MS: readonly number[] = [
+export const DEFAULT_BACKOFF_MS: readonly number[] = [
   60_000,
   120_000,
   300_000,
@@ -71,9 +71,9 @@ export interface IDurableConsumerOptions {
   readonly maxDeliver?: number;
   /** Maximum unacked in-flight messages (backpressure). @default 1000 */
   readonly maxAckPending?: number;
-  /** Time before redelivery of an unacked message (ms). @default 30_000 */
+  /** Time before redelivery of an unacked message (ms). @default 60_000 */
   readonly ackWaitMs?: number;
-  /** Backoff schedule for redeliveries (ms). @default [1s, 5s, 30s, 2m] */
+  /** Backoff schedule for redeliveries (ms). @default [60s, 120s, 300s, 600s] */
   readonly backoffMs?: readonly number[];
   /** Optional human-friendly description persisted on the consumer. */
   readonly description?: string;
