@@ -113,6 +113,10 @@ skill documenting THIS repo's e2e setup — sequential `workers: 1`
 (`playwright.config.ts:16`), `fillMatInput`/mat-form-field locators
 (`e2e/sales-agent-setup.spec.ts:28-40`), `E2E_*` env vars (`:16-19`),
 idempotency (`:12-13`). Separate decision per the SPEC's out-of-scope rule.
+**DONE 2026-07-31** (human-approved, envelope-drift post-loop item 5):
+`skills/playwright/SKILL.md`, 186 lines, first-party and fully cited;
+registered via `gentle-ai skill-registry refresh --force` (33 skills) and added
+to the `AGENTS.md:103` skill list.
 
 ## Out of scope (explicit)
 

@@ -1488,6 +1488,11 @@ the `fillMatInput`/`mat-form-field` locator problem
 `E2E_TENANT` env vars (`:16-19`), and the re-runnable idempotency requirement (`:12-13`).
 Per the SPEC, writing NEW skills is a separate decision.
 
+[Done 2026-07-31 — human-approved as envelope-drift post-loop item 5:
+`skills/playwright/SKILL.md` (first-party, every claim cited),
+registered in `.atl/skill-registry.md` (a LOCAL, gitignored index — shipped
+discoverability is `skills/` itself plus the `AGENTS.md:103` list).]
+
 ## Change: envelope contract drift closed in code (envelope-drift)
 
 Manual-loop change that took the nine numbered T07 findings the docs-consistency loop

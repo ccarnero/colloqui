@@ -100,7 +100,8 @@ All non-trivial changes go through the **manual-loop system**:
 - `DOCS/guides/dev-mode.md` — dev-mode operations.
 - `skills/` (symlinked at `.claude/skills/`) — authoring aids for humans and
   the orchestrator: `angular/*`, `envelope-messages`, `git-commit`,
-  `multi-tenant`, `yz-ui`, `judgment-day`, `skill-registry`, `_shared`.
+  `multi-tenant`, `playwright`, `yz-ui`, `judgment-day`, `skill-registry`,
+  `_shared`.
   Skills are advisory; SPEC Constraints are binding.
 - `cowork/INDEX.md` — registry of shipped changes; every SPEC's docs task
   adds its entry.
