@@ -561,6 +561,105 @@ k9b_numeric_claims() {
 }
 
 # ---------------------------------------------------------------------------
+# K10 — Relative markdown links resolve.
+#
+# Drift class: docs linking deleted docs. When a document is removed or moved,
+# the links pointing at it are left behind and rot silently — the
+# `code-review.md` dangling row found on 2026-07-29 is the recurring instance.
+# Nothing in a markdown renderer fails on a dead relative link, so only a guard
+# catches it.
+#
+# SCOPE — the corpus is the LIVE, descriptive documentation:
+#   * root `README.md`
+#   * `DOCS/**/*.md`
+#   * `services/*/README.md`
+#   * `packages/*/README.md`  — added beyond the SPEC's three globs because
+#     these are first-class component docs of exactly the same class (written
+#     in T04). Today they contain zero relative .md links, so the addition is a
+#     no-op that only pre-empts future rot.
+#   NOT `manual-loops/**` or `cowork/**`: those are loop history, deliberately
+#   frozen (SPEC decision 4), and rewriting them to satisfy a link check would
+#   falsify the record.
+#
+# WHAT IS CHECKED — relative links whose target is a `.md` file. External
+# (`http://`, `https://`, `mailto:`), absolute (`/...`) and pure-anchor (`#...`)
+# targets are skipped, as are non-`.md` targets (scripts, manifests,
+# directories): those are a different class and several live only in archived
+# runbooks that must not be edited. Both inline `](target)` links and
+# reference-style `[label]: target` definitions are scanned.
+#
+# ANCHORS — for `file.md#section` only the FILE part is resolved. Anchor
+# validation is deliberately NOT implemented: doing it correctly requires
+# reimplementing GitHub's slugging rules, and a half-correct version would
+# produce false positives, which is the one failure mode that gets a guard
+# disabled.
+#
+# FALSE-POSITIVE AVOIDANCE — the scanner skips fenced code blocks (``` / ~~~)
+# entirely and strips inline code spans (`...`) before matching, so example
+# links in documentation samples are never treated as real links. Indented
+# code blocks are NOT skipped: 4-space indentation is ambiguous with list
+# continuation, and treating it as code would silently drop real links.
+# ---------------------------------------------------------------------------
+k10_markdown_links_resolve() {
+  local guard="K10(markdown-links-resolve)"
+  local ok=1
+
+  local scan_awk
+  scan_awk='
+    { line = $0
+      if (line ~ /^[ \t]*(```|~~~)/) { fence = !fence; next }
+      if (fence) next
+      gsub(/`[^`]*`/, "", line)
+      rest = line
+      while (match(rest, /\]\([^)]*\)/)) {
+        print FILENAME "\t" FNR "\t" substr(rest, RSTART + 2, RLENGTH - 3)
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+      if (line ~ /^[ \t]*\[[^]]+\][ \t]*:[ \t]*[^ \t]/) {
+        d = line
+        sub(/^[ \t]*\[[^]]+\][ \t]*:[ \t]*/, "", d)
+        sub(/[ \t].*$/, "", d)
+        print FILENAME "\t" FNR "\t" d
+      }
+    }'
+
+  local files
+  files=$( { echo "README.md"
+             fd -e md . DOCS
+             fd -g 'README.md' services --max-depth 2
+             fd -g 'README.md' packages --max-depth 2
+           } 2>/dev/null | sort -u )
+
+  if [[ -z "$files" ]]; then
+    fail "$guard: doc corpus discovery returned nothing — the globs or fd broke"
+    return
+  fi
+
+  local scanned=0
+  local f l t base dir
+  while IFS=$'\t' read -r f l t; do
+    [[ -z "$f" ]] && continue
+    case "$t" in
+      http://*|https://*|mailto:*|"#"*|/*|"") continue ;;
+    esac
+    base="${t%%#*}"
+    [[ -z "$base" ]] && continue
+    case "$base" in
+      *.md) ;;
+      *) continue ;;
+    esac
+    scanned=$((scanned + 1))
+    dir=$(dirname "$f")
+    if [[ ! -e "$dir/$base" ]]; then
+      fail "$guard: $f:$l links to '$t' which does not exist (resolved: $dir/$base)"
+      ok=0
+    fi
+  done <<<"$(awk "$scan_awk" $files)"
+
+  [[ "$ok" -eq 1 ]] && pass "$guard: all $scanned relative .md links resolve"
+}
+
+# ---------------------------------------------------------------------------
 # K11 — Storage-engine documentation.
 #
 # Drift class: undocumented dual-backend support. A service that calls
@@ -626,6 +725,7 @@ main() {
   k8_agent_call_timeout_ceiling
   k9_di_type_imports
   k9b_numeric_claims
+  k10_markdown_links_resolve
   k11_storage_engine_documented
 
   echo

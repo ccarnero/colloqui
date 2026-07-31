@@ -229,7 +229,7 @@ grep -n "docs-consistency" cowork/INDEX.md
 - [x] T03 absorb remaining AGENTS.md + resurrection guard (K6g, services/*)
 - [x] T04 package READMEs + K11 (K6g extended to packages/*)
 - [x] T05 one ADR channel
-- [ ] T06 K10 dead-link guard + fixes
+- [x] T06 K10 dead-link guard + fixes
 - [ ] T07 full-corpus sweep + doc-side fixes
 - [ ] T08 docs + index
 
@@ -382,6 +382,20 @@ ADRs' "Later observations", decision bodies kept verbatim per decision 5):**
    fails on any live ScaledObject); independent scalability holds via replica
    count. `onboarding.md:565-566` still describes KEDA as the future
    production path — consistent with the ADR, equally aspirational.
+
+**T06 record (recorded 2026-07-30):** K10 scans root README, DOCS/**,
+services/*/README.md AND packages/*/README.md (deliberate same-class
+addition, zero links there today). One in-scope dead link found and FIXED:
+`services/workflow-service/README.md:925` (path one level short + stale
+anchor). Fenced blocks and inline code spans skipped; anchors resolved to
+the file part only.
+
+**T06 follow-ups (recorded 2026-07-30):** seven dead NON-`.md` targets in
+`DOCS/runbooks/archive/{temporal-ha-migration,temporal-visibility-split}.md`
+(infrastructure paths that died with the dev-mode collapse `be62ae89`).
+Left as-is — historical records. OPEN QUESTION for a future guard: exempt
+archived runbooks from any non-`.md` link guard, or annotate dead paths in
+place as "removed in <commit>".
 
 ## Out of scope (explicit)
 

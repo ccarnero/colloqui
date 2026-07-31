@@ -922,5 +922,5 @@ tenants' batches.
 
 - Detailed worker configuration and database schema: the sections above
 - [Temporal Workflow Documentation](https://temporal.io/docs/concepts/what-is-a-workflow-definition)
-- [Template Resolution Guide](../DOCS/workflows/patterns.md#template-resolution)
+- [Template Resolution Guide](../../DOCS/workflows/patterns.md#pattern-6-template-resolution--variable-substitution)
 - [Connector Runtime Integration](../connector-runtime/README.md)
