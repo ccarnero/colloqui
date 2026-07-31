@@ -27,7 +27,7 @@ const EGRESS_CONFIRMATION_KINDS = new Set([
 ]);
 
 // TAXONOMY.md §5 row 1 — `channel-service.messaging.*.*.received.v1`.
-// transport-topology.ts:14-17 (workflow-triggers, channel-events-audit) plus
+// transport-topology.ts:14-17 (workflow-triggers, channel-audit) plus
 // service-bus.md:214 (usage-aggregator-service) and envelope-parser.ts
 // (agent-ai-service durable `agent-ai-service-consumer`).
 const RECEIVED_CONSUMERS: readonly string[] = [
@@ -38,11 +38,11 @@ const RECEIVED_CONSUMERS: readonly string[] = [
 ];
 
 // TAXONOMY.md §5 row 2 — `channel-service.messaging.*.*.send.v1`.
-// transport-topology.ts:19-22 (channel-egress producer + channel-events-audit sink).
+// transport-topology.ts:19-22 (channel-egress producer + channel-audit sink).
 const SEND_CONSUMERS: readonly string[] = ["channel-service", "audit-service"];
 
 // TAXONOMY.md §5 row 3 — sent/delivered/read/failed egress confirmations.
-// transport-topology.ts:26-28 (channel-events-audit) + envelope-parser.ts
+// transport-topology.ts:26-28 (channel-audit) + envelope-parser.ts
 // KIND_TO_DIRECTION (usage-aggregator-service).
 const EGRESS_CONFIRMATION_CONSUMERS: readonly string[] = [
   "audit-service",

@@ -310,7 +310,7 @@ grep -n "envelope-drift" cowork/INDEX.md
 
 - [x] T01 consumer JSDoc + constant pin
 - [x] T02 depth conforms to shared spec
-- [ ] T03 durable-name registry fixed
+- [x] T03 durable-name registry fixed
 - [ ] T04 envelope-schema.json rewrite
 - [ ] T05 stage-1 type token
 - [ ] T06 stage-2 headers → data.headers

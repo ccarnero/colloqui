@@ -40,9 +40,9 @@ Each event also shows its **pub/sub fan-out** — the durable consumers it reach
 silent `audit-service` sink that the causal tree alone would hide:
 
 ```
-received.v1 → workflow-service/workflow-triggers (→ next)  +  audit-service/channel-events-audit (sink)
-send.v1     → channel-service/channel-egress     (→ next)  +  audit-service/channel-events-audit (sink)
-sent.v1     → audit-service/channel-events-audit (sink, terminal)   [channel-egress consumes send, not sent]
+received.v1 → workflow-service/workflow-triggers (→ next)  +  audit-service/channel-audit (sink)
+send.v1     → channel-service/channel-egress     (→ next)  +  audit-service/channel-audit (sink)
+sent.v1     → audit-service/channel-audit (sink, terminal)         [channel-egress consumes send, not sent]
 ```
 
 ### What each node shows

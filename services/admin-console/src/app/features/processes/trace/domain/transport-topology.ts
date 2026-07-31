@@ -13,18 +13,18 @@ import type { ITraceSubscriber } from "./message-trace.model";
 
 const RECEIVED_SUBSCRIBERS: readonly ITraceSubscriber[] = [
   { service: "workflow-service", durable: "workflow-triggers", role: "producer" },
-  { service: "audit-service", durable: "channel-events-audit", role: "sink" },
+  { service: "audit-service", durable: "channel-audit", role: "sink" },
 ];
 
 const SEND_SUBSCRIBERS: readonly ITraceSubscriber[] = [
   { service: "channel-service", durable: "channel-egress", role: "producer" },
-  { service: "audit-service", durable: "channel-events-audit", role: "sink" },
+  { service: "audit-service", durable: "channel-audit", role: "sink" },
 ];
 
 // `sent.v1` is the egress delivery confirmation — terminal. `channel-egress`
 // consumes `send`, NOT `sent`; the only subscriber is the audit sink.
 const SENT_SUBSCRIBERS: readonly ITraceSubscriber[] = [
-  { service: "audit-service", durable: "channel-events-audit", role: "sink" },
+  { service: "audit-service", durable: "channel-audit", role: "sink" },
 ];
 
 /** Returns the known subscribers for an event subject, or `[]` if unknown. */

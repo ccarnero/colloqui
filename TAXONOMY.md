@@ -199,6 +199,17 @@ encodes the alarm set — a rule number's membership there is authoritative, not
 > (`services/audit-service/src/modules/channel-audit/channel-audit.service.ts:49`).
 > The registry is the stale side — recorded as a T07 finding, not corrected
 > here (no source changes in this loop).
+>
+> **Code fixed 2026-07-31 (envelope-drift T03):** `transport-topology.ts`
+> (`:16`, `:21`, `:27`) now names the audit sink `channel-audit`, matching
+> `channel-audit.service.ts:49`. The stale name is gone from `services/`
+> (registry, its spec, `assemble-trace.spec.ts`, the trace README and the
+> `consumed-by.ts` comments), and the corrected names are pinned with their
+> declaring `file:line` in
+> `services/admin-console/src/app/features/processes/trace/domain/__tests__/transport-topology.spec.ts`.
+> The other two registry durables were swept in the same task and were already
+> correct: `workflow-triggers` (`trigger-consumer.service.ts:45`) and
+> `channel-egress` (`send-command-consumer.service.ts:38`).
 
 > **Decision note (Q1 continued):** `consumed_by` is a separate multi-value column (Postgres `text[]`), NOT part of `business_fn`. It records which durable consumers read a given subject family. Values are grounded in the durable-consumer registry (`transport-topology.ts`) plus the durable inventory in `docs/messaging/service-bus.md:214` and per-service consumer code.
 

@@ -78,7 +78,7 @@ describe("assembleTrace", () => {
     const rcv = r.nodes.find((n) => n.id === "rcv");
     expect(rcv?.subscribers.map((s) => s.durable)).toEqual([
       "workflow-triggers",
-      "channel-events-audit",
+      "channel-audit",
     ]);
     expect(r.deliveryCount).toBe(4);
   });
