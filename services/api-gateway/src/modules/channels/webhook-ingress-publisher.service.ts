@@ -23,6 +23,7 @@ import {
 } from "../../providers/nats.provider";
 import { gatewayConfig } from "../../config";
 import { WebhookPublishUnavailableError } from "./webhook-publish-unavailable.error";
+import { buildWebhookIngressType } from "./webhook-ingress-type";
 import type { IYoizenRequest } from "../../types/yoizen-request";
 
 interface IPublishWebhookParams {
@@ -114,7 +115,7 @@ export class WebhookIngressPublisherService {
       specversion: "1.0",
       id,
       source: "//api-gateway/webhooks",
-      type: "io.yoizen.messaging.webhook.received.v1",
+      type: buildWebhookIngressType(channel),
       resource: `tenant/${tenantId}/channel/${channel}/provider/webhook`,
       time: now,
       traceid: activeOrRandomTraceId(),

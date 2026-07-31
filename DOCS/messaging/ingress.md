@@ -324,7 +324,7 @@ callPlatformApi
   "specversion": "1.0",
   "id": "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
   "source": "//api-gateway/webhooks",
-  "type": "io.yoizen.messaging.webhook.received.v1",
+  "type": "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1",
   "resource": "tenant/acme/channel/whatsapp/provider/webhook",
   "time": "2026-06-11T12:00:00.000Z",
   "traceid": "4bf92f3577b34da6a3ce929d0e0e4736",

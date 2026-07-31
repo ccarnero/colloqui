@@ -3,6 +3,7 @@ import { ensureTenantIngressStream } from "@yoizen/database";
 import { TENANT_HEADER } from "@yoizen/shared";
 import type { JetStreamClient, JetStreamManager } from "nats";
 import { gatewayConfig } from "../../src/config";
+import type { Channel } from "@yoizen/shared";
 import { WebhookIngressPublisherService } from "../../src/modules/channels/webhook-ingress-publisher.service";
 import { WebhookPublishUnavailableError } from "../../src/modules/channels/webhook-publish-unavailable.error";
 
@@ -59,6 +60,12 @@ describe("WebhookIngressPublisherService", () => {
     const envelope = JSON.parse(new TextDecoder().decode(bytes));
     expect(envelope.tenant).toBe("tenant-a");
     expect(envelope.kind).toBe("webhook_received");
+    // envelope-drift T05: `type` follows envelope.md:77 and carries the
+    // channel, instead of the old channel-less
+    // `io.yoizen.messaging.webhook.received.v1`.
+    expect(envelope.type).toBe(
+      "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1"
+    );
     // `accountid` MUST be absent — the account is unresolved at this
     // stage and using a placeholder would corrupt per-account usage
     // aggregations downstream (billing).
@@ -239,6 +246,83 @@ describe("WebhookIngressPublisherService", () => {
           gatewayConfig.webhook as { publishInflightCap: number }
         ).publishInflightCap = original;
       }
+    });
+  });
+
+  // =========================================================================
+  // envelope-drift T05 — stage-1 `type` obeys the prescriptive format
+  // (SPEC decision 2). The old code emitted the SAME channel-less literal
+  // `io.yoizen.messaging.webhook.received.v1` for every channel, so `type`
+  // could not be used to recover the channel or to tell a stage-1 receipt
+  // apart from a stage-2 `received` (DRIFT.md row 1).
+  // =========================================================================
+  describe("stage-1 envelope type", () => {
+    async function publishOn(channel: Channel): Promise<Record<string, unknown>> {
+      publish.mockClear();
+      const service = new WebhookIngressPublisherService(js, jsm);
+      await service.publishWebhook({
+        tenantId: "tenant-a",
+        channel,
+        rawBody: Buffer.from('{"ping":1}'),
+        parsedBody: { ping: 1 },
+        headers: {},
+      });
+      const [, bytes] = publish.mock.calls[0];
+      return JSON.parse(new TextDecoder().decode(bytes));
+    }
+
+    it("emits a per-channel type for every channel stage-1 serves", async () => {
+      const channels: readonly Channel[] = [
+        "telegram",
+        "whatsapp",
+        "http",
+        "instagram",
+      ];
+      for (const channel of channels) {
+        const envelope = await publishOn(channel);
+        expect(envelope.type).toBe(
+          `io.yoizen.messaging.${channel}.webhook.webhook_received.v1`
+        );
+        expect(envelope.type).not.toBe("io.yoizen.messaging.webhook.received.v1");
+      }
+    });
+
+    it("keeps `type` consistent with `kind`, `channel` and the subject", async () => {
+      publish.mockClear();
+      const service = new WebhookIngressPublisherService(js, jsm);
+      await service.publishWebhook({
+        tenantId: "tenant-a",
+        channel: "telegram",
+        rawBody: Buffer.from('{"update_id":7}'),
+        parsedBody: { update_id: 7 },
+        headers: {},
+      });
+
+      const [subject, bytes] = publish.mock.calls[0];
+      const envelope = JSON.parse(new TextDecoder().decode(bytes));
+
+      // The subject was always per-channel; `type` now agrees with it.
+      expect(String(subject).endsWith(String(envelope.type).split(".").slice(-4).join("."))).toBe(
+        true
+      );
+      expect(String(envelope.type).split(".")[3]).toBe(envelope.channel);
+      expect(String(envelope.type).split(".")[5]).toBe(envelope.kind);
+    });
+
+    it("does not change the published subject (wire routing untouched)", async () => {
+      publish.mockClear();
+      const service = new WebhookIngressPublisherService(js, jsm);
+      await service.publishWebhook({
+        tenantId: "tenant-a",
+        channel: "telegram",
+        rawBody: Buffer.from('{"update_id":8}'),
+        parsedBody: { update_id: 8 },
+        headers: {},
+      });
+      const [subject] = publish.mock.calls[0];
+      expect(subject).toBe(
+        "evt.tenant-a.api-gateway.messaging.telegram.webhook.webhook_received.v1"
+      );
     });
   });
 });

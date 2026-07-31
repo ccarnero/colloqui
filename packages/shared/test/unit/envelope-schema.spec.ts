@@ -210,7 +210,8 @@ const STAGE_1_SAMPLE: WebhookIngressEnvelope = {
   specversion: "1.0",
   id: "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
   source: "//api-gateway/webhooks",
-  type: "io.yoizen.messaging.webhook.received.v1",
+  // envelope-drift T05: per-channel stage-1 type (webhook-ingress-type.ts).
+  type: "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1",
   resource: "tenant/acme/channel/whatsapp/provider/webhook",
   time: "2026-07-31T15:40:11.382Z",
   traceid: "4bf92f3577b34da6a3ce929d0e0e4736",
@@ -244,6 +245,7 @@ const STAGE_1_HTTP_SAMPLE: WebhookIngressEnvelope = {
   ...STAGE_1_SAMPLE,
   id: "b4d9e2c3-5c6f-8a0b-c3d4-e5f6a7b8c9d0",
   channel: "http",
+  type: "io.yoizen.messaging.http.webhook.webhook_received.v1",
   resource: "tenant/acme/channel/http/provider/webhook",
   data: {
     ...STAGE_1_SAMPLE.data,
@@ -356,17 +358,24 @@ describe("envelope-schema.json (skills/envelope-messages asset)", () => {
     expect(props["kind"]["const"]).toBe("webhook_received");
     expect(props["data"]["$ref"]).toBe("#/definitions/IWebhookIngressData");
 
-// The `type` format is documented with today's stage-1 exception:
-    // api-gateway publishes a 5-token type, missing the channel token.
+    // The `type` format documents stage-1 as it is since 2026-07-31
+    // (envelope-drift T05): the per-channel format is obeyed, and the
+    // channel-less value is HISTORICAL — pre-migration rows still carry it,
+    // so readers accept both. Same framing as envelope-schema.json:53.
     const common = definition("EnvelopeCommon")["properties"] as Record<
       string,
       ISchema
     >;
     expect(common["type"]["description"] as string).toContain(
-      "io.yoizen.messaging.webhook.received.v1",
+      "io.yoizen.messaging.<channel>.webhook.webhook_received.v1",
     );
     expect(common["type"]["description"] as string).toContain(
-      "webhook-ingress-publisher.service.ts:117",
+      "webhook-ingress-type.ts",
+    );
+    // The pre-2026-07-31 value stays documented: those envelopes are still in
+    // the tracking store and readers must accept both.
+    expect(common["type"]["description"] as string).toContain(
+      "io.yoizen.messaging.webhook.received.v1",
     );
 
     const dataRequired = definition("IWebhookIngressData")[

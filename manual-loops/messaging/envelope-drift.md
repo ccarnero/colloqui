@@ -314,7 +314,10 @@ grep -n "envelope-drift" cowork/INDEX.md
 - [x] T04 envelope-schema.json rewrite (pin test lives in packages/shared
   test/unit; follow-up flagged: full envelope-messages SKILL.md translation
   to English incl. frontmatter description)
-- [ ] T05 stage-1 type token
+- [x] T05 stage-1 type token (premise correction: ingester classify is
+  SUBJECT-only — no rule/golden change needed; type-agnosticism pinned by
+  stage1-type-migration.spec.ts. Follow-ups: hoist WEBHOOK_INGRESS_PROVIDER
+  to channel.constants.ts; move buildWebhookIngressType to shared)
 - [ ] T06 stage-2 headers → data.headers
 - [ ] T07 one INGRESS builder
 - [ ] T08 agent-memory constants + domain

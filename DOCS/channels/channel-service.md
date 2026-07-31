@@ -133,7 +133,7 @@ sequenceDiagram
   "specversion": "1.0",
   "id": "uuid-v4",
   "source": "//api-gateway/webhooks",
-  "type": "io.yoizen.messaging.webhook.received.v1",
+  "type": "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1",
   "tenant": "acme",
   "producer": "api-gateway",
   "domain": "messaging",

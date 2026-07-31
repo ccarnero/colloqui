@@ -50,7 +50,7 @@
         },
         "type": {
           "type": "string",
-          "description": "Reverse-domain event type: io.yoizen.<domain>.<channel>.<provider>.<kind>.v1 (DOCS/messaging/envelope.md:77). CAVEAT — the stage-1 WebhookIngressEnvelope does NOT follow that format today: api-gateway publishes the 5-token io.yoizen.messaging.webhook.received.v1 (services/api-gateway/src/modules/channels/webhook-ingress-publisher.service.ts:117), with no channel token.",
+          "description": "Reverse-domain event type: io.yoizen.<domain>.<channel>.<provider>.<kind>.v1 (DOCS/messaging/envelope.md:77). Stage-1 receipts obey it as of 2026-07-31 (envelope-drift T05): api-gateway builds io.yoizen.messaging.<channel>.webhook.webhook_received.v1 through services/api-gateway/src/modules/channels/webhook-ingress-type.ts. HISTORICAL — stage-1 envelopes published before that date carry the channel-less io.yoizen.messaging.webhook.received.v1 (6 dot-separated segments against the current 7, counting io.yoizen as a two-segment prefix) and are still in the tracking store, so readers must accept both.",
           "examples": ["io.yoizen.messaging.whatsapp.meta.received.v1"]
         },
         "resource": {
