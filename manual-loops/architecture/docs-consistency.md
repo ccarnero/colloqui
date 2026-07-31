@@ -438,7 +438,7 @@ the file part only.
 9. Two INGRESS stream-name builders disagree on casing.
    `getTenantStreamName` upper-cases the tenant id —
    `INGRESS-${tenantId.toUpperCase()}`
-   (`packages/shared/src/tenant-stream.constants.ts:44-45`) — while
+   (`packages/shared/src/tenant-stream.constants.ts:58-59`) — while
    `buildIngressStreamName` interpolates it verbatim — `INGRESS-${tenant}`
    (`packages/shared/src/channel.utils.ts:29-30`). Both are exported from
    `@yoizen/shared`, so a caller's choice of helper silently decides whether
@@ -487,8 +487,25 @@ code and where. Loop SPEC: `manual-loops/messaging/envelope-drift.md`.
    projected and displayed, never filtered).
 7. FIXED — envelope-drift T01 (`971ad0c3`). The `@default` tags match the
    constants, and both are pinned by a constant test.
-8. OPEN — deferred by envelope-drift decision 4 (tier wiring is a design
-   change, not drift). Stands as recorded.
+8. ADJUDICATED 2026-07-31 (envelope-drift post-loop item 6, human-decided) —
+   NOT a drift defect. The finding described the code accurately, and
+   `service-bus.md` already labelled tiers "partially wired / objective design
+   (pending)", so no doc lied. Investigation established WHY it cannot simply
+   be wired: no tenant record carries a `TenantTier` (the tenant `tier` field is
+   the unrelated `shared|dedicated` DATABASE tier), the 10
+   `ensureTenantIngressStream` call sites have no tier in scope, and the dev
+   JetStream account (2 GiB) cannot satisfy `pro` (5 GiB) or `enterprise`
+   (20 GiB + 3 replicas on single-node NATS). The direction is now formalized as
+   `DOCS/v_next/tenant-messaging-tiers.md` with 5 numbered prerequisites, under
+   a new FUTURE document class (`DOCS/v_next/README.md`).
+
+   The investigation DID surface a real latent bug, now fixed:
+   `INGRESS-<TENANT>` had TWO creators with different configs — the shared
+   `ensureTenantIngressStream` (flat: 256 MiB) and agent-admin/agent-memory via
+   `buildTenantStreamConfig(tenantId, "free")` (1 GiB + a 1 MiB message cap) —
+   so a new tenant's stream limits depended on which service published first.
+   Both services now delegate to the shared helper, which is the single creator;
+   their capacity pre-flight is preserved through its opt-in `checkCapacity`.
 9. FIXED — envelope-drift T07 (`9b6dd4e3`). `buildIngressStreamName` deleted;
    `getTenantStreamName` is the only ingress-name builder. It had no callers,
    so nothing was binding `INGRESS-acme`.

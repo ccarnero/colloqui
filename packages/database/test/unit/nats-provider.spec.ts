@@ -11,6 +11,7 @@ import {
 import {
   ensureStream,
   ensureTenantIngressStream,
+  JetStreamCapacityError,
 } from "../../src/nats-provider";
 
 interface StreamInfoStub {
@@ -167,6 +168,7 @@ interface MockTenantJsm {
   streams: {
     add: Mock<(cfg: Record<string, unknown>) => Promise<unknown>>;
   };
+  getAccountInfo?: Mock<() => Promise<unknown>>;
 }
 
 function makeTenantJsmMock(
@@ -174,6 +176,24 @@ function makeTenantJsmMock(
     Promise.resolve({}),
 ): MockTenantJsm {
   return { streams: { add: mock(add) } };
+}
+
+/**
+ * Tenant jsm mock that also answers `getAccountInfo` — only the opt-in
+ * `checkCapacity` path calls it. Kept separate from `makeTenantJsmMock` on
+ * purpose: the default helper path must never touch the broker for account
+ * info, and 27 jsm mocks across the repo do not implement it.
+ */
+function makeCapacityJsmMock(
+  storageUsed: number,
+  maxStorage: number,
+): MockTenantJsm & { getAccountInfo: Mock<() => Promise<unknown>> } {
+  return {
+    streams: { add: mock((_cfg: Record<string, unknown>) => Promise.resolve({})) },
+    getAccountInfo: mock(() =>
+      Promise.resolve({ storage: storageUsed, limits: { max_storage: maxStorage } }),
+    ),
+  };
 }
 
 describe("ensureTenantIngressStream", () => {
@@ -198,6 +218,76 @@ describe("ensureTenantIngressStream", () => {
       expect(cfg.retention).toBe(RetentionPolicy.Limits);
       expect(cfg.max_age).toBe(CHANNEL_STREAM_MAX_AGE_NS);
       expect(cfg.max_bytes).toBe(CHANNEL_STREAM_MAX_BYTES);
+    },
+  );
+
+  it(
+    "default path never asks the broker for account info (capacity check is opt-in)",
+    async () => {
+      // 27 jsm mocks across the repo omit `getAccountInfo`; the 10 production
+      // call sites publish on the hot path. The check must stay opt-in so the
+      // default ensure keeps its single-round-trip contract.
+      const jsm = makeCapacityJsmMock(0, 1_000_000_000);
+
+      await ensureTenantIngressStream(jsm as never, "no-capacity-check-tenant");
+
+      expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+      expect(jsm.getAccountInfo).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    "checkCapacity: pre-flights account storage before creating",
+    async () => {
+      const jsm = makeCapacityJsmMock(0, 10 * CHANNEL_STREAM_MAX_BYTES);
+
+      await ensureTenantIngressStream(jsm as never, "capacity-ok-tenant", {
+        checkCapacity: true,
+      });
+
+      expect(jsm.getAccountInfo).toHaveBeenCalledTimes(1);
+      expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it(
+    "checkCapacity: throws JetStreamCapacityError and does NOT create when storage is short",
+    async () => {
+      // Available = limit - used, below the flat stream's max_bytes.
+      const jsm = makeCapacityJsmMock(0, CHANNEL_STREAM_MAX_BYTES - 1);
+
+      let caught: unknown;
+      try {
+        await ensureTenantIngressStream(jsm as never, "capacity-short-tenant", {
+          checkCapacity: true,
+        });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(JetStreamCapacityError);
+      expect((caught as JetStreamCapacityError).requestedBytes).toBe(
+        CHANNEL_STREAM_MAX_BYTES,
+      );
+      expect(jsm.streams.add).not.toHaveBeenCalled();
+    },
+  );
+
+  it(
+    "checkCapacity: a failed check does NOT seed the cache (next call retries)",
+    async () => {
+      const tenantId = "capacity-retry-tenant";
+      const short = makeCapacityJsmMock(0, CHANNEL_STREAM_MAX_BYTES - 1);
+      await ensureTenantIngressStream(short as never, tenantId, {
+        checkCapacity: true,
+      }).catch(() => {});
+
+      const roomy = makeCapacityJsmMock(0, 10 * CHANNEL_STREAM_MAX_BYTES);
+      await ensureTenantIngressStream(roomy as never, tenantId, {
+        checkCapacity: true,
+      });
+
+      expect(roomy.streams.add).toHaveBeenCalledTimes(1);
     },
   );
 

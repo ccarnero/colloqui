@@ -173,7 +173,7 @@ Constants in `channel.constants.ts`:
 
 The legacy `EVENTS` and `RESULTS` streams are deprecated — do not use them in new code.
 
-Canonical helpers (all in `@yoizen/shared`): `getTenantStreamName(tenant)` → `INGRESS-<TENANT>` (upper-cased, `tenant-stream.constants.ts:44-45`), `buildClaimCheckBucket(tenant)` → `PAYLOAD-<tenant>`, `buildDlqStreamName(tenant)` → `DLQ-<tenant>` (both verbatim). Mind the case asymmetry: only the ingress stream upper-cases. A second, verbatim ingress builder was removed on 2026-07-31 (envelope-drift T07) — `getTenantStreamName` is the only one.
+Canonical helpers (all in `@yoizen/shared`): `getTenantStreamName(tenant)` → `INGRESS-<TENANT>` (upper-cased, `tenant-stream.constants.ts:58-59`), `buildClaimCheckBucket(tenant)` → `PAYLOAD-<tenant>`, `buildDlqStreamName(tenant)` → `DLQ-<tenant>` (both verbatim). Mind the case asymmetry: only the ingress stream upper-cases. A second, verbatim ingress builder was removed on 2026-07-31 (envelope-drift T07) — `getTenantStreamName` is the only one.
 
 ### 4. Event Kinds
 

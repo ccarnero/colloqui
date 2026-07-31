@@ -20,7 +20,7 @@ at the infrastructure layer. NATS runs as a **single account with no ACLs per te
 1. **NATS subjects** carry a `evt.<tenant>.` prefix on every message.
 2. **NATS streams** are per-tenant: `INGRESS-<TENANT>`, `DLQ-<tenant>`, `PAYLOAD-<tenant>`.
    Note the case asymmetry — it is real, not a typo. `getTenantStreamName`
-   upper-cases the suffix (`packages/shared/src/tenant-stream.constants.ts:44-45`),
+   upper-cases the suffix (`packages/shared/src/tenant-stream.constants.ts:58-59`),
    while `buildDlqStreamName` (`packages/shared/src/channel.constants.ts:80-82`)
    and `buildClaimCheckBucket` (`packages/shared/src/channel.utils.ts:29-31`)
    interpolate the tenant id verbatim. A consumer matching the wrong case binds
@@ -279,7 +279,7 @@ Name construction functions:
 
 | Function | Returns | File |
 |---|---|---|
-| `getTenantStreamName(tenant)` | `INGRESS-<TENANT>` (upper-cased) | `packages/shared/src/tenant-stream.constants.ts:44-45` |
+| `getTenantStreamName(tenant)` | `INGRESS-<TENANT>` (upper-cased) | `packages/shared/src/tenant-stream.constants.ts:58-59` |
 | `buildDlqStreamName(tenant)` | `DLQ-<tenant>` (verbatim) | `packages/shared/src/channel.constants.ts:80-82` |
 | `buildClaimCheckBucket(tenant)` | `PAYLOAD-<tenant>` (verbatim) | `packages/shared/src/channel.utils.ts:29-31` |
 

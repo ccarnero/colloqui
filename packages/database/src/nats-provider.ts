@@ -13,6 +13,7 @@ import type { FactoryProvider } from "@nestjs/common";
 import {
   CHANNEL_STREAM_MAX_AGE_NS,
   CHANNEL_STREAM_MAX_BYTES,
+  checkJetStreamCapacity,
   getTenantStreamName,
   getTenantSubjectPattern,
 } from "@yoizen/shared";
@@ -225,11 +226,65 @@ function isStreamNameInUseError(err: unknown): boolean {
  * call is treated as a successful ensure. Any other error class is
  * rethrown so callers can bubble it up to their retry/metric path.
  */
+/**
+ * Thrown by {@link ensureTenantIngressStream} when `checkCapacity` is set and
+ * the JetStream account cannot fit another stream of
+ * `CHANNEL_STREAM_MAX_BYTES`. Carries the numbers so callers can map it to
+ * their own transport error (agent-admin and agent-memory turn it into a
+ * `ServiceUnavailableException`).
+ */
+export class JetStreamCapacityError extends Error {
+  constructor(
+    message: string,
+    public readonly requestedBytes: number,
+    public readonly availableBytes: number,
+  ) {
+    super(message);
+    this.name = "JetStreamCapacityError";
+  }
+}
+
+/** Options for {@link ensureTenantIngressStream}. */
+export interface IEnsureTenantIngressStreamOptions {
+  /**
+   * Pre-flight the account's file storage before creating the stream, and
+   * throw {@link JetStreamCapacityError} instead of letting the broker reject
+   * the add with a raw error.
+   *
+   * OPT-IN on purpose. It costs one extra `getAccountInfo()` round-trip per
+   * tenant per pod, and the default ensure sits on every publish path; 27 jsm
+   * mocks across this repo implement `streams` only, so turning it on
+   * unconditionally would also break unrelated suites in 10 packages. Callers
+   * that already pre-flighted before this helper existed (agent-admin,
+   * agent-memory) pass `true` to keep that behaviour.
+   */
+  readonly checkCapacity?: boolean;
+}
+
 async function performTenantIngressEnsure(
   jsm: JetStreamManager,
   tenantId: string,
   streamName: string,
+  options: IEnsureTenantIngressStreamOptions,
 ): Promise<void> {
+  if (options.checkCapacity === true) {
+    const info = await jsm.getAccountInfo();
+    const check = checkJetStreamCapacity(
+      CHANNEL_STREAM_MAX_BYTES,
+      info.storage,
+      info.limits.max_storage,
+    );
+    if (!check.ok) {
+      // Deliberately BEFORE the add and before seeding the cache: a capacity
+      // failure must be retryable once the operator frees storage.
+      throw new JetStreamCapacityError(
+        check.message ?? "Insufficient JetStream file storage",
+        check.requestedBytes,
+        check.availableBytes,
+      );
+    }
+  }
+
   try {
     await jsm.streams.add({
       name: streamName,
@@ -280,11 +335,19 @@ async function performTenantIngressEnsure(
  * - Any other broker / network error → rethrown to the caller without
  *   seeding the cache.
  *
+ * **Single creator (2026-07-31)**: this is the ONLY place that creates
+ * `INGRESS-<TENANT>`. agent-admin and agent-memory used to create the same
+ * stream themselves via `buildTenantStreamConfig(tenantId, "free")`, so a new
+ * tenant's stream got free-tier limits or these flat limits depending on which
+ * service touched it first. Both now delegate here. Tier-aware limits are a
+ * FUTURE design — see `DOCS/v_next/tenant-messaging-tiers.md`.
+ *
  * @see REQ-RSE-002 — stream-ensure precondition before publish.
  */
 export async function ensureTenantIngressStream(
   jsm: JetStreamManager,
   tenantId: string,
+  options: IEnsureTenantIngressStreamOptions = {},
 ): Promise<void> {
   const streamName = getTenantStreamName(tenantId);
   if (ensuredTenantIngressStreams.has(streamName)) return;
@@ -299,6 +362,7 @@ export async function ensureTenantIngressStream(
     jsm,
     tenantId,
     streamName,
+    options,
   ).finally(() => {
     inFlightTenantIngressEnsures.delete(streamName);
   });

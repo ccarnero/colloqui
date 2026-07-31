@@ -38,6 +38,8 @@ export {
   ensureStream,
   ensureConsumer,
   ensureTenantIngressStream,
+  JetStreamCapacityError,
+  type IEnsureTenantIngressStreamOptions,
   createJetStreamManagerProvider,
   createJetStreamDurableConsumerProvider,
   createJetStreamPublisherProvider,

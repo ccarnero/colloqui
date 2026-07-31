@@ -13,11 +13,14 @@ import {
   PinoLoggerService,
   startNatsProducerSpan,
 } from "@yoizen/observability";
+import {
+  ensureTenantIngressStream,
+  JetStreamCapacityError,
+} from "@yoizen/database";
 import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
 import {
   buildPlatformSubject,
-  buildTenantStreamConfig,
-  checkJetStreamCapacity,
+  getTenantStreamName,
   DepthExceededError,
   MAX_DEPTH_BY_CATEGORY,
   PLATFORM_ACCOUNT_ID,
@@ -32,7 +35,6 @@ import {
   PLATFORM_PROVIDER,
   AGENT_ADMIN_SKB_FILE_INGESTION,
   AGENT_ADMIN_SUBJECT_PREFIX,
-  type TenantTier,
 } from "@yoizen/shared";
 import {
   connect,
@@ -41,8 +43,6 @@ import {
   type NatsConnection,
   headers as natsHeaders,
   type PubAck,
-  RetentionPolicy,
-  StorageType,
 } from "nats";
 import { agentAdminServiceConfig } from "../config";
 import {
@@ -258,7 +258,7 @@ function buildEventEnvelope(
 @Injectable()
 export class NatsPublisher implements OnModuleDestroy {
   private readonly logger = new PinoLoggerService(NatsPublisher.name);
-  private readonly ensuredStreams = new Map<string, TenantTier>();
+  private readonly ensuredStreams = new Set<string>();
 
   constructor(
     @Inject(LAZY_NATS)
@@ -273,12 +273,20 @@ export class NatsPublisher implements OnModuleDestroy {
   }
 
   /**
-   * Auto-ensures the tenant JetStream stream exists before
-   * the first publish per tenant. Idempotent — skips if the
-   * stream is already known or already exists in NATS.
+   * Ensures `INGRESS-<TENANT>` exists before the first publish for a tenant.
    *
-   * Uses fallback tier "free" and logs a warning; stream should
-   * be pre-provisioned via TenantProvisioningService when possible.
+   * Delegates to `ensureTenantIngressStream` (`@yoizen/database`), the
+   * platform's SINGLE creator of that stream. This service used to create it
+   * here from `buildTenantStreamConfig(tenantId, "free")` — same stream name,
+   * different limits — so a new tenant's stream config depended on which
+   * service published first (envelope-drift post-loop item 6).
+   *
+   * `checkCapacity: true` preserves the pre-flight this method already did:
+   * the helper throws `JetStreamCapacityError`, surfaced here as the 503 this
+   * service has always returned.
+   *
+   * Tier-aware limits are a FUTURE design — see
+   * `DOCS/v_next/tenant-messaging-tiers.md`.
    */
   private async ensureTenantStream(tenantId: string): Promise<void> {
     if (this.ensuredStreams.has(tenantId)) {
@@ -286,16 +294,6 @@ export class NatsPublisher implements OnModuleDestroy {
     }
 
     this.logger.log(`Ensuring stream for tenant '${tenantId}'...`);
-
-    const tier: TenantTier = "free";
-    this.logger.warn(
-      `No tier registered for tenant '${tenantId}'; ` +
-        `using fallback tier '${tier}'. ` +
-        "Stream should be pre-provisioned via " +
-        "TenantProvisioningService."
-    );
-
-    const config = buildTenantStreamConfig(tenantId, tier);
 
     let jsm: JetStreamManager;
     try {
@@ -306,55 +304,23 @@ export class NatsPublisher implements OnModuleDestroy {
       throw jsmErr;
     }
 
+    const streamName = getTenantStreamName(tenantId);
     try {
-      await jsm.streams.info(config.name);
-      this.logger.log(
-        `Stream '${config.name}' already exists ` + `for tenant '${tenantId}'`
-      );
-    } catch {
-      this.logger.log(
-        `Stream '${config.name}' not found, creating ` +
-          `with subjects: ` +
-          `${JSON.stringify(config.subjects)}`
-      );
-
-      const info = await jsm.getAccountInfo();
-      const check = checkJetStreamCapacity(
-        config.limits.max_bytes,
-        info.storage,
-        info.limits.max_storage
-      );
-      if (!check.ok) {
-        this.logger.error(check.message);
-        throw new ServiceUnavailableException(check.message);
+      await ensureTenantIngressStream(jsm, tenantId, { checkCapacity: true });
+      this.logger.log(`Stream '${streamName}' ensured for tenant '${tenantId}'`);
+    } catch (err: unknown) {
+      if (err instanceof JetStreamCapacityError) {
+        this.logger.error(err.message);
+        throw new ServiceUnavailableException(err.message);
       }
-
-      try {
-        await jsm.streams.add({
-          name: config.name,
-          subjects: config.subjects,
-          max_age: config.limits.max_age,
-          max_bytes: config.limits.max_bytes,
-          max_msg_size: config.limits.max_msg_size,
-          num_replicas: config.limits.num_replicas,
-          retention: RetentionPolicy.Limits,
-          storage: StorageType.File,
-        });
-        this.logger.log(
-          `Auto-created stream '${config.name}' ` + `for tenant '${tenantId}'`
-        );
-      } catch (createErr: unknown) {
-        const msg =
-          createErr instanceof Error ? createErr.message : String(createErr);
-        this.logger.error(
-          `Failed to create stream ` + `'${config.name}': ${msg}`
-        );
-        throw createErr;
-      }
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.error(`Failed to ensure stream '${streamName}': ${msg}`);
+      throw err;
     }
 
-    this.ensuredStreams.set(tenantId, tier);
+    this.ensuredStreams.add(tenantId);
   }
+
 
   private async publishEvent(
     tenantId: string,

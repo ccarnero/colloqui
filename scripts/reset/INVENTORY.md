@@ -16,7 +16,7 @@ Convenciones:
 
 | Stream | Alcance | Subjects | Creado por | Cita |
 |---|---|---|---|---|
-| `INGRESS-<TENANT_UPPER>` | Por tenant | `evt.<tenant>.>` | Se crea de forma idempotente (primer creador gana) desde 4 servicios distintos: `channel-service` (`ensureTenantIngressStream`), `registry-service`, `agent-memory-service`, `agent-admin-service` | `packages/database/src/nats-provider.ts:228-307`, `packages/shared/src/tenant-stream.constants.ts:44-62` |
+| `INGRESS-<TENANT_UPPER>` | Por tenant | `evt.<tenant>.>` | Se crea de forma idempotente desde un ÚNICO creador, `ensureTenantIngressStream`, al que delegan todos los servicios (desde 2026-07-31 `agent-admin-service` y `agent-memory-service` ya no lo crean por su cuenta) | `packages/database/src/nats-provider.ts:347-371`, `packages/shared/src/tenant-stream.constants.ts:58-59` |
 | `DLQ-<tenantId>` | Por tenant | `dlq.<tenantId>.>` | `packages/database/src/nats-dlq.ts:30-58` (`ensureTenantDlqStream`), invocado automáticamente cuando cualquier consumer lanza `PermanentError` | `packages/database/src/multi-tenant-consumer-manager.ts:447`; `packages/shared/src/channel.constants.ts:70-91` |
 | `DLQ` (global, legacy) | Global | `dlq.webhook` (antes `dlq.>`) | Sin `streams.add` vivo encontrado en código — solo mencionado en un comentario histórico | `packages/database/src/nats-provider.ts:96-107`; `packages/shared/src/constants.ts:1-11` — **DUDOSO, ver abajo** |
 | `PLATFORM_TENANTS` | Global (control-plane) | `platform.tenant.>` | `tenant-service`, `RetentionPolicy.Workqueue` (se autolimpia al ackear) | `services/tenant-service/src/providers/nats.module.ts:23-35`; `packages/shared/src/tenant-events.ts:30-33` |

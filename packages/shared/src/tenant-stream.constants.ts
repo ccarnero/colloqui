@@ -17,6 +17,20 @@ export interface TenantStreamConfig {
 
 const DAY_NS = 24 * 60 * 60 * 1_000_000_000;
 
+/**
+ * RESERVED FOR A FUTURE DESIGN — see `DOCS/v_next/tenant-messaging-tiers.md`.
+ *
+ * These limits are NOT applied to any stream today. No tenant record carries a
+ * `TenantTier`, and `ensureTenantIngressStream`
+ * (`packages/database/src/nats-provider.ts`) — the single creator of
+ * `INGRESS-<TENANT>` since 2026-07-31 — applies the flat
+ * `CHANNEL_STREAM_MAX_AGE_NS` / `CHANNEL_STREAM_MAX_BYTES` instead.
+ *
+ * Kept in code (not deleted) because the v_next design references these exact
+ * values; the doc lists the five prerequisites to make them live. Do not wire
+ * them into a creation path without reading prerequisite 3 (cluster capacity)
+ * and 4 (shrink semantics on existing streams).
+ */
 export const TENANT_TIER_LIMITS: Record<TenantTier, TenantStreamLimits> = {
   free: {
     max_age: 7 * DAY_NS,
@@ -49,6 +63,13 @@ export function getTenantSubjectPattern(tenantId: string): string {
   return `evt.${tenantId}.>`;
 }
 
+/**
+ * RESERVED FOR A FUTURE DESIGN — see `DOCS/v_next/tenant-messaging-tiers.md`.
+ *
+ * Had two callers (agent-admin, agent-memory) that both hardcoded
+ * `tier: "free"`; both now delegate stream creation to
+ * `ensureTenantIngressStream`, so this composes a config nothing applies yet.
+ */
 export function buildTenantStreamConfig(
   tenantId: string,
   tier: TenantTier,

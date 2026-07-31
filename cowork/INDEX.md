@@ -1498,7 +1498,16 @@ discoverability is `skills/` itself plus the `AGENTS.md:103` list).]
 Manual-loop change that took the nine numbered T07 findings the docs-consistency loop
 RECORDED (it fixed docs only) and closed them in CODE, one commit per task, each with a
 regression test that fails on the old behaviour. Eight of the nine are now fixed; finding
-8 (tier wiring) stands deferred by decision 4 as a design change rather than drift. Full
+8 (tier wiring) stands deferred by decision 4 as a design change rather than drift.
+[Updated 2026-07-31 — finding 8 ADJUDICATED in post-loop item 6 (human-decided):
+not drift, the docs were accurate. The tier direction is formalized as
+`DOCS/v_next/tenant-messaging-tiers.md` under a new FUTURE doc class
+(`DOCS/v_next/README.md`) with 5 numbered prerequisites. The investigation did
+surface a real latent bug, now fixed: `INGRESS-<TENANT>` had TWO creators with
+different configs (flat 256 MiB vs free-tier 1 GiB + 1 MiB msg cap), decided by
+whichever service touched a new tenant first; agent-admin and agent-memory now
+delegate to `ensureTenantIngressStream`, the single creator. This is the only
+post-loop item that changed production code.] Full
 queue, gates, decisions and the per-finding code-fix log:
 `manual-loops/messaging/envelope-drift.md` and the appended log in
 `manual-loops/architecture/docs-consistency.md` (dated 2026-07-31).

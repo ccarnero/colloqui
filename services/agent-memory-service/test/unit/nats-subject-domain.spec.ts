@@ -75,7 +75,14 @@ describe("NatsPublisher subject/envelope agreement", () => {
   const publishMock = mock(() => Promise.resolve({ seq: 1 }));
   const fakeLazyNats = {
     jetstreamManager: () =>
-      Promise.resolve({ streams: { info: () => Promise.resolve({}) } }),
+      Promise.resolve({
+        streams: {
+          info: () => Promise.resolve({}),
+          add: () => Promise.resolve({}),
+        },
+        getAccountInfo: () =>
+          Promise.resolve({ storage: 0, limits: { max_storage: 10_000_000_000 } }),
+      }),
     jetstream: () => Promise.resolve({ publish: publishMock }),
     close: () => Promise.resolve(),
   };

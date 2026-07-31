@@ -122,19 +122,20 @@ Actual values come from `packages/shared/src/channel.constants.ts`:
 | `duplicate_window` | Not explicitly set | Server default (2 min) |
 | `num_replicas` | Not explicitly set | Server default (1) |
 
-### Tenant tiers (partially wired)
+### Tenant tiers
 
-> **Status: partial implementation**
->
-> `TENANT_TIER_LIMITS` is defined in `packages/shared/src/tenant-stream.constants.ts` with values for `free`, `pro`, and `enterprise`, and some provisioning paths call `buildTenantStreamConfig(..., "free")`. Other ensure/reconcile paths still use legacy default limits (`CHANNEL_STREAM_MAX_AGE_NS` / `CHANNEL_STREAM_MAX_BYTES`) or only ensure stream existence. Treat tenant tiers as partially wired until all stream creation and reconciliation paths share the same tier source.
+Every tenant stream uses the SAME flat limits documented above
+(`CHANNEL_STREAM_MAX_AGE_NS` / `CHANNEL_STREAM_MAX_BYTES`). There is no
+per-tenant messaging tier in the platform today: `TENANT_TIER_LIMITS` exists in
+`packages/shared/src/tenant-stream.constants.ts` but no tenant record carries a
+`TenantTier`, and since 2026-07-31 `ensureTenantIngressStream` is the single
+creator of `INGRESS-<TENANT>`, so the flat config is the only one applied.
 
-Objective design (pending):
-
-| Tier | max_bytes | max_age | num_replicas | object_store_max_bytes |
-|------|-----------|---------|--------------|------------------------|
-| `free` | 1 GB | 7 days | 1 | 512 MB |
-| `pro` | 5 GB | 14 days | 1 | 2 GB |
-| `enterprise` | 20 GB | 30 days | 3 | 5 GB |
+Tiering is an agreed FUTURE direction with its limits table, prerequisites and
+migration questions in
+[`DOCS/v_next/tenant-messaging-tiers.md`](../v_next/tenant-messaging-tiers.md).
+Per `DOCS/v_next/README.md`, that document must not be read as current
+behaviour.
 
 ## Streams Reference
 
@@ -360,9 +361,14 @@ When a tenant is deactivated, the objective design is:
 3. After the retention period, data expires automatically by TTL.
 4. No immediate data deletion — this allows reactivation within the retention window.
 
-### Tier scaling (partially wired)
+### Tier scaling
 
-JetStream supports live stream limit updates without downtime. The connection between tenant tier and stream provisioning is partial: `buildTenantStreamConfig` exists and is used by some providers with a hardcoded `free` tier, but reconciliation/default paths are not yet consistently tier-aware.
+JetStream supports live stream limit updates without downtime, but the platform
+does not use them: every tenant stream is created once with the flat limits
+above and is never reconciled. `buildTenantStreamConfig` has had no caller since
+2026-07-31 — see [Tenant tiers](#tenant-tiers) and
+[`DOCS/v_next/tenant-messaging-tiers.md`](../v_next/tenant-messaging-tiers.md),
+whose prerequisite 4 covers exactly this update path and its shrink semantics.
 
 ## Publish Semantics
 

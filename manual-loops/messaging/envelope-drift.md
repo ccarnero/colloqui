@@ -59,7 +59,7 @@ The engine does not forward this section — repeat citations inside tasks.
   `webhook.interfaces.ts:18` (`data.headers`).
 - Ingester classification + goldens: `services/tracking-ingester-service/src/lib/classify.ts`,
   `golden/labeled.tsv` (92 rows, pinned by guard K9b), TAXONOMY.md.
-- Naming: `packages/shared/src/tenant-stream.constants.ts:44-45`
+- Naming: `packages/shared/src/tenant-stream.constants.ts:58-59`
   (`getTenantStreamName`), `packages/shared/src/channel.utils.ts:29-30`
   (`buildIngressStreamName`, no external callers).
 - Consumer runner: `packages/database/src/nats-durable-consumer.ts`
@@ -88,6 +88,13 @@ The engine does not forward this section — repeat citations inside tasks.
 - Touched services only: api-gateway, channel-service, agent-ai-service,
   tracking-ingester-service, admin-console, packages/shared,
   packages/database, skills/envelope-messages. Anything else → STOP.
+  **Amended 2026-07-31 (human-directed, post-loop items):** agent-memory-service
+  (items T08, 1, and the producer fix) and agent-admin-service (items 2 and 6)
+  are sanctioned additions — each was authorised explicitly when the item was
+  assigned, and item 6's single-creator race fix could not be done in either
+  service alone. DOCS/v_next, scripts/reset/INVENTORY.md, TAXONOMY.md,
+  SCHEMAS.md, DRIFT.md, cowork/INDEX.md and skills/playwright were likewise
+  authorised per item.
 - Repo style wins per service; English everywhere.
 
 ## Gates (the `/manual-loop` command runs these verbatim, in order)
@@ -247,7 +254,7 @@ G6b: rebuild channel-service.
 
 - Remove `buildIngressStreamName` from `packages/shared/src/channel.utils.ts:29-30`
   and its export (`index.ts`); every stream-name construction goes through
-  `getTenantStreamName` (`tenant-stream.constants.ts:44-45`). Verified
+  `getTenantStreamName` (`tenant-stream.constants.ts:58-59`). Verified
   2026-07-31: zero callers outside packages/shared — confirm again at
   implementation time; if a caller appeared since, migrate it in the same
   task.
@@ -456,6 +463,18 @@ webhook-derived stage-2 envelopes grow by the 7-header allowlist — a few
 hundred bytes against the 256 KB claim-check threshold, so no change in
 claim-check behaviour. Five existing `processInbound` assertions were EXTENDED
 (not weakened) to pin the forwarded headers verbatim.
+
+**Post-loop item 6 (2026-07-31): tier wiring adjudicated + race fixed.**
+Finding 8 is NOT drift — the docs were accurate. Human decision: formalize the
+tier direction as `DOCS/v_next/tenant-messaging-tiers.md` under a new FUTURE
+doc class (`DOCS/v_next/README.md`, third class beside descriptive and
+prescriptive), and fix the real bug the investigation found — `INGRESS-<TENANT>`
+had two creators with different configs (flat 256 MiB vs free-tier 1 GiB + 1 MiB
+msg cap), decided by whichever service touched a new tenant first. agent-admin
+and agent-memory now delegate to `ensureTenantIngressStream`, the single
+creator; their capacity pre-flight survives as its opt-in `checkCapacity`
+option (opt-in because 27 jsm mocks across 10 packages implement `streams`
+only, and the default ensure sits on every publish path).
 
 **Remaining OPEN questions (replacing the resolved `PLATFORM_*` trap):**
 
