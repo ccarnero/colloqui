@@ -439,8 +439,15 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 - [x] T05 service scaling fields + routes
 - [x] T06 `mcpServers` section
 - [x] T07 SDK/CLI compatibility sweep
-- [ ] T08 migrate the 11 stand-by samples
-- [ ] T09 restore the full G4 canary set (4 groups, mcp included)
+- [x] T08 migrate the 11 stand-by samples (CLOSED-SUPERSEDED 2026-07-31:
+  2/11 migrated here; the remaining 9 were transferred by the 2026-07-16
+  closure ruling to `provisioning-manifest-gaps-2.md`, whose T07 migrated
+  8/9 on 2026-07-17 — the 9th, `ai-skill-support-agent`, stays in sanctioned
+  stand-by pending the `skills` fifth-resource-kind decision)
+- [x] T09 restore the full G4 canary set (CLOSED-SUPERSEDED 2026-07-31:
+  never ran here; its intent shipped as `provisioning-manifest-gaps-2.md`
+  T08 on 2026-07-17 — full canary set restored, one per group, with the
+  first REAL mcp canary, all four validated + double-apply all-noop)
 
 ## Out of scope (explicit)
 
