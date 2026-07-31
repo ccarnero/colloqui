@@ -112,7 +112,6 @@ export type {
 export {
   buildChannelSubject,
   buildClaimCheckBucket,
-  buildIngressStreamName,
   buildTenantWildcard,
   buildWebhookIngressSubject,
   parseChannelSubject,

@@ -42,7 +42,7 @@ src/
 │                                   #   subject patterns, claim-check thresholds, DLQ helpers
 │                                   #   (buildDlqStreamName, buildDlqSubjectPattern, buildDlqMessageSubject)
 ├── channel.utils.ts                # Subject builders/parsers: buildChannelSubject,
-│                                   #   buildWebhookIngressSubject, buildIngressStreamName,
+│                                   #   buildWebhookIngressSubject,
 │                                   #   buildClaimCheckBucket, parseChannelSubject,
 │                                   #   parseWebhookIngressSubject, buildTenantWildcard
 ├── tenant-events.ts                # PLATFORM_TENANTS stream, tenant provision/ready/deleted
@@ -135,7 +135,7 @@ The canonical topology is **per-tenant**. See `DOCS/messaging/envelope.md` (enve
 
 | Helper / Constant | Value / Pattern |
 |---|---|
-| `getTenantStreamName(tenantId)` | `INGRESS-<tenant>` |
+| `getTenantStreamName(tenantId)` | `INGRESS-<TENANT>` (tenant id upper-cased) |
 | `getTenantSubjectPattern(tenantId)` | `evt.<tenant>.>` |
 | `buildTenantStreamConfig(tenantId, tier)` | Returns `TenantStreamConfig` with tier-scoped limits |
 | `TENANT_TIER_LIMITS` | `free` / `pro` / `enterprise` limits (max_age, max_bytes, replicas, object store) |

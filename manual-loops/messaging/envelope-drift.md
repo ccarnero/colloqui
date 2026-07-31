@@ -323,7 +323,10 @@ grep -n "envelope-drift" cowork/INDEX.md
   closes the type hole. T09 note: add the "ingress caller does not yet
   forward the stage-1 allowlist" clause to envelope.md §10.2 to prevent the
   next implicature drift)
-- [ ] T07 one INGRESS builder
+- [x] T07 one INGRESS builder (zero callers confirmed; 20/20 services
+  typechecked post-removal; pin scans 4 construction forms. Follow-up
+  flagged: lowercase INGRESS-acme examples in packages/database doc
+  comments)
 - [ ] T08 agent-memory constants + domain
 - [ ] T09 docs + index
 

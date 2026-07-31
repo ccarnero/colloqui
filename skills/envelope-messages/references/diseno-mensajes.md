@@ -34,8 +34,11 @@ packages/shared/src/channel.constants.ts
   → buildDlqStreamName, buildDlqSubjectPattern
 
 packages/shared/src/channel.utils.ts
-  → buildChannelSubject, buildWebhookIngressSubject, buildIngressStreamName
+  → buildChannelSubject, buildWebhookIngressSubject
   → buildClaimCheckBucket, parseChannelSubject, parseWebhookIngressSubject, buildTenantWildcard
+
+packages/shared/src/tenant-stream.constants.ts
+  → getTenantStreamName (INGRESS-<TENANT>, upper-cased — the only ingress-name builder)
 
 packages/shared/src/webhook.interfaces.ts
   → WebhookIngressEnvelope (tipo pre-ingress de api-gateway — sin accountid)

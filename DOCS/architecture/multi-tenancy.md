@@ -22,7 +22,7 @@ at the infrastructure layer. NATS runs as a **single account with no ACLs per te
    Note the case asymmetry — it is real, not a typo. `getTenantStreamName`
    upper-cases the suffix (`packages/shared/src/tenant-stream.constants.ts:44-45`),
    while `buildDlqStreamName` (`packages/shared/src/channel.constants.ts:80-82`)
-   and `buildClaimCheckBucket` (`packages/shared/src/channel.utils.ts:37-39`)
+   and `buildClaimCheckBucket` (`packages/shared/src/channel.utils.ts:29-31`)
    interpolate the tenant id verbatim. A consumer matching the wrong case binds
    nothing.
 3. **PostgreSQL** is per-tenant: a logical database on the shared CNPG cluster (`shared` tier)
@@ -280,14 +280,15 @@ Name construction functions:
 | Function | Returns | File |
 |---|---|---|
 | `getTenantStreamName(tenant)` | `INGRESS-<TENANT>` (upper-cased) | `packages/shared/src/tenant-stream.constants.ts:44-45` |
-| `buildIngressStreamName(tenant)` | `INGRESS-<tenant>` (verbatim) | `packages/shared/src/channel.utils.ts:29-30` |
 | `buildDlqStreamName(tenant)` | `DLQ-<tenant>` (verbatim) | `packages/shared/src/channel.constants.ts:80-82` |
-| `buildClaimCheckBucket(tenant)` | `PAYLOAD-<tenant>` (verbatim) | `packages/shared/src/channel.utils.ts:37-39` |
+| `buildClaimCheckBucket(tenant)` | `PAYLOAD-<tenant>` (verbatim) | `packages/shared/src/channel.utils.ts:29-31` |
 
-> Two builders produce the INGRESS name and they disagree on casing:
-> `getTenantStreamName` upper-cases the tenant id, `buildIngressStreamName`
-> interpolates it verbatim. The names above are what each function returns;
-> the divergence itself is recorded as a T07 code finding, not resolved here.
+> `buildIngressStreamName` removed 2026-07-31 (envelope-drift T07) —
+> `getTenantStreamName` is the only ingress-name builder. The two used to
+> disagree on casing: the removed one interpolated the tenant id verbatim, so
+> for tenant `acme` it produced `INGRESS-acme`, a stream that exists in no
+> cluster. It had no callers. Pinned by
+> `packages/shared/src/__tests__/ingress-stream-name.test.ts`.
 
 ### 6.4 ChannelAccount Interface
 
@@ -327,5 +328,5 @@ interface ChannelAccount {
 | `packages/shared/src/constants.ts` | `TENANT_HEADER = 'x-yoizen-tenant'` |
 | `packages/shared/src/channel.interfaces.ts` | `ChannelAccount`, `InboundMessage`, `OutboundMessage` |
 | `packages/shared/src/channel.constants.ts` | `buildDlqStreamName` |
-| `packages/shared/src/channel.utils.ts` | `buildIngressStreamName`, `buildClaimCheckBucket` |
+| `packages/shared/src/channel.utils.ts` | `buildClaimCheckBucket`, `buildChannelSubject` |
 | `packages/database/src/` | `ensureTenantIngressStream`, `ensureTenantDlqStream` |

@@ -23,14 +23,6 @@ export function buildChannelSubject(
 }
 
 /**
- * Builds the stream name for a tenant's ingress messages.
- * Format: INGRESS-<tenant>
- */
-export function buildIngressStreamName(tenant: string): string {
-  return `INGRESS-${tenant}`;
-}
-
-/**
  * Builds the NATS Object Store bucket name for claim-check payloads.
  * Format: PAYLOAD-<tenant>
  */
