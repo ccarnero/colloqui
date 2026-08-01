@@ -124,7 +124,10 @@ export const AGENT_ADMIN_CONFIG_SYNC = `${AGENT_ADMIN_SUBJECT_PREFIX}.config_syn
 export const AGENT_ADMIN_JOBS_SYNC = `${AGENT_ADMIN_SUBJECT_PREFIX}.jobs_sync.v1`;
 export const AGENT_ADMIN_JOB_TRIGGER = `${AGENT_ADMIN_SUBJECT_PREFIX}.job_trigger.v1`;
 export const AGENT_ADMIN_CHAT_RESPOND = `${AGENT_ADMIN_SUBJECT_PREFIX}.chat_respond.v1`;
-export const AGENT_ADMIN_ONLINE = `${AGENT_ADMIN_SUBJECT_PREFIX}.online.v1`;
+// `AGENT_ADMIN_ONLINE` (`…online.v1`) was removed 2026-08-01 (envelope-drift
+// open decision 4): no publisher or consumer ever existed in any service.
+// Runtime presence heartbeats are agent-ai's `online.v1` on the
+// ai-agent-gateway family instead.
 export const AGENT_ADMIN_AGENT_OUTBOUND = `${AGENT_ADMIN_SUBJECT_PREFIX}.agent_outbound.v1`;
 export const AGENT_ADMIN_EXECUTION_STATUS = `${AGENT_ADMIN_SUBJECT_PREFIX}.execution_status.v1`;
 export const AGENT_ADMIN_AGENT_PUBLISHED = `${AGENT_ADMIN_SUBJECT_PREFIX}.agent_published.v1`;
@@ -173,10 +176,23 @@ export const AI_AGENT_GATEWAY_EXECUTION_FAILED = `${AI_AGENT_GATEWAY_SUBJECT_PRE
  * agent-scheduler-service's subject family. `SCHEDULER_HEARTBEAT` was
  * platform-prefixed until 2026-07-31 — same rename, same
  * reason; its value is and was the scheduler's own subject.
+ *
+ * The prefix is built from the identity constants (like agent-memory's) so
+ * the heartbeat envelope's producer/domain/channel/provider fields — which
+ * `HeartbeatService` builds from the same constants since 2026-08-01
+ * (envelope-drift open decision 3) — cannot disagree with the subject
+ * tokens. Value byte-identical, pinned in `agent-admin.constants.test.ts`.
  */
-export const SCHEDULER_SUBJECT_PREFIX =
-  "evt.{tenant}.agent-scheduler-service.automation.platform.internal";
+export const AGENT_SCHEDULER_PRODUCER = "agent-scheduler-service";
+export const SCHEDULER_SUBJECT_PREFIX = `evt.{tenant}.${AGENT_SCHEDULER_PRODUCER}.${AUTOMATION_DOMAIN}.${PLATFORM_CHANNEL}.${PLATFORM_PROVIDER}`;
 export const SCHEDULER_HEARTBEAT = `${SCHEDULER_SUBJECT_PREFIX}.heartbeat.v1`;
+/**
+ * The heartbeat envelope's `type`. Predates the `io.yoizen.<producer>.…` type
+ * convention the other internal producers follow; the value is pinned as-is
+ * in `heartbeat.service.spec.ts` because changing it is a wire change.
+ */
+export const SCHEDULER_HEARTBEAT_TYPE =
+  "io.yoizen.platform.scheduler.heartbeat.v1";
 
 export function buildPlatformSubject(
   template: string,

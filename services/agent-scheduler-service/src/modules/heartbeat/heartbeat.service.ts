@@ -1,15 +1,30 @@
-import { Inject, Injectable, OnModuleInit, OnModuleDestroy } from "@nestjs/common";
-import type { JetStreamClient } from "nats";
+import {
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
-import { buildPlatformSubject, SCHEDULER_HEARTBEAT } from "@yoizen/shared";
-import { JETSTREAM } from "../../providers/nats.provider";
+import {
+  AGENT_SCHEDULER_PRODUCER,
+  AUTOMATION_DOMAIN,
+  buildPlatformSubject,
+  PLATFORM_CHANNEL,
+  PLATFORM_PROVIDER,
+  SCHEDULER_HEARTBEAT,
+  SCHEDULER_HEARTBEAT_TYPE,
+} from "@yoizen/shared";
+import type { JetStreamClient } from "nats";
 import type { IHeartbeatEngine } from "../../abstractions/heartbeat-engine.interface";
+import { JETSTREAM } from "../../providers/nats.provider";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const TENANT_ACTIVITY_TTL_MS = 5 * 60_000;
 
 @Injectable()
-export class HeartbeatService implements IHeartbeatEngine, OnModuleInit, OnModuleDestroy {
+export class HeartbeatService
+  implements IHeartbeatEngine, OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new PinoLoggerService(HeartbeatService.name);
   private intervalId: ReturnType<typeof setInterval> | null = null;
   private readonly activeTenants = new Map<string, number>();
@@ -22,13 +37,17 @@ export class HeartbeatService implements IHeartbeatEngine, OnModuleInit, OnModul
   // ── IHeartbeatEngine ──────────────────────────────────────────────────────
 
   async start(): Promise<void> {
-    if (this.running) return;
+    if (this.running) {
+      return;
+    }
     this.running = true;
     this.intervalId = setInterval(
       () => this.publishHeartbeats(),
-      HEARTBEAT_INTERVAL_MS,
+      HEARTBEAT_INTERVAL_MS
     );
-    this.logger.log(`[heartbeat] Started with interval ${HEARTBEAT_INTERVAL_MS}ms`);
+    this.logger.log(
+      `[heartbeat] Started with interval ${HEARTBEAT_INTERVAL_MS}ms`
+    );
   }
 
   async stop(): Promise<void> {
@@ -89,26 +108,30 @@ export class HeartbeatService implements IHeartbeatEngine, OnModuleInit, OnModul
 
     for (const tenantId of tenants) {
       try {
+        // Identity fields come from the same shared constants the subject
+        // (SCHEDULER_HEARTBEAT) is built from, so envelope and subject cannot
+        // disagree (envelope-drift open decision 3; values pinned by this
+        // service's heartbeat.service.spec.ts against literals).
         const envelope = {
           specversion: "1.0",
           id: crypto.randomUUID(),
-          type: "io.yoizen.platform.scheduler.heartbeat.v1",
-          source: "agent-scheduler-service",
-          resource: "agent-scheduler-service/heartbeat",
+          type: SCHEDULER_HEARTBEAT_TYPE,
+          source: AGENT_SCHEDULER_PRODUCER,
+          resource: `${AGENT_SCHEDULER_PRODUCER}/heartbeat`,
           time: timestamp,
           correlation_id: correlationId,
           idempotencykey: idempotencyKey,
           tenant: tenantId,
-          producer: "agent-scheduler-service",
-          domain: "automation",
-          channel: "platform",
-          provider: "internal",
+          producer: AGENT_SCHEDULER_PRODUCER,
+          domain: AUTOMATION_DOMAIN,
+          channel: PLATFORM_CHANNEL,
+          provider: PLATFORM_PROVIDER,
           transport: { name: "nats", version: "1.0" },
           data: {
             payload: {
               activeTenants: tenants.length,
               status: "online",
-              service: "agent-scheduler-service",
+              service: AGENT_SCHEDULER_PRODUCER,
               timestamp,
             },
           },
@@ -118,7 +141,7 @@ export class HeartbeatService implements IHeartbeatEngine, OnModuleInit, OnModul
         await this.js.publish(subject, JSON.stringify(envelope));
       } catch (error) {
         this.logger.warn(
-          `[heartbeat] Failed to publish for tenant '${tenantId}': ${error}`,
+          `[heartbeat] Failed to publish for tenant '${tenantId}': ${error}`
         );
       }
     }

@@ -10,7 +10,6 @@ import {
   AGENT_ADMIN_EXECUTION_STATUS,
   AGENT_ADMIN_JOB_TRIGGER,
   AGENT_ADMIN_JOBS_SYNC,
-  AGENT_ADMIN_ONLINE,
   AGENT_ADMIN_PRODUCER,
   AGENT_ADMIN_SKB_FILE_INGESTION,
   AGENT_ADMIN_SUBJECT_PREFIX,
@@ -51,7 +50,10 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
     );
   });
 
-  test("all twelve subjects keep their exact wire strings", () => {
+  test("all eleven subjects keep their exact wire strings", () => {
+    // Twelve until 2026-08-01: AGENT_ADMIN_ONLINE (`…online.v1`) was removed
+    // as dead — no publisher or consumer ever existed (envelope-drift open
+    // decision 4).
     const prefix =
       "evt.{tenant}.agent-admin-service.automation.platform.internal";
 
@@ -59,7 +61,6 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
     expect(AGENT_ADMIN_JOBS_SYNC).toBe(`${prefix}.jobs_sync.v1`);
     expect(AGENT_ADMIN_JOB_TRIGGER).toBe(`${prefix}.job_trigger.v1`);
     expect(AGENT_ADMIN_CHAT_RESPOND).toBe(`${prefix}.chat_respond.v1`);
-    expect(AGENT_ADMIN_ONLINE).toBe(`${prefix}.online.v1`);
     expect(AGENT_ADMIN_AGENT_OUTBOUND).toBe(`${prefix}.agent_outbound.v1`);
     expect(AGENT_ADMIN_EXECUTION_STATUS).toBe(`${prefix}.execution_status.v1`);
     expect(AGENT_ADMIN_AGENT_PUBLISHED).toBe(`${prefix}.agent_published.v1`);
@@ -81,7 +82,6 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
       AGENT_ADMIN_JOBS_SYNC,
       AGENT_ADMIN_JOB_TRIGGER,
       AGENT_ADMIN_CHAT_RESPOND,
-      AGENT_ADMIN_ONLINE,
       AGENT_ADMIN_AGENT_OUTBOUND,
       AGENT_ADMIN_EXECUTION_STATUS,
       AGENT_ADMIN_AGENT_PUBLISHED,
@@ -152,6 +152,13 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
     expect(shared.PLATFORM_CHANNEL).toBe("platform");
     expect(shared.PLATFORM_PROVIDER).toBe("internal");
     expect(shared.PLATFORM_ACCOUNT_ID).toBe("platform-admin");
+  });
+
+  test("AGENT_ADMIN_ONLINE is gone — dead subject, not renamed", () => {
+    // Removed 2026-08-01 (envelope-drift open decision 4): no publisher or
+    // consumer in any service ever used it; agent-ai's runtime-presence
+    // heartbeat publishes `online.v1` on the ai-agent-gateway family instead.
+    expect("AGENT_ADMIN_ONLINE" in shared).toBe(false);
   });
 
   test("AUTOMATION_DOMAIN keeps the wire value; the old name is gone", () => {

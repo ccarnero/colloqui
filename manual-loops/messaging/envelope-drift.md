@@ -431,7 +431,9 @@ now spans the cutover like `domain`.
    **Exact tally — 20 identifiers renamed, all values byte-identical.**
    19 exported from `packages/shared/src/constants.ts` (grep
    `^export const (AGENT_ADMIN_|AI_AGENT_GATEWAY_EXECUTION_|SCHEDULER_HEARTBEAT)`
-   to reproduce the list) + 1 local in agent-admin. In full:
+   to reproduce the list; the grep now yields 18 + `SCHEDULER_HEARTBEAT_TYPE`
+   — open decision 4 later deleted `AGENT_ADMIN_ONLINE`, and decision 3 added
+   the type constant) + 1 local in agent-admin. In full:
 
    agent-admin family (14): `AGENT_ADMIN_PRODUCER`,
    `AGENT_ADMIN_SUBJECT_PREFIX`, `AGENT_ADMIN_CONFIG_SYNC`,
@@ -527,12 +529,23 @@ only, and the default ensure sits on every publish path).
    the subject/envelope agreement guarantees the loop built elsewhere. Its
    values are correct today (verified during item 2) — this is a robustness
    follow-up, not a bug.
+   **RESOLVED 2026-08-01** — human-approved: envelope identity fields now come
+   from shared constants (`SCHEDULER_HEARTBEAT_TYPE`,
+   `AGENT_SCHEDULER_PRODUCER`, `AUTOMATION_DOMAIN`, `PLATFORM_CHANNEL`,
+   `PLATFORM_PROVIDER`), and `SCHEDULER_SUBJECT_PREFIX` is built from the same
+   constants (like agent-memory's), so subject and envelope cannot disagree.
+   Wire values byte-identical — pinned against literals in
+   `heartbeat.service.spec.ts` and `agent-admin.constants.test.ts`.
 4. **`AGENT_ADMIN_ONLINE` looks dead.** No publisher and no consumer in any
    service; only `packages/shared`'s own test references it. NOT deleted here
    (out of scope) — a dead-code candidate to confirm before anyone relies on
    it. Note agent-ai's runtime-presence heartbeat publishes `online.v1` on the
    ai-agent-gateway family instead (`classify.ts` rule 20), which is probably
    why this constant was left stranded.
+   **RESOLVED 2026-08-01** — human-approved: DELETED. Re-verified no publisher
+   or consumer anywhere (only shared's own tests referenced it); absence
+   pinned in `agent-admin.constants.test.ts`, tombstone comment left at the
+   definition site in `constants.ts`.
 
 ## Out of scope (explicit)
 
