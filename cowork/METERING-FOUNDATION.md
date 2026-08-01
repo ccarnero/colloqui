@@ -35,7 +35,8 @@ Every metering-relevant action must satisfy:
 `audit-service`'s canonical consumer pattern `evt.*.*.platform.>` (`audit.service.ts:47`) only
 matches envelopes whose domain token is `platform`. Every execution lifecycle event
 (`execution_requested/started/completed/failed`) and `config_sync` uses
-`PLATFORM_DOMAIN = "automation"` (`packages/shared/src/constants.ts:88,109-114`).
+`AUTOMATION_DOMAIN = "automation"` (named `PLATFORM_DOMAIN` until 2026-08-01,
+`packages/shared/src/constants.ts`).
 **No consumer audits automation-domain events at all** — a subject-filter mismatch, not a
 documented decision. The "service that subscribes to everything and writes Postgres" has a
 blind spot exactly over the platform's highest-value metering unit.

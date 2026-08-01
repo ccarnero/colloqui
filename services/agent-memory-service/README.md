@@ -89,7 +89,7 @@ The envelope body reports `producer: AGENT_MEMORY_PRODUCER`
 (`agent-memory-service`) and `domain: AGENT_MEMORY_DOMAIN` (`agent-memory`) —
 the same values as the subject's producer and domain tokens. Both previously
 carried agent-admin's constants, then named `PLATFORM_PRODUCER`/`PLATFORM_DOMAIN`
-(today `AGENT_ADMIN_PRODUCER`/`PLATFORM_DOMAIN`)
+(today `AGENT_ADMIN_PRODUCER`/`AUTOMATION_DOMAIN`)
 (`agent-admin-service`/`automation`), contradicting the subject: this publisher
 was renamed out of the admin service (`R061` in `e9e3a94b`), which rewrote the
 subject and `transport.agent_id` but left the envelope identity fields behind.

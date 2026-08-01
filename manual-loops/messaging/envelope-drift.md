@@ -496,6 +496,13 @@ only, and the default ensure sits on every publish path).
    token, with the same intent. The name is still imprecise, but renaming it
    is a wider decision than de-genericising one service's constants — it
    touches the automation family as a whole. Needs a human call.
+   **RESOLVED 2026-08-01** — human-approved, renamed to `AUTOMATION_DOMAIN`
+   across shared (definition, `index.ts`, `execution-client.ts`), agent-admin,
+   agent-scheduler and current-state docs; the wire value `automation` is
+   byte-identical, pinned (with the old name's absence) in
+   `packages/shared/src/__tests__/agent-admin.constants.test.ts`. Historical
+   records (`DRIFT.md` #9, `golden/README.md`) intentionally keep the old
+   name.
 2. **Move `AGENT_ADMIN_SKILL_CHANGED` into shared?** It is the only member of
    the agent-admin subject family still declared inside the service
    (`nats.provider.ts:79`) instead of beside its twelve siblings in

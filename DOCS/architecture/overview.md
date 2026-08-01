@@ -659,7 +659,7 @@ Provides type-safe constants and interfaces consumed by all services.
 | `MAX_DELIVER` | `5` | All durable consumers |
 | `TENANT_HEADER` | `x-yoizen-tenant` | All services |
 | `REGISTRY_KNATIVE_GROUP` / `REGISTRY_KNATIVE_VERSION` / `REGISTRY_KNATIVE_SERVICES_PLURAL` | `serving.knative.dev` / `v1` / `services` | Registry Service, Tenant Service (Knative API client) |
-| `REGISTRY_PRODUCER` / `PLATFORM_DOMAIN` | `registry-service` / `platform` | Registry Service (lifecycle event subjects) |
+| `REGISTRY_PRODUCER` / `REGISTRY_DOMAIN` | `registry-service` / `platform` | Registry Service (lifecycle event subjects) |
 | `ADAPTER_MANAGED_BY_REGISTRY` | `registry-service` | Connector Admin (internal-sync ownership marker) |
 | `WORKFLOW_ORCHESTRATOR_TASK_QUEUE` | `workflow-orchestrator` | Workflow Service |
 | `CONNECTOR_RUNTIME_TASK_QUEUE` | `connector-runtime` | Connector Runtime |

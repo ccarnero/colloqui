@@ -81,7 +81,10 @@ describe("NatsPublisher subject/envelope agreement", () => {
           add: () => Promise.resolve({}),
         },
         getAccountInfo: () =>
-          Promise.resolve({ storage: 0, limits: { max_storage: 10_000_000_000 } }),
+          Promise.resolve({
+            storage: 0,
+            limits: { max_storage: 10_000_000_000 },
+          }),
       }),
     jetstream: () => Promise.resolve({ publish: publishMock }),
     close: () => Promise.resolve(),
@@ -132,7 +135,8 @@ describe("NatsPublisher subject/envelope agreement", () => {
 
       expect(tokens.domain).toBe(AGENT_MEMORY_DOMAIN);
       expect(envelope["domain"]).toBe(tokens.domain);
-      // The value it used to carry, borrowed from agent-admin's PLATFORM_DOMAIN.
+      // The value it used to carry, borrowed from the constant then named
+      // PLATFORM_DOMAIN (today AUTOMATION_DOMAIN).
       expect(envelope["domain"]).not.toBe("automation");
     });
 
@@ -164,9 +168,9 @@ describe("NatsPublisher subject/envelope agreement", () => {
       expect(typeSegments[6]).toBe(subjectSegments[7]); // version
       expect(typeSegments[5]).toBe(kind);
       // The old form: `io.yoizen.agent-memory.memory.<verb>.v1`.
-      expect(String(envelope["type"]).startsWith("io.yoizen.agent-memory.memory.")).toBe(
-        false
-      );
+      expect(
+        String(envelope["type"]).startsWith("io.yoizen.agent-memory.memory.")
+      ).toBe(false);
     });
 
     it(`${kind}: envelope channel/provider also match their subject tokens`, async () => {

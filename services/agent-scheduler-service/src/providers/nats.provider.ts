@@ -23,7 +23,7 @@ import {
 import {
   AGENT_ADMIN_JOB_TRIGGER,
   AGENT_ADMIN_PRODUCER,
-  PLATFORM_DOMAIN,
+  AUTOMATION_DOMAIN,
   PLATFORM_CHANNEL,
   PLATFORM_PROVIDER,
   PLATFORM_ACCOUNT_ID,
@@ -156,7 +156,7 @@ export class NatsSchedulerPublisher implements OnModuleDestroy {
       correlation_id: `job:${jobId}:execution:${executionId}`,
       tenant: tenantId,
       producer: AGENT_ADMIN_PRODUCER,
-      domain: PLATFORM_DOMAIN,
+      domain: AUTOMATION_DOMAIN,
       channel: PLATFORM_CHANNEL,
       provider: PLATFORM_PROVIDER,
       accountid: PLATFORM_ACCOUNT_ID,

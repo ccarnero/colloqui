@@ -7,16 +7,16 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import {
+  ensureTenantIngressStream,
+  JetStreamCapacityError,
+} from "@yoizen/database";
+import {
   activeOrRandomTraceId,
   injectTraceContext,
   logWithEnvelope,
   PinoLoggerService,
   startNatsProducerSpan,
 } from "@yoizen/observability";
-import {
-  ensureTenantIngressStream,
-  JetStreamCapacityError,
-} from "@yoizen/database";
 import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
 import {
   AGENT_MEMORY_DOMAIN,
@@ -26,8 +26,8 @@ import {
   AGENT_MEMORY_PUBLISHED,
   AGENT_MEMORY_REJECTED,
   buildPlatformSubject,
-  getTenantStreamName,
   DepthExceededError,
+  getTenantStreamName,
   MAX_DEPTH_BY_CATEGORY,
   PLATFORM_ACCOUNT_ID,
   PLATFORM_CHANNEL,
@@ -225,8 +225,9 @@ function buildEventEnvelope(
     producer: AGENT_MEMORY_PRODUCER,
     // Subject and body must answer "which domain?" identically: the subject
     // token is `agent-memory` (AGENT_MEMORY_SUBJECT_PREFIX), so the envelope
-    // says the same. It used to report agent-admin's PLATFORM_DOMAIN
-    // ("automation") and contradict its own subject (envelope-drift T08).
+    // says the same. It used to report the constant then named
+    // PLATFORM_DOMAIN (today AUTOMATION_DOMAIN, "automation") and contradict
+    // its own subject (envelope-drift T08).
     domain: AGENT_MEMORY_DOMAIN,
     channel: PLATFORM_CHANNEL,
     provider: PLATFORM_PROVIDER,
@@ -292,7 +293,9 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
     const streamName = getTenantStreamName(tenantId);
     try {
       await ensureTenantIngressStream(jsm, tenantId, { checkCapacity: true });
-      this.logger.log(`Stream '${streamName}' ensured for tenant '${tenantId}'`);
+      this.logger.log(
+        `Stream '${streamName}' ensured for tenant '${tenantId}'`
+      );
     } catch (err: unknown) {
       if (err instanceof JetStreamCapacityError) {
         this.logger.error(err.message);
@@ -305,7 +308,6 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
 
     this.ensuredStreams.add(tenantId);
   }
-
 
   private async publishEvent(
     tenantId: string,

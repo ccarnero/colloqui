@@ -19,7 +19,8 @@ import {
  * `packages/shared/src/constants.ts` next to their siblings
  * (`AGENT_ADMIN_SUBJECT_PREFIX` & co). Being service-local is what let the
  * subject's domain token (`agent-memory`) drift from the envelope's `domain`
- * field (`automation`, borrowed from agent-admin's `PLATFORM_DOMAIN`).
+ * field (`automation`, borrowed from the constant then named
+ * `PLATFORM_DOMAIN`, today `AUTOMATION_DOMAIN`).
  *
  * Pinned here because TAXONOMY.md §4 rule 9 and SCHEMAS.md quote these
  * literals, and `tracking-ingester`'s classifier matches the subject tokens
@@ -47,7 +48,8 @@ describe("agent-memory subject constants (shared)", () => {
     // tracking-ingester classify.ts rule 9 (TAXONOMY.md §4 rule 9).
     expect(AGENT_MEMORY_PRODUCER).toBe("agent-memory-service");
     expect(AGENT_MEMORY_DOMAIN).toBe("agent-memory");
-    // NOT agent-admin's PLATFORM_DOMAIN — that mismatch was the T08 finding.
+    // NOT AUTOMATION_DOMAIN (then named PLATFORM_DOMAIN) — that mismatch was
+    // the T08 finding.
     expect(AGENT_MEMORY_DOMAIN).not.toBe("automation");
   });
 

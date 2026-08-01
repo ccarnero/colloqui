@@ -117,7 +117,7 @@ Built with `buildEventEnvelope` (root) or `deriveEnvelope` from the incoming
 | `source` | `agent-ai-service` (token/tool) / `ai-agent-gateway` (cancel) |
 | `producer` | `agent-ai-service` (token/tool) / `ai-agent-gateway` (cancel) |
 | `resource` | `execution/<executionId>` |
-| `domain` / `channel` / `provider` | `automation` / `platform` / `internal` (`PLATFORM_DOMAIN/CHANNEL/PROVIDER`) |
+| `domain` / `channel` / `provider` | `automation` / `platform` / `internal` (`AUTOMATION_DOMAIN` / `PLATFORM_CHANNEL` / `PLATFORM_PROVIDER`) |
 | `idempotencykey` | `computeIdempotencyKey(payload)` — kept for `isCompliantEnvelope`, but core NATS does **not** dedup; it is not load-bearing here |
 | `correlation_id` | the execution's correlation id (== `executionId` unless a `conversationId` was passed) |
 

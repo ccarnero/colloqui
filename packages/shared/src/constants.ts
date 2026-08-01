@@ -105,13 +105,14 @@ export const AGENT_ADMIN_PRODUCER = "agent-admin-service";
  * family uses them (agent-admin, agent-scheduler, agent-memory, and
  * `execution-client`), which is exactly what their names claim.
  *
- * `PLATFORM_DOMAIN` is NOT agent-admin-specific either — `automation` is the
- * domain token of the whole automation family (agent-admin, agent-scheduler
- * and ai-agent-gateway subjects all carry it). Its name is still imprecise
- * (`AUTOMATION_DOMAIN` would say what it means); flagged, not renamed here,
- * because that is a different decision from this one.
+ * `AUTOMATION_DOMAIN` is NOT agent-admin-specific either — `automation` is
+ * the domain token of the whole automation family (agent-admin,
+ * agent-scheduler and ai-agent-gateway subjects all carry it). Named
+ * `PLATFORM_DOMAIN` until 2026-08-01 (envelope-drift open decision 1): the
+ * identifier now says which family the token names; the VALUE on the wire is
+ * untouched.
  */
-export const PLATFORM_DOMAIN = "automation";
+export const AUTOMATION_DOMAIN = "automation";
 export const PLATFORM_CHANNEL = "platform";
 export const PLATFORM_PROVIDER = "internal";
 export const PLATFORM_ACCOUNT_ID = "platform-admin";
@@ -139,8 +140,9 @@ export const AGENT_ADMIN_SKB_FILE_INGESTION = `${AGENT_ADMIN_SUBJECT_PREFIX}.skb
  * the spec, and `tracking-ingester` classifies these events by matching these
  * exact tokens (rule 9, TAXONOMY.md §4). The envelope's `domain` field is built
  * from `AGENT_MEMORY_DOMAIN` too, so body and subject cannot disagree; before
- * envelope-drift T08 the envelope borrowed agent-admin's `PLATFORM_DOMAIN`
- * (`automation`) and contradicted its own subject.
+ * envelope-drift T08 the envelope borrowed the constant then named
+ * `PLATFORM_DOMAIN` (today `AUTOMATION_DOMAIN`, `automation`) and
+ * contradicted its own subject.
  */
 export const AGENT_MEMORY_PRODUCER = "agent-memory-service";
 export const AGENT_MEMORY_DOMAIN = "agent-memory";

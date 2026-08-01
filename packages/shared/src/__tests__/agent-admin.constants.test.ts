@@ -120,8 +120,7 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
 
   test("ai-agent-gateway execution subjects keep their exact wire strings", () => {
     // Renamed from PLATFORM_EXECUTION_* on the same date, same reason.
-    const prefix =
-      "evt.{tenant}.ai-agent-gateway.automation.platform.internal";
+    const prefix = "evt.{tenant}.ai-agent-gateway.automation.platform.internal";
 
     expect(AI_AGENT_GATEWAY_SUBJECT_PREFIX).toBe(prefix);
     expect(AI_AGENT_GATEWAY_EXECUTION_REQUESTED).toBe(
@@ -153,6 +152,14 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
     expect(shared.PLATFORM_CHANNEL).toBe("platform");
     expect(shared.PLATFORM_PROVIDER).toBe("internal");
     expect(shared.PLATFORM_ACCOUNT_ID).toBe("platform-admin");
-    expect(shared.PLATFORM_DOMAIN).toBe("automation");
+  });
+
+  test("AUTOMATION_DOMAIN keeps the wire value; the old name is gone", () => {
+    // Renamed from PLATFORM_DOMAIN on 2026-08-01 (envelope-drift open
+    // decision 1): `automation` is the automation family's domain token, not
+    // a platform-wide one. Same pure-rename rule as above — the VALUE is
+    // pinned, and the old identifier must not survive as an alias.
+    expect(shared.AUTOMATION_DOMAIN).toBe("automation");
+    expect("PLATFORM_DOMAIN" in shared).toBe(false);
   });
 });
