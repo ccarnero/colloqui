@@ -155,6 +155,10 @@ get_deployment_names() {
   case "$svc" in
     connector-admin)          echo "connector-admin-worker" ;;
     audit-service)            echo "audit-service-worker" ;;
+    # agent-admin-service ships an api KSVC + a worker Deployment from the
+    # same image; the worker was missing here until 2026-08-01, so rebuilds
+    # left agent-admin-service-worker running the previous image.
+    agent-admin-service)      echo "agent-admin-service-worker" ;;
     channel-service)          echo "channel-service-worker" ;;
     usage-aggregator-service) echo "usage-aggregator-worker" ;;
     # workflow-service ships three pods: api KSVC, NATS worker Deployment,
