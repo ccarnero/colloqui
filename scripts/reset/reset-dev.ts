@@ -16,10 +16,10 @@
  * NEVER touches: stream/consumer/bucket *definitions* (topology), the
  * tenant registry, credentials, schemas, or connector/channel/agent
  * CONFIGURATION. Also deliberately EXCLUDES the `credentials`
- * table/collection even though INVENTORY.md's DUDOSO section was
+ * table/collection even though INVENTORY.md's UNCERTAIN section was
  * approved wholesale — it holds real per-tenant connector secrets, not
  * test-run residue, and wiping it is out of scope for "clean up old
- * failed test runs." Everything else flagged DUDOSO (agent_versions,
+ * failed test runs." Everything else flagged UNCERTAIN (agent_versions,
  * document_chunks[_embedding], canary_deployments, adapter:oauth:*
  * Redis keys, the legacy global DLQ stream) IS included below.
  *
@@ -128,7 +128,7 @@ const USAGE_POSTGRES_TABLES: readonly string[] = [
   "channel_events",
 ];
 
-/** Redis key patterns. `adapter:oauth:*` is included per explicit approval of INVENTORY.md's DUDOSO section. */
+/** Redis key patterns. `adapter:oauth:*` is included per explicit approval of INVENTORY.md's UNCERTAIN section. */
 const REDIS_PATTERNS: readonly string[] = [
   "pending:*",
   "*:pending:*",
@@ -157,7 +157,7 @@ function classifyStream(name: string): "data" | "unknown" {
     return "data";
   }
   if (name === "DLQ") {
-    return "data"; // legacy global stream, INVENTORY.md DUDOSO #1
+    return "data"; // legacy global stream, INVENTORY.md UNCERTAIN #1
   }
   if (name === "GATEWAY_AUDIT") {
     return "data";

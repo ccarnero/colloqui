@@ -371,6 +371,9 @@ once a multipart parser dependency is vendored.
 > as the record of the decision round and the adjudication. Note gaps-2 and
 > gaps-3 have no `## Change:` entries of their own — a pre-existing bookkeeping
 > gap flagged, not fixed here.]
+>
+> [2026-08-01: bookkeeping gap closed — both entries authored retroactively
+> below, before the gaps-4 entry.]
 
 Manual-loop change (not SDD) reorganizing the old flat SDK samples tree (one true SDK example plus
 twelve platform integration examples) into three tiers, each with one reason to
@@ -442,6 +445,66 @@ Decision cuádruple:
   `value` field for either credential) and against the live `demo-hubspot` connector's real
   endpoint ids, matching byte-for-byte.
 - **Engram topic**: `demo/crm-telegram-showcase`.
+
+## Change: provisioning manifest gaps 2 — library manifests, connector ID refs, per-tool MCP fields, service env (provisioning-manifest-gaps-2)
+
+[Entry authored retroactively 2026-08-01 — the loop ran and shipped 2026-07-16/17
+but never got its `## Change:` entry, a bookkeeping gap the samples-reorg entry's
+SUPERSEDED note records. Content reconstructed from the SPEC's own Progress log.]
+
+Manual-loop change (not SDD) extending manifest v1 with the four gap kinds the parent
+`provisioning-manifest-gaps.md` T08 escalated while migrating the 9 remaining stand-by
+samples, plus a safety fix found en route. T01 library/channel-less manifests (the
+structural validator no longer unconditionally demands ≥1 inbound channel + ≥1 process,
+so connector-catalog and MCP-server-only manifests are expressible); T02 fail-loud on
+ref-shaped objects at non-allowlisted keys (previously walked as plain objects and
+persisted verbatim — a silent-corruption bug independent of the other gaps); T03 LLM/KB
+connector ID references (`model_config.llm.connectorId`,
+`ingestion_config.provider_connector_id`) join manifest-time substitution; T04 agent
+per-tool MCP fields (`enabled_mcp_tools`, `tool_description_overrides`); T05 service
+`env[]` vars (PLAIN-STRINGS-ONLY ruling — the secretRef half was deferred and later
+shipped by `provisioning-manifest-gaps-4`, next entry); T06 low-priority cleanup
+fold-in; T07 migrated 8/9 stand-by samples in three batches, ONE commit per sample
+(`ai-skill-support-agent` escalated — it needs a genuine fifth resource kind, which
+became `provisioning-manifest-gaps-3`; four more HTTP/Telegram-triggered manifests
+shipped carrying the DOCUMENTED unpinned-trigger deviation the earlier migrations had
+established, bringing the deviation-carrying total to seven); T08 restored the full G8
+canary set. Full queue, decisions, and per-task Progress log:
+`manual-loops/provisioning-manifest-gaps-2.md` (dated 2026-07-16/17).
+
+- **Rule**: gaps found while migrating samples get their own human-approved SPEC instead
+  of stretching the parent loop past its approved scope (2026-07-16 ruling, inherited
+  from the parent's §Human boundaries).
+- **Engram topic**: `platform/provisioning-manifest-gaps-2`.
+
+## Change: provisioning manifest gaps 3 — `skills` catalog resource + array symbolic-ref substitution (provisioning-manifest-gaps-3)
+
+[Entry authored retroactively 2026-08-01 — same bookkeeping gap as gaps-2 above.]
+
+Manual-loop change (not SDD) closing the two workstreams gaps-2 ended on, both
+HUMAN-APPROVED IN ADVANCE (2026-07-17 ruling recorded in the SPEC preamble): (a) the
+`skills` catalog section — a genuine FIFTH resource kind (schema + planner comparable +
+apply-engine writer mirroring mcp-servers-writer + `skillRef` scalar substitution),
+migrating `ai-skill-support-agent` as the LAST stand-by sample so all 12/12 imperative
+samples are declarative, with the first manifest-created catalog skill live and second
+apply FULL NOOP; and (d) ARRAY symbolic-ref substitution
+(`accountIds: [{ channelRef: … }]`), re-pinning the SEVEN already-migrated workflows'
+triggers that carried the documented unpinned-trigger deviation (accumulated across
+samples-reorg, the parent gaps loop's T08 batch 1, and gaps-2 T07 — four of the seven). LIVE FINDING + HUMAN RULING during
+T05: the workflow comparable is existence-only, so trigger changes NEVER reconcile on
+existing workflows — human ruled FORCE NOW + DOCUMENT (delete via API + re-apply, array
+substitution resolved to real channel UUIDs, DB-verified). Left open for future rounds:
+workflow definition diffing (existence-only comparable), k8s-native `secretKeyRef` env
+values (closed later by `provisioning-manifest-gaps-4`, next entry), secret-typed
+`systemVariables`. The later-authored skills-section SPEC was superseded at authoring —
+this loop's T04 had already shipped it (recorded 2026-07-31, commits e2049ca9/fd407245).
+Full queue, decisions and Progress log: `manual-loops/provisioning-manifest-gaps-3.md`
+(dated 2026-07-17).
+
+- **Rule**: a pre-approved workstream still runs under full loop discipline, and any
+  GENUINELY NEW decision that surfaces mid-task stops and escalates (T05's FORCE NOW
+  ruling is the precedent).
+- **Engram topic**: `platform/provisioning-manifest-gaps-3`.
 
 ## Change: `services[].env[]` secretRef + ref substitution, k8s-native (provisioning-manifest-gaps-4)
 
@@ -1547,6 +1610,16 @@ Findings that only surfaced during implementation:
   webhook-derived stage-2 envelopes carry `data.headers` and the §10.2 example
   is as-built. Still one filtering point (api-gateway); channel-service
   forwards verbatim.]
+
+  [Updated 2026-08-01 — no longer verbatim: the ledger's five open decisions
+  all RESOLVED in their own human-approved rounds. Channel-service now strips
+  the verification-secret subset (`WEBHOOK_SECRET_HEADERS`) after the
+  signature check, so stage-2 `data.headers` carries only non-secret entries
+  (two filtering points — 1ef4866c). Same day: `PLATFORM_DOMAIN` →
+  `AUTOMATION_DOMAIN` (9c5d77d4), dead `AGENT_ADMIN_ONLINE` deleted +
+  scheduler heartbeat envelope de-hardcoded (d7d1d86e), and
+  `AGENT_ADMIN_SKILL_CHANGED` relocated to shared (4b2a10c2). Per-decision
+  detail: the RESOLVED blocks in `manual-loops/messaging/envelope-drift.md`.]
 - **The tracking-ingester classifies by SUBJECT only.** T05's brief assumed
   `classify.ts` matched the stage-1 `type` literal and asked for extended rules plus new
   golden rows and three K9b pin updates. It does not: `classify(subject, options)` takes a
