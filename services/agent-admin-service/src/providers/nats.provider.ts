@@ -7,34 +7,34 @@ import {
   ServiceUnavailableException,
 } from "@nestjs/common";
 import {
+  ensureTenantIngressStream,
+  JetStreamCapacityError,
+} from "@yoizen/database";
+import {
   activeOrRandomTraceId,
   injectTraceContext,
   logWithEnvelope,
   PinoLoggerService,
   startNatsProducerSpan,
 } from "@yoizen/observability";
-import {
-  ensureTenantIngressStream,
-  JetStreamCapacityError,
-} from "@yoizen/database";
 import type { EventData, EventEnvelope, EventTransport } from "@yoizen/shared";
 import {
-  buildPlatformSubject,
-  getTenantStreamName,
-  DepthExceededError,
-  MAX_DEPTH_BY_CATEGORY,
-  PLATFORM_ACCOUNT_ID,
   AGENT_ADMIN_AGENT_PUBLISHED,
   AGENT_ADMIN_AGENT_UNPUBLISHED,
-  PLATFORM_CHANNEL,
   AGENT_ADMIN_CONFIG_SYNC,
   AGENT_ADMIN_DOCUMENT_INGESTION,
-  AUTOMATION_DOMAIN,
   AGENT_ADMIN_JOB_TRIGGER,
   AGENT_ADMIN_PRODUCER,
-  PLATFORM_PROVIDER,
   AGENT_ADMIN_SKB_FILE_INGESTION,
-  AGENT_ADMIN_SUBJECT_PREFIX,
+  AGENT_ADMIN_SKILL_CHANGED,
+  AUTOMATION_DOMAIN,
+  buildPlatformSubject,
+  DepthExceededError,
+  getTenantStreamName,
+  MAX_DEPTH_BY_CATEGORY,
+  PLATFORM_ACCOUNT_ID,
+  PLATFORM_CHANNEL,
+  PLATFORM_PROVIDER,
 } from "@yoizen/shared";
 import {
   connect,
@@ -66,17 +66,6 @@ const EVENT_TYPES = {
   SKILL_CHANGED: "io.yoizen.platform.admin.skill_changed.v1",
   SKB_FILE_INGESTION: "io.yoizen.platform.admin.skb_file_ingestion.v1",
 } as const;
-
-/**
- * Renamed from the platform-prefixed name on 2026-07-31 (envelope-drift
- * post-loop item 2) — same trap as the shared constants: a generic-sounding
- * prefix over a value that names this service. Pure rename, value unchanged.
- *
- * Still declared HERE rather than in `packages/shared/src/constants.ts` beside
- * its twelve siblings — that move is a separate open item (docs-consistency
- * T02 follow-up), not folded in here.
- */
-const AGENT_ADMIN_SKILL_CHANGED = `${AGENT_ADMIN_SUBJECT_PREFIX}.skill_changed.v1`;
 
 interface IBuildEventOptions {
   eventType: string;
@@ -307,7 +296,9 @@ export class NatsPublisher implements OnModuleDestroy {
     const streamName = getTenantStreamName(tenantId);
     try {
       await ensureTenantIngressStream(jsm, tenantId, { checkCapacity: true });
-      this.logger.log(`Stream '${streamName}' ensured for tenant '${tenantId}'`);
+      this.logger.log(
+        `Stream '${streamName}' ensured for tenant '${tenantId}'`
+      );
     } catch (err: unknown) {
       if (err instanceof JetStreamCapacityError) {
         this.logger.error(err.message);
@@ -320,7 +311,6 @@ export class NatsPublisher implements OnModuleDestroy {
 
     this.ensuredStreams.add(tenantId);
   }
-
 
   private async publishEvent(
     tenantId: string,

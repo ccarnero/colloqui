@@ -284,6 +284,8 @@ fixed in this loop):**
    `packages/shared/src/constants.ts` with its siblings.
    [2026-07-31: renamed `AGENT_ADMIN_SKILL_CHANGED`, now at `:79` — the
    relocation-to-shared half stays open as envelope-drift open question 2.]
+   [2026-08-01: relocated to `packages/shared/src/constants.ts` —
+   envelope-drift open question 2 RESOLVED. Item closed.]
 4. agent-admin-service uses literal `process.env.SERVICE_MODE !== "worker"`
    (`ingestion-worker.service.ts:76`, `skb-ingestion-worker.service.ts:84`)
    where other services use `isWorkerMode()` from `@yoizen/observability`.

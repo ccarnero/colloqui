@@ -522,6 +522,11 @@ only, and the default ensure sits on every publish path).
    (`nats.provider.ts:79`) instead of beside its twelve siblings in
    `packages/shared/src/constants.ts`. Pre-existing docs-consistency T02
    follow-up; renamed here, not relocated.
+   **RESOLVED 2026-08-01** — human-approved: relocated to
+   `packages/shared/src/constants.ts` beside the family (value unchanged,
+   wire pin added to `agent-admin.constants.test.ts`, family back to twelve
+   after decision 4's deletion); agent-admin imports it from `@yoizen/shared`
+   and its README row updated.
 3. **`heartbeat.service.ts` builds its envelope from hardcoded literals.**
    `services/agent-scheduler-service/src/modules/heartbeat/heartbeat.service.ts:95-105`
    inlines `type`, `producer`, `domain`, `channel`, `provider` as string

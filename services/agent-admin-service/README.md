@@ -70,7 +70,7 @@ Subjects are built from `AGENT_ADMIN_SUBJECT_PREFIX =
 | `.job_trigger.v1` | `publishJobTrigger` (`nats.provider.ts:496-524`) | `constants.ts:124` |
 | `.document_ingestion.v1` | `publishDocumentIngestion` (`nats.provider.ts:526-555`) | `constants.ts:132` |
 | `.skb_file_ingestion.v1` | `publishSkbFileIngestion` (`nats.provider.ts:564-593`) | `constants.ts:133` |
-| `.skill_changed.v1` | `publishSkillChanged` (`nats.provider.ts:595-620`) | declared locally at `nats.provider.ts:70` — the only one of the seven NOT in `@yoizen/shared` |
+| `.skill_changed.v1` | `publishSkillChanged` (`nats.provider.ts`) | `AGENT_ADMIN_SKILL_CHANGED` in `@yoizen/shared` — relocated from this service 2026-08-01, the last of the family to move |
 
 The NATS connection is lazy: it is established on the first publish so the HTTP
 server starts even when NATS is down (`nats.provider.ts:88-91`).

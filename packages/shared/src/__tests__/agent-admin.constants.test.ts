@@ -12,6 +12,7 @@ import {
   AGENT_ADMIN_JOBS_SYNC,
   AGENT_ADMIN_PRODUCER,
   AGENT_ADMIN_SKB_FILE_INGESTION,
+  AGENT_ADMIN_SKILL_CHANGED,
   AGENT_ADMIN_SUBJECT_PREFIX,
   AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
   AI_AGENT_GATEWAY_EXECUTION_FAILED,
@@ -50,10 +51,11 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
     );
   });
 
-  test("all eleven subjects keep their exact wire strings", () => {
-    // Twelve until 2026-08-01: AGENT_ADMIN_ONLINE (`…online.v1`) was removed
-    // as dead — no publisher or consumer ever existed (envelope-drift open
-    // decision 4).
+  test("all twelve subjects keep their exact wire strings", () => {
+    // Two 2026-08-01 membership changes: AGENT_ADMIN_ONLINE (`…online.v1`)
+    // removed as dead (envelope-drift open decision 4), and
+    // AGENT_ADMIN_SKILL_CHANGED relocated here from agent-admin's
+    // nats.provider.ts (decision 2) — value unchanged, pinned below.
     const prefix =
       "evt.{tenant}.agent-admin-service.automation.platform.internal";
 
@@ -74,6 +76,7 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
     expect(AGENT_ADMIN_SKB_FILE_INGESTION).toBe(
       `${prefix}.skb_file_ingestion.v1`
     );
+    expect(AGENT_ADMIN_SKILL_CHANGED).toBe(`${prefix}.skill_changed.v1`);
   });
 
   test("every renamed subject is a canonical 8-token subject on the admin family", () => {
@@ -89,6 +92,7 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
       AGENT_ADMIN_EVENT,
       AGENT_ADMIN_DOCUMENT_INGESTION,
       AGENT_ADMIN_SKB_FILE_INGESTION,
+      AGENT_ADMIN_SKILL_CHANGED,
     ];
 
     for (const subject of subjects) {

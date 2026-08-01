@@ -136,6 +136,14 @@ export const AGENT_ADMIN_EVENT = `${AGENT_ADMIN_SUBJECT_PREFIX}.event.v1`;
 export const AGENT_ADMIN_DOCUMENT_INGESTION = `${AGENT_ADMIN_SUBJECT_PREFIX}.document_ingestion.v1`;
 export const AGENT_ADMIN_SKB_FILE_INGESTION = `${AGENT_ADMIN_SUBJECT_PREFIX}.skb_file_ingestion.v1`;
 /**
+ * Relocated from `services/agent-admin-service/src/providers/nats.provider.ts`
+ * on 2026-08-01 (envelope-drift open decision 2 / docs-consistency T02
+ * follow-up) — it was the only member of the family still declared inside the
+ * service. Value unchanged; agent-ai's consumer subscribes to this subject
+ * by pattern (`multi-tenant-consumer.service.ts`).
+ */
+export const AGENT_ADMIN_SKILL_CHANGED = `${AGENT_ADMIN_SUBJECT_PREFIX}.skill_changed.v1`;
+/**
  * agent-memory-service subject family.
  *
  * Unlike every other internal producer, this family's domain token is
