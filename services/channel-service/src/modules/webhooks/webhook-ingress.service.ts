@@ -1,51 +1,55 @@
-import {
-  Injectable,
-} from "@nestjs/common";
+import { Injectable } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
-import type {
-  Channel,
-  IChannelProvider,
-  InboundMessage,
-} from "@yoizen/shared";
+import type { Channel, IChannelProvider, InboundMessage } from "@yoizen/shared";
+import { WEBHOOK_SECRET_HEADERS_SET } from "@yoizen/shared";
 import { ChannelRouter } from "../../providers/channel-router";
-import { IngressService } from "../ingress/ingress.service";
 import { AccountsService } from "../accounts/accounts.service";
 import {
+  ingressMessagesReceived,
   webhookRequests,
   webhookVerificationFailures,
-  ingressMessagesReceived,
 } from "../ingress/ingress.metrics";
+import { IngressService } from "../ingress/ingress.service";
 
 type IAccountWithSecret = Awaited<
   ReturnType<AccountsService["listActive"]>
 >[number];
 
 function extractMetaPhoneNumberId(
-  body: Record<string, unknown>,
+  body: Record<string, unknown>
 ): string | undefined {
   const entry = body.entry;
-  if (!Array.isArray(entry) || entry.length === 0) return undefined;
+  if (!Array.isArray(entry) || entry.length === 0) {
+    return undefined;
+  }
   const first = entry[0] as Record<string, unknown>;
   const changes = first.changes;
-  if (!Array.isArray(changes) || changes.length === 0) return undefined;
-  const value = (changes[0] as { value?: { metadata?: { phone_number_id?: string } } })
-    ?.value;
+  if (!Array.isArray(changes) || changes.length === 0) {
+    return undefined;
+  }
+  const value = (
+    changes[0] as { value?: { metadata?: { phone_number_id?: string } } }
+  )?.value;
   return value?.metadata?.phone_number_id;
 }
 
 /** Best-effort Instagram business account id from Graph webhook JSON. */
 function extractInstagramBusinessIdHint(
-  body: Record<string, unknown>,
+  body: Record<string, unknown>
 ): string | undefined {
   const entry = body.entry;
-  if (!Array.isArray(entry) || entry.length === 0) return undefined;
+  if (!Array.isArray(entry) || entry.length === 0) {
+    return undefined;
+  }
   for (const ent of entry) {
     const e = ent as Record<string, unknown>;
     const messaging = e.messaging;
     if (Array.isArray(messaging)) {
       for (const m of messaging) {
         const mid = (m as { recipient?: { id?: string } })?.recipient?.id;
-        if (typeof mid === "string") return mid;
+        if (typeof mid === "string") {
+          return mid;
+        }
       }
     }
   }
@@ -59,7 +63,7 @@ export class WebhookIngressService {
   constructor(
     private readonly router: ChannelRouter,
     private readonly ingress: IngressService,
-    private readonly accounts: AccountsService,
+    private readonly accounts: AccountsService
   ) {}
 
   /**
@@ -73,26 +77,30 @@ export class WebhookIngressService {
     rawBody: Buffer,
     headers: Record<string, string>,
     parsedBody: unknown,
-    causal?: { correlationId?: string; causationId?: string | null; depth?: number },
-    instance?: string,
+    causal?: {
+      correlationId?: string;
+      causationId?: string | null;
+      depth?: number;
+    },
+    instance?: string
   ): Promise<{ status: string }> {
     const channelType = channel as Channel;
     webhookRequests.add(1, { channel, tenant: tenantId });
     const provider = this.router.get(channelType);
     if (!provider) {
       this.logger.warn(
-        `Unsupported webhook channel=${channel} tenant=${tenantId}`,
+        `Unsupported webhook channel=${channel} tenant=${tenantId}`
       );
       return { status: "unsupported_channel" };
     }
 
     const activeAccounts = await this.accounts.listActive(
       tenantId,
-      channelType,
+      channelType
     );
     if (activeAccounts.length === 0) {
       this.logger.warn(
-        `No active accounts for tenant=${tenantId} channel=${channel}`,
+        `No active accounts for tenant=${tenantId} channel=${channel}`
       );
       return { status: "no_active_accounts" };
     }
@@ -100,7 +108,7 @@ export class WebhookIngressService {
     const body = this.toBody(parsedBody);
     if (body === null) {
       this.logger.warn(
-        `Webhook payload is not a JSON object for tenant=${tenantId} channel=${channel}`,
+        `Webhook payload is not a JSON object for tenant=${tenantId} channel=${channel}`
       );
       return { status: "invalid_payload" };
     }
@@ -141,10 +149,12 @@ export class WebhookIngressService {
       account,
       messages,
       causal,
-      // Same allowlist the signature check above read: api-gateway already
-      // filtered it (WEBHOOK_FORWARDED_HEADERS) and the consumer lowercased
-      // the keys, so it goes to `data.headers` verbatim (envelope.md §4.1).
-      webhookHeaders: headers,
+      // Same allowlist the signature check above read (api-gateway filtered
+      // it against WEBHOOK_FORWARDED_HEADERS, the consumer lowercased the
+      // keys), minus the verification-secret subset: resolveAccount has
+      // already used those to authenticate, and stage-2 `data.headers` must
+      // never carry a secret (envelope.md §4.1, decided 2026-08-01).
+      webhookHeaders: this.stripSecretHeaders(headers),
     });
     return { status: "accepted" };
   }
@@ -170,18 +180,9 @@ export class WebhookIngressService {
     body: Record<string, unknown>;
     /** Account `externalId` from the instance-addressed ingress URL, if any. */
     instance?: string;
-  }):
-    | { account: IAccountWithSecret }
-    | { status: string } {
-    const {
-      provider,
-      rawBody,
-      signature,
-      channel,
-      tenantId,
-      body,
-      instance,
-    } = options;
+  }): { account: IAccountWithSecret } | { status: string } {
+    const { provider, rawBody, signature, channel, tenantId, body, instance } =
+      options;
 
     /**
      * Instance-addressed ingress (`/api/webhooks/<channel>/<tenant>/<instance>`):
@@ -194,12 +195,12 @@ export class WebhookIngressService {
     let activeAccounts = options.activeAccounts;
     if (instance !== undefined && instance.length > 0) {
       activeAccounts = activeAccounts.filter(
-        (account) => account.externalId === instance,
+        (account) => account.externalId === instance
       );
       if (activeAccounts.length === 0) {
         webhookVerificationFailures.add(1, { channel, tenant: tenantId });
         this.logger.warn(
-          `Webhook rejected: no active ${channel} account with externalId='${instance}' (tenant=${tenantId})`,
+          `Webhook rejected: no active ${channel} account with externalId='${instance}' (tenant=${tenantId})`
         );
         return { status: "unknown_instance" };
       }
@@ -209,7 +210,7 @@ export class WebhookIngressService {
       if (channel === "telegram" || channel === "http") {
         webhookVerificationFailures.add(1, { channel, tenant: tenantId });
         this.logger.warn(
-          `${channel} webhook rejected: missing ${provider.signatureHeader} (tenant=${tenantId})`,
+          `${channel} webhook rejected: missing ${provider.signatureHeader} (tenant=${tenantId})`
         );
         return { status: "signature_mismatch" };
       }
@@ -227,7 +228,7 @@ export class WebhookIngressService {
     if (verified.length === 0) {
       webhookVerificationFailures.add(1, { channel, tenant: tenantId });
       this.logger.warn(
-        `Webhook signature verification failed for tenant=${tenantId} channel=${channel}`,
+        `Webhook signature verification failed for tenant=${tenantId} channel=${channel}`
       );
       return { status: "signature_mismatch" };
     }
@@ -240,7 +241,9 @@ export class WebhookIngressService {
       const phoneId = extractMetaPhoneNumberId(body);
       if (phoneId) {
         const match = verified.find((a) => a.phoneNumberId === phoneId);
-        if (match) return { account: match };
+        if (match) {
+          return { account: match };
+        }
       }
     }
 
@@ -248,13 +251,15 @@ export class WebhookIngressService {
       const igFromBody = extractInstagramBusinessIdHint(body);
       if (igFromBody) {
         const match = verified.find((a) => a.igUserId === igFromBody);
-        if (match) return { account: match };
+        if (match) {
+          return { account: match };
+        }
       }
     }
 
     webhookVerificationFailures.add(1, { channel, tenant: tenantId });
     this.logger.warn(
-      `Ambiguous webhook: ${verified.length} accounts verify for tenant=${tenantId} channel=${channel}`,
+      `Ambiguous webhook: ${verified.length} accounts verify for tenant=${tenantId} channel=${channel}`
     );
     return { status: "signature_mismatch" };
   }
@@ -272,11 +277,32 @@ export class WebhookIngressService {
 
   private readHeader(
     headers: Record<string, string>,
-    headerName: string,
+    headerName: string
   ): string | undefined {
     const direct = headers[headerName];
-    if (direct) return direct;
+    if (direct) {
+      return direct;
+    }
     return headers[headerName.toLowerCase()];
+  }
+
+  /**
+   * Removes the verification-secret headers (WEBHOOK_SECRET_HEADERS) once the
+   * signature check has consumed them. Keys arrive lowercased from the
+   * webhook consumer, but the strip is case-insensitive anyway so a future
+   * caller cannot leak a secret by casing.
+   */
+  private stripSecretHeaders(
+    headers: Record<string, string>
+  ): Record<string, string> {
+    const forwarded: Record<string, string> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      if (WEBHOOK_SECRET_HEADERS_SET.has(key.toLowerCase())) {
+        continue;
+      }
+      forwarded[key] = value;
+    }
+    return forwarded;
   }
 
   private scheduleIngress(options: {
@@ -285,12 +311,26 @@ export class WebhookIngressService {
     provider: IChannelProvider;
     account: IAccountWithSecret;
     messages: InboundMessage[];
-    causal?: { correlationId?: string; causationId?: string | null; depth?: number };
-    /** Stage-1 header allowlist, forwarded verbatim to `data.headers`. */
+    causal?: {
+      correlationId?: string;
+      causationId?: string | null;
+      depth?: number;
+    };
+    /**
+     * Stage-1 header allowlist minus the verification-secret subset,
+     * forwarded to `data.headers` (envelope.md §4.1).
+     */
     webhookHeaders?: Record<string, string>;
   }): void {
-    const { tenantId, channelType, provider, account, messages, causal, webhookHeaders } =
-      options;
+    const {
+      tenantId,
+      channelType,
+      provider,
+      account,
+      messages,
+      causal,
+      webhookHeaders,
+    } = options;
     setImmediate(() => {
       this.ingress
         .processInbound({
@@ -304,7 +344,7 @@ export class WebhookIngressService {
         })
         .catch((err) => {
           this.logger.error(
-            `Ingress processing failed: ${err instanceof Error ? err.message : err}`,
+            `Ingress processing failed: ${err instanceof Error ? err.message : err}`
           );
         });
     });

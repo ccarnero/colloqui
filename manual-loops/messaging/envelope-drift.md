@@ -488,6 +488,18 @@ only, and the default ensure sits on every publish path).
    be dropped once the signature has been verified is a genuine spec question
    (it would change §4.1 and the `WEBHOOK_FORWARDED_HEADERS` contract). Own
    decision round.
+   **RESOLVED 2026-08-01** — human-approved: STRIP. New shared
+   `WEBHOOK_SECRET_HEADERS` (the four signature/token entries);
+   `WebhookIngressService.stripSecretHeaders` drops them after
+   `resolveAccount`'s signature check, so stage-2 `data.headers` can only
+   carry `content-type`, `x-request-id`, `user-agent`. Nothing downstream read
+   them (verified: all hits are senders or the verifier itself). §4.1 +
+   §10.2, ingress.md, channel-service.md, security.md, decision-log D8 and
+   the envelope-messages skill updated; regression test in
+   `webhook-ingress.service.spec.ts`, subset pinned in
+   `doc-locks.constants.test.ts`. Stage-1 envelopes still carry all seven
+   (the verifier needs them); rows published 2026-07-31→08-01 may retain
+   secrets in stored envelopes.
 
 1. **`PLATFORM_DOMAIN` → `AUTOMATION_DOMAIN`?** Deliberately UNTOUCHED. Its
    value `automation` is not service-specific: agent-admin

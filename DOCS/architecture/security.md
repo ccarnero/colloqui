@@ -134,6 +134,12 @@ WEBHOOK_FORWARDED_HEADERS = [
 ]
 ```
 
+The four signature/token entries are verification secrets
+(`WEBHOOK_SECRET_HEADERS`): forwarded to `channel-service` for the signature
+check, then stripped before the stage-2 envelope is built
+(`webhook-ingress.service.ts`, since 2026-08-01), so `message.received`
+consumers and stores never see them.
+
 **Implemented mechanisms by provider:**
 
 | Provider | Mechanism | Header | Implementation |

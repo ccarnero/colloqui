@@ -28,7 +28,8 @@
  *     - type: `io.yoizen.messaging.${channel}.webhook.webhook_received.v1`
  *     - source: "//api-gateway/webhooks"
  *     - accountid: OMITTED (unknown at this stage — resolved in stage 2)
- *     - data includes raw_body_b64 and filtered headers (WEBHOOK_FORWARDED_HEADERS — 6 entries)
+ *     - data includes raw_body_b64 and filtered headers (WEBHOOK_FORWARDED_HEADERS — 7 entries;
+ *       stage 2 additionally strips the WEBHOOK_SECRET_HEADERS subset post-verification)
  */
 
 export {}; // Module marker — no runtime exports; see files referenced above.

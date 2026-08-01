@@ -133,7 +133,7 @@ File: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.se
 | `transport.method` | `"webhook"` |
 | `transport.protocol` | `"https"` |
 | `accountid` | Resolved real provider account ID |
-| `data.headers` | The stage-1 allowlist, forwarded VERBATIM (webhook-derived envelopes only, since 2026-07-31). api-gateway is the single filtering point (`WEBHOOK_FORWARDED_HEADERS`, `webhook-ingress-publisher.service.ts:252-263`); channel-service only lowercases keys and never re-filters. Absent on any non-webhook flow. |
+| `data.headers` | The stage-1 allowlist minus the verification-secret subset (webhook-derived envelopes only; forwarding since 2026-07-31, secret strip since 2026-08-01). api-gateway filters against `WEBHOOK_FORWARDED_HEADERS` (`webhook-ingress-publisher.service.ts:252-263`); channel-service lowercases keys and, after the signature check, strips `WEBHOOK_SECRET_HEADERS` (`webhook-ingress.service.ts`, envelope.md §4.1) — only `content-type`, `x-request-id`, `user-agent` can reach stage 2. Absent on any non-webhook flow. |
 
 Canonical subject:
 

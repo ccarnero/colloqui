@@ -194,6 +194,12 @@ Only these headers from the original HTTP request are included in the envelope:
 
 Defined in `WEBHOOK_FORWARDED_HEADERS` in `packages/shared/src/channel.constants.ts`.
 
+The four signature/token headers are verification secrets
+(`WEBHOOK_SECRET_HEADERS`, same file): they reach `channel-service` so it can
+authenticate the webhook, and are stripped after the signature check — stage-2
+`message.received` envelopes carry only `content-type`, `x-request-id` and
+`user-agent` in `data.headers` (envelope.md §4.1, since 2026-08-01).
+
 #### Operational notes
 
 - The HTTP 200 to Meta/Telegram is returned **only after** `api-gateway` successfully publishes the stage-1 `WebhookIngressEnvelope` to JetStream. Meta/Telegram still require a fast response, so publish backpressure is surfaced as an HTTP error instead of acknowledging before durability.

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 import { createChannelEnvelope } from "../../src/domain/envelope.factory";
 
 describe("createChannelEnvelope", () => {
@@ -88,9 +88,12 @@ describe("createChannelEnvelope", () => {
     it("puts the allowlist under data.headers, never on transport", () => {
       const headers = {
         "content-type": "application/json",
-        "x-hub-signature-256": "sha256=abc",
+        "user-agent": "TelegramBot",
       };
-      const env = createChannelEnvelope({ ...baseOptions, webhookHeaders: headers });
+      const env = createChannelEnvelope({
+        ...baseOptions,
+        webhookHeaders: headers,
+      });
 
       expect(env.data.headers).toEqual(headers);
       expect("headers" in env.transport).toBe(false);
@@ -98,14 +101,20 @@ describe("createChannelEnvelope", () => {
 
     it("passes the allowlist through byte-identically (no filtering, no renaming)", () => {
       // The factory has never filtered — api-gateway applies
-      // WEBHOOK_FORWARDED_HEADERS and channel-service lowercases keys before
-      // this point. Pinning pass-through keeps that division of labour honest.
+      // WEBHOOK_FORWARDED_HEADERS, channel-service lowercases keys and strips
+      // the WEBHOOK_SECRET_HEADERS subset (since 2026-08-01) before this
+      // point. Pinning pass-through keeps that division of labour honest,
+      // which is also why the fixture carries no secret header: callers may
+      // no longer hand the factory one.
       const headers = {
         "content-type": "application/json",
-        "x-telegram-bot-api-secret-token": "tok",
-        "x-http-channel-token": "abc123",
+        "x-request-id": "req-1",
+        "user-agent": "TelegramBot",
       };
-      const env = createChannelEnvelope({ ...baseOptions, webhookHeaders: headers });
+      const env = createChannelEnvelope({
+        ...baseOptions,
+        webhookHeaders: headers,
+      });
       expect(env.data.headers).toEqual(headers);
       expect(Object.keys(env.data.headers ?? {})).toEqual(Object.keys(headers));
     });
@@ -123,7 +132,10 @@ describe("createChannelEnvelope", () => {
 
       for (const options of [
         baseOptions,
-        { ...baseOptions, webhookHeaders: { "content-type": "application/json" } },
+        {
+          ...baseOptions,
+          webhookHeaders: { "content-type": "application/json" },
+        },
       ]) {
         const env = createChannelEnvelope(options);
         const unexpected = Object.keys(env.transport).filter(

@@ -33,6 +33,7 @@ packages/shared/src/envelope.utils.ts
 packages/shared/src/channel.constants.ts
   → CHANNEL_PRODUCER ("channel-service")
   → WEBHOOK_FORWARDED_HEADERS (7 entries, :55-63)
+  → WEBHOOK_SECRET_HEADERS (4-entry verification subset, stripped post-signature-check)
   → CLAIM_CHECK_THRESHOLD_BYTES (256 KB)
   → CLAIM_CHECK_BUCKET_TTL_NS, CLAIM_CHECK_BUCKET_MAX_BYTES
   → buildDlqStreamName, buildDlqSubjectPattern

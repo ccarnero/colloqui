@@ -1,40 +1,48 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { JetStreamClient, JetStreamManager, ObjectStore } from "nats";
-import { headers as natsHeaders, StorageType } from "nats";
-import type { Channel, ChannelProvider, EventEnvelope, InboundMessage } from "@yoizen/shared";
 import {
-  TENANT_HEADER,
-  CLAIM_CHECK_THRESHOLD_BYTES,
-  CLAIM_CHECK_BUCKET_TTL_NS,
-  CLAIM_CHECK_BUCKET_MAX_BYTES,
-  buildChannelSubject,
-  buildClaimCheckBucket,
-  buildDlqMessageSubject,
-  buildDlqStreamName,
-  canonicalJson,
-  canonicalByteLength,
-  computePayloadChecksum,
-} from "@yoizen/shared";
+  ensureTenantDlqStream,
+  ensureTenantIngressStream,
+} from "@yoizen/database";
 import {
   injectTraceContext,
   PinoLoggerService,
   startNatsProducerSpan,
 } from "@yoizen/observability";
-import { ensureTenantIngressStream, ensureTenantDlqStream } from "@yoizen/database";
+import type {
+  Channel,
+  ChannelProvider,
+  EventEnvelope,
+  InboundMessage,
+} from "@yoizen/shared";
 import {
-  JETSTREAM_PUBLISHER,
-  JETSTREAM_MANAGER,
-} from "../../providers/nats.provider";
+  buildChannelSubject,
+  buildClaimCheckBucket,
+  buildDlqMessageSubject,
+  buildDlqStreamName,
+  CLAIM_CHECK_BUCKET_MAX_BYTES,
+  CLAIM_CHECK_BUCKET_TTL_NS,
+  CLAIM_CHECK_THRESHOLD_BYTES,
+  canonicalByteLength,
+  canonicalJson,
+  computePayloadChecksum,
+  TENANT_HEADER,
+} from "@yoizen/shared";
+import type { JetStreamClient, JetStreamManager, ObjectStore } from "nats";
+import { headers as natsHeaders, StorageType } from "nats";
+import { UTF8_TEXT_ENCODER } from "../../common/utf8-text-encoder";
 import { createChannelEnvelope } from "../../domain/envelope.factory";
 import {
-  ingressMessagesPublished,
-  ingressPublishFailures,
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../providers/nats.provider";
+import {
   ingressClaimCheckCount,
   ingressClaimCheckStored,
   ingressClaimCheckStoreFailed,
+  ingressMessagesPublished,
   ingressPublishDuration,
+  ingressPublishFailures,
 } from "./ingress.metrics";
-import { UTF8_TEXT_ENCODER } from "../../common/utf8-text-encoder";
 
 interface IProcessInboundOptions {
   tenantId: string;
@@ -47,10 +55,13 @@ interface IProcessInboundOptions {
   depth?: number;
   /**
    * Webhook header allowlist forwarded from the stage-1 envelope
-   * (`data.headers`). Already filtered against `WEBHOOK_FORWARDED_HEADERS` and
+   * (`data.headers`). Filtered against `WEBHOOK_FORWARDED_HEADERS` and
    * lowercased by api-gateway (`webhook-ingress-publisher.service.ts:252-263`),
-   * so it travels verbatim from here — stage 2 never re-filters. Absent for
-   * any non-webhook flow, in which case the envelope carries no `headers` key.
+   * then stripped of the verification-secret subset by
+   * `WebhookIngressService.stripSecretHeaders` after the signature check
+   * (envelope.md §4.1, since 2026-08-01) — from here it travels verbatim, so
+   * a secret must never be passed in. Absent for any non-webhook flow, in
+   * which case the envelope carries no `headers` key.
    */
   webhookHeaders?: Record<string, string>;
 }
@@ -67,10 +78,13 @@ interface IPublishMessageOptions {
   depth?: number;
   /**
    * Webhook header allowlist forwarded from the stage-1 envelope
-   * (`data.headers`). Already filtered against `WEBHOOK_FORWARDED_HEADERS` and
+   * (`data.headers`). Filtered against `WEBHOOK_FORWARDED_HEADERS` and
    * lowercased by api-gateway (`webhook-ingress-publisher.service.ts:252-263`),
-   * so it travels verbatim from here — stage 2 never re-filters. Absent for
-   * any non-webhook flow, in which case the envelope carries no `headers` key.
+   * then stripped of the verification-secret subset by
+   * `WebhookIngressService.stripSecretHeaders` after the signature check
+   * (envelope.md §4.1, since 2026-08-01) — from here it travels verbatim, so
+   * a secret must never be passed in. Absent for any non-webhook flow, in
+   * which case the envelope carries no `headers` key.
    */
   webhookHeaders?: Record<string, string>;
 }
@@ -111,7 +125,9 @@ export class IngressService {
    */
   private async getClaimCheckBucket(tenantId: string): Promise<ObjectStore> {
     const cached = this.claimCheckBuckets.get(tenantId);
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
     const bucketName = buildClaimCheckBucket(tenantId);
     const os = await this.js.views.os(bucketName, {
       description: `Claim-check payloads for tenant ${tenantId}`,
@@ -129,7 +145,17 @@ export class IngressService {
    * Returns immediately — publishing happens asynchronously per message.
    */
   async processInbound(options: IProcessInboundOptions): Promise<void> {
-    const { tenantId, channel, provider, accountId, messages, correlationId, causationId, depth, webhookHeaders } = options;
+    const {
+      tenantId,
+      channel,
+      provider,
+      accountId,
+      messages,
+      correlationId,
+      causationId,
+      depth,
+      webhookHeaders,
+    } = options;
     await ensureTenantIngressStream(this.jsm, tenantId);
 
     const publishPromises = messages.map((msg) =>
@@ -143,7 +169,7 @@ export class IngressService {
         causationId,
         depth,
         webhookHeaders,
-      }),
+      })
     );
 
     const results = await Promise.allSettled(publishPromises);
@@ -161,14 +187,22 @@ export class IngressService {
     }
 
     this.logger.log(
-      `Ingress: ${published}/${messages.length} messages published for tenant=${tenantId} channel=${channel}`,
+      `Ingress: ${published}/${messages.length} messages published for tenant=${tenantId} channel=${channel}`
     );
   }
 
-  private async publishMessage(
-    options: IPublishMessageOptions,
-  ): Promise<void> {
-    const { tenantId, channel, provider, accountId, message, correlationId, causationId, depth, webhookHeaders } = options;
+  private async publishMessage(options: IPublishMessageOptions): Promise<void> {
+    const {
+      tenantId,
+      channel,
+      provider,
+      accountId,
+      message,
+      correlationId,
+      causationId,
+      depth,
+      webhookHeaders,
+    } = options;
     const envelope = createChannelEnvelope({
       tenantId,
       channel,
@@ -181,7 +215,12 @@ export class IngressService {
       depth,
       webhookHeaders,
     });
-    const subject = buildChannelSubject(tenantId, channel, provider, "received");
+    const subject = buildChannelSubject(
+      tenantId,
+      channel,
+      provider,
+      "received"
+    );
 
     // Trigger on full-serialized-envelope byte length: guards the actual
     // 1 MB NATS max_payload. The slim claim-check envelope is ~2 KB so it
@@ -202,7 +241,14 @@ export class IngressService {
       return;
     }
 
-    await this.publishInline(subject, envelope, payloadBytes, start, channel, tenantId);
+    await this.publishInline(
+      subject,
+      envelope,
+      payloadBytes,
+      start,
+      channel,
+      tenantId
+    );
   }
 
   /** Publish the full envelope bytes inline (common path). */
@@ -212,18 +258,14 @@ export class IngressService {
     payloadBytes: Uint8Array,
     start: number,
     channel: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<void> {
     const hdrs = natsHeaders();
     hdrs.set(TENANT_HEADER, tenantId);
     hdrs.set("Nats-Msg-Id", envelope.idempotencykey);
     injectTraceContext(hdrs);
 
-    const { span } = startNatsProducerSpan(
-      "channel-service",
-      subject,
-      hdrs,
-    );
+    const { span } = startNatsProducerSpan("channel-service", subject, hdrs);
 
     try {
       await this.js.publish(subject, payloadBytes, { headers: hdrs });
@@ -250,7 +292,7 @@ export class IngressService {
    * is via body — envelope.data.payload_inline === false).
    */
   private async publishWithClaimCheck(
-    params: IPublishWithClaimCheckParams,
+    params: IPublishWithClaimCheckParams
   ): Promise<void> {
     const { tenantId, subject, envelope } = params;
     const objectKey = `${envelope.id}-payload`;
@@ -260,7 +302,7 @@ export class IngressService {
     // Store exactly the UTF-8 bytes of canonicalJson(payload).
     // Consumer verifies sha256 over these RAW bytes (never re-canonicalizes).
     const payloadCanonical = UTF8_TEXT_ENCODER.encode(
-      canonicalJson(envelope.data?.payload),
+      canonicalJson(envelope.data?.payload)
     );
 
     try {
@@ -270,13 +312,13 @@ export class IngressService {
           name: objectKey,
           description: `Envelope ${envelope.id} claim-check payload (${payloadCanonical.byteLength} bytes)`,
         },
-        payloadCanonical,
+        payloadCanonical
       );
       ingressClaimCheckStored.add(1, { tenant: tenantId });
     } catch (storeErr) {
       ingressClaimCheckStoreFailed.add(1, { tenant: tenantId });
       this.logger.error(
-        `Claim-check store failed for ${objectKey}: ${storeErr instanceof Error ? storeErr.message : storeErr}`,
+        `Claim-check store failed for ${objectKey}: ${storeErr instanceof Error ? storeErr.message : storeErr}`
       );
 
       // Best-effort DLQ publish on store failure (doc §3.3).
@@ -298,11 +340,11 @@ export class IngressService {
           {
             headers: dlqHdrs,
             msgID: `dlq:${envelope.idempotencykey}`,
-          },
+          }
         );
       } catch (dlqErr) {
         this.logger.error(
-          `DLQ publish failed for ${objectKey} (original store error is still thrown): ${dlqErr instanceof Error ? dlqErr.message : dlqErr}`,
+          `DLQ publish failed for ${objectKey} (original store error is still thrown): ${dlqErr instanceof Error ? dlqErr.message : dlqErr}`
         );
       }
 
@@ -329,20 +371,16 @@ export class IngressService {
     hdrs.set("Nats-Msg-Id", envelope.idempotencykey);
     injectTraceContext(hdrs);
 
-    const { span } = startNatsProducerSpan(
-      "channel-service",
-      subject,
-      hdrs,
-    );
+    const { span } = startNatsProducerSpan("channel-service", subject, hdrs);
 
     try {
       this.logger.log(
-        `Claim-check: ${payloadCanonical.byteLength} bytes stored at ${payloadRef}`,
+        `Claim-check: ${payloadCanonical.byteLength} bytes stored at ${payloadRef}`
       );
       await this.js.publish(
         subject,
         UTF8_TEXT_ENCODER.encode(JSON.stringify(slimEnvelope)),
-        { headers: hdrs },
+        { headers: hdrs }
       );
     } finally {
       span.end();

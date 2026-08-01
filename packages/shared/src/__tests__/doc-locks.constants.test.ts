@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   CLAIM_CHECK_THRESHOLD_BYTES,
   WEBHOOK_FORWARDED_HEADERS,
+  WEBHOOK_SECRET_HEADERS,
 } from "../channel.constants";
 import {
   RUNTIME_STREAM_SUBJECT_PREFIX,
@@ -57,6 +58,20 @@ describe("Doc-pinned constants (DOCS/ literals)", () => {
       "x-request-id",
       "user-agent",
     ]);
+  });
+
+  test("WEBHOOK_SECRET_HEADERS is exactly the verification subset of the allowlist", () => {
+    // envelope.md §4.1, 2026-08-01 decision: these four authenticate the
+    // webhook at stage 1 and are stripped before the stage-2 envelope.
+    expect([...WEBHOOK_SECRET_HEADERS]).toEqual([
+      "x-hub-signature-256",
+      "x-hub-signature",
+      "x-telegram-bot-api-secret-token",
+      "x-http-channel-token",
+    ]);
+    for (const header of WEBHOOK_SECRET_HEADERS) {
+      expect([...WEBHOOK_FORWARDED_HEADERS]).toContain(header);
+    }
   });
 
   test("RUNTIME_STREAM_SUBJECT_PREFIX matches the documented template and starts with 'rt.'", () => {

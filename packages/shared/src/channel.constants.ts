@@ -64,7 +64,26 @@ export const WEBHOOK_FORWARDED_HEADERS = Object.freeze([
 
 /** O(1) header allowlist lookup for webhook envelope building. */
 export const WEBHOOK_FORWARDED_HEADERS_SET = new Set<string>(
-  WEBHOOK_FORWARDED_HEADERS,
+  WEBHOOK_FORWARDED_HEADERS
+);
+
+/**
+ * Verification-secret subset of `WEBHOOK_FORWARDED_HEADERS`. Stage 1 forwards
+ * these so channel-service can authenticate the webhook (each is some
+ * provider's `signatureHeader`); once the signature check has used them they
+ * are stripped, so stage-2 `data.headers` never carries a verification secret
+ * (envelope.md §4.1, decided 2026-08-01).
+ */
+export const WEBHOOK_SECRET_HEADERS = Object.freeze([
+  "x-hub-signature-256",
+  "x-hub-signature",
+  "x-telegram-bot-api-secret-token",
+  "x-http-channel-token",
+] as const);
+
+/** O(1) lookup for the post-verification header strip. */
+export const WEBHOOK_SECRET_HEADERS_SET = new Set<string>(
+  WEBHOOK_SECRET_HEADERS
 );
 
 /** Prefix for per-tenant dead-letter JetStream streams. */
@@ -97,7 +116,7 @@ export function buildDlqSubjectPattern(tenantId: string): string {
  */
 export function buildDlqMessageSubject(
   tenantId: string,
-  originalSubject: string,
+  originalSubject: string
 ): string {
   return `${DLQ_TENANT_SUBJECT_PREFIX}.${tenantId}.${originalSubject}`;
 }

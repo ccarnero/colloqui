@@ -158,7 +158,7 @@ function validate(node: ISchema, value: unknown, path = "$"): string[] {
     // here, making this validator quietly weaker than the schema it checks.
     // Fail loudly instead — same contract as the keyword guard above.
     throw new Error(
-      `Schema at ${path} uses a non-object additionalProperties (${JSON.stringify(additional)}) — extend the test validator`,
+      `Schema at ${path} uses a non-object additionalProperties (${JSON.stringify(additional)}) — extend the test validator`
     );
   }
   if (additional && typeOf(value) === "object") {
@@ -367,15 +367,15 @@ describe("envelope-schema.json (skills/envelope-messages asset)", () => {
       ISchema
     >;
     expect(common["type"]["description"] as string).toContain(
-      "io.yoizen.messaging.<channel>.webhook.webhook_received.v1",
+      "io.yoizen.messaging.<channel>.webhook.webhook_received.v1"
     );
     expect(common["type"]["description"] as string).toContain(
-      "webhook-ingress-type.ts",
+      "webhook-ingress-type.ts"
     );
     // The pre-2026-07-31 value stays documented: those envelopes are still in
     // the tracking store and readers must accept both.
     expect(common["type"]["description"] as string).toContain(
-      "io.yoizen.messaging.webhook.received.v1",
+      "io.yoizen.messaging.webhook.received.v1"
     );
 
     const dataRequired = definition("IWebhookIngressData")[
@@ -422,18 +422,23 @@ describe("envelope-schema.json (skills/envelope-messages asset)", () => {
   it("accepts the stage-2 webhook allowlist at its declared home, data.headers", () => {
     // envelope-drift T06: createChannelEnvelope writes the allowlist to
     // `data.headers` (typed IChannelEventData), the same home stage 1 uses.
+    // Since 2026-08-01 the secret subset is stripped before this hop, so the
+    // sample carries only non-secret entries (the schema itself cannot
+    // express the strip — it allows any string map).
     const withDataHeaders: ChannelEnvelope = {
       ...STAGE_2_SAMPLE,
       data: {
         ...STAGE_2_SAMPLE.data,
-        headers: { "x-telegram-bot-api-secret-token": "tok" },
+        headers: { "content-type": "application/json", "x-request-id": "r1" },
       },
     };
     expect(validate(schema, withDataHeaders)).toEqual([]);
-    expect(validate(definition("ChannelEnvelope"), withDataHeaders)).toEqual([]);
-    expect(validate(definition("IChannelEventData"), withDataHeaders.data)).toEqual(
-      [],
+    expect(validate(definition("ChannelEnvelope"), withDataHeaders)).toEqual(
+      []
     );
+    expect(
+      validate(definition("IChannelEventData"), withDataHeaders.data)
+    ).toEqual([]);
   });
 
   it("rejects non-string values inside data.headers", () => {
@@ -442,7 +447,7 @@ describe("envelope-schema.json (skills/envelope-messages asset)", () => {
       data: { ...STAGE_2_SAMPLE.data, headers: { "content-type": 42 } },
     };
     expect(
-      validate(definition("IChannelEventData"), bogus.data).length,
+      validate(definition("IChannelEventData"), bogus.data).length
     ).toBeGreaterThan(0);
   });
 
@@ -451,10 +456,10 @@ describe("envelope-schema.json (skills/envelope-messages asset)", () => {
     // envelope.factory.ts spread in untyped. T06 removed it, so `headers` must
     // NOT be a declared transport property here either.
     const transportProps = Object.keys(
-      definition("EventTransport")["properties"] as Record<string, ISchema>,
+      definition("EventTransport")["properties"] as Record<string, ISchema>
     );
     expect(transportProps.sort()).toEqual(
-      ["agent_id", "depth", "method", "protocol"].sort(),
+      ["agent_id", "depth", "method", "protocol"].sort()
     );
     expect(transportProps).not.toContain("headers");
 
@@ -527,7 +532,7 @@ describe("envelope-schema.json (skills/envelope-messages asset)", () => {
 describe("skills/envelope-messages/SKILL.md claims", () => {
   const skill = readFileSync(
     `${import.meta.dir}/../../../../skills/envelope-messages/SKILL.md`,
-    "utf-8",
+    "utf-8"
   );
 
   /** The fenced block that enumerates the header allowlist (§8). */
@@ -557,7 +562,7 @@ describe("skills/envelope-messages/SKILL.md claims", () => {
       .filter(
         (line) =>
           line.includes("WEBHOOK_FORWARDED_HEADERS") &&
-          !line.includes("WEBHOOK_FORWARDED_HEADERS_SET"),
+          !line.includes("WEBHOOK_FORWARDED_HEADERS_SET")
       )
       .map((line) => line.replace(/\.ts:[\d-]+/g, "").replace(/O\(\d+\)/g, ""));
 
@@ -584,7 +589,7 @@ describe("skills/envelope-messages/SKILL.md claims", () => {
         (line) =>
           line.includes("correlation") &&
           line.includes("randomUUID()") &&
-          line.includes("envelope.utils.ts:332"),
+          line.includes("envelope.utils.ts:332")
       );
     expect(tied).toBe(true);
   });

@@ -174,6 +174,17 @@ user-agent
 
 All other headers must be discarded.
 
+**Verification-secret strip (2026-08-01).** Four of the seven exist so that
+channel-service can AUTHENTICATE the webhook (`x-hub-signature-256`,
+`x-hub-signature`, `x-telegram-bot-api-secret-token`, `x-http-channel-token` —
+`WEBHOOK_SECRET_HEADERS`, same file). They ride the stage-1 envelope to the
+verifier, and once the signature check has used them
+(`WebhookIngressService.resolveAccount`) they are stripped
+(`stripSecretHeaders`), so stage-2 `data.headers` carries only `content-type`,
+`x-request-id` and `user-agent`. A secret's job ends at verification; nothing
+downstream reads it, and forwarding it would only widen the exposure surface
+of every stage-2 consumer and store.
+
 **Placement.** The allowlisted headers are carried under `data`, not under
 `transport`: the typed stage-1 shape is `IWebhookIngressData.headers`
 (`packages/shared/src/webhook.interfaces.ts:18`), and `EventTransport`
@@ -431,7 +442,11 @@ Note: `accountid` is absent — `WebhookIngressEnvelope` is typed as `Omit<Event
     "depth": 1
   },
   "data": {
-    "headers": { "x-telegram-bot-api-secret-token": "..." }
+    "headers": {
+      "content-type": "application/json",
+      "x-request-id": "…",
+      "user-agent": "…"
+    }
   }
 }
 ```
@@ -449,13 +464,17 @@ Subject: `evt.acme.channel-service.messaging.telegram.telegram.received.v1`
 > webhook consumer's allowlist — which it also uses for signature verification
 > — is threaded through `WebhookIngressService.scheduleIngress` and
 > `IngressService.processInbound` to `createChannelEnvelope`, so webhook-derived
-> stage-2 envelopes now carry the block shown above. It travels VERBATIM: the
-> single filtering point is api-gateway
-> (`WEBHOOK_FORWARDED_HEADERS`, `webhook-ingress-publisher.service.ts:252-263`),
-> and channel-service only lowercases keys
-> (`webhook-ingress-consumer.service.ts:178-187`) — stage 2 never re-filters.
-> Envelopes published before that date, and any non-webhook flow, carry no
-> `headers` key at all (the option is optional and simply omitted).
+> stage-2 envelopes now carry the block shown above. api-gateway is the
+> allowlist filter (`WEBHOOK_FORWARDED_HEADERS`,
+> `webhook-ingress-publisher.service.ts:252-263`) and channel-service
+> lowercases keys (`webhook-ingress-consumer.service.ts:178-187`); since
+> 2026-08-01 channel-service additionally strips the verification-secret
+> subset (`WEBHOOK_SECRET_HEADERS`, §4.1) after the signature check, so the
+> block above can only contain `content-type`, `x-request-id` and
+> `user-agent`. Envelopes published before 2026-07-31, and any non-webhook
+> flow, carry no `headers` key at all (the option is optional and simply
+> omitted); envelopes published between 2026-07-31 and 2026-08-01 may still
+> carry the secret headers.
 
 ### 10.3 Internal agent (agent-admin-service)
 

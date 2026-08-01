@@ -50,7 +50,7 @@ Apply this skill when creating, consuming or auditing messages on the NATS event
 | I need to generate an event ID | `crypto.randomUUID()` — never a ULID |
 | I need the producer name (channel) | `CHANNEL_PRODUCER` = `"channel-service"` |
 | I need to build the `type` field (channel) | `io.yoizen.messaging.${channel}.${provider}.${kind}.v1` — see `envelope.factory.ts:98` |
-| I need the header allowlist | `WEBHOOK_FORWARDED_HEADERS` in `channel.constants.ts` — 7 entries |
+| I need the header allowlist | `WEBHOOK_FORWARDED_HEADERS` in `channel.constants.ts` — 7 entries; the `WEBHOOK_SECRET_HEADERS` subset is stripped before stage two |
 | I need to build a channel subject | `buildChannelSubject(tenant, channel, provider, kind)` from `@yoizen/shared` |
 | I need to build a generic subject | `buildSubject(params)` from `@yoizen/shared/envelope.utils` |
 | I need a root envelope (non-channel) | `buildEventEnvelope(options)` from `@yoizen/shared/envelope.utils` |
@@ -221,7 +221,7 @@ channel-service (WebhookIngressConsumerService)
     causation_id: <webhook envelope id>
     correlation_id: <propagated from the webhook envelope>
     transport.depth: 1
-    data.headers: <stage-1 allowlist, forwarded verbatim>
+    data.headers: <stage-1 allowlist minus WEBHOOK_SECRET_HEADERS (stripped post-verification)>
 ```
 
 Key files:
@@ -241,7 +241,7 @@ The `transport` field (type `EventTransport` in `packages/shared/src/interfaces.
 | `agent_id` | string? | Agent ID (only for `method: "agent"`) |
 | `depth` | number? | Causal depth for anti-loop enforcement (see §10) |
 
-The webhook header allowlist (§8) lives under `data.headers`, NOT under `transport` — `IWebhookIngressData.headers` on stage 1 (`webhook.interfaces.ts:18`) and `IChannelEventData.headers` on stage 2 (`channel.interfaces.ts`). `EventTransport` declares exactly the four fields above. Until 2026-07-31 `createChannelEnvelope` spread an undeclared `headers` key into `transport` (envelope-drift T06); that spread had no caller, so `transport.headers` never reached the wire. Since 2026-07-31 the stage-1 allowlist IS forwarded to stage-2 `data.headers` on webhook-derived envelopes (envelope-drift post-loop item 3) — verbatim, with api-gateway as the single filtering point.
+The webhook header allowlist (§8) lives under `data.headers`, NOT under `transport` — `IWebhookIngressData.headers` on stage 1 (`webhook.interfaces.ts:18`) and `IChannelEventData.headers` on stage 2 (`channel.interfaces.ts`). `EventTransport` declares exactly the four fields above. Until 2026-07-31 `createChannelEnvelope` spread an undeclared `headers` key into `transport` (envelope-drift T06); that spread had no caller, so `transport.headers` never reached the wire. Since 2026-07-31 the stage-1 allowlist IS forwarded to stage-2 `data.headers` on webhook-derived envelopes (envelope-drift post-loop item 3). Two filtering points: api-gateway applies the allowlist at stage 1; since 2026-08-01 channel-service strips the `WEBHOOK_SECRET_HEADERS` subset after the signature check (§8), so stage 2 carries only the non-secret entries.
 
 ### 7. Data Payload
 
@@ -271,6 +271,12 @@ user-agent
 ```
 
 An O(1) lookup is available as `WEBHOOK_FORWARDED_HEADERS_SET` (a Set). Every other header must be discarded.
+
+The four signature/token entries form `WEBHOOK_SECRET_HEADERS` (same file):
+they exist so channel-service can verify the webhook, and are stripped after
+the signature check (since 2026-08-01). Stage-1 `data.headers` may carry all
+seven; stage-2 `data.headers` can only carry `content-type`, `x-request-id`
+and `user-agent`.
 
 ### 9. Idempotency
 

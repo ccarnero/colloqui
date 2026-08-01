@@ -63,7 +63,7 @@ These decisions are final and apply across all bus/messaging documents.
 | D5 | One stream per tenant with explicit limits | messaging/service-bus | Implemented — topology consequence of [`../adr/temporal-and-nats.md`](../adr/temporal-and-nats.md) |
 | D6 | Full raw + per-tenant ACL for PII | security | Implemented (ACLs pending) |
 | D7 | Initial shadow publish — replaced by primary path | messaging/service-bus | Superseded: NATS is the primary path |
-| D8 | Explicit allowlist of HTTP headers | messaging/envelope | Implemented (7 headers; see `WEBHOOK_FORWARDED_HEADERS`) |
+| D8 | Explicit allowlist of HTTP headers | messaging/envelope | Implemented (7 headers; see `WEBHOOK_FORWARDED_HEADERS`). Extended 2026-08-01: the verification-secret subset (`WEBHOOK_SECRET_HEADERS`) is stripped after the stage-1 signature check, so stage-2 `data.headers` never carries a secret |
 | D9 | `traceid` in the envelope | messaging/envelope | Implemented (`activeOrRandomTraceId` via `@yoizen/observability`) |
 | D10 | Rename field `subject` to `resource` in the envelope | messaging/envelope | Implemented |
 | D11 | `causation_id` and `correlation_id` in the envelope | messaging/envelope | Implemented |

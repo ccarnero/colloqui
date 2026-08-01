@@ -1,19 +1,18 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { createHash } from "node:crypto";
 import { Test } from "@nestjs/testing";
-import { IngressService } from "../../src/modules/ingress/ingress.service";
+import { __resetEnsuredDlqStreamCacheForTests } from "@yoizen/database";
 import {
-  JETSTREAM_PUBLISHER,
-  JETSTREAM_MANAGER,
-} from "../../src/providers/nats.provider";
-import {
-  canonicalJson,
   canonicalByteLength,
+  canonicalJson,
   computePayloadChecksum,
   isCompliantEnvelope,
-  buildDlqMessageSubject,
 } from "@yoizen/shared";
-import { __resetEnsuredDlqStreamCacheForTests } from "@yoizen/database";
+import { IngressService } from "../../src/modules/ingress/ingress.service";
+import {
+  JETSTREAM_MANAGER,
+  JETSTREAM_PUBLISHER,
+} from "../../src/providers/nats.provider";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -51,15 +50,15 @@ interface MockSet {
 function buildMocks(putBlobImpl?: () => Promise<unknown>): MockSet {
   const publish: PublishMock = mock(() => Promise.resolve({ seq: 1 }));
   const putBlob: PutBlobMock = mock(
-    putBlobImpl ?? (() => Promise.resolve({ name: "", size: 0 })),
+    putBlobImpl ?? (() => Promise.resolve({ name: "", size: 0 }))
   );
-  const osFactory: OsFactoryMock = mock(() =>
-    Promise.resolve({ putBlob }),
-  );
+  const osFactory: OsFactoryMock = mock(() => Promise.resolve({ putBlob }));
   const js = { publish, views: { os: osFactory } };
   const jsm = {
     streams: {
-      info: mock(() => Promise.resolve({ config: { name: "INGRESS-tenant-a" } })),
+      info: mock(() =>
+        Promise.resolve({ config: { name: "INGRESS-tenant-a" } })
+      ),
       add: mock(() => Promise.resolve()),
     },
   } as unknown as import("nats").JetStreamManager;
@@ -114,15 +113,18 @@ describe("IngressService — inline path", () => {
   // (`webhook-ingress-consumer.service.ts:147`), and they are now threaded
   // through to `createChannelEnvelope`.
   //
-  // Contract pinned here: ONE filtering point, at stage 1. channel-service
-  // passes the allowlist through verbatim and never re-filters.
+  // Contract pinned here (updated 2026-08-01): TWO filtering points upstream
+  // — the allowlist at stage 1 (api-gateway) and the verification-secret
+  // strip in `WebhookIngressService.stripSecretHeaders` after the signature
+  // check. IngressService itself is a pass-through: whatever it receives
+  // travels verbatim, which is why callers must never hand it a secret.
   // -------------------------------------------------------------------------
-  it("forwards the stage-1 allowlist to data.headers, byte-identical", async () => {
+  it("forwards the received (already-stripped) allowlist to data.headers, byte-identical", async () => {
     const mocks = buildMocks();
     const service = await compileService(mocks);
     const webhookHeaders = {
       "content-type": "application/json",
-      "x-hub-signature-256": "sha256=abc123",
+      "x-request-id": "req-1",
     };
 
     await service.processInbound({
@@ -141,12 +143,17 @@ describe("IngressService — inline path", () => {
     });
 
     expect(mocks.publish).toHaveBeenCalledTimes(1);
-    const [, bytes] = mocks.publish.mock.calls[0] as unknown as [string, Uint8Array];
+    const [, bytes] = mocks.publish.mock.calls[0] as unknown as [
+      string,
+      Uint8Array,
+    ];
     const envelope = JSON.parse(new TextDecoder().decode(bytes));
 
     expect(envelope.data.headers).toEqual(webhookHeaders);
     // No re-filtering and no key rewriting on this hop.
-    expect(Object.keys(envelope.data.headers)).toEqual(Object.keys(webhookHeaders));
+    expect(Object.keys(envelope.data.headers)).toEqual(
+      Object.keys(webhookHeaders)
+    );
     // The allowlist belongs under `data`, never on `transport` (T06).
     expect("headers" in envelope.transport).toBe(false);
   });
@@ -169,7 +176,10 @@ describe("IngressService — inline path", () => {
       ],
     });
 
-    const [, bytes] = mocks.publish.mock.calls[0] as unknown as [string, Uint8Array];
+    const [, bytes] = mocks.publish.mock.calls[0] as unknown as [
+      string,
+      Uint8Array,
+    ];
     const envelope = JSON.parse(new TextDecoder().decode(bytes));
 
     expect("headers" in envelope.data).toBe(false);
@@ -201,7 +211,7 @@ describe("IngressService — claim-check path (threshold = 256 KB)", () => {
     const service = await compileService(mocks);
     const webhookHeaders = {
       "content-type": "application/json",
-      "x-hub-signature-256": "sha256=oversize",
+      "x-request-id": "req-oversize",
     };
 
     await service.processInbound({
@@ -258,7 +268,7 @@ describe("IngressService — claim-check path (threshold = 256 KB)", () => {
         description: expect.stringContaining("tenant-a"),
         ttl: expect.any(Number),
         max_bytes: expect.any(Number),
-      }),
+      })
     );
 
     // Blob must be stored exactly once
@@ -266,8 +276,7 @@ describe("IngressService — claim-check path (threshold = 256 KB)", () => {
 
     // One slim publish
     expect(mocks.publish).toHaveBeenCalledTimes(1);
-    const [publishedSubject, slimBytes, opts] = mocks.publish.mock
-      .calls[0] as [
+    const [publishedSubject, slimBytes, opts] = mocks.publish.mock.calls[0] as [
       string,
       Uint8Array,
       { headers: { get: (k: string) => string | undefined } },
@@ -286,7 +295,7 @@ describe("IngressService — claim-check path (threshold = 256 KB)", () => {
 
     // payload_ref shape
     expect(slim.data.payload_ref).toMatch(
-      /^nats:\/\/objstore\/PAYLOAD-tenant-a\/.+-payload$/,
+      /^nats:\/\/objstore\/PAYLOAD-tenant-a\/.+-payload$/
     );
 
     // payload_bytes reflects canonical payload size (not the envelope size)
@@ -300,9 +309,7 @@ describe("IngressService — claim-check path (threshold = 256 KB)", () => {
     // We can't easily reconstruct the exact payload here, but we can verify
     // that the stored bytes are valid JSON and their length matches
     const storedJson = JSON.parse(Buffer.from(storedBytes).toString("utf8"));
-    expect(slim.data.payload_bytes).toBe(
-      canonicalByteLength(storedJson),
-    );
+    expect(slim.data.payload_bytes).toBe(canonicalByteLength(storedJson));
 
     // Invariant: sha256(storedBytes) === payload_checksum
     const actualChecksum =
@@ -340,7 +347,7 @@ describe("IngressService — claim-check path (threshold = 256 KB)", () => {
       Uint8Array,
     ];
     const parsedFromStored = JSON.parse(
-      Buffer.from(storedBytes).toString("utf8"),
+      Buffer.from(storedBytes).toString("utf8")
     );
     // The stored bytes must equal Buffer.from(canonicalJson(parsedPayload))
     const reEncoded = Buffer.from(canonicalJson(parsedFromStored));
@@ -438,7 +445,7 @@ describe("IngressService — claim-check path (threshold = 256 KB)", () => {
     // Subject matches dlq.tenant-a.<original-subject>
     expect(dlqSubject).toMatch(/^dlq\.tenant-a\./);
     expect(dlqOpts.headers.get("X-Dlq-Reason")).toBe(
-      "claim_check_store_failed",
+      "claim_check_store_failed"
     );
     expect(dlqOpts.headers.get("X-Dlq-Stage")).toBe("ingress_claim_check");
     expect(dlqOpts.headers.get("X-Dlq-Original-Subject")).toBeTruthy();

@@ -230,7 +230,7 @@
         },
         "headers": {
           "type": "object",
-          "description": "Allowlisted request headers (WEBHOOK_FORWARDED_HEADERS, channel.constants.ts). Record<string, string>.",
+          "description": "Allowlisted request headers (WEBHOOK_FORWARDED_HEADERS, channel.constants.ts). May include the verification-secret subset (WEBHOOK_SECRET_HEADERS) — stage 2 needs them to authenticate. Record<string, string>.",
           "additionalProperties": { "type": "string" }
         },
         "instance": {
@@ -279,7 +279,7 @@
       "properties": {
         "headers": {
           "type": "object",
-          "description": "Allowlisted request headers (WEBHOOK_FORWARDED_HEADERS, channel.constants.ts). Record<string, string>.",
+          "description": "Allowlisted request headers minus the verification-secret subset (WEBHOOK_FORWARDED_HEADERS minus WEBHOOK_SECRET_HEADERS, stripped after the signature check since 2026-08-01): only content-type, x-request-id, user-agent. Record<string, string>.",
           "additionalProperties": { "type": "string" }
         }
       }
