@@ -138,4 +138,33 @@ final per-file dispositions.
 
 ## Progress
 
-(appended per task)
+- [x] T01 — Inventory + ledger skeleton
+- [ ] T02 — Audit: DOCS/messaging + DOCS/architecture
+- [ ] T03 — Audit: DOCS/channels, agents, workflows, skb, reference, adr, guides, runbooks
+- [ ] T04 — Audit: the 20 service READMEs
+- [ ] T05 — Audit: packages + sdk docs
+- [ ] T06 — Audit: integrations, demos, examples
+- [ ] T07 — Audit: scripts (docs AND behavior contracts)
+- [ ] T08 — Audit: root docs, cowork notes, skills
+- [ ] T09 — Structure proposal + purge list ⟶ HUMAN DECISION ROUND
+- [ ] T10 — Execute the approved structure + purge
+
+(per-task entries appended below)
+
+### T01 — 2026-08-02
+
+`cowork/DOCS-TRUTH-LEDGER.md` created: 306 rows (273 md + 28 script headers
++ 5 claim-bearing skill assets), all `pending`, grouped by owning task
+(T02–T08 + RECORDS + section U for unassigned). CORRECTION to this task's
+Accept text discovered en route: bare `fd -e md` does NOT reconcile — 68
+tracked docs live in hidden dirs (`.claude` 4, `.agents/skills/adr-skill` 8,
+`.sdd` 56) and `CLAUDE.md` is gitignored (manual +1); the honest census is
+`fd -H -e md` (273) = `git ls-files '*.md'` (272) + the ledger. Four
+class corrections applied with evidence (mcp-connections + runtime-streaming
+future→descriptive per their own "Status: Implemented" headers;
+DESIGN-run-view → prescriptive RECORD; DESIGN-http-channel-instances →
+RECORD, Option B verified shipped). Escalations parked for T09: the
+live-vs-staged `manual-loop.command.md` duplicate, the `.sdd/` second
+record system, section U ownership, hybrid class names.
+Attempt 1 2× REJECTED (hidden-dir omission, CLAUDE.md, misclasses,
+non-verbatim checklist) — attempt 2 2× APPROVED. G0 green both attempts.
