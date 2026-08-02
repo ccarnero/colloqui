@@ -1,5 +1,5 @@
-import { TenantDatabaseTier } from "./tenant-database-tier";
 import type { IMongoCollectionSchema } from "./mongo-schema.types";
+import { TenantDatabaseTier } from "./tenant-database-tier";
 
 /**
  * Platform MongoDB collections — catalog, auth, registry.
@@ -136,3 +136,11 @@ export const PLATFORM_MONGO_SCHEMA: IMongoCollectionSchema[] = [
 
 /** Default tier value embedded in tenant catalog documents. */
 export const PLATFORM_TENANT_DEFAULT_TIER = TenantDatabaseTier.Shared;
+
+/**
+ * Tenant catalog documents also carry `messaging_tier`
+ * (`TenantTier`, default `free` — `DEFAULT_TENANT_MESSAGING_TIER` in
+ * `tenant-stream.constants.ts`) since 2026-08-01. This file declares indexes
+ * only (`IMongoCollectionSchema` has no validator support), and the field is
+ * not indexed; documents created earlier lack it and read as `free`.
+ */

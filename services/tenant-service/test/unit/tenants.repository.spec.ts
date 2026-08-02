@@ -1,8 +1,8 @@
 import "../setup-env";
 import { describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { createMockMongoClient } from "@yoizen/testing";
 import { ProvisioningStatus, TenantDatabaseTier } from "@yoizen/shared";
+import { createMockMongoClient } from "@yoizen/testing";
 import { TenantsMongoRepository } from "../../src/modules/tenants/tenants.mongo.repository";
 import { TENANTS_REPOSITORY } from "../../src/modules/tenants/tenants.repository.interface";
 import { MONGO_CLIENT } from "../../src/providers/platform-mongo.provider";
@@ -53,12 +53,52 @@ describe("TenantsMongoRepository", () => {
       "id-1",
       "tenant-a",
       TenantDatabaseTier.Shared,
-      {},
+      {}
     );
     const byName = await repository.findByName("tenant-a");
 
     expect(created.name).toBe("tenant-a");
     expect(byName?.name).toBe("tenant-a");
+    // tenant-messaging-tiers T01 wire compatibility: the findOne fixture above
+    // is a LEGACY document with no `messaging_tier` — it must read as `free`;
+    // the freshly created row carries the default explicitly.
+    expect(created.messaging_tier).toBe("free");
+    expect(byName?.messaging_tier).toBe("free");
+  });
+
+  it("throws on an invalid messaging_tier stored in the DB", async () => {
+    const collections = new Map([
+      [
+        "tenants",
+        (operation: string) => {
+          if (operation === "findOne") {
+            return {
+              _id: "id-1",
+              name: "tenant-a",
+              ...rowTemplate,
+              messaging_tier: "gold",
+              created_at: new Date(),
+              updated_at: new Date(),
+            };
+          }
+          return null;
+        },
+      ],
+    ]);
+    const client = createMockMongoClient(collections, mock);
+
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        TenantsMongoRepository,
+        { provide: TENANTS_REPOSITORY, useExisting: TenantsMongoRepository },
+        { provide: MONGO_CLIENT, useValue: client },
+      ],
+    }).compile();
+
+    const repository = moduleRef.get(TenantsMongoRepository);
+    await expect(repository.findByName("tenant-a")).rejects.toThrow(
+      "Invalid messaging_tier in DB: gold"
+    );
   });
 
   it("findAll returns all tenant rows", async () => {

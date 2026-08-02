@@ -1,4 +1,18 @@
-export type TenantTier = "free" | "pro" | "enterprise";
+export const TENANT_TIERS = ["free", "pro", "enterprise"] as const;
+export type TenantTier = (typeof TENANT_TIERS)[number];
+
+/** Type guard mirroring `isTenantDatabaseTier` for the messaging tier. */
+export function isTenantTier(value: unknown): value is TenantTier {
+  return (TENANT_TIERS as readonly unknown[]).includes(value);
+}
+
+/**
+ * Default messaging tier for tenants that never had one assigned — including
+ * every tenant document/row created before the field existed (absent reads
+ * as `free`; see `manual-loops/messaging/tenant-messaging-tiers.md`
+ * decision 1).
+ */
+export const DEFAULT_TENANT_MESSAGING_TIER: TenantTier = "free";
 
 export interface TenantStreamLimits {
   max_age: number;
@@ -20,8 +34,9 @@ const DAY_NS = 24 * 60 * 60 * 1_000_000_000;
 /**
  * RESERVED FOR A FUTURE DESIGN — see `DOCS/v_next/tenant-messaging-tiers.md`.
  *
- * These limits are NOT applied to any stream today. No tenant record carries a
- * `TenantTier`, and `ensureTenantIngressStream`
+ * These limits are NOT applied to any stream today. Tenant records carry a
+ * `messaging_tier` since 2026-08-01 (tenant-messaging-tiers T01), but
+ * `ensureTenantIngressStream`
  * (`packages/database/src/nats-provider.ts`) — the single creator of
  * `INGRESS-<TENANT>` since 2026-07-31 — applies the flat
  * `CHANNEL_STREAM_MAX_AGE_NS` / `CHANNEL_STREAM_MAX_BYTES` instead.
@@ -72,7 +87,7 @@ export function getTenantSubjectPattern(tenantId: string): string {
  */
 export function buildTenantStreamConfig(
   tenantId: string,
-  tier: TenantTier,
+  tier: TenantTier
 ): TenantStreamConfig {
   return {
     name: getTenantStreamName(tenantId),
@@ -101,7 +116,7 @@ export interface JetStreamStorageCheck {
 export function checkJetStreamCapacity(
   requestedMaxBytes: number,
   storageUsed: number,
-  storageLimit: number,
+  storageLimit: number
 ): JetStreamStorageCheck {
   if (storageLimit < 0) {
     return {

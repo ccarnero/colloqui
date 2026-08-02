@@ -1,25 +1,27 @@
 import {
-  IsString,
-  IsNotEmpty,
-  MaxLength,
-  Matches,
-  IsOptional,
-  IsObject,
-  IsIn,
-} from "class-validator";
-import {
-  TenantDatabaseTier,
   type JsonValue,
   type ProvisioningStatusValue,
+  TENANT_TIERS,
+  TenantDatabaseTier,
   type TenantDatabaseTierValue,
+  type TenantTier,
 } from "@yoizen/shared";
+import {
+  IsIn,
+  IsNotEmpty,
+  IsObject,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+} from "class-validator";
 
 export {
-  VALID_ENVIRONMENTS,
   type Environment,
   type JsonValue,
   type ProvisioningStatusValue,
   type TenantDatabaseTierValue,
+  VALID_ENVIRONMENTS,
 } from "@yoizen/shared";
 
 export type TenantConfiguration = { [key: string]: JsonValue };
@@ -28,6 +30,8 @@ export interface ITenantRow {
   id: string;
   name: string;
   tier: TenantDatabaseTierValue;
+  /** Messaging tier (INGRESS stream limits); absent in storage reads as `free`. */
+  messaging_tier: TenantTier;
   configuration: TenantConfiguration;
   created_at: Date;
   updated_at: Date;
@@ -52,12 +56,27 @@ export class CreateTenantDto {
   tier?: TenantDatabaseTierValue;
 
   @IsOptional()
+  @IsIn(TENANT_TIERS)
+  messagingTier?: TenantTier;
+
+  @IsOptional()
   @IsObject()
   configuration?: TenantConfiguration;
 }
 
+/**
+ * Both fields optional so a caller can change either independently; the
+ * service rejects a body carrying neither (400). `configuration` was the
+ * only (required) member until 2026-08-01 — existing callers that always
+ * send it are unaffected.
+ */
 export class UpdateTenantDto {
+  @IsOptional()
   @IsObject()
   @IsNotEmpty()
-  configuration!: TenantConfiguration;
+  configuration?: TenantConfiguration;
+
+  @IsOptional()
+  @IsIn(TENANT_TIERS)
+  messagingTier?: TenantTier;
 }

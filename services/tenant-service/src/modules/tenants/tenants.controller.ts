@@ -1,32 +1,32 @@
 import {
   BadRequestException,
-  Controller,
-  Post,
-  Get,
-  Patch,
-  Delete,
   Body,
-  Param,
-  Query,
+  Controller,
+  Delete,
+  Get,
   HttpCode,
   HttpException,
   HttpStatus,
+  Param,
+  Patch,
+  Post,
+  Query,
   Res,
 } from "@nestjs/common";
-import type { FastifyReply } from "fastify";
-import {
-  TenantsService,
-  type ICreateTenantAccepted,
-  type ITenantDetail,
-  type ITenantSummary,
-} from "./tenants.service";
-import { CreateTenantDto, UpdateTenantDto } from "./tenant.dto";
 import {
   isPlatformTenantRowIdParam,
   isProvisioningStatus,
   ProvisioningStatus,
   type ProvisioningStatusValue,
 } from "@yoizen/shared";
+import type { FastifyReply } from "fastify";
+import { CreateTenantDto, UpdateTenantDto } from "./tenant.dto";
+import {
+  type ICreateTenantAccepted,
+  type ITenantDetail,
+  type ITenantSummary,
+  TenantsService,
+} from "./tenants.service";
 
 /**
  * Default Retry-After (seconds) advertised when a DELETE arrives while
@@ -50,7 +50,12 @@ export class TenantsController {
   async create(
     @Body() dto: CreateTenantDto,
   ): Promise<ICreateTenantAccepted> {
-    return this.tenantsService.createTenant(dto.name, dto.tier, dto.configuration);
+    return this.tenantsService.createTenant(
+      dto.name,
+      dto.tier,
+      dto.configuration,
+      dto.messagingTier,
+    );
   }
 
   /**
@@ -61,8 +66,8 @@ export class TenantsController {
    * unknown value yields `400 Bad Request` rather than silently returning
    * the unfiltered set.
    *
-     * Default behavior (no query param) is unchanged: every row is returned,
-     * preserving compatibility with admin tooling like `agent-admin-service`.
+   * Default behavior (no query param) is unchanged: every row is returned,
+   * preserving compatibility with admin tooling like `agent-admin-service`.
    */
   @Get()
   async list(
@@ -98,9 +103,12 @@ export class TenantsController {
   @Patch(":name")
   async update(
     @Param("name") name: string,
-    @Body() dto: UpdateTenantDto,
+    @Body() dto: UpdateTenantDto
   ): Promise<ITenantDetail> {
-    return this.tenantsService.updateTenant(name, dto.configuration);
+    return this.tenantsService.updateTenant(name, {
+      configuration: dto.configuration,
+      messagingTier: dto.messagingTier,
+    });
   }
 
   /**
@@ -113,7 +121,7 @@ export class TenantsController {
   @Delete(":name")
   async remove(
     @Param("name") name: string,
-    @Res({ passthrough: true }) reply: FastifyReply,
+    @Res({ passthrough: true }) reply: FastifyReply
   ): Promise<void> {
     try {
       await this.tenantsService.deleteTenant(name);

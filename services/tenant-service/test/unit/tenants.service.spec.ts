@@ -1,23 +1,24 @@
 import "../setup-env";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
-import { Test } from "@nestjs/testing";
 import {
   ConflictException,
   HttpException,
   HttpStatus,
   NotFoundException,
 } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import { ProvisioningStatus, TenantDatabaseTier } from "@yoizen/shared";
-import { TenantsService } from "../../src/modules/tenants/tenants.service";
 import { TENANTS_REPOSITORY } from "../../src/modules/tenants/tenants.repository.interface";
-import { TENANT_PROVISIONER } from "../../src/providers/tenant-provisioner.interface";
-import { TenantProvisionPublisher } from "../../src/providers/tenant-provision-publisher.service";
-import { TenantDeletionPublisher } from "../../src/providers/tenant-deletion-publisher.service";
+import { TenantsService } from "../../src/modules/tenants/tenants.service";
 import { K8S_CORE_API } from "../../src/providers/kubernetes.provider";
+import { TenantDeletionPublisher } from "../../src/providers/tenant-deletion-publisher.service";
+import { TenantProvisionPublisher } from "../../src/providers/tenant-provision-publisher.service";
+import { TENANT_PROVISIONER } from "../../src/providers/tenant-provisioner.interface";
 
 const baseRow = {
   configuration: {} as Record<string, unknown>,
   tier: TenantDatabaseTier.Shared,
+  messaging_tier: "free" as const,
   created_at: new Date("2024-01-01"),
   updated_at: new Date("2024-01-02"),
   provisioning_status: ProvisioningStatus.Ready,
@@ -34,6 +35,7 @@ describe("TenantsService", () => {
     create: ReturnType<typeof mock>;
     findAll: ReturnType<typeof mock>;
     updateConfiguration: ReturnType<typeof mock>;
+    updateMessagingTier: ReturnType<typeof mock>;
     deleteByName: ReturnType<typeof mock>;
   };
   let k8sApi: {
@@ -53,7 +55,7 @@ describe("TenantsService", () => {
           id: "tid-1",
           name: "tenant-a",
           ...baseRow,
-        }),
+        })
       ),
       findAll: mock(() =>
         Promise.resolve([
@@ -63,7 +65,7 @@ describe("TenantsService", () => {
             configuration: {},
             ...baseRow,
           },
-        ]),
+        ])
       ),
       updateConfiguration: mock(() =>
         Promise.resolve({
@@ -71,7 +73,15 @@ describe("TenantsService", () => {
           name: "tenant-a",
           configuration: { yFlowUrl: "https://flow" },
           ...baseRow,
-        }),
+        })
+      ),
+      updateMessagingTier: mock(() =>
+        Promise.resolve({
+          id: "tid-1",
+          name: "tenant-a",
+          ...baseRow,
+          messaging_tier: "pro" as const,
+        })
       ),
       deleteByName: mock(() => Promise.resolve(true)),
     };
@@ -120,14 +130,14 @@ describe("TenantsService", () => {
   it("throws conflict when tenant already exists", async () => {
     repository.findByName.mockResolvedValueOnce({ name: "tenant-a" });
     await expect(
-      service.createTenant("tenant-a", undefined, {}),
+      service.createTenant("tenant-a", undefined, {})
     ).rejects.toBeInstanceOf(ConflictException);
   });
 
   it("throws not found for unknown tenant", async () => {
     repository.findByName.mockResolvedValueOnce(null);
     await expect(service.getTenant("missing")).rejects.toBeInstanceOf(
-      NotFoundException,
+      NotFoundException
     );
   });
 
@@ -164,7 +174,7 @@ describe("TenantsService", () => {
     expect(detail.namespaces[0]?.name).toBe("tenant-a-dev-ns");
     expect(detail.namespaces[0]?.phase).toBe("Active");
     expect(detail.mongoHost).toBe(
-      "mongo-shared.support-services-dev.svc.cluster.local",
+      "mongo-shared.support-services-dev.svc.cluster.local"
     );
   });
 
@@ -180,9 +190,7 @@ describe("TenantsService", () => {
     const detail = await service.getTenant("tenant-a");
     expect(detail.tier).toBe(TenantDatabaseTier.Dedicated);
     expect(detail.namespaces).toHaveLength(1);
-    expect(detail.mongoHost).toBe(
-      "mongo.tenant-a-dev-ns.svc.cluster.local",
-    );
+    expect(detail.mongoHost).toBe("mongo.tenant-a-dev-ns.svc.cluster.local");
   });
 
   it("getTenantById returns detail for dedicated tenant", async () => {
@@ -195,7 +203,7 @@ describe("TenantsService", () => {
     });
     k8sApi.listNamespace.mockResolvedValueOnce({ items: [tenantNamespace] });
     const detail = await service.getTenantById(
-      "550e8400-e29b-41d4-a716-446655440000",
+      "550e8400-e29b-41d4-a716-446655440000"
     );
     expect(detail.id).toBe("550e8400-e29b-41d4-a716-446655440000");
     expect(detail.namespaces).toHaveLength(1);
@@ -210,10 +218,67 @@ describe("TenantsService", () => {
     });
     k8sApi.listNamespace.mockResolvedValueOnce({ items: [tenantNamespace] });
     const detail = await service.updateTenant("tenant-a", {
-      yFlowUrl: "https://flow.example",
+      configuration: { yFlowUrl: "https://flow.example" },
     });
     expect(detail.configuration).toEqual({ yFlowUrl: "https://flow.example" });
     expect(detail.namespaces).toHaveLength(1);
+    expect(repository.updateMessagingTier).not.toHaveBeenCalled();
+  });
+
+  it("updateTenant with messagingTier only persists the tier and skips configuration", async () => {
+    k8sApi.listNamespace.mockResolvedValueOnce({ items: [tenantNamespace] });
+    const detail = await service.updateTenant("tenant-a", {
+      messagingTier: "pro",
+    });
+    expect(repository.updateMessagingTier).toHaveBeenCalledWith(
+      "tenant-a",
+      "pro"
+    );
+    expect(repository.updateConfiguration).not.toHaveBeenCalled();
+    expect(detail.messagingTier).toBe("pro");
+  });
+
+  it("updateTenant rejects a body with neither configuration nor messagingTier", async () => {
+    await expect(service.updateTenant("tenant-a", {})).rejects.toMatchObject({
+      status: HttpStatus.BAD_REQUEST,
+    });
+    expect(repository.updateConfiguration).not.toHaveBeenCalled();
+    expect(repository.updateMessagingTier).not.toHaveBeenCalled();
+  });
+
+  it("createTenant threads messagingTier to the repository and echoes it", async () => {
+    repository.create.mockResolvedValueOnce({
+      id: "tid-1",
+      name: "tenant-a",
+      ...baseRow,
+      messaging_tier: "enterprise" as const,
+    });
+    const created = await service.createTenant(
+      "tenant-a",
+      undefined,
+      {},
+      "enterprise"
+    );
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.any(String),
+      "tenant-a",
+      TenantDatabaseTier.Shared,
+      {},
+      "enterprise"
+    );
+    expect(created.messagingTier).toBe("enterprise");
+  });
+
+  it("createTenant defaults messagingTier to free", async () => {
+    const created = await service.createTenant("tenant-a", undefined, {});
+    expect(repository.create).toHaveBeenCalledWith(
+      expect.any(String),
+      "tenant-a",
+      TenantDatabaseTier.Shared,
+      {},
+      "free"
+    );
+    expect(created.messagingTier).toBe("free");
   });
 
   it("deleteTenant for shared tier drops DB+role AND cascades the namespace", async () => {
@@ -225,7 +290,9 @@ describe("TenantsService", () => {
     });
     k8sApi.listNamespace.mockResolvedValueOnce({ items: [tenantNamespace] });
     await service.deleteTenant("tenant-a");
-    expect(tenantProvisioner.deprovisionShared).toHaveBeenCalledWith("tenant-a");
+    expect(tenantProvisioner.deprovisionShared).toHaveBeenCalledWith(
+      "tenant-a"
+    );
     expect(k8sApi.deleteNamespace).toHaveBeenCalledWith({
       name: "tenant-a-dev-ns",
     });
@@ -262,7 +329,7 @@ describe("TenantsService", () => {
   it("deleteTenant throws NotFound when the tenant row is absent", async () => {
     repository.findByName.mockResolvedValueOnce(null);
     await expect(service.deleteTenant("missing")).rejects.toBeInstanceOf(
-      NotFoundException,
+      NotFoundException
     );
     expect(tenantProvisioner.deprovisionShared).not.toHaveBeenCalled();
     expect(k8sApi.deleteNamespace).not.toHaveBeenCalled();
@@ -310,7 +377,9 @@ describe("TenantsService", () => {
     // DROP DATABASE IF EXISTS, DROP ROLE IF EXISTS); the consumer will
     // term its in-flight message via PermanentError [lookup] when it
     // eventually picks it up.
-    expect(tenantProvisioner.deprovisionShared).toHaveBeenCalledWith("tenant-a");
+    expect(tenantProvisioner.deprovisionShared).toHaveBeenCalledWith(
+      "tenant-a"
+    );
     expect(repository.deleteByName).toHaveBeenCalledWith("tenant-a");
   });
 

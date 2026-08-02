@@ -1,3 +1,4 @@
+import type { FactoryProvider } from "@nestjs/common";
 import {
   Global,
   Module,
@@ -5,10 +6,13 @@ import {
   type OnModuleInit,
 } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
-import type { FactoryProvider } from "@nestjs/common";
-import postgres from "postgres";
+import {
+  DEFAULT_TENANT_MESSAGING_TIER,
+  TENANT_TIERS,
+  TenantDatabaseTier,
+} from "@yoizen/shared";
 import type { Sql } from "postgres";
-import { TenantDatabaseTier } from "@yoizen/shared";
+import postgres from "postgres";
 import { tenantServiceConfig } from "../config";
 
 export const PLATFORM_POSTGRES_SQL = "PLATFORM_POSTGRES_SQL";
@@ -49,6 +53,21 @@ BEGIN
   END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_tenants_tier ON tenants (tier);
+
+ALTER TABLE tenants ADD COLUMN IF NOT EXISTS messaging_tier
+  TEXT NOT NULL DEFAULT '${DEFAULT_TENANT_MESSAGING_TIER}';
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'tenants_messaging_tier_check'
+  ) THEN
+    ALTER TABLE tenants
+      ADD CONSTRAINT tenants_messaging_tier_check
+      CHECK (messaging_tier IN (${TENANT_TIERS.map((t) => `'${t}'`).join(", ")}));
+  END IF;
+END $$;
 
 ALTER TABLE tenants ADD COLUMN IF NOT EXISTS provisioning_status
   TEXT NOT NULL DEFAULT 'ready';

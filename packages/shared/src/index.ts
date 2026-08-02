@@ -491,9 +491,12 @@ export type {
 export {
   buildTenantStreamConfig,
   checkJetStreamCapacity,
+  DEFAULT_TENANT_MESSAGING_TIER,
   getTenantStreamName,
   getTenantSubjectPattern,
+  isTenantTier,
   TENANT_TIER_LIMITS,
+  TENANT_TIERS,
 } from "./tenant-stream.constants";
 export { validateOutboundUrl } from "./validate-outbound-url";
 export type {

@@ -1,15 +1,18 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { MongoClient } from "mongodb";
 import {
-  isTenantDatabaseTier,
+  DEFAULT_TENANT_MESSAGING_TIER,
   isProvisioningStatus,
+  isTenantDatabaseTier,
+  isTenantTier,
   ProvisioningStatus,
-  TenantDatabaseTier,
   type ProvisioningStatusValue,
+  TenantDatabaseTier,
   type TenantDatabaseTierValue,
+  type TenantTier,
 } from "@yoizen/shared";
-import { MONGO_CLIENT } from "../../providers/platform-mongo.provider";
+import type { MongoClient } from "mongodb";
 import { platformDb } from "../../providers/platform-db";
+import { MONGO_CLIENT } from "../../providers/platform-mongo.provider";
 import type { ITenantRow, TenantConfiguration } from "./tenant.dto";
 import type { ITenantsRepository } from "./tenants.repository.interface";
 
@@ -17,6 +20,8 @@ interface ITenantDoc {
   readonly _id: string;
   readonly name: string;
   readonly tier: TenantDatabaseTierValue;
+  /** Absent on documents created before 2026-08-01 — reads as `free`. */
+  readonly messaging_tier?: TenantTier;
   readonly configuration: TenantConfiguration;
   readonly created_at: Date;
   readonly updated_at: Date;
@@ -36,7 +41,7 @@ function mapRow(doc: ITenantDoc): ITenantRow {
         ? raw
         : (() => {
             throw new Error(
-              `Invalid provisioning_status in DB: ${String(raw)}`,
+              `Invalid provisioning_status in DB: ${String(raw)}`
             );
           })();
   const tier: TenantDatabaseTierValue =
@@ -47,10 +52,22 @@ function mapRow(doc: ITenantDoc): ITenantRow {
         : (() => {
             throw new Error(`Invalid tenant tier in DB: ${String(rawTier)}`);
           })();
+  const rawMessaging = doc.messaging_tier;
+  const messagingTier: TenantTier =
+    rawMessaging === undefined || rawMessaging === null
+      ? DEFAULT_TENANT_MESSAGING_TIER
+      : isTenantTier(rawMessaging)
+        ? rawMessaging
+        : (() => {
+            throw new Error(
+              `Invalid messaging_tier in DB: ${String(rawMessaging)}`
+            );
+          })();
   return {
     id: doc._id,
     name: doc.name,
     tier,
+    messaging_tier: messagingTier,
     configuration: doc.configuration ?? {},
     created_at: doc.created_at,
     updated_at: doc.updated_at,
@@ -74,12 +91,14 @@ export class TenantsMongoRepository implements ITenantsRepository {
     name: string,
     tier: TenantDatabaseTierValue = TenantDatabaseTier.Shared,
     configuration: TenantConfiguration = {},
+    messagingTier: TenantTier = DEFAULT_TENANT_MESSAGING_TIER
   ): Promise<ITenantRow> {
     const now = new Date();
     const doc: ITenantDoc = {
       _id: id,
       name,
       tier,
+      messaging_tier: messagingTier,
       configuration,
       created_at: now,
       updated_at: now,
@@ -123,7 +142,7 @@ export class TenantsMongoRepository implements ITenantsRepository {
   async markProvisioningStarted(id: string): Promise<void> {
     const existing = await this.collection().findOne(
       { _id: id },
-      { projection: { provisioning_started_at: 1 } },
+      { projection: { provisioning_started_at: 1 } }
     );
     const now = new Date();
     await this.collection().updateOne(
@@ -138,7 +157,7 @@ export class TenantsMongoRepository implements ITenantsRepository {
             ? { provisioning_started_at: now }
             : {}),
         },
-      },
+      }
     );
   }
 
@@ -153,7 +172,7 @@ export class TenantsMongoRepository implements ITenantsRepository {
           provisioning_completed_at: now,
           updated_at: now,
         },
-      },
+      }
     );
   }
 
@@ -168,14 +187,14 @@ export class TenantsMongoRepository implements ITenantsRepository {
           provisioning_completed_at: now,
           updated_at: now,
         },
-      },
+      }
     );
   }
 
   async setProvisioningStatus(
     id: string,
     status: ProvisioningStatusValue,
-    error: string | null,
+    error: string | null
   ): Promise<void> {
     await this.collection().updateOne(
       { _id: id },
@@ -185,13 +204,13 @@ export class TenantsMongoRepository implements ITenantsRepository {
           provisioning_error: error,
           updated_at: new Date(),
         },
-      },
+      }
     );
   }
 
   async updateConfiguration(
     name: string,
-    configuration: TenantConfiguration,
+    configuration: TenantConfiguration
   ): Promise<ITenantRow | undefined> {
     const doc = await this.collection().findOneAndUpdate(
       { name },
@@ -201,7 +220,24 @@ export class TenantsMongoRepository implements ITenantsRepository {
           updated_at: new Date(),
         },
       },
-      { returnDocument: "after" },
+      { returnDocument: "after" }
+    );
+    return doc ? mapRow(doc) : undefined;
+  }
+
+  async updateMessagingTier(
+    name: string,
+    messagingTier: TenantTier
+  ): Promise<ITenantRow | undefined> {
+    const doc = await this.collection().findOneAndUpdate(
+      { name },
+      {
+        $set: {
+          messaging_tier: messagingTier,
+          updated_at: new Date(),
+        },
+      },
+      { returnDocument: "after" }
     );
     return doc ? mapRow(doc) : undefined;
   }

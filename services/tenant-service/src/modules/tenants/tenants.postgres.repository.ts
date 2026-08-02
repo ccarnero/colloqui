@@ -1,13 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { Sql } from "postgres";
 import {
-  isTenantDatabaseTier,
+  DEFAULT_TENANT_MESSAGING_TIER,
   isProvisioningStatus,
+  isTenantDatabaseTier,
+  isTenantTier,
   ProvisioningStatus,
-  TenantDatabaseTier,
   type ProvisioningStatusValue,
+  TenantDatabaseTier,
   type TenantDatabaseTierValue,
+  type TenantTier,
 } from "@yoizen/shared";
+import type { Sql } from "postgres";
 import { PLATFORM_POSTGRES_SQL } from "../../providers/platform-postgres.provider";
 import type { ITenantRow, TenantConfiguration } from "./tenant.dto";
 import type { ITenantsRepository } from "./tenants.repository.interface";
@@ -22,7 +25,7 @@ function mapRow(row: ITenantRow): ITenantRow {
         ? raw
         : (() => {
             throw new Error(
-              `Invalid provisioning_status in DB: ${String(raw)}`,
+              `Invalid provisioning_status in DB: ${String(raw)}`
             );
           })();
   const tier: TenantDatabaseTierValue =
@@ -33,9 +36,21 @@ function mapRow(row: ITenantRow): ITenantRow {
         : (() => {
             throw new Error(`Invalid tenant tier in DB: ${String(rawTier)}`);
           })();
+  const rawMessaging = row.messaging_tier;
+  const messagingTier: TenantTier =
+    rawMessaging === undefined || rawMessaging === null
+      ? DEFAULT_TENANT_MESSAGING_TIER
+      : isTenantTier(rawMessaging)
+        ? rawMessaging
+        : (() => {
+            throw new Error(
+              `Invalid messaging_tier in DB: ${String(rawMessaging)}`
+            );
+          })();
   return {
     ...row,
     tier,
+    messaging_tier: messagingTier,
     provisioning_status: ps,
     provisioning_error: row.provisioning_error ?? null,
     provisioning_started_at: row.provisioning_started_at ?? null,
@@ -54,11 +69,12 @@ export class TenantsPostgresRepository implements ITenantsRepository {
     name: string,
     tier: TenantDatabaseTierValue = TenantDatabaseTier.Shared,
     configuration: TenantConfiguration = {},
+    messagingTier: TenantTier = DEFAULT_TENANT_MESSAGING_TIER
   ): Promise<ITenantRow> {
     const [row] = await this.sql<ITenantRow[]>`
-      INSERT INTO tenants (id, name, tier, configuration, provisioning_status)
-      VALUES (${id}, ${name}, ${tier}, ${this.sql.json(configuration)}, 'pending')
-      RETURNING id, name, tier, configuration, created_at, updated_at,
+      INSERT INTO tenants (id, name, tier, messaging_tier, configuration, provisioning_status)
+      VALUES (${id}, ${name}, ${tier}, ${messagingTier}, ${this.sql.json(configuration)}, 'pending')
+      RETURNING id, name, tier, messaging_tier, configuration, created_at, updated_at,
                 provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
     `;
     return mapRow(row);
@@ -67,7 +83,7 @@ export class TenantsPostgresRepository implements ITenantsRepository {
   async findById(id: string): Promise<ITenantRow | undefined> {
     const [row] = await this.sql<ITenantRow[]>`
       SELECT id, name, configuration, created_at, updated_at,
-             tier,
+             tier, messaging_tier,
              provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
       FROM tenants
       WHERE id = ${id}
@@ -78,7 +94,7 @@ export class TenantsPostgresRepository implements ITenantsRepository {
   async findByName(name: string): Promise<ITenantRow | undefined> {
     const [row] = await this.sql<ITenantRow[]>`
       SELECT id, name, configuration, created_at, updated_at,
-             tier,
+             tier, messaging_tier,
              provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
       FROM tenants
       WHERE name = ${name}
@@ -99,7 +115,7 @@ export class TenantsPostgresRepository implements ITenantsRepository {
     const status = filter?.status ?? null;
     const rows = await this.sql<ITenantRow[]>`
       SELECT id, name, configuration, created_at, updated_at,
-             tier,
+             tier, messaging_tier,
              provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
       FROM tenants
       WHERE ${status}::text IS NULL OR provisioning_status = ${status}
@@ -148,7 +164,7 @@ export class TenantsPostgresRepository implements ITenantsRepository {
   async setProvisioningStatus(
     id: string,
     status: ProvisioningStatusValue,
-    error: string | null,
+    error: string | null
   ): Promise<void> {
     await this.sql`
       UPDATE tenants
@@ -161,7 +177,7 @@ export class TenantsPostgresRepository implements ITenantsRepository {
 
   async updateConfiguration(
     name: string,
-    configuration: TenantConfiguration,
+    configuration: TenantConfiguration
   ): Promise<ITenantRow | undefined> {
     const [row] = await this.sql<ITenantRow[]>`
       UPDATE tenants
@@ -169,7 +185,23 @@ export class TenantsPostgresRepository implements ITenantsRepository {
           updated_at = NOW()
       WHERE name = ${name}
       RETURNING id, name, configuration, created_at, updated_at,
-                tier,
+                tier, messaging_tier,
+                provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
+    `;
+    return row ? mapRow(row) : undefined;
+  }
+
+  async updateMessagingTier(
+    name: string,
+    messagingTier: TenantTier
+  ): Promise<ITenantRow | undefined> {
+    const [row] = await this.sql<ITenantRow[]>`
+      UPDATE tenants
+      SET messaging_tier = ${messagingTier},
+          updated_at = NOW()
+      WHERE name = ${name}
+      RETURNING id, name, configuration, created_at, updated_at,
+                tier, messaging_tier,
                 provisioning_status, provisioning_error, provisioning_started_at, provisioning_completed_at
     `;
     return row ? mapRow(row) : undefined;

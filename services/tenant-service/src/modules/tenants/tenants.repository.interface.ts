@@ -1,6 +1,7 @@
 import type {
   ProvisioningStatusValue,
   TenantDatabaseTierValue,
+  TenantTier,
 } from "@yoizen/shared";
 import type { ITenantRow, TenantConfiguration } from "./tenant.dto";
 
@@ -12,23 +13,26 @@ export interface ITenantsRepository {
     name: string,
     tier?: TenantDatabaseTierValue,
     configuration?: TenantConfiguration,
+    messagingTier?: TenantTier
   ): Promise<ITenantRow>;
   findById(id: string): Promise<ITenantRow | undefined>;
   findByName(name: string): Promise<ITenantRow | undefined>;
-  findAll(filter?: {
-    status?: ProvisioningStatusValue;
-  }): Promise<ITenantRow[]>;
+  findAll(filter?: { status?: ProvisioningStatusValue }): Promise<ITenantRow[]>;
   markProvisioningStarted(id: string): Promise<void>;
   markProvisioningReady(id: string): Promise<void>;
   markProvisioningFailed(id: string, err: string): Promise<void>;
   setProvisioningStatus(
     id: string,
     status: ProvisioningStatusValue,
-    error: string | null,
+    error: string | null
   ): Promise<void>;
   updateConfiguration(
     name: string,
-    configuration: TenantConfiguration,
+    configuration: TenantConfiguration
+  ): Promise<ITenantRow | undefined>;
+  updateMessagingTier(
+    name: string,
+    messagingTier: TenantTier
   ): Promise<ITenantRow | undefined>;
   deleteByName(name: string): Promise<boolean>;
 }

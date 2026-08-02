@@ -1,4 +1,7 @@
+import { randomUUID } from "node:crypto";
+import type * as k8s from "@kubernetes/client-node";
 import {
+  BadRequestException,
   ConflictException,
   HttpException,
   HttpStatus,
@@ -8,34 +11,34 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
-import type * as k8s from "@kubernetes/client-node";
-import { randomUUID } from "node:crypto";
 import {
-  TenantDatabaseTier,
+  DEFAULT_TENANT_MESSAGING_TIER,
   invalidPlatformEnvironmentMessage,
   ProvisioningStatus,
-  tenantKubernetesNamespaceName,
   type ProvisioningStatusValue,
+  TenantDatabaseTier,
   type TenantDatabaseTierValue,
+  type TenantTier,
+  tenantKubernetesNamespaceName,
 } from "@yoizen/shared";
 import { tenantServiceConfig } from "../../config";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
-import { TenantProvisionPublisher } from "../../providers/tenant-provision-publisher.service";
 import { TenantDeletionPublisher } from "../../providers/tenant-deletion-publisher.service";
+import { TenantProvisionPublisher } from "../../providers/tenant-provision-publisher.service";
 import {
-  TENANT_PROVISIONER,
   type ITenantProvisioner,
+  TENANT_PROVISIONER,
 } from "../../providers/tenant-provisioner.interface";
-import {
-  TENANTS_REPOSITORY,
-  type ITenantsRepository,
-} from "./tenants.repository.interface";
 import {
   type Environment,
   type ITenantRow,
   type TenantConfiguration,
   VALID_ENVIRONMENTS,
 } from "./tenant.dto";
+import {
+  type ITenantsRepository,
+  TENANTS_REPOSITORY,
+} from "./tenants.repository.interface";
 
 const LABEL_TENANT = "yoizen.io/tenant";
 const LABEL_ENVIRONMENT = "yoizen.io/environment";
@@ -52,6 +55,7 @@ export interface ITenantDetail {
   id: string;
   name: string;
   tier: TenantDatabaseTierValue;
+  messagingTier: TenantTier;
   configuration: TenantConfiguration;
   namespaces: INamespaceStatus[];
   mongoHost?: string;
@@ -71,6 +75,7 @@ export interface ITenantSummary {
   configuration: TenantConfiguration;
   provisioningStatus: ProvisioningStatusValue;
   tier: TenantDatabaseTierValue;
+  messagingTier: TenantTier;
 }
 
 /** 202 Accepted body for POST /tenants (public path: /api/tenants/:id for status). */
@@ -78,6 +83,7 @@ export interface ICreateTenantAccepted {
   id: string;
   name: string;
   tier: TenantDatabaseTierValue;
+  messagingTier: TenantTier;
   provisioningStatus: ProvisioningStatusValue;
   statusUrl: string;
 }
@@ -85,7 +91,7 @@ export interface ICreateTenantAccepted {
 function databaseHost(
   tenant: string,
   env: Environment,
-  tier: TenantDatabaseTierValue,
+  tier: TenantDatabaseTierValue
 ): { mongoHost?: string; postgresHost?: string } {
   if (tenantServiceConfig.dbEngine === "mongo") {
     return {
@@ -132,6 +138,7 @@ export class TenantsService {
     name: string,
     tier: TenantDatabaseTierValue = TenantDatabaseTier.Shared,
     configuration: TenantConfiguration = {},
+    messagingTier: TenantTier = DEFAULT_TENANT_MESSAGING_TIER
   ): Promise<ICreateTenantAccepted> {
     const existing = await this.repository.findByName(name);
     if (existing) {
@@ -139,7 +146,13 @@ export class TenantsService {
     }
 
     const id = randomUUID();
-    const row = await this.repository.create(id, name, tier, configuration);
+    const row = await this.repository.create(
+      id,
+      name,
+      tier,
+      configuration,
+      messagingTier
+    );
     await this.provisionPublisher.publishProvisionRequested({
       tenantId: row.id,
       name: row.name,
@@ -150,6 +163,7 @@ export class TenantsService {
       id: row.id,
       name: row.name,
       tier: row.tier,
+      messagingTier: row.messaging_tier,
       provisioningStatus: ProvisioningStatus.Pending,
       statusUrl: `/api/tenants/${row.id}`,
     };
@@ -174,6 +188,7 @@ export class TenantsService {
         name: row.name,
         environment: this.environment,
         tier: row.tier,
+        messagingTier: row.messaging_tier,
         configuration: row.configuration,
         provisioningStatus: row.provisioning_status,
       };
@@ -205,15 +220,38 @@ export class TenantsService {
    */
   async updateTenant(
     name: string,
-    configuration: TenantConfiguration,
-  ): Promise<ITenantDetail> {
-    const row = await this.repository.updateConfiguration(name, configuration);
-    if (!row) {
-      throw new NotFoundException(`Tenant '${name}' not found`);
+    changes: {
+      configuration?: TenantConfiguration;
+      messagingTier?: TenantTier;
     }
-    const items = await this.findNamespacesByTenant(row.name);
-    this.logger.log(`Updated configuration for tenant '${name}'`);
-    return this.mapRowToDetail(row, items);
+  ): Promise<ITenantDetail> {
+    const { configuration, messagingTier } = changes;
+    if (configuration === undefined && messagingTier === undefined) {
+      throw new BadRequestException(
+        "PATCH body must carry at least one of: configuration, messagingTier"
+      );
+    }
+
+    let row: ITenantRow | undefined;
+    if (configuration !== undefined) {
+      row = await this.repository.updateConfiguration(name, configuration);
+      if (!row) {
+        throw new NotFoundException(`Tenant '${name}' not found`);
+      }
+    }
+    if (messagingTier !== undefined) {
+      // T01 persists the tier only; applying it to the live INGRESS stream
+      // (streams.update + shrink guard) is the T04 reconciliation task of
+      // manual-loops/messaging/tenant-messaging-tiers.md.
+      row = await this.repository.updateMessagingTier(name, messagingTier);
+      if (!row) {
+        throw new NotFoundException(`Tenant '${name}' not found`);
+      }
+    }
+
+    const items = await this.findNamespacesByTenant(row!.name);
+    this.logger.log(`Updated tenant '${name}'`);
+    return this.mapRowToDetail(row!, items);
   }
 
   /**
@@ -266,7 +304,7 @@ export class TenantsService {
           message: `Tenant '${name}' is currently provisioning; retry the delete after the provisioning_status flips to 'ready' or 'failed'.`,
           provisioningStatus: row.provisioning_status,
         },
-        HttpStatus.CONFLICT,
+        HttpStatus.CONFLICT
         // Note: setting headers on the response itself is the
         // controller's responsibility; this body shape includes
         // `provisioningStatus` so callers can decide how long to wait.
@@ -281,7 +319,7 @@ export class TenantsService {
     const items = await this.findNamespacesByTenant(name);
     const len = items.length;
     const cleanup: Promise<unknown>[] = new Array(
-      len + (sharedDeprovision ? 1 : 0),
+      len + (sharedDeprovision ? 1 : 0)
     );
     for (let i = 0; i < len; i++) {
       const nsName = items[i]!.metadata!.name!;
@@ -289,8 +327,8 @@ export class TenantsService {
         .deleteNamespace({ name: nsName })
         .then(() =>
           this.logger.log(
-            `Deleted namespace ${nsName} (cascades K8s resources)`,
-          ),
+            `Deleted namespace ${nsName} (cascades K8s resources)`
+          )
         );
     }
     if (sharedDeprovision) {
@@ -301,7 +339,7 @@ export class TenantsService {
     const deleted = await this.repository.deleteByName(name);
     if (!deleted) {
       this.logger.warn(
-        `Tenant '${name}' was not found in database after infrastructure cleanup`,
+        `Tenant '${name}' was not found in database after infrastructure cleanup`
       );
     }
     this.logger.log(`Deleted tenant '${name}' from database`);
@@ -322,11 +360,15 @@ export class TenantsService {
     return this.mapRowToDetail(row, items);
   }
 
-  private mapRowToDetail(row: ITenantRow, items: k8s.V1Namespace[]): ITenantDetail {
+  private mapRowToDetail(
+    row: ITenantRow,
+    items: k8s.V1Namespace[]
+  ): ITenantDetail {
     return {
       id: row.id,
       name: row.name,
       tier: row.tier,
+      messagingTier: row.messaging_tier,
       configuration: row.configuration,
       namespaces: this.mapNamespacesToStatuses(items),
       ...databaseHost(row.name, this.environment, row.tier),
@@ -340,7 +382,7 @@ export class TenantsService {
   }
 
   private mapNamespacesToStatuses(
-    items: k8s.V1Namespace[],
+    items: k8s.V1Namespace[]
   ): INamespaceStatus[] {
     const len = items.length;
     const out: INamespaceStatus[] = new Array(len);
@@ -356,7 +398,7 @@ export class TenantsService {
   }
 
   private async findNamespacesByTenant(
-    tenant: string,
+    tenant: string
   ): Promise<k8s.V1Namespace[]> {
     const response = await this.k8sApi.listNamespace({
       labelSelector: `${LABEL_MANAGED_BY}=${MANAGED_BY_VALUE},${LABEL_TENANT}=${tenant},${LABEL_ENVIRONMENT}=${this.environment}`,

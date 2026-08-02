@@ -1,7 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from "@nestjs/swagger";
 import {
+  TENANT_TIERS,
   TenantDatabaseTier,
   type TenantDatabaseTierValue,
+  type TenantTier,
 } from "@yoizen/shared";
 import {
   IsIn,
@@ -46,6 +48,15 @@ export class CreateTenantBodyDto {
   tier?: TenantDatabaseTierValue;
 
   @ApiPropertyOptional({
+    enum: TENANT_TIERS,
+    description:
+      "Messaging tier governing the tenant's INGRESS stream limits. Defaults to `free`.",
+  })
+  @IsOptional()
+  @IsIn(TENANT_TIERS)
+  messagingTier?: TenantTier;
+
+  @ApiPropertyOptional({
     type: "object",
     additionalProperties: true,
     description: "Free-form tenant configuration overrides.",
@@ -56,15 +67,26 @@ export class CreateTenantBodyDto {
 }
 
 /**
- * Proxy body for PATCH /tenants/:name — aligned with tenant-service UpdateTenantDto.
+ * Proxy body for PATCH /tenants/:name — aligned with tenant-service
+ * UpdateTenantDto: both fields optional so either can change independently
+ * (tenant-service rejects a body carrying neither with 400).
  */
 export class UpdateTenantBodyDto {
-  @ApiProperty({
+  @ApiPropertyOptional({
     type: "object",
     additionalProperties: true,
     description: "Tenant configuration to merge/replace.",
   })
+  @IsOptional()
   @IsObject()
   @IsNotEmpty()
-  configuration!: Record<string, unknown>;
+  configuration?: Record<string, unknown>;
+
+  @ApiPropertyOptional({
+    enum: TENANT_TIERS,
+    description: "New messaging tier for the tenant.",
+  })
+  @IsOptional()
+  @IsIn(TENANT_TIERS)
+  messagingTier?: TenantTier;
 }
