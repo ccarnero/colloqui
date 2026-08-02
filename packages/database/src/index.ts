@@ -83,6 +83,7 @@ export {
   ensureStream,
   ensureTenantIngressStream,
   type IEnsureTenantIngressStreamOptions,
+  isStreamNotFoundError,
   JetStreamCapacityError,
   NATS_CONNECTION,
   sumReservedStreamBytes,

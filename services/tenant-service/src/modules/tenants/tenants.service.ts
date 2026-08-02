@@ -10,19 +10,26 @@ import {
   InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
+import { isStreamNotFoundError } from "@yoizen/database";
 import { PinoLoggerService } from "@yoizen/observability";
 import {
+  clampTenantStreamLimits,
   DEFAULT_TENANT_MESSAGING_TIER,
+  getTenantStreamName,
   invalidPlatformEnvironmentMessage,
   ProvisioningStatus,
   type ProvisioningStatusValue,
+  readMessagingCeilingsFromEnv,
+  TENANT_TIER_LIMITS,
   TenantDatabaseTier,
   type TenantDatabaseTierValue,
   type TenantTier,
   tenantKubernetesNamespaceName,
 } from "@yoizen/shared";
+import type { JetStreamManager } from "nats";
 import { tenantServiceConfig } from "../../config";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
+import { JETSTREAM_MANAGER } from "../../providers/nats.module";
 import { TenantDeletionPublisher } from "../../providers/tenant-deletion-publisher.service";
 import { TenantProvisionPublisher } from "../../providers/tenant-provision-publisher.service";
 import {
@@ -120,6 +127,7 @@ export class TenantsService {
     private readonly provisionPublisher: TenantProvisionPublisher,
     private readonly deletionPublisher: TenantDeletionPublisher,
     @Inject(TENANT_PROVISIONER) private readonly provisioner: ITenantProvisioner,
+    @Inject(JETSTREAM_MANAGER) private readonly jsm: JetStreamManager,
   ) {
     const env = tenantServiceConfig.platformEnvironment;
     if (!VALID_ENVIRONMENTS.includes(env as Environment)) {
@@ -240,18 +248,111 @@ export class TenantsService {
       }
     }
     if (messagingTier !== undefined) {
-      // T01 persists the tier only; applying it to the live INGRESS stream
-      // (streams.update + shrink guard) is the T04 reconciliation task of
-      // manual-loops/messaging/tenant-messaging-tiers.md.
-      row = await this.repository.updateMessagingTier(name, messagingTier);
-      if (!row) {
+      const current = row ?? (await this.repository.findByName(name));
+      if (!current) {
         throw new NotFoundException(`Tenant '${name}' not found`);
+      }
+      if (current.messaging_tier === messagingTier) {
+        // Idempotent: same tier means no stream work and no persist.
+        row = current;
+      } else {
+        // T04 reconciliation: the live stream is updated FIRST, then the
+        // tier persists — if the persist fails the retry re-runs a now
+        // no-op-equivalent update rather than leaving a persisted tier the
+        // stream never received.
+        await this.reconcileMessagingTier(name, messagingTier);
+        row = await this.repository.updateMessagingTier(name, messagingTier);
+        if (!row) {
+          throw new NotFoundException(`Tenant '${name}' not found`);
+        }
       }
     }
 
     const items = await this.findNamespacesByTenant(row!.name);
     this.logger.log(`Updated tenant '${name}'`);
     return this.mapRowToDetail(row!, items);
+  }
+
+  /**
+   * Applies a tier change to the live `INGRESS-<TENANT>` stream (T04 of
+   * `manual-loops/messaging/tenant-messaging-tiers.md`, decision 4).
+   *
+   * - Stream genuinely absent (broker error 10059): nothing to reconcile —
+   *   the tier persists and creation applies it. Any OTHER `streams.info`
+   *   failure (connection, timeout, auth) RETHROWS so the tier is NOT
+   *   persisted under a false "absent" belief — for an existing stream,
+   *   creation never re-applies limits (decision 2), so persisting on a
+   *   transport error would drift record and stream until the next change.
+   * - Shrink guard: under `retention: limits`, lowering `max_bytes` below
+   *   the stream's CURRENT bytes discards messages (oldest first). The
+   *   platform refuses that with 409 — no force flag in v1. NOTE: `max_age`
+   *   shrink is DELIBERATELY unguarded per decision 4's bytes-only
+   *   criterion — a downgrade that passes the bytes guard still expires
+   *   messages older than the new retention the moment the update lands.
+   * - The update carries the full existing config with only the four tier
+   *   limit fields overridden, so subjects/retention/etc. never drift here.
+   * - INTERIM (T02→T05): with the dev ceilings unset, a live GROW in dev
+   *   requests limits the 2 GiB single-node account cannot grant; the broker
+   *   rejection maps to 409 below with the broker's reason.
+   */
+  private async reconcileMessagingTier(
+    name: string,
+    messagingTier: TenantTier
+  ): Promise<void> {
+    const streamName = getTenantStreamName(name);
+    const target = clampTenantStreamLimits(
+      TENANT_TIER_LIMITS[messagingTier],
+      readMessagingCeilingsFromEnv()
+    );
+
+    let info;
+    try {
+      info = await this.jsm.streams.info(streamName);
+    } catch (err) {
+      if (!isStreamNotFoundError(err)) {
+        throw err;
+      }
+      this.logger.log(
+        `No live stream ${streamName} to reconcile; ` +
+          `tier '${messagingTier}' will apply at creation`
+      );
+      return;
+    }
+
+    if (target.max_bytes < info.state.bytes) {
+      throw new ConflictException(
+        `Refusing messaging tier change for '${name}': the '${messagingTier}' ` +
+          `tier allows ${target.max_bytes} bytes but the stream currently ` +
+          `holds ${info.state.bytes} bytes — shrinking would discard ` +
+          `messages. Drain or expire the stream first.`
+      );
+    }
+
+    try {
+      await this.jsm.streams.update(streamName, {
+        ...info.config,
+        max_age: target.max_age,
+        max_bytes: target.max_bytes,
+        max_msg_size: target.max_msg_size,
+        num_replicas: target.num_replicas,
+      });
+    } catch (err) {
+      // Broker refusals (account capacity, replicas on a single node) are a
+      // conflict with cluster state, not a server bug — surface the reason
+      // instead of a generic 500. The tier is NOT persisted.
+      this.logger.error(
+        `Broker rejected tier update for ${streamName}: ${String(err)}`
+      );
+      throw new ConflictException(
+        `Cannot apply messaging tier '${messagingTier}' to '${name}': the ` +
+          `broker rejected the stream update (${err instanceof Error ? err.message : String(err)})`
+      );
+    }
+    this.logger.log(
+      `Reconciled ${streamName} to tier '${messagingTier}' ` +
+        `(max_bytes=${target.max_bytes}, max_age=${target.max_age}, ` +
+        `num_replicas=${target.num_replicas})`
+    );
   }
 
   /**

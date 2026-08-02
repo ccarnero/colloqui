@@ -11,6 +11,7 @@ import { RetentionPolicy } from "nats";
 import {
   ensureStream,
   ensureTenantIngressStream,
+  isStreamNotFoundError,
   JetStreamCapacityError,
 } from "../../src/nats-provider";
 
@@ -531,5 +532,27 @@ describe("ensureTenantIngressStream", () => {
 
     expect(jsm.streams.list).not.toHaveBeenCalled();
     expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("isStreamNotFoundError (TMT T04)", () => {
+  it("matches the structured broker error by err_code 10059, message aside", () => {
+    const brokerError = Object.assign(new Error("whatever the server says"), {
+      api_error: { err_code: 10059 },
+    });
+    expect(isStreamNotFoundError(brokerError)).toBe(true);
+  });
+
+  it("falls back to the message substring when the payload is stripped", () => {
+    expect(isStreamNotFoundError(new Error("stream not found"))).toBe(true);
+  });
+
+  it("does NOT match transport-style errors — they must propagate", () => {
+    expect(isStreamNotFoundError(new Error("CONNECTION_REFUSED"))).toBe(false);
+    expect(
+      isStreamNotFoundError(
+        Object.assign(new Error("timeout"), { api_error: { err_code: 10058 } })
+      )
+    ).toBe(false);
   });
 });

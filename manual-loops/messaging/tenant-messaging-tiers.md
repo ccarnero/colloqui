@@ -201,3 +201,33 @@ green. Dual review: round 1 2× REJECTED (self-inclusion bug, unrecorded
 deviation) — fixed; round 2 2× APPROVED (their two non-blocking notes —
 unlimited-account scan-skip pin + stale mock type — folded in before
 commit).
+
+### T04 — 2026-08-01
+
+Tier-change reconciliation in tenant-service `updateTenant`:
+`reconcileMessagingTier` runs BEFORE the persist (a failed persist retries
+into a harmless re-update; a failed reconcile never leaves a persisted tier
+the stream missed). Absent stream (broker 10059, discriminated by the new
+shared `isStreamNotFoundError` in `@yoizen/database`, mirroring
+`isStreamNameInUseError`) ⇒ persist only, creation applies; any OTHER
+`streams.info` failure rethrows and nothing persists (round-1 catch: the
+first cut's catch-all read transport errors as "absent" and drifted state).
+Shrink guard refuses 409 when clamped `max_bytes` < current `state.bytes`
+(decision 4; `max_age` shrink DELIBERATELY unguarded per its bytes-only
+criterion — documented at the guard, flagged for the T05 docs pass).
+Broker-rejected updates map to 409 with the broker's reason, not a generic
+500. Unchanged tier ⇒ zero stream/persist work.
+
+KNOWN INTERIM (same T02→T05 window): with dev ceilings unset, a live GROW
+in dev asks for limits the 2 GiB account can't grant — now surfaced as the
+mapped 409, tier not persisted. Both-fields PATCH persists configuration
+first, so a tier 409 leaves the configuration change applied (sequential
+semantics, pre-existing from T01).
+
+Gates: database 135 + tsc (includes a dedicated `isStreamNotFoundError`
+spec pinning the structured 10059 branch, the message fallback and the
+transport-error negative — added on the reviewers' shared note),
+tenant-service build + 96 unit, rebuilt in dev, cluster e2e green.
+Dual review: round 1 2× REJECTED (transport-error catch-all, missing
+Progress entry, unmapped broker rejection) — all fixed; round 2
+2× APPROVED.

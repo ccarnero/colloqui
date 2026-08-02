@@ -222,6 +222,33 @@ function isStreamNameInUseError(err: unknown): boolean {
   return msg.includes(STREAM_NAME_IN_USE_MESSAGE);
 }
 
+const STREAM_NOT_FOUND_ERR_CODE = 10059;
+const STREAM_NOT_FOUND_MESSAGE = "stream not found";
+
+/**
+ * Returns `true` when the broker error indicates the requested stream does
+ * not exist (NATS `JSStreamNotFoundErr`). Mirrors
+ * {@link isStreamNameInUseError}: structured `api_error.err_code` (10059)
+ * first, message-substring fallback. Callers use it to distinguish a genuine
+ * "absent stream" from transport/auth failures, which must propagate —
+ * treating a broken connection as "absent" is how state drifts silently
+ * (tenant-messaging-tiers T04 review).
+ */
+export function isStreamNotFoundError(err: unknown): boolean {
+  if (typeof err === "object" && err !== null) {
+    const apiError = (err as { api_error?: { err_code?: unknown } }).api_error;
+    if (
+      apiError &&
+      typeof apiError.err_code === "number" &&
+      apiError.err_code === STREAM_NOT_FOUND_ERR_CODE
+    ) {
+      return true;
+    }
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes(STREAM_NOT_FOUND_MESSAGE);
+}
+
 /**
  * Performs the broker round-trip for {@link ensureTenantIngressStream}.
  * Tries `streams.add` directly; if the broker reports the stream

@@ -1,5 +1,5 @@
 import "../setup-env";
-import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import {
   ConflictException,
   HttpException,
@@ -11,9 +11,28 @@ import { ProvisioningStatus, TenantDatabaseTier } from "@yoizen/shared";
 import { TENANTS_REPOSITORY } from "../../src/modules/tenants/tenants.repository.interface";
 import { TenantsService } from "../../src/modules/tenants/tenants.service";
 import { K8S_CORE_API } from "../../src/providers/kubernetes.provider";
+import { JETSTREAM_MANAGER } from "../../src/providers/nats.module";
 import { TenantDeletionPublisher } from "../../src/providers/tenant-deletion-publisher.service";
 import { TenantProvisionPublisher } from "../../src/providers/tenant-provision-publisher.service";
 import { TENANT_PROVISIONER } from "../../src/providers/tenant-provisioner.interface";
+
+// T04 tests touch the messaging-ceiling env vars; keep them hermetic.
+const originalCeilings = {
+  bytes: process.env.MESSAGING_MAX_BYTES_CEILING,
+  replicas: process.env.MESSAGING_MAX_REPLICAS_CEILING,
+};
+afterEach(() => {
+  if (originalCeilings.bytes === undefined) {
+    delete process.env.MESSAGING_MAX_BYTES_CEILING;
+  } else {
+    process.env.MESSAGING_MAX_BYTES_CEILING = originalCeilings.bytes;
+  }
+  if (originalCeilings.replicas === undefined) {
+    delete process.env.MESSAGING_MAX_REPLICAS_CEILING;
+  } else {
+    process.env.MESSAGING_MAX_REPLICAS_CEILING = originalCeilings.replicas;
+  }
+});
 
 const baseRow = {
   configuration: {} as Record<string, unknown>,
@@ -45,6 +64,12 @@ describe("TenantsService", () => {
   let publisher: { publishProvisionRequested: ReturnType<typeof mock> };
   let deletionPublisher: { publishTenantDeleted: ReturnType<typeof mock> };
   let tenantProvisioner: { deprovisionShared: ReturnType<typeof mock> };
+  let jsm: {
+    streams: {
+      info: ReturnType<typeof mock>;
+      update: ReturnType<typeof mock>;
+    };
+  };
 
   beforeEach(async () => {
     repository = {
@@ -103,6 +128,13 @@ describe("TenantsService", () => {
       deprovisionShared: mock(() => Promise.resolve()),
     };
 
+    jsm = {
+      streams: {
+        info: mock(() => Promise.reject(new Error("stream not found"))),
+        update: mock(() => Promise.resolve({})),
+      },
+    };
+
     const moduleRef = await Test.createTestingModule({
       providers: [
         TenantsService,
@@ -111,6 +143,7 @@ describe("TenantsService", () => {
         { provide: TenantProvisionPublisher, useValue: publisher },
         { provide: TenantDeletionPublisher, useValue: deletionPublisher },
         { provide: TENANT_PROVISIONER, useValue: tenantProvisioner },
+        { provide: JETSTREAM_MANAGER, useValue: jsm },
       ],
     }).compile();
 
@@ -225,7 +258,14 @@ describe("TenantsService", () => {
     expect(repository.updateMessagingTier).not.toHaveBeenCalled();
   });
 
-  it("updateTenant with messagingTier only persists the tier and skips configuration", async () => {
+  it("updateTenant with messagingTier only persists the tier and skips configuration (stream absent)", async () => {
+    // Default jsm.streams.info mock rejects — the T04 absent-stream branch:
+    // nothing to reconcile, the tier persists and creation applies it.
+    repository.findByName.mockResolvedValueOnce({
+      id: "tid-1",
+      name: "tenant-a",
+      ...baseRow,
+    });
     k8sApi.listNamespace.mockResolvedValueOnce({ items: [tenantNamespace] });
     const detail = await service.updateTenant("tenant-a", {
       messagingTier: "pro",
@@ -235,6 +275,130 @@ describe("TenantsService", () => {
       "pro"
     );
     expect(repository.updateConfiguration).not.toHaveBeenCalled();
+    expect(jsm.streams.update).not.toHaveBeenCalled();
+    expect(detail.messagingTier).toBe("pro");
+  });
+
+  it("updateTenant reconciles the live stream on a tier GROW (T04)", async () => {
+    delete process.env.MESSAGING_MAX_BYTES_CEILING;
+    delete process.env.MESSAGING_MAX_REPLICAS_CEILING;
+    repository.findByName.mockResolvedValueOnce({
+      id: "tid-1",
+      name: "tenant-a",
+      ...baseRow, // messaging_tier free
+    });
+    jsm.streams.info.mockResolvedValueOnce({
+      config: {
+        name: "INGRESS-TENANT-A",
+        subjects: ["evt.tenant-a.>"],
+        retention: "limits",
+        max_age: 1,
+        max_bytes: 1,
+      },
+      state: { bytes: 100 },
+    });
+    k8sApi.listNamespace.mockResolvedValueOnce({ items: [tenantNamespace] });
+
+    await service.updateTenant("tenant-a", { messagingTier: "pro" });
+
+    expect(jsm.streams.update).toHaveBeenCalledTimes(1);
+    const [streamName, cfg] = jsm.streams.update.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ];
+    expect(streamName).toBe("INGRESS-TENANT-A");
+    // pro limits, unclamped (no env ceilings): 14d, 5 GiB, 1 MiB, 1 replica.
+    expect(cfg.max_bytes).toBe(5_368_709_120);
+    expect(cfg.max_age).toBe(14 * 24 * 60 * 60 * 1_000_000_000);
+    expect(cfg.max_msg_size).toBe(1_048_576);
+    expect(cfg.num_replicas).toBe(1);
+    // Existing non-limit config fields survive the update untouched.
+    expect(cfg.subjects).toEqual(["evt.tenant-a.>"]);
+    expect(repository.updateMessagingTier).toHaveBeenCalledWith(
+      "tenant-a",
+      "pro"
+    );
+  });
+
+  it("updateTenant REFUSES a shrink below current stream usage with 409 (T04)", async () => {
+    delete process.env.MESSAGING_MAX_BYTES_CEILING;
+    repository.findByName.mockResolvedValueOnce({
+      id: "tid-1",
+      name: "tenant-a",
+      ...baseRow,
+      messaging_tier: "enterprise" as const,
+    });
+    jsm.streams.info.mockResolvedValueOnce({
+      config: { name: "INGRESS-TENANT-A" },
+      // More bytes stored than free's 1 GiB allows — shrink would discard.
+      state: { bytes: 2_000_000_000 },
+    });
+
+    await expect(
+      service.updateTenant("tenant-a", { messagingTier: "free" })
+    ).rejects.toMatchObject({ status: HttpStatus.CONFLICT });
+
+    expect(jsm.streams.update).not.toHaveBeenCalled();
+    // The refused tier must NOT persist — record and stream stay coherent.
+    expect(repository.updateMessagingTier).not.toHaveBeenCalled();
+  });
+
+  it("updateTenant does NOT persist the tier when streams.info fails with a transport error (T04)", async () => {
+    repository.findByName.mockResolvedValueOnce({
+      id: "tid-1",
+      name: "tenant-a",
+      ...baseRow,
+    });
+    // NOT a stream-not-found error — a broken broker connection must
+    // propagate instead of being read as "absent" and drifting state.
+    jsm.streams.info.mockRejectedValueOnce(new Error("CONNECTION_REFUSED"));
+
+    await expect(
+      service.updateTenant("tenant-a", { messagingTier: "pro" })
+    ).rejects.toThrow("CONNECTION_REFUSED");
+
+    expect(jsm.streams.update).not.toHaveBeenCalled();
+    expect(repository.updateMessagingTier).not.toHaveBeenCalled();
+  });
+
+  it("updateTenant maps a broker-rejected stream update to 409 and does not persist (T04)", async () => {
+    delete process.env.MESSAGING_MAX_BYTES_CEILING;
+    repository.findByName.mockResolvedValueOnce({
+      id: "tid-1",
+      name: "tenant-a",
+      ...baseRow,
+    });
+    jsm.streams.info.mockResolvedValueOnce({
+      config: { name: "INGRESS-TENANT-A" },
+      state: { bytes: 100 },
+    });
+    jsm.streams.update.mockRejectedValueOnce(
+      new Error("insufficient storage resources available")
+    );
+
+    await expect(
+      service.updateTenant("tenant-a", { messagingTier: "pro" })
+    ).rejects.toMatchObject({ status: HttpStatus.CONFLICT });
+
+    expect(repository.updateMessagingTier).not.toHaveBeenCalled();
+  });
+
+  it("updateTenant with an unchanged messagingTier does no stream or persist work (T04)", async () => {
+    repository.findByName.mockResolvedValueOnce({
+      id: "tid-1",
+      name: "tenant-a",
+      ...baseRow,
+      messaging_tier: "pro" as const,
+    });
+    k8sApi.listNamespace.mockResolvedValueOnce({ items: [tenantNamespace] });
+
+    const detail = await service.updateTenant("tenant-a", {
+      messagingTier: "pro",
+    });
+
+    expect(jsm.streams.info).not.toHaveBeenCalled();
+    expect(jsm.streams.update).not.toHaveBeenCalled();
+    expect(repository.updateMessagingTier).not.toHaveBeenCalled();
     expect(detail.messagingTier).toBe("pro");
   });
 
