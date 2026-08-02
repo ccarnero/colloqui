@@ -277,6 +277,38 @@ export interface IEnsureTenantIngressStreamOptions {
   readonly limits?: TenantStreamLimits;
 }
 
+/**
+ * Sums the `max_bytes` reservations of every stream in the account
+ * (tenant-messaging-tiers T03). NATS reserves a bounded stream's `max_bytes`
+ * against the account's `max_storage`, but the client API exposes no
+ * `reserved_storage` field — so an honest capacity pre-flight has to derive
+ * it from `streams.list()`. Unbounded streams (`max_bytes: -1`) reserve
+ * nothing and are skipped. One extra API round-trip; only the opt-in
+ * `checkCapacity` path pays it.
+ *
+ * When `targetName` is given the scan also reports whether that stream
+ * already exists, so the caller can treat the ensure as satisfied instead of
+ * capacity-failing an idempotent re-ensure (the target's own `max_bytes` is
+ * part of the reservations it would be judged against).
+ */
+export async function sumReservedStreamBytes(
+  jsm: JetStreamManager,
+  targetName?: string
+): Promise<{ reservedBytes: number; targetExists: boolean }> {
+  let reservedBytes = 0;
+  let targetExists = false;
+  for await (const si of jsm.streams.list()) {
+    if (targetName !== undefined && si.config?.name === targetName) {
+      targetExists = true;
+    }
+    const maxBytes = si.config?.max_bytes;
+    if (typeof maxBytes === "number" && maxBytes > 0) {
+      reservedBytes += maxBytes;
+    }
+  }
+  return { reservedBytes, targetExists };
+}
+
 async function performTenantIngressEnsure(
   jsm: JetStreamManager,
   tenantId: string,
@@ -287,19 +319,38 @@ async function performTenantIngressEnsure(
     options.limits?.max_bytes ?? CHANNEL_STREAM_MAX_BYTES;
   if (options.checkCapacity === true) {
     const info = await jsm.getAccountInfo();
-    const check = checkJetStreamCapacity(
-      requestedMaxBytes,
-      info.storage,
-      info.limits.max_storage
-    );
-    if (!check.ok) {
-      // Deliberately BEFORE the add and before seeding the cache: a capacity
-      // failure must be retryable once the operator frees storage.
-      throw new JetStreamCapacityError(
-        check.message ?? "Insufficient JetStream file storage",
-        check.requestedBytes,
-        check.availableBytes
+    // Unlimited accounts skip the reservation scan — the check below cannot
+    // fail, and the existing-stream case falls through to the idempotent
+    // STREAM_NAME_IN_USE add, exactly as before T03.
+    if (info.limits.max_storage >= 0) {
+      const { reservedBytes, targetExists } = await sumReservedStreamBytes(
+        jsm,
+        streamName
       );
+      // The tenant's own stream showing up in the scan means the ensure is
+      // ALREADY satisfied — capacity is irrelevant (its max_bytes is part of
+      // the reservations) and throwing here would turn every pod restart on
+      // a well-reserved account into a permanent 503 for existing tenants.
+      // Caught by dual review in T03 round 1.
+      if (targetExists) {
+        ensuredTenantIngressStreams.add(streamName);
+        return;
+      }
+      const check = checkJetStreamCapacity(
+        requestedMaxBytes,
+        info.storage,
+        info.limits.max_storage,
+        reservedBytes
+      );
+      if (!check.ok) {
+        // Deliberately BEFORE the add and before seeding the cache: a capacity
+        // failure must be retryable once the operator frees storage.
+        throw new JetStreamCapacityError(
+          check.message ?? "Insufficient JetStream file storage",
+          check.requestedBytes,
+          check.availableBytes
+        );
+      }
     }
   }
 

@@ -43,9 +43,16 @@ describe("NatsPublisher causal chain", () => {
         streams: {
           info: () => Promise.resolve({}),
           add: () => Promise.resolve({}),
+          // T03: the capacity pre-flight sums reserved bytes via streams.list.
+          list: () => ({
+            async *[Symbol.asyncIterator]() {},
+          }),
         },
         getAccountInfo: () =>
-          Promise.resolve({ storage: 0, limits: { max_storage: 10_000_000_000 } }),
+          Promise.resolve({
+            storage: 0,
+            limits: { max_storage: 10_000_000_000 },
+          }),
       }),
     jetstream: () => Promise.resolve({ publish: publishMock }),
     close: () => Promise.resolve(),

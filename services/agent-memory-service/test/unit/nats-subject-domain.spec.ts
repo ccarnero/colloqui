@@ -79,6 +79,10 @@ describe("NatsPublisher subject/envelope agreement", () => {
         streams: {
           info: () => Promise.resolve({}),
           add: () => Promise.resolve({}),
+          // T03: the capacity pre-flight sums reserved bytes via streams.list.
+          list: () => ({
+            async *[Symbol.asyncIterator]() {},
+          }),
         },
         getAccountInfo: () =>
           Promise.resolve({

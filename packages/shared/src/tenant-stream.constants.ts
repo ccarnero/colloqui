@@ -171,14 +171,30 @@ export interface JetStreamStorageCheck {
  * JetStream file capacity. Call with values from
  * `jsm.getAccountInfo()` before creating streams.
  *
+ * `reservedBytes` (tenant-messaging-tiers T03) is the sum of existing
+ * streams' `max_bytes`: NATS reserves each bounded stream's `max_bytes`
+ * against the account, so comparing only against bytes USED can pass while
+ * the broker still rejects the add. The client API exposes no
+ * `reserved_storage` field, so callers compute the sum from
+ * `jsm.streams.list()` (`sumReservedStreamBytes` in `@yoizen/database`).
+ * Defaults to `0`, which preserves the old used-bytes-only behavior.
+ *
+ * The combination is `max(used, reserved)`, not `used + reserved`: bytes
+ * stored in a bounded stream live INSIDE its reservation, so summing would
+ * double-count them and falsely reject adds the broker accepts. `max`
+ * mirrors the broker's own reservation-based add check while staying
+ * conservative when unbounded-stream usage dominates.
+ *
  * @param requestedMaxBytes - max_bytes for the new stream
  * @param storageUsed - current file storage used (accountInfo.storage)
  * @param storageLimit - file storage limit (accountInfo.limits.max_storage), -1 = unlimited
+ * @param reservedBytes - sum of existing streams' max_bytes (0 = unknown)
  */
 export function checkJetStreamCapacity(
   requestedMaxBytes: number,
   storageUsed: number,
-  storageLimit: number
+  storageLimit: number,
+  reservedBytes = 0
 ): JetStreamStorageCheck {
   if (storageLimit < 0) {
     return {
@@ -188,7 +204,7 @@ export function checkJetStreamCapacity(
     };
   }
 
-  const available = storageLimit - storageUsed;
+  const available = storageLimit - Math.max(storageUsed, reservedBytes);
   if (requestedMaxBytes > available) {
     return {
       ok: false,
@@ -198,7 +214,7 @@ export function checkJetStreamCapacity(
         `Insufficient JetStream file storage: ` +
         `need ${requestedMaxBytes} bytes but only ` +
         `${available} bytes available ` +
-        `(${storageUsed}/${storageLimit} used)`,
+        `(${storageUsed}/${storageLimit} used, ${reservedBytes} reserved)`,
     };
   }
 

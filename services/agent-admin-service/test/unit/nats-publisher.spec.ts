@@ -1,5 +1,5 @@
 import "../setup-env";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { ServiceUnavailableException } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import {
@@ -7,16 +7,16 @@ import {
   CHANNEL_STREAM_MAX_BYTES,
   TENANT_TIER_LIMITS,
 } from "@yoizen/shared";
-import { NatsPublisher, LAZY_NATS } from "../../src/providers/nats.provider";
+import { LAZY_NATS, NatsPublisher } from "../../src/providers/nats.provider";
 
 describe("NatsPublisher", () => {
   let publisher: NatsPublisher;
   const publish = mock(() =>
-    Promise.resolve({ seq: 1, duplicate: false, stream: "S" }),
+    Promise.resolve({ seq: 1, duplicate: false, stream: "S" })
   );
   const streamsInfo = mock(() => Promise.resolve({ config: { name: "S" } }));
   const streamsAdd = mock((_cfg: Record<string, unknown>) =>
-    Promise.resolve({}),
+    Promise.resolve({})
   );
   const getAccountInfo = mock(async () => ({
     storage: 0,
@@ -34,6 +34,10 @@ describe("NatsPublisher", () => {
         streams: {
           info: streamsInfo,
           add: streamsAdd,
+          // T03: the capacity pre-flight sums reserved bytes via streams.list.
+          list: () => ({
+            async *[Symbol.asyncIterator]() {},
+          }),
         },
         getAccountInfo,
       })),
@@ -41,10 +45,7 @@ describe("NatsPublisher", () => {
     };
 
     const moduleRef = await Test.createTestingModule({
-      providers: [
-        NatsPublisher,
-        { provide: LAZY_NATS, useValue: mockLazy },
-      ],
+      providers: [NatsPublisher, { provide: LAZY_NATS, useValue: mockLazy }],
     }).compile();
 
     publisher = moduleRef.get(NatsPublisher);
@@ -57,9 +58,14 @@ describe("NatsPublisher", () => {
   });
 
   it("publishSkillChanged publishes correct envelope for created action", async () => {
-    const ack = await publisher.publishSkillChanged("ten-1", "sk-1", "created", {
-      name: "test-skill",
-    });
+    const ack = await publisher.publishSkillChanged(
+      "ten-1",
+      "sk-1",
+      "created",
+      {
+        name: "test-skill",
+      }
+    );
     expect(ack).not.toBeNull();
     expect(publish).toHaveBeenCalled();
 
@@ -83,7 +89,7 @@ describe("NatsPublisher", () => {
       expect(publish).toHaveBeenCalled();
 
       const payload = JSON.parse(
-        (publish.mock.calls[0] as [string, string])[1],
+        (publish.mock.calls[0] as [string, string])[1]
       );
       expect(payload.data.payload.action).toBe(action);
     }
@@ -121,7 +127,7 @@ describe("NatsPublisher", () => {
     }));
 
     await expect(
-      publisher.publishAgentPublished("tenant-no-room", "a-2", "A"),
+      publisher.publishAgentPublished("tenant-no-room", "a-2", "A")
     ).rejects.toThrow(ServiceUnavailableException);
 
     expect(streamsAdd).not.toHaveBeenCalled();

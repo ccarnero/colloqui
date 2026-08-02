@@ -171,3 +171,33 @@ handler pass-through unasserted, toEqual-vs-toStrictEqual pin, unrecorded
 interim window) — all fixed; round 2 2× APPROVED. Reviewer nit for T05's
 docs pass: decision 2 / the `limits` option doc say "9" lazy call sites, a
 fresh grep counts 11 across 8 services.
+
+### T03 — 2026-08-01
+
+Capacity-check honesty. DEVIATION from the task text: the nats.js client
+API exposes NO `reserved_storage` field (verified against the pinned
+`nats` typings; the server's wire response carries it, but reading it
+untyped off `getAccountInfo()` was rejected in favor of a typed
+derivation) — new `sumReservedStreamBytes(jsm, targetName?)` sums
+`config.max_bytes > 0` over `jsm.streams.list()`, and
+`checkJetStreamCapacity` gains an optional `reservedBytes`
+(`available = limit − max(used, reserved)`; `max`, not sum, because bounded
+usage lives inside its reservation — doc + shared pin added). The scan is
+skipped on unlimited accounts. Callers unchanged per the task text: the
+provisioning executor still does not pass `checkCapacity` (broker
+rejections surface as provisioning-FAILED, the T02 interim contract).
+
+ROUND-1 REVIEW CATCH (real bug in the first implementation): the scan
+counted the tenant's OWN stream, so on a reservation-full account every
+pod restart made the idempotent re-ensure throw capacity BEFORE reaching
+the STREAM_NAME_IN_USE branch — permanent 503 for existing tenants. Fixed:
+the scan detects the target stream and treats the ensure as satisfied
+(cache seeded, no add); regression test pins the exact scenario including
+the no-second-round-trip follow-up.
+
+Gates: shared 373 + tsc, database 131 + tsc, agent-admin/agent-memory at
+their pre-existing infra baselines, both rebuilt in dev, cluster e2e
+green. Dual review: round 1 2× REJECTED (self-inclusion bug, unrecorded
+deviation) — fixed; round 2 2× APPROVED (their two non-blocking notes —
+unlimited-account scan-skip pin + stale mock type — folded in before
+commit).

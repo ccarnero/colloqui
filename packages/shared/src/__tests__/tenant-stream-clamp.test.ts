@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  checkJetStreamCapacity,
   clampTenantStreamLimits,
   MESSAGING_MAX_BYTES_CEILING_ENV,
   MESSAGING_MAX_REPLICAS_CEILING_ENV,
@@ -39,6 +40,35 @@ describe("clampTenantStreamLimits", () => {
       maxReplicasCeiling: 5,
     });
     expect(out).toEqual(TENANT_TIER_LIMITS.free);
+  });
+});
+
+describe("checkJetStreamCapacity — reservedBytes (T03)", () => {
+  test("uses max(used, reserved), not the sum — bounded usage lives inside its reservation", () => {
+    // used 1 GiB inside streams that reserve 1.5 GiB; limit 2 GiB.
+    // Sum (2.5 GiB) would falsely reject a 0.4 GiB request; max accepts it.
+    const ok = checkJetStreamCapacity(
+      400_000_000,
+      1_073_741_824,
+      2_147_483_648,
+      1_610_612_736
+    );
+    expect(ok.ok).toBe(true);
+
+    // But a request beyond limit - reserved fails even with tiny usage.
+    const full = checkJetStreamCapacity(
+      600_000_000,
+      1_000_000,
+      2_147_483_648,
+      1_610_612_736
+    );
+    expect(full.ok).toBe(false);
+    expect(full.message).toContain("reserved");
+  });
+
+  test("omitted reservedBytes preserves the old used-bytes-only behavior", () => {
+    const check = checkJetStreamCapacity(600_000_000, 1_000_000, 2_147_483_648);
+    expect(check.ok).toBe(true);
   });
 });
 

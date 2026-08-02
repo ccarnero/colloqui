@@ -169,6 +169,9 @@ describe("ensureStream", () => {
 interface MockTenantJsm {
   streams: {
     add: Mock<(cfg: Record<string, unknown>) => Promise<unknown>>;
+    list?: Mock<
+      () => AsyncIterable<{ config: { name?: string; max_bytes: number } }>
+    >;
   };
   getAccountInfo?: Mock<() => Promise<unknown>>;
 }
@@ -188,11 +191,21 @@ function makeTenantJsmMock(
  */
 function makeCapacityJsmMock(
   storageUsed: number,
-  maxStorage: number
+  maxStorage: number,
+  existingStreams: Array<{ name?: string; max_bytes: number }> = []
 ): MockTenantJsm & { getAccountInfo: Mock<() => Promise<unknown>> } {
   return {
     streams: {
       add: mock((_cfg: Record<string, unknown>) => Promise.resolve({})),
+      // T03: the capacity pre-flight derives reserved bytes from the
+      // account's stream list (the client API has no reserved_storage).
+      list: mock(() => ({
+        async *[Symbol.asyncIterator]() {
+          for (const { name, max_bytes } of existingStreams) {
+            yield { config: { name, max_bytes } };
+          }
+        },
+      })),
     },
     getAccountInfo: mock(() =>
       Promise.resolve({
@@ -434,5 +447,89 @@ describe("ensureTenantIngressStream", () => {
     expect(caught).toBeInstanceOf(JetStreamCapacityError);
     expect((caught as JetStreamCapacityError).requestedBytes).toBe(proBytes);
     expect(jsm.streams.add).not.toHaveBeenCalled();
+  });
+
+  it("checkCapacity counts RESERVED stream bytes, not just used bytes (T03)", async () => {
+    // Regression for the under-count: the account has barely any bytes USED,
+    // but existing streams already RESERVE almost the whole account via
+    // their max_bytes. The old used-bytes-only check passed here and NATS
+    // then rejected the add anyway.
+    const maxStorage = 2_147_483_648; // 2 GiB account
+    const jsm = makeCapacityJsmMock(
+      1_000_000, // ~1 MB actually used
+      maxStorage,
+      [
+        { name: "INGRESS-OTHER-A", max_bytes: 1_073_741_824 },
+        { name: "INGRESS-OTHER-B", max_bytes: 1_000_000_000 },
+      ] // ~1.93 GiB reserved by OTHER tenants' streams
+    );
+
+    let caught: unknown;
+    try {
+      await ensureTenantIngressStream(jsm as never, "reserved-full-tenant", {
+        checkCapacity: true,
+      });
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(JetStreamCapacityError);
+    expect((caught as JetStreamCapacityError).message).toContain("reserved");
+    expect(jsm.streams.add).not.toHaveBeenCalled();
+  });
+
+  it("checkCapacity still passes when reservations leave room for the request", async () => {
+    const jsm = makeCapacityJsmMock(0, 10 * CHANNEL_STREAM_MAX_BYTES, [
+      { name: "INGRESS-OTHER-A", max_bytes: CHANNEL_STREAM_MAX_BYTES },
+      { name: "INGRESS-OTHER-B", max_bytes: CHANNEL_STREAM_MAX_BYTES },
+    ]);
+
+    await ensureTenantIngressStream(jsm as never, "reserved-roomy-tenant", {
+      checkCapacity: true,
+    });
+
+    expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+  });
+
+  it("checkCapacity treats an EXISTING target stream as satisfied even on a reservation-full account (T03 round-1 fix)", async () => {
+    // The tenant's own stream is part of the reservations. Pre-fix, a pod
+    // restart on a well-reserved account made this idempotent re-ensure
+    // throw a capacity error BEFORE reaching the STREAM_NAME_IN_USE branch —
+    // a permanent 503 for a tenant that needed no capacity at all.
+    const tenantId = "reserved-existing-tenant";
+    const maxStorage = 2_147_483_648;
+    const jsm = makeCapacityJsmMock(1_000_000, maxStorage, [
+      { name: "INGRESS-OTHER-A", max_bytes: 1_073_741_824 },
+      // The target itself, already reserving its share of the account.
+      { name: getTenantStreamName(tenantId), max_bytes: 1_073_741_824 },
+    ]);
+
+    await ensureTenantIngressStream(jsm as never, tenantId, {
+      checkCapacity: true,
+    });
+
+    // Satisfied without touching add; the cache is seeded so the follow-up
+    // ensure is a pure no-op (no second account/list round-trip either).
+    expect(jsm.streams.add).not.toHaveBeenCalled();
+    await ensureTenantIngressStream(jsm as never, tenantId, {
+      checkCapacity: true,
+    });
+    expect(jsm.getAccountInfo).toHaveBeenCalledTimes(1);
+  });
+
+  it("checkCapacity skips the reservation scan on an unlimited account", async () => {
+    // max_storage -1 means the capacity check cannot fail; the reorder must
+    // not pay the streams.list round-trip and must fall through to the
+    // idempotent add, byte-identical to pre-T03 behavior.
+    const jsm = makeCapacityJsmMock(0, -1, [
+      { name: "INGRESS-OTHER-A", max_bytes: 1_073_741_824 },
+    ]);
+
+    await ensureTenantIngressStream(jsm as never, "unlimited-account-tenant", {
+      checkCapacity: true,
+    });
+
+    expect(jsm.streams.list).not.toHaveBeenCalled();
+    expect(jsm.streams.add).toHaveBeenCalledTimes(1);
   });
 });

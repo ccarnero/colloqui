@@ -2,16 +2,16 @@ import "../setup-env";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { ServiceUnavailableException } from "@nestjs/common";
 import {
+  CHANNEL_STREAM_MAX_AGE_NS,
+  CHANNEL_STREAM_MAX_BYTES,
+  TENANT_TIER_LIMITS,
+} from "@yoizen/shared";
+import {
   MemoryKind,
   MemoryScope,
   MemoryStatus,
 } from "../../src/modules/memory/domain/enums";
 import type { IMemory } from "../../src/modules/memory/domain/memory.entity";
-import {
-  CHANNEL_STREAM_MAX_AGE_NS,
-  CHANNEL_STREAM_MAX_BYTES,
-  TENANT_TIER_LIMITS,
-} from "@yoizen/shared";
 import { NatsPublisher } from "../../src/providers/nats.provider";
 
 /**
@@ -62,7 +62,14 @@ describe("NatsPublisher stream creation", () => {
   const fakeLazyNats = {
     jetstreamManager: () =>
       Promise.resolve({
-        streams: { info: streamsInfo, add: streamsAdd },
+        streams: {
+          info: streamsInfo,
+          add: streamsAdd,
+          // T03: the capacity pre-flight sums reserved bytes via streams.list.
+          list: () => ({
+            async *[Symbol.asyncIterator]() {},
+          }),
+        },
         getAccountInfo,
       }),
     jetstream: () => Promise.resolve({ publish: publishMock }),
@@ -126,17 +133,17 @@ describe("NatsPublisher stream creation", () => {
     // The shared helper throws JetStreamCapacityError; this service has always
     // answered 503 when JetStream had no room, and must keep doing so.
     getAccountInfo.mockImplementation(() =>
-      Promise.resolve({ storage: 0, limits: { max_storage: 1 } }),
+      Promise.resolve({ storage: 0, limits: { max_storage: 1 } })
     );
 
     await expect(
-      publisher.publishMemoryProposed("tenant-no-room", createMemory()),
+      publisher.publishMemoryProposed("tenant-no-room", createMemory())
     ).rejects.toThrow(ServiceUnavailableException);
 
     expect(streamsAdd).not.toHaveBeenCalled();
 
     getAccountInfo.mockImplementation(() =>
-      Promise.resolve({ storage: 0, limits: { max_storage: 10_000_000_000 } }),
+      Promise.resolve({ storage: 0, limits: { max_storage: 10_000_000_000 } })
     );
   });
 });
