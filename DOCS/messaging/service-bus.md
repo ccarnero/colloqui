@@ -83,7 +83,7 @@ Source: `infrastructure/base/nats/statefulset.yaml`
 flowchart TD
     subgraph ingress["INGRESS-<tenant> (JetStream stream)"]
         in_subj[Subjects: evt.<tenant>.>]
-        in_prod[Producers: api-gateway, channel-service, registry-service, agent-admin-service, ai-agent-gateway]
+        in_prod[Producers: api-gateway, channel-service, registry-service, agent-admin-service, agent-memory-service, ai-agent-gateway, provisioning-service]
         in_cons[Consumers: audit-service, channel-service, connector-admin, usage-aggregator-service, workflow-service, agent-ai-service]
     end
 
@@ -183,7 +183,7 @@ Tenant streams are pre-provisioned by `tenant-service` during tenant creation, w
 Provisioning happens at three layers, in priority order:
 
 1. **Primary (eager, during tenant creation)** — `tenant-service`'s `TenantProvisioningExecutor` invokes `ensureTenantIngressStream(jsm, tenantId)` as a dedicated `nats.ensure-ingress-stream` phase, executed **after** OLTP + usage Postgres readiness and **before** runtime consumers such as `agent-ai-service` attach JetStream durables. This closes the race where a consumer pod would otherwise boot before the tenant stream exists and fail to bind its durable consumer.
-2. **Safety net (lazy, before first publish)** — Producers (`api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway`) call `ensureTenantIngressStream(jsm, tenantId)` before publishing to `evt.<tenant>.>`. This guards against tenants that pre-date the primary path or whose stream was pruned externally.
+2. **Safety net (lazy, before first publish)** — Producers (`api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `agent-memory-service`, `ai-agent-gateway`, `provisioning-service`) call `ensureTenantIngressStream(jsm, tenantId)` before publishing to `evt.<tenant>.>`. This guards against tenants that pre-date the primary path or whose stream was pruned externally.
 3. **Consumer reconciliation (lazy, at runtime startup and interval)** — TypeScript consumers such as `agent-ai-service` use `MultiTenantConsumerManager` to list existing `INGRESS-*` streams, bind the durable consumer, and periodically reconcile newly-created tenant streams. This layer binds consumers; it does not create missing tenant streams.
 
 Common contract across provisioning and consumer-binding layers:

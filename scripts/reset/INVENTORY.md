@@ -16,7 +16,7 @@ Conventions:
 
 | Stream | Scope | Subjects | Created by | Citation |
 |---|---|---|---|---|
-| `INGRESS-<TENANT_UPPER>` | Per tenant | `evt.<tenant>.>` | Created idempotently from a SINGLE creator, `ensureTenantIngressStream`, which all services delegate to (since 2026-07-31 `agent-admin-service` and `agent-memory-service` no longer create it on their own) | `packages/database/src/nats-provider.ts:347-371`, `packages/shared/src/tenant-stream.constants.ts:58-59` |
+| `INGRESS-<TENANT_UPPER>` | Per tenant | `evt.<tenant>.>` | Created idempotently from a SINGLE creator, `ensureTenantIngressStream`, which all services delegate to (since 2026-07-31 `agent-admin-service` and `agent-memory-service` no longer create it on their own) | `packages/database/src/nats-provider.ts` (`ensureTenantIngressStream`), `packages/shared/src/tenant-stream.constants.ts:58-59` |
 | `DLQ-<tenantId>` | Per tenant | `dlq.<tenantId>.>` | `packages/database/src/nats-dlq.ts:30-58` (`ensureTenantDlqStream`), invoked automatically when any consumer throws `PermanentError` | `packages/database/src/multi-tenant-consumer-manager.ts:447`; `packages/shared/src/channel.constants.ts:70-91` |
 | `DLQ` (global, legacy) | Global | `dlq.webhook` (previously `dlq.>`) | No live `streams.add` found in code — only mentioned in a historical comment | `packages/database/src/nats-provider.ts:96-107`; `packages/shared/src/constants.ts:1-11` — **UNCERTAIN, see below** |
 | `PLATFORM_TENANTS` | Global (control-plane) | `platform.tenant.>` | `tenant-service`, `RetentionPolicy.Workqueue` (self-cleans on ack) | `services/tenant-service/src/providers/nats.module.ts:23-35`; `packages/shared/src/tenant-events.ts:30-33` |
@@ -161,7 +161,7 @@ Everything above is DATA (derived caches, counters, breakers) except what is mar
 7. **`agent-scheduler-service` Redis client** — provider instantiated (`services/agent-scheduler-service/src/providers/redis.provider.ts:1-38`) but no confirmed write sites in this trace. Confirm with the owner whether it is used and what it stores.
 8. **Claim-check buckets `PAYLOAD-<tenant>`** — no reliable purge/TTL (see §1). Classified DATA, but the script must purge objects explicitly instead of relying on expiration.
 9. **audit-service's `CLAUDE.md` is outdated**: it documents a global `EVENTS` stream and an `audit-writer` durable that no longer exist in the code (replaced by `audit-events`/`channel-audit`/`execution-audit` over `INGRESS-*`, per the comment in `services/audit-service/src/providers/nats.provider.ts:27-33`). Do not use that doc as a source of truth.
-10. **Config drift in `INGRESS-<tenant>`**: 4 different services can create the stream with different limits (fixed vs. tier-based) depending on who runs first. Not a problem for the reset script, but beware: do not "fix" this by recreating streams — that touches topology, outside the requested scope.
+10. **Config drift in `INGRESS-<tenant>`**: RESOLVED since this inventory was written. Since 2026-07-31 `ensureTenantIngressStream` is the single creator (see §1), and since 2026-08-01 the provisioning path applies the tenant's messaging tier (`DOCS/messaging/tenant-messaging-tiers.md`) while every lazy call site keeps the flat fallback. Streams created BEFORE those dates may still carry whichever config won the old race — the caution stands: do not "fix" drift by recreating streams from the reset script; tier reconciliation (PATCH `messagingTier`) is the sanctioned path.
 
 ---
 

@@ -58,22 +58,22 @@ design, so Knative can probe it before routing.
 
 Subjects are built from `AGENT_ADMIN_SUBJECT_PREFIX =
 "evt.{tenant}.agent-admin-service.automation.platform.internal"`
-(`packages/shared/src/constants.ts:119-120`), with `{tenant}` substituted by
-`buildPlatformSubject` (`constants.ts:146-151`, called at
-`src/providers/nats.provider.ts:355`).
+(`packages/shared/src/constants.ts`), with `{tenant}` substituted by
+`buildPlatformSubject` (`constants.ts`, called by `publishEvent` in
+`src/providers/nats.provider.ts`).
 
 | Subject suffix | Publisher method | Constant |
 |---|---|---|
-| `.agent_published.v1` | `publishAgentPublished` (`nats.provider.ts:404-442`) | `constants.ts:129` |
-| `.agent_unpublished.v1` | `publishAgentUnpublished` (`nats.provider.ts:444-468`) | `constants.ts:130` |
-| `.config_sync.v1` | `publishRuntimeConfigSync` (`nats.provider.ts:470-494`) | `constants.ts:122` |
-| `.job_trigger.v1` | `publishJobTrigger` (`nats.provider.ts:496-524`) | `constants.ts:124` |
-| `.document_ingestion.v1` | `publishDocumentIngestion` (`nats.provider.ts:526-555`) | `constants.ts:132` |
-| `.skb_file_ingestion.v1` | `publishSkbFileIngestion` (`nats.provider.ts:564-593`) | `constants.ts:133` |
+| `.agent_published.v1` | `publishAgentPublished` (`nats.provider.ts`) | `AGENT_ADMIN_*` in `@yoizen/shared` |
+| `.agent_unpublished.v1` | `publishAgentUnpublished` (`nats.provider.ts`) | `AGENT_ADMIN_*` in `@yoizen/shared` |
+| `.config_sync.v1` | `publishRuntimeConfigSync` (`nats.provider.ts`) | `AGENT_ADMIN_*` in `@yoizen/shared` |
+| `.job_trigger.v1` | `publishJobTrigger` (`nats.provider.ts`) | `AGENT_ADMIN_*` in `@yoizen/shared` |
+| `.document_ingestion.v1` | `publishDocumentIngestion` (`nats.provider.ts`) | `AGENT_ADMIN_*` in `@yoizen/shared` |
+| `.skb_file_ingestion.v1` | `publishSkbFileIngestion` (`nats.provider.ts`) | `AGENT_ADMIN_*` in `@yoizen/shared` |
 | `.skill_changed.v1` | `publishSkillChanged` (`nats.provider.ts`) | `AGENT_ADMIN_SKILL_CHANGED` in `@yoizen/shared` — relocated from this service 2026-08-01, the last of the family to move |
 
 The NATS connection is lazy: it is established on the first publish so the HTTP
-server starts even when NATS is down (`nats.provider.ts:88-91`).
+server starts even when NATS is down (`nats.provider.ts`).
 
 ### Consumed
 
