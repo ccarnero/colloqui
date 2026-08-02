@@ -84,7 +84,7 @@ Points marked **Resolved** are closed in code. All others remain pending.
 |---|---|---|---|---|
 | O1 | Define NATS accounts structure (1 per tenant vs 1 per env with ACLs) | Infra | messaging/service-bus | Pending |
 | O2 | Automate tenant provisioning | Infra + Dev | messaging/service-bus | **Resolved** (3 layers: tenant-service, lazy publishers, agent-ai-service self-healing) |
-| O3 | Header allowlist by provider | Dev | messaging/envelope | **Resolved** (7 headers in `WEBHOOK_FORWARDED_HEADERS`, `channel.constants.ts:55`) |
+| O3 | Header allowlist by provider | Dev | messaging/envelope | **Resolved** (7 headers in `WEBHOOK_FORWARDED_HEADERS`, `packages/shared/src/channel.constants.ts`) |
 | O4 | `correlation_id` scheme (format, generator, propagation) | Dev | messaging/envelope | **Resolved** (`correlation_id` defaults to the envelope's own `id`; propagated unchanged in `deriveEnvelope`) |
 | O5 | Evaluate whether `provider` should be optional for single-provider channels | Dev | messaging/envelope | Pending |
 | O6 | Define transport contract for polling-based providers | Dev | messaging/envelope | Pending |
@@ -102,7 +102,7 @@ Points marked **Resolved** are closed in code. All others remain pending.
 | O18 | Evaluate immediate revocation mechanism for third-party agents | Infra | security | Pending |
 | O19 | Define PII redaction strategy if compliance requirements change | Dev + Legal | security | Pending |
 | O20 | Define monitoring dashboard for streams | Infra | observability | Pending |
-| O21 | Define dead-letter strategy for failed validations | Dev | observability | Partially resolved (DLQ-<tenant> exists; see messaging/service-bus §5) |
+| O21 | Define dead-letter strategy for failed validations | Dev | observability | Partially resolved (DLQ-<tenant> exists; see messaging/service-bus "DLQ Lifecycle" — that document has named headings, not numbered sections) |
 | O22 | Support MCP as an outbound tool source (agents/workflows consume external MCP servers) | Dev | architecture/mcp-connections | **Resolved** (commit c4da71a) — distinct from O8/M2 below, which is the *inverse* direction (an internal MCP server as a publish interface for other agents); that idea remains pending |
 
 ---

@@ -17,7 +17,7 @@ The messaging ingress pipeline is a **two-stage bridge** between an external pro
 External provider
       │
       ▼
-[api-gateway]  POST /webhooks/:channel/:tenantId
+[api-gateway]  POST /api/webhooks/:channel/:tenantId
       │  publishes WebhookIngressEnvelope → INGRESS-<tenant>
       ▼
 [channel-service]  durable consumer: channel-webhook-ingress
@@ -34,10 +34,12 @@ Downstream consumers (agent-ai-service, workflow-service, audit-service, etc.)
 ### 2.1 Endpoint
 
 ```
-POST /webhooks/:channel/:tenantId
-POST /webhooks/:channel/:tenantId/:instance   ← instance-addressed ingress
-GET  /webhooks/:channel/:tenantId             ← hub.challenge verification (Meta)
+POST /api/webhooks/:channel/:tenantId
+POST /api/webhooks/:channel/:tenantId/:instance   ← instance-addressed ingress
+GET  /api/webhooks/:channel/:tenantId             ← hub.challenge verification (Meta)
 ```
+
+(`@Controller("webhooks")` under api-gateway's `setGlobalPrefix("api")`.)
 
 All three endpoints are public (`@Public()`, `@SkipTenant()`). The tenant is resolved only from the path parameter — no JWT and no tenant guard.
 
@@ -65,7 +67,7 @@ Successful response: HTTP 200 with body `{ "status": "accepted" }`, returned onl
 
 The envelope ID is a UUID v4 (`crypto.randomUUID()`).
 
-The `accountid` field is deliberately absent: at this point the request has not passed signature verification, and the provider account (WhatsApp Business ID, Telegram bot, etc.) has not been resolved. Including a placeholder would corrupt per-account billing aggregations. See the comment in `webhook-ingress-publisher.service.ts:103-113`.
+The `accountid` field is deliberately absent: at this point the request has not passed signature verification, and the provider account (WhatsApp Business ID, Telegram bot, etc.) has not been resolved. Including a placeholder would corrupt per-account billing aggregations. See the comment above the `WebhookIngressEnvelope` literal in `WebhookIngressPublisherService.publishWebhook`.
 
 Type: `WebhookIngressEnvelope = Omit<EventEnvelope, "accountid"> & { ... }`.
 
@@ -133,7 +135,7 @@ File: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.se
 | `transport.method` | `"webhook"` |
 | `transport.protocol` | `"https"` |
 | `accountid` | Resolved real provider account ID |
-| `data.headers` | The stage-1 allowlist minus the verification-secret subset (webhook-derived envelopes only; forwarding since 2026-07-31, secret strip since 2026-08-01). api-gateway filters against `WEBHOOK_FORWARDED_HEADERS` (`webhook-ingress-publisher.service.ts:252-263`); channel-service lowercases keys and, after the signature check, strips `WEBHOOK_SECRET_HEADERS` (`webhook-ingress.service.ts`, envelope.md §4.1) — only `content-type`, `x-request-id`, `user-agent` can reach stage 2. Absent on any non-webhook flow. |
+| `data.headers` | The stage-1 allowlist minus the verification-secret subset (webhook-derived envelopes only; forwarding since 2026-07-31, secret strip since 2026-08-01). api-gateway filters against `WEBHOOK_FORWARDED_HEADERS` (`WebhookIngressPublisherService.filterHeaders`); channel-service lowercases keys (`WebhookIngressConsumerService.normalizeHeaders`) and, after the signature check, strips `WEBHOOK_SECRET_HEADERS` (`WebhookIngressService.stripSecretHeaders`, envelope.md §4.1) — only `content-type`, `x-request-id`, `user-agent` can reach stage 2. Absent on any non-webhook flow. |
 
 Canonical subject:
 
@@ -145,7 +147,7 @@ The **envelope ID is a new UUID v4** independent of the `WebhookIngressEnvelope`
 
 ### 3.4 Egress shadow envelopes
 
-`createChannelSentEnvelope` (`envelope.factory.ts:147`) builds shadow envelopes for egress events (`sent`, `delivered`, `send`). Difference from ingress:
+`createChannelSentEnvelope` (`services/channel-service/src/domain/envelope.factory.ts`) builds shadow envelopes for egress events (`sent`, `delivered`, `send`). Difference from ingress:
 
 ```
 transport.method   = "stream"
@@ -209,7 +211,7 @@ sequenceDiagram
     participant CS as channel-service
     participant AG as agent-ai-service
 
-    Meta->>GW: POST /webhooks/whatsapp/<tenant>
+    Meta->>GW: POST /api/webhooks/whatsapp/<tenant>
     GW->>GW: buildWebhookIngressEnvelope(depth=0)
     GW-->>JS: publish evt.<t>.api-gateway.messaging.whatsapp.webhook.webhook_received.v1
 
@@ -230,13 +232,31 @@ sequenceDiagram
 
 ## 5. Agent Lifecycle Events (As-Built)
 
-The only agent execution lifecycle currently published to the bus is from `ai-agent-gateway`. Subjects are constants in `packages/shared/src/constants.ts`:
+The agent execution lifecycle travels on the `ai-agent-gateway` **subject
+family**, declared as constants in `packages/shared/src/constants.ts` over
+`AI_AGENT_GATEWAY_SUBJECT_PREFIX`:
 
-| Event | Subject template |
-|-------|-----------------|
-| `execution_started` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_started.v1` |
-| `execution_completed` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_completed.v1` |
-| `execution_failed` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_failed.v1` |
+| Event | Constant | Subject template |
+|-------|----------|-----------------|
+| `execution_started` | `AI_AGENT_GATEWAY_EXECUTION_STARTED` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_started.v1` |
+| `execution_completed` | `AI_AGENT_GATEWAY_EXECUTION_COMPLETED` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_completed.v1` |
+| `execution_failed` | `AI_AGENT_GATEWAY_EXECUTION_FAILED` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_failed.v1` |
+
+The subject family is named after `ai-agent-gateway`, but the **publisher is
+`agent-ai-service`**: `ExecutionHandler.publishStatus`
+(`services/agent-ai-service/src/nats-handlers/execution.handler.ts`) composes
+`evt.<tenant>.ai-agent-gateway.automation.platform.internal.<kind>.v1` and
+publishes an envelope whose own `producer` field says `agent-ai-service` and
+whose `type` is `io.yoizen.platform.runtime.<kind>.v1`. `ai-agent-gateway` only
+**reads** these subjects: `ExecutionsService.streamExecutionEvents` relays them
+to SSE, and `YoizenClawExecutionClient` awaits them as
+`EXECUTION_RESULT_EVENT_SUBJECTS`. `ai-agent-gateway` publishes the *request*
+side of the flow (`AI_AGENT_GATEWAY_EXECUTION_REQUESTED` via
+`YoizenClawExecutionClient.submitExecution`), not the lifecycle results.
+
+This is not the only lifecycle on the bus: `workflow-service` publishes its own
+`evt.<tenant>.workflow-service.workflow.internal.native.execution_started.v1`
+family (`execution-completed-publisher.activity.ts`) for Temporal workflow runs.
 
 `agent-ai-service` consumes specific subjects from `agent-admin-service` and `ai-agent-gateway` via `MessageRouterService`.
 
@@ -308,16 +328,16 @@ callPlatformApi
 |--------|------------------------------|-------------------------|-----------------------------|--------------------------|
 | Trust | High (HMAC signature verified) | High (our infra) | Low (third-party code) | Medium (known SaaS) |
 | Authentication | HMAC webhook in channel-service | Service token | API key + tenant auth | OAuth2 / callback signature |
-| Endpoint | `POST /webhooks/:channel/:tenantId` | `POST /api/agents/publish` | `POST /api/agents/publish` | webhook callback or poll |
+| Endpoint | `POST /api/webhooks/:channel/:tenantId` | `POST /api/agents/publish` | `POST /api/agents/publish` | webhook callback or poll |
 | Implemented | ✅ | ❌ | ❌ | ❌ |
 | MAX_DEPTH | 0 (`root`) | 5 (`internal_agent`) | 2 (`thirdparty_agent`) | 3 (`platform_agent`) |
 | Depth enforcement | — | `DepthTrackerService` (strict `>`, `MAX_DEPTH_BY_CATEGORY`) | — | — |
 
 The MAX_DEPTH row names the `ProducerCategory` whose limit applies; the values are
-the enforced `MAX_DEPTH_BY_CATEGORY` constants (`packages/shared/src/envelope.utils.ts:15-22`),
+the enforced `MAX_DEPTH_BY_CATEGORY` constants (`packages/shared/src/envelope.utils.ts`),
 not aspirations — what stays pending in those columns is the ingress PATH, not the
 ceiling. Since 2026-07-31 (envelope-drift T02) `DepthTrackerService`
-(`services/agent-ai-service/src/modules/depth-tracker/depth-tracker.service.ts:68-78`)
+(`services/agent-ai-service/src/modules/depth-tracker/depth-tracker.service.ts`)
 enforces every category through its `category` parameter, so the single populated
 cell is about which path exists today, not about which categories it can enforce.
 
@@ -409,12 +429,18 @@ Note: `accountid` is absent — typed as `Omit<EventEnvelope, "accountid">`.
     },
     "headers": {
       "content-type": "application/json",
-      "x-hub-signature-256": "sha256=..."
+      "x-request-id": "…",
+      "user-agent": "…"
     }
   }
 }
 ```
 
-> `data.headers` carries the stage-1 allowlist verbatim on webhook-derived
-> envelopes (§3.3, envelope.md §4.1) as of 2026-07-31. Envelopes published
-> before that date, and any non-webhook flow, have no `headers` key.
+> `data.headers` carries the stage-1 allowlist on webhook-derived envelopes
+> (§3.3, envelope.md §4.1) as of 2026-07-31, **minus** the verification-secret
+> subset (`WEBHOOK_SECRET_HEADERS`) which `WebhookIngressService.stripSecretHeaders`
+> removes after the signature check as of 2026-08-01 — so `x-hub-signature-256`
+> and friends can no longer appear here, only `content-type`, `x-request-id`
+> and `user-agent`. Envelopes published before 2026-07-31, and any non-webhook
+> flow, have no `headers` key at all; envelopes published between 2026-07-31 and
+> 2026-08-01 may still carry the secret headers.

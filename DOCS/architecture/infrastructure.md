@@ -15,7 +15,7 @@ Support services are shared in `support-services-dev` and back all platform work
 |---|---|---|
 | NATS JetStream | Durable event backbone | Internal async messaging on `INGRESS-<tenant>` and DLQ streams |
 | Redis | Shared low-latency state/cache | L2 cache, execution status store, public-routes sync cache |
-| PostgreSQL | Persistent relational storage | Shared platform DB + tenant-isolated DBs (via CloudNativePG) |
+| PostgreSQL | Persistent relational storage | Shared platform/usage/Temporal clusters run on **CloudNativePG** (`infrastructure/base/postgres/postgres-*-cluster.yaml`, `apiVersion: postgresql.cnpg.io`). `dedicated`-tier tenants do **not**: `tenant-service` creates a plain Kubernetes StatefulSet + PVC per tenant from `TENANT_POSTGRES_IMAGE` (`postgres.provider.ts` / `postgres-usage.provider.ts`), `shared`-tier tenants get a logical DB inside the CNPG shared cluster |
 | Temporal | Durable orchestration engine | Workflow execution and activity queue dispatch |
 
 ### Redis

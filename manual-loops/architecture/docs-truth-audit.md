@@ -139,7 +139,7 @@ final per-file dispositions.
 ## Progress
 
 - [x] T01 — Inventory + ledger skeleton
-- [ ] T02 — Audit: DOCS/messaging + DOCS/architecture
+- [x] T02 — Audit: DOCS/messaging + DOCS/architecture
 - [ ] T03 — Audit: DOCS/channels, agents, workflows, skb, reference, adr, guides, runbooks
 - [ ] T04 — Audit: the 20 service READMEs
 - [ ] T05 — Audit: packages + sdk docs
@@ -168,3 +168,26 @@ live-vs-staged `manual-loop.command.md` duplicate, the `.sdd/` second
 record system, section U ownership, hybrid class names.
 Attempt 1 2× REJECTED (hidden-dir omission, CLAUDE.md, misclasses,
 non-verbatim checklist) — attempt 2 2× APPROVED. G0 green both attempts.
+
+### T02 — 2026-08-02
+
+13/13 verdicts with evidence: 11 FIXED, 2 TRUE (tenant-messaging-tiers.md,
+observability.md — 21 metric names verified verbatim). Biggest drift killed:
+envelope.md producer census 5→11 + false "DLQ is not canonical" claim +
+invented example types; ingress.md missing `/api` prefix + WRONG lifecycle
+publisher (it is agent-ai-service's `ExecutionHandler.publishStatus`, not
+ai-agent-gateway) + stale secret header in an example; service-bus.md
+invented prod/staging topology → real single-node dev, "core NATS only for
+tenant.deleted" → producing-surface table (runtime `rt.` streaming is a
+second live surface; caveat: PLATFORM_TENANTS does bind platform.tenant.>,
+only `rt.` is stream-free), topology diagram regenerated 7→11 producers /
+6→10 consumers; overview.md 12 drifts incl. three NONEXISTENT endpoints
+removed and WORKFLOW_DEFAULT_TIMEOUT_MS 600k-not-60k; infrastructure.md
+tenant DBs are plain StatefulSets not CNPG; security.md `forwarded_headers`
+field never existed. Escalations E1–E5 parked for T09 (never-honored
+type/source contract clauses, publishStatus producer/subject mismatch,
+stale DOCS-line cites inside source files → proposed guard, alerts.yaml
+watching two nonexistent durables). Three attempts: R1 caught a residual
+unprefixed path + stale topology diagram + fresh line-cite assertions;
+R2/R3 narrowed to a self-contradicting subgraph label, fixed. 2× APPROVED.
+G0 green every attempt; docs-only (G1/G6b skipped).

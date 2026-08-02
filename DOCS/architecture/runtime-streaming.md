@@ -16,7 +16,16 @@ re-deriving decisions.
 
 ---
 
-## 0. As-built baseline (what exists today)
+## 0. Pre-implementation baseline (RECORD — superseded)
+
+> **This section is history, not present truth.** It records the code as traced
+> on **2026-07-05**, *before* the design below was built. Everything it calls
+> missing now exists: the SDK has `runtime.stream()`
+> (`sdk/src/resources/runtime/client.ts`), api-gateway has
+> `pipe-upstream-sse-to-reply.util.ts` and `@Post("stream")` on
+> `runtime.controller.ts`, and `packages/shared` carries
+> `buildRuntimeStreamSubject` + `runtime-stream.interfaces.ts`. Read §1 onward
+> for the as-built shape; keep this section only to understand what changed.
 
 Traced from source (verified 2026-07-05):
 
@@ -332,8 +341,9 @@ by `executionId` + `seq` as the resume cursor — designed for later, not built 
   `StreamTextParams` and forward it into `streamText({ …, abortSignal })`. Also
   surface `tool_call` / `tool_result` from the stream (AI SDK `fullStream` parts)
   so tool events can be published — the existing `generateStream` only wires
-  `textStream` (tool wiring is a `TODO` in `chat.service.ts:152`; token-only is an
-  acceptable first slice, tools second).
+  `textStream` (tool wiring is still the `// TODO: Wire tools into streaming…`
+  comment in `chat.service.ts`; token-only is an acceptable first slice, tools
+  second — and token-only is what shipped, see §8).
 - The legacy HTTP `execution.controller.ts POST execution/stream` was removed
   on 2026-07-07 (superseded by this pipeline; it had zero callers and no
   client-disconnect abort). This NATS/SSE path is the only streaming surface.
@@ -525,9 +535,12 @@ only wires real providers (`openai`, `anthropic`, `google`, `groq`, `mistral`,
 a running Ollama with a pulled model — too heavy for CI/dev smoke.
 
 **Recommendation — smallest test hook: a dev-only `mock` (echo) provider.**
-The AI SDK ships `MockLanguageModelV2` + `simulateReadableStream` in its test
-module. Register a `mock` provider in `ProviderRegistryService.createModel`,
-gated by env (`RUNTIME_ALLOW_MOCK_PROVIDER=true`, off in prod). The mock streams
+The AI SDK ships a mock language model + `simulateReadableStream` in its test
+module (`ai/test`; the shipped code uses `MockLanguageModelV3` — the design was
+written against `V2`). Register a `mock` provider in
+`ProviderRegistryService.createModel`, gated by env
+(`RUNTIME_ALLOW_MOCK_PROVIDER_ENV` = `RUNTIME_ALLOW_MOCK_PROVIDER=true`, off in
+prod). The mock streams
 the **prompt echoed back word-by-word** as token chunks with small delays, then
 emits deterministic `usage`. This exercises the entire path —
 `streamText().textStream` → `rt.` publish → gateway relay → api-gateway SSE →
@@ -558,7 +571,7 @@ Current base ksvc files set **no** `timeoutSeconds` → default 300s request cap
 kills any stream longer than 5 minutes; cluster `max-revision-timeout-seconds`
 default 600s caps how high we can raise it.
 
-Changes:
+Changes (**both shipped** — `timeoutSeconds: 3600` is present in both files today):
 - `knative/services/base/api-gateway.yaml` and `ai-agent-gateway.yaml` — set
   `spec.template.spec.timeoutSeconds: 3600` (and add
   `responseStartTimeoutSeconds` if the deploy targets a Knative version that
@@ -621,18 +634,24 @@ Implementation order (each item independently shippable except where noted):
 
 ---
 
-## 8. Open questions (need user input)
+## 8. Open questions — resolved by what shipped
 
-1. **Token vs tool granularity for v1.** Ship **token-only** first (tools remain
-   the `chat.service.ts:152` TODO), or wire `tool_call`/`tool_result` in the same
-   slice? Recommendation: token-only first.
-2. **Combined `POST …/stream` vs submit-then-GET.** This design strongly
-   recommends the **combined** endpoint (race-free). Confirm you accept a new
-   route shape rather than reusing the existing `@Sse("stream")` GET.
-3. **Resumability.** Confirm **non-resumable v1** is acceptable (final result
-   still recoverable via `getExecution`). If live-token replay across reconnect is
-   a hard requirement, we add the bounded `RT-<tenant>` JetStream buffer (more
-   cost) — out of scope as designed.
-4. **`containerConcurrency` for streaming.** Do you want an explicit cap on the
-   api-gateway streaming revision (protects scale-out signals) or leave it
-   unbounded (`0`) and rely on `max-scale`?
+The four questions below were open when this design was written. Their answers
+are now readable from the code:
+
+1. **Token vs tool granularity for v1** → **token-only shipped.**
+   `ExecutionHandler` in `agent-ai-service` publishes only `RUNTIME_TOKEN` on
+   `buildRuntimeStreamSubject(...)`; it never publishes `RUNTIME_TOOL_CALL` /
+   `RUNTIME_TOOL_RESULT`. The relay (`ai-agent-gateway`'s
+   `executions.service.ts`) and the SDK types
+   (`sdk/src/resources/runtime/types.ts`) already carry `tool_call` /
+   `tool_result` end-to-end, so the only missing half is the producer.
+2. **Combined `POST …/stream` vs submit-then-GET** → **combined shipped.**
+   `@Post("stream")` on both `services/api-gateway/src/modules/runtime/runtime.controller.ts`
+   and `ai-agent-gateway`'s executions controller.
+3. **Resumability** → **non-resumable v1 shipped.** No `RT-<tenant>` stream
+   exists; terminal state is still recoverable via `getExecution`.
+4. **`containerConcurrency` for streaming** → left unbounded; what shipped is
+   `timeoutSeconds: 3600` on `knative/services/base/api-gateway.yaml` and
+   `ai-agent-gateway.yaml` (§6), with no explicit `containerConcurrency` cap.
+   Still open for ops review.

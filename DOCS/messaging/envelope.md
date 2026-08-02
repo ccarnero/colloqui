@@ -81,7 +81,7 @@ Every message published to the bus **must** be serialized as the following envel
 | `causation_id` | string \| null | ID of the event that caused this one. `null` only for root events. |
 | `correlation_id` | string | Groups the entire chain end-to-end. Defaults are producer-specific: `api-gateway` and `createChannelEnvelope()` self-correlate when no value is passed, while shared `buildEventEnvelope()` currently falls back to a fresh UUID unless `correlationId` is passed explicitly. `deriveEnvelope()` copies it unchanged. |
 | `tenant` | string | Tenant ID. |
-| `producer` | string | Service that publishes. Active producers: `api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway`. |
+| `producer` | string | Service that publishes. Active producers: `api-gateway` (`WebhookIngressEnvelope`), `channel-service` (`CHANNEL_PRODUCER`), `registry-service` (`REGISTRY_PRODUCER`), `agent-admin-service` (`AGENT_ADMIN_PRODUCER`), `agent-memory-service` (`AGENT_MEMORY_PRODUCER`), `agent-scheduler-service` (`AGENT_SCHEDULER_PRODUCER`), `ai-agent-gateway` (`AI_AGENT_GATEWAY_PRODUCER`, via `execution-client.ts`), plus four services that do **not** use a `@yoizen/shared` constant: `agent-ai-service`, `connector-runtime` and `workflow-service` inline the string literal at each publish site, while `provisioning-service` declares a file-local `const PRODUCER` in `apply-events.publisher.ts` and `secret-audit.publisher.ts`. |
 | `domain` | string | Business domain. Examples: `messaging`, `automation`, `platform`. |
 | `channel` | string | Channel. Examples: `whatsapp`, `telegram`, `platform`. |
 | `provider` | string | Provider. Examples: `meta`, `telegram`, `internal`. |
@@ -134,7 +134,8 @@ Subject builders: `buildChannelSubject`, `buildWebhookIngressSubject` in `packag
 ### 3.1 Stream ↔ subject mapping
 
 - Stream `INGRESS-<tenant>` captures `evt.<tenant>.>` — all tenant events.
-- Subjects `dlq.<tenant>.>` and `audit.gateway.>` do not use the canonical envelope — they are control channels with their own formats.
+- `audit.gateway.>` (stream `GATEWAY_AUDIT`) does not use the canonical envelope: `publishGatewayAuditEvent` publishes a `GatewayAuditEvent`, a control-channel format of its own.
+- `dlq.<tenant>.>` (stream `DLQ-<tenant>`) is not a *new* format — it re-publishes the **original message bytes verbatim** and puts the dead-letter metadata in headers (`X-Dlq-Reason`, `X-Dlq-Stage`, `X-Dlq-Original-Subject`, `X-Dlq-Stream`, `X-Dlq-Deliveries`/`X-Dlq-Original-Msg-Id`). So a canonical envelope that dies arrives on the DLQ still canonical: `MultiTenantConsumerManager.buildTenantDlqHandler` forwards `msg.data`, and `IngressService.publishWithClaimCheck` forwards the full inlined envelope on a store failure. Subjects are built by `buildDlqMessageSubject`; the separate global `DLQ` stream owns only `dlq.webhook` (`DLQ_STREAM_SUBJECTS`).
 
 ---
 
@@ -160,7 +161,7 @@ interface EventTransport {
 
 ### 4.1 Webhook header allowlist (D8)
 
-Seven headers may be forwarded. Defined in `WEBHOOK_FORWARDED_HEADERS`, `packages/shared/src/channel.constants.ts:55-63`:
+Seven headers may be forwarded. Defined in `WEBHOOK_FORWARDED_HEADERS` (`packages/shared/src/channel.constants.ts`), with `WEBHOOK_FORWARDED_HEADERS_SET` as its O(1) lookup:
 
 ```
 content-type
@@ -187,8 +188,8 @@ of every stage-2 consumer and store.
 
 **Placement.** The allowlisted headers are carried under `data`, not under
 `transport`: the typed stage-1 shape is `IWebhookIngressData.headers`
-(`packages/shared/src/webhook.interfaces.ts:18`), and `EventTransport`
-(`packages/shared/src/interfaces.ts:13-18`) declares only `method`, `protocol`,
+(`packages/shared/src/webhook.interfaces.ts`), and `EventTransport`
+(`packages/shared/src/interfaces.ts`) declares only `method`, `protocol`,
 `agent_id?` and `depth?` — it has no header field at all. A consumer must read
 `data.headers`.
 
@@ -294,7 +295,7 @@ Event C  (workflow completion)
 >
 > - `deriveEnvelope` / `buildEventEnvelope` in `@yoizen/shared` use `MAX_DEPTH_BY_CATEGORY` with a strict `>` comparison.
 > - `DepthTrackerService` in `agent-ai-service` (`services/agent-ai-service/src/modules/depth-tracker/depth-tracker.service.ts`) does the same as of 2026-07-31 (envelope-drift T02, commit `e0c2e42f`). It previously used its own hardcoded `DEFAULT_MAX_DEPTH = 5` with `>=`, rejecting one level earlier than the shared library and ignoring the per-category limits. The category is a parameter defaulting to `internal_service`, mirroring the shared default. No other service enforces depth locally — every other producer goes through the shared helpers.
-> - Still **not implemented**: the documented original behavior on depth exceeded (write to DLQ with reason `depth_exceeded` and emit metric `agent.depth_exceeded`). The two thrower families differ, and neither does it: agent-ai's LOCAL `DepthExceededError extends PermanentError` (`depth-tracker.service.ts`) is routed to the DLQ by the consumer runner, but with no `depth_exceeded` reason header; the SHARED `DepthExceededError` thrown by `deriveEnvelope`/`buildEventEnvelope` extends plain `Error` (`packages/shared/src/envelope.utils.ts:226`), so it is NAK'd and retried like any other failure rather than dead-lettered. No targeted metric exists on either path.
+> - Still **not implemented**: the documented original behavior on depth exceeded (write to DLQ with reason `depth_exceeded` and emit metric `agent.depth_exceeded`). The two thrower families differ, and neither does it: agent-ai's LOCAL `DepthExceededError extends PermanentError` (`depth-tracker.service.ts`) is routed to the DLQ by the consumer runner, but with no `depth_exceeded` reason header; the SHARED `DepthExceededError` thrown by `deriveEnvelope`/`buildEventEnvelope` extends plain `Error` (`packages/shared/src/envelope.utils.ts`), so it is NAK'd and retried like any other failure rather than dead-lettered. No targeted metric exists on either path.
 >
 > **Objective design (pending):**
 > - On depth exceeded: publish to `DLQ-<tenant>` with `X-Dlq-Reason: depth_exceeded` and emit the corresponding metric.
@@ -465,9 +466,9 @@ Subject: `evt.acme.channel-service.messaging.telegram.telegram.received.v1`
 > — is threaded through `WebhookIngressService.scheduleIngress` and
 > `IngressService.processInbound` to `createChannelEnvelope`, so webhook-derived
 > stage-2 envelopes now carry the block shown above. api-gateway is the
-> allowlist filter (`WEBHOOK_FORWARDED_HEADERS`,
-> `webhook-ingress-publisher.service.ts:252-263`) and channel-service
-> lowercases keys (`webhook-ingress-consumer.service.ts:178-187`); since
+> allowlist filter (`WebhookIngressPublisherService.filterHeaders`, which
+> consults `WEBHOOK_FORWARDED_HEADERS_SET`) and channel-service lowercases keys
+> (`WebhookIngressConsumerService.normalizeHeaders`); since
 > 2026-08-01 channel-service additionally strips the verification-secret
 > subset (`WEBHOOK_SECRET_HEADERS`, §4.1) after the signature check, so the
 > block above can only contain `content-type`, `x-request-id` and
@@ -480,8 +481,8 @@ Subject: `evt.acme.channel-service.messaging.telegram.telegram.received.v1`
 
 ```json
 {
-  "type": "io.yoizen.agent-admin-service.automation.platform.internal.agent_published.v1",
-  "source": "agent-admin-service",
+  "type": "io.yoizen.platform.admin.agent.published.v1",
+  "source": "//agent-admin-service/admin/agents/publish",
   "producer": "agent-admin-service",
   "domain": "automation",
   "channel": "platform",
@@ -496,17 +497,27 @@ Subject: `evt.acme.channel-service.messaging.telegram.telegram.received.v1`
 ```
 
 Subject: `evt.acme.agent-admin-service.automation.platform.internal.agent_published.v1`
+(`AGENT_ADMIN_AGENT_PUBLISHED` over `AGENT_ADMIN_SUBJECT_PREFIX`).
+
+Note the `type` does **not** mirror the subject tokens: it is
+`EVENT_TYPES.AGENT_PUBLISHED` in `agent-admin-service`'s `nats.provider.ts`, a
+`io.yoizen.platform.admin.…` value that predates the
+`io.yoizen.<domain>.<channel>.<provider>.<kind>.v1` convention of §2.1.
+The envelope-level fields come from `AGENT_ADMIN_PRODUCER`, `AUTOMATION_DOMAIN`,
+`PLATFORM_CHANNEL`, `PLATFORM_PROVIDER` and `DEFAULT_TRANSPORT`.
 
 ### 10.4 ai-agent-gateway
 
 ```json
 {
-  "type": "io.yoizen.ai-agent-gateway.automation.platform.internal.execution_requested.v1",
-  "source": "ai-agent-gateway",
+  "type": "io.yoizen.platform.runtime.execution_requested.v1",
+  "source": "<the calling service's own name>",
   "producer": "ai-agent-gateway",
+  "resource": "execution/<executionId>",
   "domain": "automation",
   "channel": "platform",
   "provider": "internal",
+  "accountid": "ai-agent-gateway",
   "transport": {
     "method": "agent",
     "protocol": "internal",
@@ -517,6 +528,14 @@ Subject: `evt.acme.agent-admin-service.automation.platform.internal.agent_publis
 ```
 
 Subject: `evt.acme.ai-agent-gateway.automation.platform.internal.execution_requested.v1`
+(`AI_AGENT_GATEWAY_EXECUTION_REQUESTED` resolved by `buildPlatformSubject`).
+
+This envelope is built by `ExecutionClient.submitExecution`
+(`packages/shared/src/execution-client.ts`), so `producer`/`accountid` are
+`AI_AGENT_GATEWAY_PRODUCER` while `source` is the **client's** `serviceName` —
+the shared client is embedded in whichever service submits the execution. Here
+too the `type` (`io.yoizen.platform.runtime.…`) does not mirror the subject
+tokens.
 
 ---
 
@@ -549,6 +568,13 @@ The **only canonical taxonomy** for domain events is:
 | Subject filter | `evt.<tenant>.>` (8 tokens, see §3) |
 | Object Store | `PAYLOAD-<tenant>` |
 
-The flat `EVENTS` (`events.>`) and `RESULTS` (`results.>`) streams are **deprecated** and marked in `packages/shared/src/constants.ts`. They must not be used in new code.
+The flat `EVENTS` (`events.>`) and `RESULTS` (`results.>`) streams were deprecated here and have since been **removed from the code entirely**: `packages/shared/src/constants.ts` no longer declares them (nor any deprecation marker), and no service publishes or subscribes to `events.>` / `results.>`. The only surviving mentions are a comment in `tracking-ingester-service`'s `classify.ts` and one api-gateway unit fixture. They must not be used in new code.
 
-Platform monitoring and audit streams that use shared streams (`GATEWAY_AUDIT`, `DLQ`) are retained because they are cross-tenant by design and are not part of the business flow.
+Two cross-tenant streams are retained on purpose because they are not part of the business flow:
+
+| Stream | Subjects | Constants |
+|---|---|---|
+| `GATEWAY_AUDIT` | `audit.gateway.>` (published on `audit.gateway.request`) | `GATEWAY_AUDIT_STREAM_NAME`, `GATEWAY_AUDIT_STREAM_SUBJECTS`, `GATEWAY_AUDIT_SUBJECT` |
+| `DLQ` | `dlq.webhook` only | `DLQ_STREAM_NAME`, `DLQ_STREAM_SUBJECTS` |
+
+Note that dead-lettering of tenant traffic is **not** on that global `DLQ`: the `dlq.<tenant>.>` namespace belongs to per-tenant `DLQ-<tenant>` streams provisioned by `ensureTenantDlqStream` (`DLQ_TENANT_STREAM_PREFIX`), so the two never overlap.

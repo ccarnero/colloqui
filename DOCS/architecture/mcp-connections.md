@@ -127,7 +127,7 @@ Known gaps against the original design (closed 2026-07-08 unless noted):
   `endpointCall` node type; its config panel
   (`workflow-node-config.component.ts`) lets the user pick an Adapter from a
   dropdown, then a dependent Endpoint dropdown, writing `adapterId`/
-  `endpointId` into `EndpointCallArgs` (`packages/shared/src/workflow.interfaces.ts:73-81`).
+  `endpointId` into `EndpointCallArgs` (`packages/shared/src/workflow.interfaces.ts`).
   Executed as a Temporal activity on the `connector-runtime` task queue
   (`endpoint-call.activity.ts`), independent of `agent-ai-service`.
 

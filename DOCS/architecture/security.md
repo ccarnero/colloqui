@@ -109,7 +109,9 @@ envelope published by `api-gateway`. The flow has two stages:
 
 **Stage 1 — api-gateway:** receives the incoming webhook HTTP request and publishes a
 `webhook_received` envelope to JetStream **before signature verification**. The envelope
-carries the raw body in `raw_body_b64` plus the signature headers in `forwarded_headers`.
+carries the raw body in `data.raw_body_b64` plus the signature headers in `data.headers`
+(`IWebhookIngressData`, `packages/shared/src/webhook.interfaces.ts` — there is no
+`forwarded_headers` field, and `EventTransport` carries no headers at all).
 
 **Stage 2 — channel-service:** upon consuming the envelope, verifies the signature before
 any canonical processing. If verification fails → message discarded. The payload never
@@ -120,7 +122,7 @@ reaches the main bus without a verified signature.
 > is low in the current single-account configuration, but this should be revisited when
 > per-tenant account isolation is implemented (§3.2).
 
-**Forwarded signature headers** (`packages/shared/src/channel.constants.ts:55-63`):
+**Forwarded signature headers** (`WEBHOOK_FORWARDED_HEADERS`, `packages/shared/src/channel.constants.ts`):
 
 ```
 WEBHOOK_FORWARDED_HEADERS = [
@@ -145,7 +147,7 @@ consumers and stores never see them.
 | Provider | Mechanism | Header | Implementation |
 |---|---|---|---|
 | Meta (WhatsApp, Instagram) | HMAC-SHA256 with `timingSafeEqual` | `x-hub-signature-256` | `services/channel-service/src/providers/meta/meta-base.ts` |
-| Telegram | `timingSafeEqual` against secret token | `x-telegram-bot-api-secret-token` | `services/channel-service/src/providers/telegram/telegram.provider.ts:62-65` |
+| Telegram | `timingSafeEqual` against secret token | `x-telegram-bot-api-secret-token` (the provider's own `signatureHeader`) | `services/channel-service/src/providers/telegram/telegram.provider.ts` |
 | Generic HTTP channel | `timingSafeEqual` against a shared token | `x-http-channel-token` | `services/channel-service/src/providers/http/http.provider.ts` |
 
 For Telegram, an absent or empty header is rejected directly as `signature_mismatch` (no
@@ -273,8 +275,8 @@ absent from `IStructuredLogFields`.
 
 | Layer | Mechanism | Status |
 |---|---|---|
-| In transit | TLS 1.3 between nodes and clients | Required in prod |
-| At rest (streams) | JetStream file encryption | Pending configuration |
+| In transit | TLS between NATS nodes and clients | **Not configured.** `infrastructure/base/nats/configmap.yaml` has no `tls {}` block and clients connect over `nats://…:4222` (`NATS_URL` in the dev env patches). A prod posture would require it; this repo ships only the dev configuration. |
+| At rest (streams) | JetStream file encryption | Pending configuration (no `key` in the JetStream block) |
 | At rest (object store) | Inherits from stream | Pending configuration |
 
 ### 6.3 Redaction Options for Future Compliance Requirements

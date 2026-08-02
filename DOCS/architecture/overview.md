@@ -32,6 +32,7 @@ flowchart LR
         subgraph core[Core Event Consumers]
             audit[audit-service]
             usage[usage-aggregator-service]
+            tracking[tracking-ingester-service]
         end
 
         subgraph automation[Automation]
@@ -247,7 +248,7 @@ The database phase is storage-engine aware (`postgres.provider.ts` / `mongo.prov
 |--------|--------|
 | **Role** | HTTP entry point, JWT auth, event ingestion, SSE streaming, dynamic tenant routing, proxies to all downstream services |
 | **Port** | 3000 |
-| **Scale** | 1 -- 10 replicas (RPS target: 500) |
+| **Scale** | 1 -- 10 replicas (`metric: rps`, target 500) — pinned to 1 by the dev overlay |
 
 **Authentication:** All routes require a valid JWT (Bearer token) except those marked as public. The global `AuthGuard` checks every request:
 
@@ -266,11 +267,9 @@ The database phase is storage-engine aware (`postgres.provider.ts` / `mongo.prov
 | `GET/POST/DELETE` | `/api/v1/auth/public-routes` | Dynamic public route management | Platform |
 | `POST/GET` | `/api/v1/auth/users` | Platform user management | Platform |
 | `POST/GET/DELETE` | `/api/v1/auth/clients` | API client management | Platform |
-| `POST` | `/api/v1/events` | Ingest event (202 Accepted) | Required |
-| `GET` | `/api/v1/results/:id` | Fetch processing result | Required |
-| `GET` | `/api/v1/events/stream` | SSE real-time stream | Required |
-| `GET` | `/api/v1/audit/events` | Query audit events | Required |
-| `POST/GET/DELETE` | `/api/v1/tenants` | Tenant management | Platform (write) / Required (read) |
+| `POST/GET/PATCH/DELETE` | `/api/v1/auth/tenant-users`, `/api/v1/auth/tenant-roles` | Tenant-scoped identity + role management | Required |
+| `GET` | `/api/v1/audit/events` / `/api/v1/audit/channel-events` | Query audit + channel audit events | Required |
+| `POST/GET/PATCH/DELETE` | `/api/v1/tenants` | Tenant management | Platform (write) / Required (read) |
 | `POST/GET/PATCH/DELETE` | `/api/v1/registry/services` | Service registry | Required |
 | `POST/PATCH/GET` | `/api/v1/registry/services/:id/canary` | Canary deployments | Required |
 | `POST/GET` | `/api/v1/workflows` | Workflow management | Required |
@@ -279,12 +278,25 @@ The database phase is storage-engine aware (`postgres.provider.ts` / `mongo.prov
 | `POST/GET/PATCH/DELETE` | `/api/v1/channels/accounts` | Channel account management (proxied to `channel-service`) | Required |
 | `GET` | `/api/v1/channels/usage` / `/api/v1/channels/usage/totals` | Channel usage metrics (proxied to `channel-service`) | Required |
 | `POST` | `/api/v1/runtime/executions` / `/api/v1/runtime/executions/stream` | Agent execution submit + SSE token streaming (proxied to `ai-agent-gateway`) | Required |
-| `GET` | `/health`, `/readyz` | Aggregated health | Public |
+| `SSE` | `/api/v1/channels/stream` | Live channel message stream | Required |
+| `POST/GET` | `/api/v1/connectors/:connectorId/endpoints/:endpointId/invoke`, `/api/v1/connectors/invocations/:id` | Direct connector invoke + async result polling | Required |
+| `GET` | `/api/v1/tracking/{events,chains/:correlationId,runs/*,node-stats,node-runs}` | Trace/chain/run read APIs (proxied to `tracking-ingester-service`) | Required |
+| `POST/PUT/GET` | `/api/v1/provisioning/manifests/*`, `/api/v1/provisioning/secrets` | Declarative manifest validate/plan/apply + write-only secrets | Required |
+| `GET` | `/api/v1/dashboard/stats` | Console dashboard aggregate | Required |
+| `*` | `/api/v1/admin/*` | 11 admin controllers proxied to `agent-admin-service` / `agent-scheduler-service`: `agents`, `jobs`, `knowledge-bases` (+ `/:kbId/documents`), `mcp-servers`, `memories`, `skills`, `structured-kb`, `system-variables`, `tools`, plus a root `admin` config controller | Required |
+| `*` | `/api/v1/proxy/*` | Tenant-dependent external backends (proxied to `proxy-service`) | Required |
+| `GET/POST` | `/api/webhooks/:channel/:tenantId[/:instance]` | Provider webhook ingress — **not** versioned or tenant-guarded | Public |
+| `GET` | `/health`, `/readyz` | Aggregated health (excluded from the `api` global prefix) | Public |
+
+There is no `POST /events`, `GET /results/:id`, or `GET /events/stream` on the
+gateway: those generic ingest/result routes were removed. Event ingestion happens
+through the channel webhook bridge (`/api/webhooks/...`), and execution results
+come back over `/api/v1/runtime/executions/:id` or the SSE stream.
 
 #### API Versioning
 
 The gateway applies a global `api` prefix plus NestJS URI versioning
-(`services/api-gateway/src/main.ts:98-110`):
+(`setGlobalPrefix` + `enableVersioning` in `services/api-gateway/src/main.ts`):
 
 ```ts
 app.setGlobalPrefix("api", { exclude: [...] });
@@ -349,7 +361,13 @@ graph LR
 platform_users  (id, email, password_hash, role, is_active, created_at, updated_at)
 api_clients     (id, client_id, client_secret_hash, name, scope, is_active, created_at, updated_at)
 public_routes   (id, method, path_pattern, scope, environment, created_at)
+tenants         (mirror of the platform tenants list, used for scope validation)
 ```
+
+`auth-service` additionally owns **tenant-scoped** identities that do not live in
+the platform database: `tenant_users` and `tenant_roles` in the per-tenant store
+(`tenant-users.*.repository.ts`), exposed as
+`/api/v1/auth/tenant-users` and `/api/v1/auth/tenant-roles`.
 
 ```mermaid
 graph LR
@@ -373,14 +391,26 @@ graph LR
 
 ```sql
 CREATE TABLE events (
-    id         TEXT PRIMARY KEY,
-    type       TEXT NOT NULL,
-    payload    JSONB NOT NULL,
-    metadata   JSONB,
-    subject    TEXT,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    id             TEXT        PRIMARY KEY,
+    type           TEXT        NOT NULL,
+    payload        JSONB       NOT NULL DEFAULT '{}',
+    metadata       JSONB       NOT NULL DEFAULT '{}',
+    subject        TEXT        NOT NULL DEFAULT '',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    correlation_id TEXT,
+    causation_id   TEXT,
+    depth          INTEGER     NOT NULL DEFAULT 0
 );
+-- indexes: type, created_at, (type, created_at),
+--          (correlation_id, depth, created_at), causation_id
 ```
+
+The lineage trio (`correlation_id` / `causation_id` / `depth`) is top-level and
+indexed since 2026-06-20 — that is what backs the chain endpoints in
+[messaging/envelope.md](../messaging/envelope.md) §8. `subject` here is the NATS
+subject, not the envelope's `resource` field. Source:
+`services/audit-service/src/modules/audit/audit.postgres.repository.ts`
+(alongside `channel_events`, `execution_events` and `gateway_audit_events`).
 
 ---
 
@@ -511,7 +541,9 @@ graph LR
 | `jsFunction` | `workflow-orchestrator` | Inline JS evaluation |
 | `agentCall` | `workflow-orchestrator` | YoizenClaw agent chat via workflow-service local activity |
 | `serviceBusCall` | `workflow-orchestrator` | NATS publish with tenant header |
+| `channelSend` | `workflow-orchestrator` | Outbound channel send via `channel-service` |
 | `branch` | (workflow-level) | Parallel execution of sub-actions |
+| `conditional` | (workflow-level) | Branches evaluated in order; first match wins |
 
 Actions support `{{path.to.value}}` template resolution against the execution context.
 
@@ -582,9 +614,15 @@ graph TB
 
 ### Knative Autoscaling
 
+These are the **base manifest** values (`knative/services/base/*.yaml`). The dev
+overlay overrides every Knative Service to `min-scale = max-scale = 1`
+(`knative/services/overlays/local/postgres-dev/kustomization.yaml`), so nothing
+below actually autoscales in developer mode — the table records the intended
+shape, not the running one.
+
 | Service | Min Scale | Max Scale | Concurrency Target |
 |---------|-----------|-----------|-------------------|
-| API Gateway | 1 | 10 | 100 |
+| API Gateway | 1 | 10 | 500 — note this one uses `metric: rps`, not `concurrency` |
 | Auth Service | 1 | 3 | 50 |
 | Audit Service (API) | 1 | 10 | 100 |
 | Cache Service | 1 | 5 | 100 |
@@ -604,9 +642,12 @@ graph TB
 | Proxy Service | 1 | 5 | 50 |
 | Admin Console | 1 | 3 | 200 |
 
-Note: `audit-service`, `channel-service`, `connector-admin`, and `usage-aggregator-service` each
-split into a Knative-scaled API and a plain-Deployment worker (fixed `replicas: 1`); the table
-above shows the API autoscaling values.
+Note: `audit-service`, `channel-service`, `connector-admin`, `agent-admin-service` and
+`usage-aggregator-service` each split into a Knative-scaled API and a plain-Deployment worker
+(fixed `replicas: 1`); the table above shows the API autoscaling values.
+`tracking-ingester-service` is worker-only — `tracking-ingester-worker` is a plain
+`Deployment` with a companion ClusterIP `Service`, never a Knative Service, so it has no row
+above.
 
 ### Container Build
 
@@ -624,13 +665,13 @@ Images are built against the shared OrbStack Docker daemon as `dev.local/<servic
 
 ### Support Services Resources (Local Overlay)
 
-| Component | CPU (req/limit) | Memory (req/limit) | Storage |
-|-----------|----------------|---------------------|---------|
-| NATS | 250m / 1 | 256Mi / 512Mi | 50Gi PVC |
-| Redis | 250m / 1 | 256Mi / 512Mi | 256Mi PVC |
-| PostgreSQL (shared CNPG cluster) | 250m / 1 | 512Mi / 1Gi | 20Gi |
-| PostgreSQL (per-tenant `dedicated`-tier StatefulSet) | 250m / 1 | 256Mi / 512Mi | 10Gi PVC |
-| Temporal | 500m / 2 | 512Mi / 1Gi | -- (uses PG) |
+| Component | CPU (req/limit) | Memory (req/limit) | Storage | Source |
+|-----------|----------------|---------------------|---------|--------|
+| NATS | 100m / 1 | 256Mi / 1Gi | 2Gi PVC (base declares 50Gi) | `overlays/local/local-base/patches/nats-resources.yaml` |
+| Redis | 150m / 1 | 256Mi / 512Mi | 256Mi PVC | `patches/redis-resources.yaml`; PVC in `base/redis/statefulset.yaml` |
+| PostgreSQL (shared CNPG cluster) | 250m / 1 | 512Mi / 1Gi | 20Gi | `base/postgres/postgres-shared-cluster.yaml` |
+| PostgreSQL (per-tenant `dedicated`-tier StatefulSet) | 50m / 250m | 64Mi / 128Mi | 1Gi PVC | built in code by `tenant-service`'s `postgres.provider.ts`, not by a manifest |
+| Temporal | 500m / 2 | 512Mi / 1Gi | -- (uses PG) | `base/temporal/deployment-autosetup.yaml` |
 
 ---
 
@@ -655,15 +696,15 @@ Provides type-safe constants and interfaces consumed by all services.
 |----------|-------|---------|
 | `RESULT_KEY_PREFIX` / `PENDING_KEY_PREFIX` | `result:` / `pending:` | Per-tenant runtime/Redis cache layer |
 | `RESULT_TTL` / `PENDING_TTL` | `3600` (1 hour) | Runtime/Redis cache layer |
-| `STREAM_MAX_AGE_NS` | 7 days (ns) | All NATS stream provisioning |
-| `MAX_DELIVER` | `5` | All durable consumers |
+| `STREAM_MAX_AGE_NS` | 7 days (ns) | **No production caller** — exported from `constants.ts` and re-exported from `index.ts`, nothing else. Stream provisioning uses `CHANNEL_STREAM_MAX_AGE_NS` (or the tier limits) instead. |
+| `MAX_DELIVER` | `5` | **No production caller** either: `packages/database`'s `nats-durable-consumer.ts` uses its own `DEFAULT_MAX_DELIVER = 5`, channel flows use `CHANNEL_MAX_DELIVER`, and `connector-admin`'s internal-sync declares a local `MAX_DELIVER` that shadows the shared one. Same value, three declarations. |
 | `TENANT_HEADER` | `x-yoizen-tenant` | All services |
 | `REGISTRY_KNATIVE_GROUP` / `REGISTRY_KNATIVE_VERSION` / `REGISTRY_KNATIVE_SERVICES_PLURAL` | `serving.knative.dev` / `v1` / `services` | Registry Service, Tenant Service (Knative API client) |
 | `REGISTRY_PRODUCER` / `REGISTRY_DOMAIN` | `registry-service` / `platform` | Registry Service (lifecycle event subjects) |
 | `ADAPTER_MANAGED_BY_REGISTRY` | `registry-service` | Connector Admin (internal-sync ownership marker) |
 | `WORKFLOW_ORCHESTRATOR_TASK_QUEUE` | `workflow-orchestrator` | Workflow Service |
 | `CONNECTOR_RUNTIME_TASK_QUEUE` | `connector-runtime` | Connector Runtime |
-| `WORKFLOW_DEFAULT_TIMEOUT_MS` | `60000` | Workflow Service |
+| `WORKFLOW_DEFAULT_TIMEOUT_MS` | `600_000` (10 min) | Workflow Service |
 | `GATEWAY_AUDIT_*` | gateway audit stream/subject/consumer constants | API Gateway, Audit Service |
 | `AGENT_ADMIN_*` (subject prefix + per-event helpers) | `evt.{tenant}.agent-admin-service.automation.platform.internal.*` | Agent Admin Service / Runtime / Runtime Gateway |
 | `AI_AGENT_GATEWAY_*` (`evt.{tenant}.ai-agent-gateway.automation.platform.internal.*`) | execution lifecycle subjects | AI Agent Gateway / Workflow Service |
@@ -676,14 +717,17 @@ Canonical source: `packages/shared/src/interfaces.ts`. Key types:
 EventEnvelope  → CloudEvents-inspired; fields: specversion, id, source, type, resource, time,
                  traceid, causation_id, correlation_id, tenant, producer, domain, channel,
                  provider, accountid, idempotencykey, transport (EventTransport), data (EventData)
-EventData      → { payload_inline: boolean, payload: object|null, payload_ref: string|null,
-                   checksum: string|null }   ← slim when claim-check active
+EventData      → { received_at, payload_inline: boolean, payload_ref: string|null,
+                   payload_bytes: number, payload_checksum: string,
+                   payload: object|null }   ← payload is null when claim-check active
 EventTransport → { method, protocol, agent_id?, depth? }
 ChannelEnvelope → canonical post-ingress envelope produced by channel-service
 WebhookIngressEnvelope → pre-ingress envelope produced by api-gateway (no accountid)
 JwtPayload     → { sub, type, scope, role?, env, iat, exp }
 WorkflowDefinition → { name, tenant, application, request, actions }
-WorkflowAction → EndpointCallAction | JsFunctionAction | ServiceBusCallAction | BranchAction | AgentCallAction
+WorkflowAction → EndpointCallAction | McpCallAction | JsFunctionAction | ServiceBusCallAction
+                 | ServiceCallAction | ChannelSendAction | AgentCallAction | BranchAction
+                 | ConditionalAction        (packages/shared/src/workflow.interfaces.ts)
 ```
 
 ---
@@ -693,7 +737,7 @@ WorkflowAction → EndpointCallAction | JsFunctionAction | ServiceBusCallAction 
 ```mermaid
 graph TD
     subgraph Ingress
-        C([Client]) -->|"POST /events<br/>(JWT + tenant)"| GW[API Gateway]
+        C([Provider webhook]) -->|"POST /api/webhooks/:channel/:tenant"| GW[API Gateway]
     end
 
     subgraph eventBus ["Event Bus — NATS JetStream"]
@@ -806,6 +850,9 @@ graph TD
 | **Ingress** | Kourier 1.17 |
 | **DNS** | dev.local (static, resolved via a managed /etc/hosts block) |
 | **Containers** | Docker multi-stage (node:24-alpine build, oven/bun:1.3-alpine runtime; bun slim/Debian for Temporal workers) |
+| **IaC** | Kustomize (base + overlays) |
+| **Validation** | class-validator (16 services declare it, incl. Gateway, Auth, Tenant, Registry, Connector Admin, Provisioning), ajv (workflow payload schemas) |
+| **K8s Client** | `@kubernetes/client-node` (`tenant-service`, `registry-service`, `provisioning-service`, `@yoizen/database`) |
 
 ---
 
@@ -1128,7 +1175,7 @@ sequenceDiagram
     participant OBJ as PAYLOAD-<tenant><br/>Object Store
     participant CONS as Consumer Services<br/>(audit, workflow, agent)
 
-    P->>GW: POST /webhooks/telegram/{tenant}
+    P->>GW: POST /api/webhooks/telegram/{tenant}
     GW->>GW: Extract allowed headers<br/>Build WebhookIngressEnvelope
     GW->>NATS: Publish evt.<tenant>.api-gateway.messaging.telegram.webhook.webhook_received.v1
 
@@ -1159,6 +1206,3 @@ sequenceDiagram
 - The canonical `ChannelEnvelope` inherits `correlation_id`, `causation_id`, and `depth` from the pre-ingress `WebhookIngressEnvelope` instead of resetting them, so the causal chain is unbroken across the webhook → canonical hop (threaded through `processInbound` → `createChannelEnvelope`)
 - All downstream consumers MUST use the canonical envelope, not the pre-ingress one
 - `wrapHandler` in `MultiTenantConsumerManager` is the single resolution point for claim-check envelopes; individual handlers never deal with `payload_inline: false`
-| **IaC** | Kustomize (base + overlays) |
-| **Validation** | class-validator (Gateway, Auth, Tenant, Registry, Connector Admin), ajv (workflow payload schemas) |
-| **K8s Client** | @kubernetes/client-node (Tenant, Registry services) |

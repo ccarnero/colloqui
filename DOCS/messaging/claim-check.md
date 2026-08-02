@@ -159,11 +159,11 @@ The key is derived from the envelope's `id` field — a direct correlation betwe
 
 No manual garbage collection. Objects expire by TTL (7 days), aligned with the tenant ingress stream's `max_age`.
 
-### 4.5 Tier sizing (pending — not implemented)
+### 4.5 Tier sizing (declared but not wired)
 
-> **Status: pending — not implemented**
+> **Status: declared in the tier table, not wired to the bucket**
 >
-> A per-tier sizing table (starter/growth/enterprise) exists in the design but the per-tier parameters are not connected to the bucket configuration code. The global configuration applies to all tenants.
+> Messaging tiers shipped 2026-08-01 (`free` / `pro` / `enterprise` — see [`tenant-messaging-tiers.md`](tenant-messaging-tiers.md)) and `TENANT_TIER_LIMITS` in `packages/shared/src/tenant-stream.constants.ts` carries an `object_store_max_bytes` per tier. Nothing reads it: `IngressService.getClaimCheckBucket` still passes the flat `CLAIM_CHECK_BUCKET_MAX_BYTES` / `CLAIM_CHECK_BUCKET_TTL_NS`, so the global bucket configuration applies to every tenant regardless of tier (the tiers loop's decision 5 — claim-check buckets and DLQ streams stay flat).
 
 ---
 

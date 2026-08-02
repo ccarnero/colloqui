@@ -26,7 +26,32 @@ NATS JetStream is the default for all platform events because:
 
 Core NATS is at-most-once with no persistence. If a consumer is not connected at publish time, the message is lost. For ingress events where loss is unacceptable, JetStream is the minimum requirement.
 
-Core NATS is used only for lightweight fire-and-forget signals — currently `platform.tenant.deleted` for cache eviction and DB pool teardown.
+### Where core NATS *is* used
+
+Core NATS is the transport wherever loss is acceptable and fan-out or
+low-latency matters more than replay. There are **two producing surfaces**, plus
+an RPC pattern and some subscribe-only consumers:
+
+| Surface | Subjects | Producer | Why core, not JetStream |
+|---|---|---|---|
+| **Tenant teardown fan-out** | `platform.tenant.deleted` (`TENANT_DELETED_SUBJECT`) | `tenant-service`'s `TenantDeletionPublisherService` (`nc.publish`) | **Every** replica caching a per-tenant Postgres pool must receive it; the `PLATFORM_TENANTS` stream is `RetentionPolicy.Workqueue`, which would deliver to exactly one consumer and defeat the fan-out. Misses self-heal via `TenantConnectionManager.verifyConnectivity`. Subscribers: `tenant-deletion-eviction-listener.ts` / `tenant-mongo-deletion-eviction-listener.ts` (`@yoizen/database`) and agent-admin's own listener. |
+| **Runtime token streaming** | `rt.<tenant>.exec.<executionId>.{token,tool_call,tool_result}` and `…​.cancel` (`RUNTIME_STREAM_SUBJECT_PREFIX` / `buildRuntimeStreamSubject`) | `agent-ai-service`'s `ExecutionHandler.publishToken` (`nc.publish`) for tokens; `YoizenClawExecutionClient.publishCancel` (`packages/shared/src/execution-client.ts`) for the cancel control message | High-frequency display-only deltas with no replay value. The `rt.` prefix is **deliberately outside** the `evt.` taxonomy so no stream's subject filter captures it — persisting millions of token deltas into `INGRESS-<tenant>` is exactly the failure this avoids. Full contract: [`DOCS/architecture/runtime-streaming.md`](../architecture/runtime-streaming.md) §1.1. |
+
+Two related patterns that are core NATS but not fire-and-forget signals:
+
+- **Request/reply RPC** — `rpc.channel-service.webhook.verify.v1`
+  (`WEBHOOK_VERIFY_RPC_SUBJECT`): `api-gateway` requests, `channel-service`'s
+  `WebhookVerifyRpcServer` responds.
+- **Subscribe-only relays over JetStream-published subjects** — `ai-agent-gateway`
+  and `YoizenClawExecutionClient` open *core* subscriptions on the `evt.…`
+  execution-lifecycle subjects (`createNatsMultiSubjectObservable`) to relay them
+  to SSE without burning a durable; the messages themselves are still published
+  and retained through JetStream.
+
+> Namespace caveat: `platform.tenant.deleted` (and `platform.tenant.ready`) are
+> published with `nc.publish`, but they fall inside `PLATFORM_TENANTS`'s
+> `platform.tenant.>` filter, so JetStream also ingests a copy that no consumer
+> reads. Only the `rt.` namespace is genuinely bound by no stream.
 
 ## Cluster Topology
 
@@ -52,30 +77,37 @@ The dev cluster uses a single NATS node with no per-environment NATS account sep
 └─────────────────────────────────────────────────┘
 ```
 
-| Environment | Nodes | Notes |
-|-------------|-------|-------|
-| prod | 3 | Quorum for replication; tolerates 1-node failure |
-| staging | 1–3 | 1 node is sufficient; 3 nodes if prod simulation is needed |
-| dev | 1 | No replication; local or CI use |
+This repo ships **one** deployable configuration — the dev one. There is no
+prod or staging overlay to describe here; the 3-node picture above is the
+`infrastructure/base/nats` manifest as written, not a cluster that exists.
+
+| Layer | Nodes | PVC | Notes |
+|-------|-------|-----|-------|
+| `infrastructure/base/nats/statefulset.yaml` | 3 | 50 Gi | Base manifest: quorum-capable shape, never deployed as-is |
+| dev overlays | 1 | 2 Gi | All four dev bases pin `replicas: 1` and the `data` volumeClaimTemplate to 2 Gi — `overlays/local/{local-base,mongo-local-base}/patches/nats-resources.yaml` and `overlays/orbstack/{orbstack-base,mongo-orbstack-base}/patches/nats.yaml` (each family has a postgres and a mongo twin). This is what actually runs. |
 
 ### Kubernetes StatefulSet
 
-NATS is deployed as a StatefulSet in the `nats` namespace. Each pod has a dedicated 50 Gi PersistentVolumeClaim for JetStream storage.
+NATS is deployed as a StatefulSet named `nats` into the
+**`support-services-dev`** namespace (set by each overlay's `namespace:` field
+— `overlays/local/dev`, `overlays/local/mongo-dev`, `overlays/orbstack/dev`,
+`overlays/orbstack/mongo-dev`, `overlays/mongo-dev`).
 
 ```
-┌─────────────── Kubernetes Namespace: nats ───────────────┐
-│                                                           │
-│  StatefulSet: nats  (replicas: 3)                         │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐               │
-│  │  nats-0  │  │  nats-1  │  │  nats-2  │               │
-│  │ PVC 50Gi │  │ PVC 50Gi │  │ PVC 50Gi │               │
-│  └──────────┘  └──────────┘  └──────────┘               │
-│                                                           │
-│  Service: nats-headless  (cluster-internal client access) │
-└───────────────────────────────────────────────────────────┘
+┌────── Kubernetes Namespace: support-services-dev ───────┐
+│                                                          │
+│  StatefulSet: nats  (base replicas: 3 → dev overlay: 1)  │
+│  ┌──────────┐                                            │
+│  │  nats-0  │   PVC `data` 50Gi in base, 2Gi in dev      │
+│  └──────────┘                                            │
+│                                                          │
+│  Service: nats-headless (clusterIP: None, serviceName)   │
+└──────────────────────────────────────────────────────────┘
 ```
 
-Source: `infrastructure/base/nats/statefulset.yaml`
+Source: `infrastructure/base/nats/statefulset.yaml` +
+`infrastructure/base/nats/service.yaml`, patched by the two overlay families
+listed in the table above.
 
 ## Stream Topology
 
@@ -83,14 +115,14 @@ Source: `infrastructure/base/nats/statefulset.yaml`
 flowchart TD
     subgraph ingress["INGRESS-<tenant> (JetStream stream)"]
         in_subj[Subjects: evt.<tenant>.>]
-        in_prod[Producers: api-gateway, channel-service, registry-service, agent-admin-service, agent-memory-service, ai-agent-gateway, provisioning-service]
-        in_cons[Consumers: audit-service, channel-service, connector-admin, usage-aggregator-service, workflow-service, agent-ai-service]
+        in_prod[11 producers: api-gateway, channel-service, registry-service, agent-admin-service, agent-memory-service, agent-scheduler-service, ai-agent-gateway, agent-ai-service, connector-runtime, provisioning-service, workflow-service]
+        in_cons[10 consuming services: agent-admin-service, agent-ai-service, ai-agent-gateway, audit-service, channel-service, connector-admin, connector-runtime, tracking-ingester-service, usage-aggregator-service, workflow-service]
     end
 
     subgraph dlqt["DLQ-<tenant> (JetStream stream)"]
         dlqt_subj[Subjects: dlq.<tenant>.>]
-        dlqt_prod[Producer: tenant-scoped DLQ publishers]
-        dlqt_cons[Consumer: usage-aggregator-service]
+        dlqt_prod[Producers: MultiTenantConsumerManager term path + channel-service claim-check store failure]
+        dlqt_cons[Consumers: usage-aggregator-service agg-DLQ, tracking-ingester-service trk- family]
     end
 
     subgraph dlqg["DLQ (global JetStream stream)"]
@@ -103,10 +135,19 @@ flowchart TD
         payload_role[Claim-check payload storage for large messages]
     end
 
-    subgraph core["Core NATS"]
-        core_subj[platform.tenant.deleted]
+    subgraph core["Core NATS transport (nc.publish / nc.subscribe)"]
+        core_tenant["platform.tenant.deleted — teardown fan-out<br/>(ALSO bound by PLATFORM_TENANTS via platform.tenant.&gt; — see the caveat under 'Where core NATS is used')"]
+        core_rt["rt.&lt;tenant&gt;.exec.&lt;id&gt;.token / .cancel — runtime token streaming<br/>(stream-free by design)"]
+        core_rpc["rpc.channel-service.webhook.verify.v1 — request/reply<br/>(stream-free)"]
     end
 ```
+
+The producer list is the same census as
+[`envelope.md`](envelope.md) §2.1; the consumer list is every service that
+registers a `MultiTenantConsumerManager` with `TENANT_STREAM_PATTERN` /
+`INGRESS_STREAM_PATTERN`. Individual durables — several services own more than
+one — are in the [Durable Consumer Lifecycle](#durable-consumer-lifecycle-per-tenant)
+table below.
 
 ## Per-Tenant Stream Limits
 
@@ -183,7 +224,7 @@ Tenant streams are pre-provisioned by `tenant-service` during tenant creation, w
 Provisioning happens at three layers, in priority order:
 
 1. **Primary (eager, during tenant creation)** — `tenant-service`'s `TenantProvisioningExecutor` invokes `ensureTenantIngressStream(jsm, tenantId)` as a dedicated `nats.ensure-ingress-stream` phase, executed **after** OLTP + usage Postgres readiness and **before** runtime consumers such as `agent-ai-service` attach JetStream durables. This closes the race where a consumer pod would otherwise boot before the tenant stream exists and fail to bind its durable consumer.
-2. **Safety net (lazy, before first publish)** — Producers (`api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `agent-memory-service`, `ai-agent-gateway`, `provisioning-service`) call `ensureTenantIngressStream(jsm, tenantId)` before publishing to `evt.<tenant>.>`. This guards against tenants that pre-date the primary path or whose stream was pruned externally.
+2. **Safety net (lazy, before first publish)** — Producers (`api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `agent-memory-service`, `ai-agent-gateway`, `provisioning-service`) call `ensureTenantIngressStream(jsm, tenantId)` before publishing to `evt.<tenant>.>`. This guards against tenants that pre-date the primary path or whose stream was pruned externally. Note this is a **subset** of the 11 producers in the topology diagram above — these 7 are the ones that call the lazy ensure; the rest publish without it and rely on layer 1.
 3. **Consumer reconciliation (lazy, at runtime startup and interval)** — TypeScript consumers such as `agent-ai-service` use `MultiTenantConsumerManager` to list existing `INGRESS-*` streams, bind the durable consumer, and periodically reconcile newly-created tenant streams. This layer binds consumers; it does not create missing tenant streams.
 
 Common contract across provisioning and consumer-binding layers:
@@ -213,10 +254,13 @@ Code references:
   `channel-webhook-ingress`, `connector-runtime-invoke` (async `connectors.invoke()`
   transport, see below), `execution-audit`, `ingestion-worker`,
   `skb-ingestion-worker`, `workflow-projector`, `workflow-triggers`.
-  Declared elsewhere: `tenant-provisioner` (`packages/shared/src/tenant-events.ts:42`),
-  `gateway-audit-writer` (`packages/shared/src/constants.ts:84`),
-  `agg-INGRESS` / `agg-DLQ` (`services/usage-aggregator-service/src/config.ts:46-51`),
-  and the `trk-` family (`services/tracking-ingester-service/src/lib/consume-events.ts:44-48`).
+  Declared elsewhere: `tenant-provisioner` (`TENANT_PROVISIONER_DURABLE`,
+  `packages/shared/src/tenant-events.ts`), `gateway-audit-writer`
+  (`GATEWAY_AUDIT_CONSUMER_NAME`, `packages/shared/src/constants.ts`),
+  `agg-INGRESS` / `agg-DLQ` (`USAGE_INGRESS_DURABLE` / `USAGE_DLQ_DURABLE`
+  defaults in `services/usage-aggregator-service/src/config.ts`), and the
+  `trk-` family (`TRK_DURABLE_PREFIX`,
+  `services/tracking-ingester-service/src/lib/consume-events.ts`).
   Note these are DURABLE names, not service names — several services own more than one.
 
 ### Connector-invoke transport pair (rides `INGRESS-<tenant>`, no dedicated stream)

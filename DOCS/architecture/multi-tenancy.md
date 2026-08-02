@@ -20,9 +20,9 @@ at the infrastructure layer. NATS runs as a **single account with no ACLs per te
 1. **NATS subjects** carry a `evt.<tenant>.` prefix on every message.
 2. **NATS streams** are per-tenant: `INGRESS-<TENANT>`, `DLQ-<tenant>`, `PAYLOAD-<tenant>`.
    Note the case asymmetry — it is real, not a typo. `getTenantStreamName`
-   upper-cases the suffix (`packages/shared/src/tenant-stream.constants.ts:58-59`),
-   while `buildDlqStreamName` (`packages/shared/src/channel.constants.ts:80-82`)
-   and `buildClaimCheckBucket` (`packages/shared/src/channel.utils.ts:29-31`)
+   upper-cases the suffix (`packages/shared/src/tenant-stream.constants.ts`),
+   while `buildDlqStreamName` (`packages/shared/src/channel.constants.ts`)
+   and `buildClaimCheckBucket` (`packages/shared/src/channel.utils.ts`)
    interpolate the tenant id verbatim. A consumer matching the wrong case binds
    nothing.
 3. **PostgreSQL** is per-tenant: a logical database on the shared CNPG cluster (`shared` tier)
@@ -250,7 +250,10 @@ The initial schema is applied via migrations at provisioning time (shared tier) 
 #### Platform PostgreSQL (operational data)
 
 Shared platform data (tenants table, users, connector configuration, schedules) lives in the
-platform PostgreSQL instance in the `platform-services-dev` namespace.
+shared CNPG cluster, reached as `postgres.support-services-dev.svc.cluster.local`
+(`POSTGRES_HOST` in `knative/services/overlays/local/postgres-dev/env-patches.yaml`).
+`platform-services-dev` is the namespace of the SERVICES, not of the database —
+all backing stores (Postgres, NATS, Redis) live in `support-services-dev`.
 
 #### NATS Object Store per-tenant (claim-check)
 
@@ -259,7 +262,7 @@ Large payloads (> 256 KB) are not carried inside the NATS envelope. They are sto
 
 TTL: 7 days (aligned with the `INGRESS-<TENANT>` stream retention).
 
-See [../../messaging/claim-check.md](../messaging/claim-check.md) for the full contract.
+See [`messaging/claim-check.md`](../messaging/claim-check.md) for the full contract.
 
 #### Redis (application cache)
 
@@ -271,7 +274,7 @@ auth/gateway public-route sync. The cache keys include the tenant ID where isola
 
 | Stream | Subjects | Retention | Purpose |
 |---|---|---|---|
-| `INGRESS-<TENANT>` | `evt.<tenant>.>` | 7 days / 256 MB | All events for the tenant |
+| `INGRESS-<TENANT>` | `evt.<tenant>.>` | Tier-dependent since 2026-08-01 (`free` 7d/1 GiB, `pro` 14d/5 GiB, `enterprise` 30d/20 GiB, clamped by the environment ceilings). The flat `CHANNEL_STREAM_MAX_AGE_NS`/`CHANNEL_STREAM_MAX_BYTES` (7 days / 256 MB) is only the lazy-ensure fallback — see [`../messaging/tenant-messaging-tiers.md`](../messaging/tenant-messaging-tiers.md) | All events for the tenant |
 | `DLQ-<tenant>` | `dlq.<tenant>.>` | 30 days / 512 MB | Permanently-failed messages |
 | `PAYLOAD-<tenant>` | — (Object Store) | 7 days / 512 MB | Claim-check payload blobs |
 
@@ -279,9 +282,9 @@ Name construction functions:
 
 | Function | Returns | File |
 |---|---|---|
-| `getTenantStreamName(tenant)` | `INGRESS-<TENANT>` (upper-cased) | `packages/shared/src/tenant-stream.constants.ts:58-59` |
-| `buildDlqStreamName(tenant)` | `DLQ-<tenant>` (verbatim) | `packages/shared/src/channel.constants.ts:80-82` |
-| `buildClaimCheckBucket(tenant)` | `PAYLOAD-<tenant>` (verbatim) | `packages/shared/src/channel.utils.ts:29-31` |
+| `getTenantStreamName(tenant)` | `INGRESS-<TENANT>` (upper-cased) | `packages/shared/src/tenant-stream.constants.ts` |
+| `buildDlqStreamName(tenant)` | `DLQ-<tenant>` (verbatim) | `packages/shared/src/channel.constants.ts` |
+| `buildClaimCheckBucket(tenant)` | `PAYLOAD-<tenant>` (verbatim) | `packages/shared/src/channel.utils.ts` |
 
 > `buildIngressStreamName` removed 2026-07-31 (envelope-drift T07) —
 > `getTenantStreamName` is the only ingress-name builder. The two used to
