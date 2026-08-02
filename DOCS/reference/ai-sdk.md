@@ -1,6 +1,11 @@
 # Vercel AI SDK v6 — Technical Reference for NestJS Agent Services
 
-> SDK version: **6.0.197** (`ai: ^6.0.197`) | Provider packages: `@ai-sdk/openai ^3.0.68`, `@ai-sdk/anthropic ^3.0.81` | Verified against `services/agent-ai-service/package.json`
+> SDK version: **6.0.197** (`ai: ^6.0.197`) | Provider packages: `@ai-sdk/openai ^3.0.68`, `@ai-sdk/anthropic ^3.0.81`, `@ai-sdk/google ^3.0.80`, `@ai-sdk/mcp ^1.0.46` | Verified against `services/agent-ai-service/package.json`
+>
+> This page is a reference for the **upstream Vercel AI SDK**, not a description of
+> this repo's code. Only the version line above and §13's per-row status column make
+> claims about our services. For what `agent-ai-service` actually does, read
+> [`../agents/execution.md`](../agents/execution.md) and the service README.
 
 ---
 
@@ -1037,6 +1042,11 @@ const { messages, sendMessage } = useChat({
 ## 12. NestJS Agent Service Architecture
 
 ### Recommended module structure
+
+Generic guidance, **not** this repo's layout: `agent-ai-service` nests everything one
+level deeper under `src/modules/` (`src/modules/llm/llm-executor.service.ts`,
+`src/modules/tools/`, …) and keeps middleware in `src/modules/llm/rag-middleware.ts`
+rather than a `middleware/` directory.
 
 ```
 src/

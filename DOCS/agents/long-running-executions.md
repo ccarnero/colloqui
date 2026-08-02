@@ -18,8 +18,9 @@ agents. Runtime mechanics of a single `agentCall` live in
 ## The contract in five lines
 
 1. **You get a handle immediately.** `POST /api/runtime/executions` answers
-   **202** with `{ executionId, status: "accepted" }` in milliseconds
-   (`services/ai-agent-gateway/src/modules/executions/executions.controller.ts:29-37`).
+   **202** with `{ executionId, status: "accepted" }` in milliseconds — the
+   `@Post()` handler on `ExecutionsController` (`@Controller("runtime/executions")`)
+   is annotated `@HttpCode(HttpStatus.ACCEPTED)`.
    It publishes `execution_requested` to JetStream and returns — it never waits
    for the agent.
 2. **The connection closes.** No live HTTP connection exists while the agent
@@ -70,8 +71,10 @@ Rules for the poller:
 
 Use the `agentCall` action. The activity submits to JetStream and waits on core
 NATS — it does **not** traverse the api-gateway, so the 30 s proxy fetch
-timeout of the HTTP path is irrelevant to it
-(`services/workflow-service/src/temporal/activities/agent-call.activity.ts:88-99`).
+timeout of the HTTP path is irrelevant to it (`executeAgentCall` in
+`services/workflow-service/src/temporal/activities/agent-call.activity.ts` drives
+`YoizenClawExecutionClient.executeAndWait`, whose submit is `js.publish` and whose
+wait is `nc.subscribe`).
 Temporal's heartbeats cover the wait; you write nothing extra.
 
 ```json
@@ -83,9 +86,11 @@ Temporal's heartbeats cover the wait; you write nothing extra.
 
 ### 1. The agent-ai consumer is SERIAL per tenant
 
-One consumer runner per tenant stream, no `concurrency` option, so it takes the
-serial path (`packages/database/src/multi-tenant-consumer-manager.ts:324-334`
-→ `packages/database/src/nats-consumer-runner.ts:427-431`). While a 120 s
+One consumer runner per tenant stream. `MultiTenantConsumerManager` builds each
+`NatsConsumerRunner` from `config.runnerOptions`, and agent-ai-service passes only
+`workingIntervalMs` there — no `concurrency`. `NatsConsumerRunner` defaults
+`concurrency` to `1` and, for `1`, dispatches to `runSerial` instead of
+`runConcurrent`. While a 120 s
 execution of tenant X is in flight, **other agent messages of that same tenant
 queue behind it**. They are not lost and not redelivered — `num_ack_pending`
 reads 1 and drains — but they wait.
@@ -114,7 +119,7 @@ The ones a feature author actually feels:
 | > 3600 s before you poll | The Redis result record has expired. Subscribe to `execution_completed` instead of polling that late. |
 
 The one budget that surprises people is the **30 s** api-gateway → ai-agent-gateway
-proxy fetch (`services/api-gateway/src/constants.ts:5`). It is fine because it
+proxy fetch (`PROXY_TIMEOUT_MS` in `services/api-gateway/src/constants.ts`). It is fine because it
 only guards sub-second hops (a JetStream publish and a Redis GET). It would
 only become a problem if someone made the submit endpoint synchronous — do not.
 

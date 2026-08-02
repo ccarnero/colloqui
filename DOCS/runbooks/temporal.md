@@ -115,8 +115,10 @@ Expected resources (after bootstrap + healthy steady-state):
   1 instance in dev overlays; 2 instances HA in base.
 
 > The `postgres-temporal-visibility` CNPG cluster described in
-> `runbooks/temporal-visibility-split.md` is **not active** in developer mode.
-> Both `POSTGRES_SEEDS` and `VISIBILITY_POSTGRES_SEEDS` point to
+> [`archive/temporal-visibility-split.md`](./archive/temporal-visibility-split.md)
+> is **not active** in developer mode. Its manifest
+> (`infrastructure/base/postgres/postgres-temporal-visibility-cluster.yaml`) still
+> exists, but both `POSTGRES_SEEDS` and `VISIBILITY_POSTGRES_SEEDS` point to
 > `postgres-temporal-rw`.
 
 ### 3.3 Image versions (all pinned, no `:latest`)
@@ -380,9 +382,13 @@ default DB and visibility DB, but always against `POSTGRES_SEEDS` — it
 does not honour `VISIBILITY_POSTGRES_SEEDS` for the migration phase.
 
 **In developer mode this is not a problem** because both env vars point to
-the same cluster (`postgres-temporal-rw`). If you ever split visibility
-onto its own cluster, re-read `runbooks/temporal-visibility-split.md` for
-the workaround (`ensure-temporal-visibility-schema.sh`).
+the same cluster (`postgres-temporal-rw`). If you ever split visibility onto
+its own cluster, read
+[`archive/temporal-visibility-split.md`](./archive/temporal-visibility-split.md)
+for the workaround — but note the helper it describes,
+`infrastructure/scripts/ensure-temporal-visibility-schema.sh`, was **deleted from
+the repo** (see `archive/README.md`), so it must be rewritten before it can be
+run.
 
 ---
 

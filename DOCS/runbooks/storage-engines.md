@@ -61,11 +61,25 @@ Each migrated NestJS service uses:
 ## Port-forward
 
 ```bash
-STORAGE_ENGINE=postgres ./port-forward.sh dev   # 5432 shared postgres
-STORAGE_ENGINE=mongo ./port-forward.sh dev      # 27017 platform, 27018 usage
+./port-forward.sh                               # api-gateway, admin-console, nats,
+                                                # temporal-ui, grafana, tempo
+STORAGE_ENGINE=mongo ./port-forward.sh          # the same set + mongo-platform:27017
+                                                # and mongo-usage:27018
 ```
 
-Temporal Postgres ports are forwarded in **both** modes.
+`./port-forward.sh` takes the environment as a positional arg defaulting to `dev`, so
+the bare form is equivalent to `./port-forward.sh dev`.
+
+**Postgres is NOT forwarded by this script** — in either engine mode. `SERVICES` is
+`(api-gateway admin-console)` and `SUPPORT_SERVICES` is
+`(nats temporal-ui grafana tempo)`; the only conditional additions are the two Mongo
+targets under `STORAGE_ENGINE=mongo`. There is no `5432` anywhere in the script and no
+Temporal-Postgres forward. Reach Postgres by hand:
+
+```bash
+kubectl port-forward -n support-services-dev svc/postgres 5432:5432
+kubectl port-forward -n support-services-dev svc/postgres-temporal-rw 5433:5432
+```
 
 ## Testing
 
@@ -83,7 +97,7 @@ Temporal Postgres ports are forwarded in **both** modes.
 
 ## Switching engines on an existing cluster
 
-Dev data is disposable. Changing `--storage-engine` without a full reset leaves tenants provisioned for the previous engine. `bootstrap-orbstack-osx.sh` has no `--reset` flag — clean up manually before switching:
+Dev data is disposable. Changing `--storage-engine` without a full reset leaves tenants provisioned for the previous engine. `bootstrap-orbstack-osx.sh` has no `--reset` flag (its only `reset` match is an unrelated comment) — clean up manually before switching:
 
 ```bash
 kubectl delete namespace support-services-dev platform-services-dev

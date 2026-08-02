@@ -207,11 +207,17 @@ layout themselves.
 ## Known limitation (as of this change)
 
 The **Open in Temporal** data link (`workflow_id`/`run_id` columns and node-graph
-details) uses the workflow's internal `executionId`, NOT Temporal's own `workflowId` —
-the current bus event published by `execution-completed-publisher.activity.ts` does not
-carry Temporal's real workflow/run identifiers. The link may 404 until that publisher is
-extended (tracked as a follow-up, not part of this change). See
-`.sdd/changes/trace-visualization/apply-progress.md` (T4/T6) for the full analysis.
+details) uses the workflow's internal `executionId`, NOT Temporal's own `workflowId`,
+so it may 404.
+
+Partially closed since this was written: `publishExecutionStartedEvent` — which now
+lives in the same `execution-completed-publisher.activity.ts` — DOES carry
+`workflowId` (`<tenant>:<name>:<idempotencyKey|nanoid>`) and `runId`. It is
+`publishExecutionCompletedEvent` that still does not: its payload is only
+`{ executionId, status, workflowName? }`. Whether the link resolves therefore
+depends on which event the row came from. See
+`.sdd/changes/trace-visualization/apply-progress.md` (T4/T6) for the original
+analysis.
 
 ## Payload column (Message traces detail table)
 

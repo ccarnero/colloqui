@@ -30,7 +30,7 @@ flowchart LR
 - Resolves matching definitions where `trigger.type = message_received`.
 - Applies trigger filters (`accountIds`, `channels`, `providers`, `patterns`).
 - Supports `exclusive` and `shared` trigger modes: when any matching definition has `mode: "exclusive"`, only the first exclusive one fires; otherwise all shared workflows fire.
-- Starts Temporal workflows with idempotency (`idempotencyKey = envelope.idempotencykey + def.id`) and causal-chain propagation (`causation_id`, `correlation_id`, `transport.depth` extracted from the triggering envelope per DOCS/messaging/envelope.md §6).
+- Starts Temporal workflows with idempotency (`idempotencyKey = "${envelope.idempotencykey}:${def.id}"`, omitted entirely when the envelope carries no `idempotencykey`) and causal-chain propagation (`causation_id`, `correlation_id`, `transport.depth` extracted from the triggering envelope per DOCS/messaging/envelope.md §6).
 
 Incoming large payloads (>256 KB) are transparently inflated before the handler runs via the claim-check middleware in `MultiTenantConsumerManager.wrapHandler` (`packages/database/src/multi-tenant-consumer-manager.ts`). The consumer itself is unaware of the claim-check; it always sees a fully inflated envelope.
 
@@ -53,12 +53,15 @@ Current supported actions in `runWorkflow`:
 |---|---|---|---|
 | `endpointCall` | `connector-runtime` | 30 s (5 attempts) | Outbound HTTP call (connector-aware when adapterId/endpointId configured) |
 | `serviceCall` | `connector-runtime` | 30 s (5 attempts) | Internal service HTTP call (mirror/fallback resolution) |
+| `mcpCall` | `connector-runtime` | 30 s (5 attempts) | Calls a tool on a connected MCP server — shares the `http` proxy with `endpointCall`/`serviceCall`; see [mcp-connections.md](../architecture/mcp-connections.md) |
 | `agentCall` | `workflow-orchestrator` (local) | 15 m start-to-close, 30 s heartbeat (3 attempts) | Agent execution via `YoizenClawExecutionClient` over JetStream |
-| `jsFunction` | `workflow-orchestrator` (local) | 30 s | Inline JavaScript execution |
-| `serviceBusCall` | `workflow-orchestrator` (local) | 30 s | Publishes message to NATS subject for tenant |
-| `channelSend` | `workflow-orchestrator` (local) | 30 s | Publishes channel send command envelope |
+| `jsFunction` | `workflow-orchestrator` (local) | 30 s (3 attempts) | Inline JavaScript execution |
+| `serviceBusCall` | `workflow-orchestrator` (local) | 30 s (3 attempts) | Publishes message to NATS subject for tenant |
+| `channelSend` | `workflow-orchestrator` (local) | 30 s (3 attempts) | Publishes channel send command envelope |
 | `branch` | workflow control | — | Parallel branch execution; branch results are merged back into the main context |
 | `conditional` | workflow control | — | Sequential condition evaluation; first matching branch executes |
+
+These nine are the whole `WorkflowAction` union in `packages/shared/src/workflow.interfaces.ts`; `runWorkflow`'s dispatch switch has exactly one `case` per member.
 
 Notes:
 
@@ -74,20 +77,23 @@ Notes:
 flowchart LR
     wfw[workflow-service-worker]
     wfw --> local[workflow-orchestrator queue\njsFunction / serviceBusCall\nchannelSend / agentCall]
-    wfw --> crt[connector-runtime queue\nendpointCall / serviceCall]
+    wfw --> crt[connector-runtime queue\nendpointCall / serviceCall / mcpCall]
     wfw --> branch[branch control\nparallel sub-actions]
     wfw --> cond[conditional control\nexclusive branch evaluation]
 ```
 
-## Execution Completion Publisher
+## Execution Lifecycle Publishers
 
-At the end of every `runWorkflow` execution (success or failure), a best-effort `publishExecutionCompletedEvent` activity fires on the orchestrator queue (`startToCloseTimeout: "5s"`, max 2 attempts). It emits:
+One `publisher` activity proxy on the orchestrator queue (`startToCloseTimeout: "5s"`, max 2 attempts) carries the whole best-effort tracking family, all defined in `execution-completed-publisher.activity.ts` and all publishing to `INGRESS-<tenant>`:
 
-```
-evt.<tenant>.workflow-service.workflow.internal.native.execution_completed.v1
-```
+| Activity | Subject |
+|---|---|
+| `publishExecutionStartedEvent` | `evt.<tenant>.workflow-service.workflow.internal.native.execution_started.v1` |
+| `publishExecutionCompletedEvent` (every run, success or failure) | `evt.<tenant>.workflow-service.workflow.internal.native.execution_completed.v1` |
+| `publishActionStartedEvent` / `publishActionCompletedEvent` | per-action siblings in the same family |
+| `publishConditionEvaluatedEvent` | condition-evaluation sibling |
 
-to `INGRESS-<tenant>`. The `workflow-api`'s `ExecutionProjectorService` consumes this subject (durable `workflow-projector`) and batches UPDATEs into `workflow_executions`, decoupling the hot-path from Postgres writes.
+Only the `execution_completed` subject is projected: the `workflow-api`'s `ExecutionProjectorService` binds durable `workflow-projector` with `filterSubject = evt.*.workflow-service.workflow.internal.native.execution_completed.v1` and batches UPDATEs into `workflow_executions` (batch cap 100), decoupling the hot path from Postgres writes.
 
 ## Task Queue Topology and Scaling
 

@@ -36,6 +36,14 @@ informed: ""
 
 Pointers only; the decision text above is unchanged.
 
-- Tier enum and default: `TenantDatabaseTier` in `packages/shared/src/tenant-database-tier.ts:1-4`; the platform `tenants` table defaults to `shared` (`services/tenant-service/src/providers/platform-postgres.provider.ts:21`).
+- Tier enum and default: `TenantDatabaseTier` (`Shared` / `Dedicated`) in
+  `packages/shared/src/tenant-database-tier.ts`; the platform `tenants` table's
+  `tier` column is declared `NOT NULL DEFAULT '${TenantDatabaseTier.Shared}'`
+  with a matching CHECK constraint in
+  `services/tenant-service/src/providers/platform-postgres.provider.ts`.
+- Both tiers are implemented in `PostgresProvider` (`postgres.provider.ts`):
+  `provisionShared` does `CREATE ROLE`/`CREATE DATABASE` on the CNPG cluster and
+  then `createSharedExternalNameService`, while the dedicated branch calls
+  `createNamespacedStatefulSet` — matching the decision as recorded.
 - Provisioning: `services/tenant-service/src/modules/provisioning/tenant-provisioning-executor.service.ts`.
 - Connection management: `TenantConnectionManager` and `SharedTenantDatabaseMode` in `packages/database/src/tenant-connection-manager.ts` — see `packages/database/README.md`.

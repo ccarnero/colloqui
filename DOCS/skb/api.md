@@ -8,11 +8,18 @@
 
 ## Base URL
 
-All SKB endpoints are proxied through the API Gateway:
+All SKB endpoints are proxied through the API Gateway, which sets a global `api`
+prefix (`app.setGlobalPrefix("api")` in `services/api-gateway/src/main.ts`) and
+URI versioning with `defaultVersion: ["1", VERSION_NEUTRAL]` — so both the
+prefixed-only and the `/v1/` form resolve:
 
 ```
-https://{env}.{tenant}.yplatform.com/admin/structured-kb
+https://{env}.{tenant}.yplatform.com/api/admin/structured-kb
+https://{env}.{tenant}.yplatform.com/api/v1/admin/structured-kb
 ```
+
+Paths written below without the prefix are the **`agent-admin-service`-internal**
+paths (`@Controller("admin/structured-kb/...")`); prepend `/api` for gateway calls.
 
 ### Authentication
 
@@ -40,26 +47,25 @@ Creates a new SKB container for structured data ingestion.
 ```json
 {
   "name": "Sales Q1 2026",
-  "description": "Quarterly sales data for analysis",
-  "version": "v1",
-  "ingest_model": "gpt-4.1-mini",
-  "query_model": "gpt-4.1-mini",
-  "provider_config": {
-    "provider": "openai",
-    "apiKey": "sk-...",
-    "apiBaseUrl": "https://api.openai.com/v1"
-  }
+  "description": "Quarterly sales data for analysis"
 }
 ```
+
+`CreateSKBDto` declares exactly two fields, and the shared ValidationPipe runs with
+`whitelist: true, forbidNonWhitelisted: true` (`packages/observability` `bootstrap-fastify.ts`)
+— so sending `version` / `ingest_model` / `query_model` / `provider_config` is a
+**400**, not a silently ignored field. `SKBContainersRepository.create` inserts only
+`(id, tenant_id, name, description)`.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `name` | string | Yes | — | Container display name |
 | `description` | string | No | `null` | Human-readable description |
-| `version` | string | No | `"v1"` | Schema version tag |
-| `ingest_model` | string | No | `"gpt-4.1-mini"` | LLM model for schema analysis |
-| `query_model` | string | No | `"gpt-4.1-mini"` | LLM model for NL→SQL translation |
-| `provider_config` | object | No | `{}` | AI provider configuration |
+
+The model/version/provider columns exist but are **DDL defaults only**, not settable
+through the API: `version NOT NULL DEFAULT 'v1'`, `ingest_model DEFAULT 'gpt-4.1-mini'`,
+`query_model DEFAULT 'gpt-4.1-mini'`, `provider_config JSONB DEFAULT '{}'::jsonb`,
+`status NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','ready','failed'))`.
 
 **Response `201 Created`:**
 
@@ -177,12 +183,20 @@ foreign keys only fire on a hard `DELETE`, which never happens here.
 
 ## Files
 
-> **Current implementation status:** SKB file routes are not ready for use. The
-> api-gateway exposes `POST /admin/structured-kb/containers/:id/files`, but it
-> proxies to an `agent-admin-service` route that is not implemented. List,
-> delete, and schema file routes are also not implemented in
-> `agent-admin-service` controllers. Treat this section as the intended contract
-> until the missing agent-admin routes are added.
+> **Current implementation status (re-verified against the controllers):**
+> **Upload works end to end.** `AdminStructuredKBController` (api-gateway) proxies
+> `POST containers/:id/files` to `ContainersController.uploadFile`
+> (`@Post(":id/files")`, `@HttpCode(ACCEPTED)`), which validates the extension,
+> creates the `skb_files` row and publishes the ingestion event.
+> **List, delete and schema file routes do not exist** — neither
+> `ContainersController` nor `StructuredKBController` declares them, and the
+> gateway has no proxy for them. Those three sections below are an intended
+> contract, not a live API; calling them returns 404.
+>
+> The complete live SKB surface is seven routes: five on
+> `admin/structured-kb/containers` (`POST` 201, `GET`, `GET :id`, `PATCH :id`,
+> `DELETE :id` 204), plus `POST :id/files` (202) and
+> `POST admin/structured-kb/containers/:id/query`.
 
 ### Upload File for Ingestion
 
@@ -196,7 +210,6 @@ Uploads a CSV or Excel file for asynchronous ingestion. The file is queued via N
 
 ```json
 {
-  "file_id": "sales-q1-jan",
   "filename": "sales_january_2026.csv",
   "file_base64": "Um93LFByb2R1Y3QsUHJpY2UsRGF0ZQoxLExhcHRvcCw5OTkuOTksMjAyNi0wMS0xNQ==",
   "categories": ["sales", "q1"],
@@ -204,12 +217,14 @@ Uploads a CSV or Excel file for asynchronous ingestion. The file is queued via N
 }
 ```
 
+`UploadSKBFileDto` declares exactly these four fields — there is **no** caller-supplied
+`file_id`; the server generates the id with `randomUUID()`.
+
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `file_id` | string | Yes | Caller-assigned logical file identifier (unique per container) |
-| `filename` | string | Yes | Original filename with extension (`.csv`, `.xlsx`, `.xls`) |
-| `file_base64` | string | Yes | Base64-encoded file content |
-| `categories` | string[] | No | Tags for category-based filtering |
+| `filename` | string | Yes | Original filename with extension (`.csv`, `.xlsx`, `.xls` — `SKB_SUPPORTED_EXTENSIONS`) |
+| `file_base64` | string | Yes | Base64-encoded file content; empty decodes are rejected with 400 |
+| `categories` | string[] | No | Tags for category-based filtering (defaults to `[]`) |
 | `sheet_name` | string | No | Excel sheet to parse (first sheet if omitted) |
 
 **Response `202 Accepted`:**
@@ -217,14 +232,14 @@ Uploads a CSV or Excel file for asynchronous ingestion. The file is queued via N
 ```json
 {
   "fileId": "f7e6d5c4-b3a2-1098-7654-fedcba098765",
-  "fileLogicalId": "sales-q1-jan",
-  "status": "pending",
-  "message": "File queued for ingestion"
+  "status": "pending"
 }
 ```
 
-**Current behavior:** this gateway route is pending/broken because the target
-`agent-admin-service` route does not exist yet.
+Two fields only. Failure modes: **404** when the container does not belong to the
+tenant, **400** for an unsupported extension / invalid or empty base64, **503**
+(`"Failed to queue file for processing. Please try again."`) when the NATS publish
+fails after the `skb_files` row was already created.
 
 **Constraints:**
 
@@ -244,7 +259,8 @@ Uploads a CSV or Excel file for asynchronous ingestion. The file is queued via N
 GET /admin/structured-kb/containers/:id/files
 ```
 
-**Current behavior:** not implemented in `agent-admin-service`.
+**DOES NOT EXIST.** No `@Get(":id/files")` in `ContainersController` and no gateway
+proxy — this returns 404. Shape below is the intended contract only.
 
 **Response `200 OK`:**
 
@@ -284,7 +300,7 @@ GET /admin/structured-kb/containers/:id/files
 DELETE /admin/structured-kb/containers/:id/files/:fileId
 ```
 
-**Current behavior:** not implemented in `agent-admin-service`.
+**DOES NOT EXIST.** Returns 404. Shape below is the intended contract only.
 
 Removes a file and all its rows from the container.
 
@@ -305,7 +321,7 @@ Removes a file and all its rows from the container.
 GET /admin/structured-kb/containers/:id/files/:fileId/schema
 ```
 
-**Current behavior:** not implemented in `agent-admin-service`.
+**DOES NOT EXIST.** Returns 404. Shape below is the intended contract only.
 
 Returns the LLM-analyzed schema for a specific file.
 
@@ -399,8 +415,8 @@ Translates a natural language query to SQL, executes it against the container's 
 |-------|------|----------|---------|-------------|
 | `query` | string | Yes | — | Natural language query |
 | `categories` | string[] | No | `[]` | Filter by category tags |
-| `limit` | number | No | `100` | Max results (1–1000, validated by `QuerySKBDto`) |
-| `offset` | number | No | `0` | Pagination offset |
+| `limit` | number | No | **`10`** | Max results. `QuerySKBDto` validates `@Min(1) @Max(1000)`; `StructuredKBController` then applies `body.limit ?? 10` and re-checks the range. `SKBQueryService`'s own `options?.limit ?? 100` fallback never fires on this path, because the controller always passes a number. |
+| `offset` | number | No | `0` | Pagination offset (`@Min(0)`) |
 
 **Response `200 OK`:**
 
@@ -477,7 +493,7 @@ not implemented in `agent-admin-service`.
 | Endpoint | Limit | Window | Enforcement |
 |----------|-------|--------|-------------|
 | `POST .../query` | 30 requests | per minute per tenant per process | In-memory `SKBRateLimitGuard` in agent-admin-service |
-| `POST .../files` | — | — | Not implemented; gateway route target is missing |
+| `POST .../files` | — | — | No limiter — the route exists and is unthrottled |
 | All other endpoints | — | — | No SKB-specific limiter |
 
 The query limiter does not emit `X-RateLimit-*` response headers.
@@ -518,11 +534,11 @@ POST /files → NATS publish → Worker picks up → Parse file → LLM schema a
   → Type-cast rows → Batch INSERT (5000/batch) → Mark completed
 ```
 
-**Current implementation note:** the worker-side ingestion consumer exists,
-but the public file upload route is not wired end-to-end because the
-`agent-admin-service` file upload controller route is missing (nothing
-publishes the `skb_file_ingestion.v1` event the worker consumes). The
-worker pipeline's own wiring gaps — file-status updates targeting a
+**Current implementation note:** the pipeline is wired end to end.
+`ContainersController.uploadFile` creates the `skb_files` row and calls
+`publishSkbFileIngestion`, and `SKBIngestionWorkerService` consumes that event.
+(An earlier revision of this page said the publish side was missing — it is not.)
+The worker pipeline's own wiring gaps — file-status updates targeting a
 non-existent `skb_container_files` table, the `insertRows()` `as any` arity
 mismatch, and the `row_data`/`file_index` column mismatch — have been fixed:
 file-status updates now target `skb_files` (created by the schema

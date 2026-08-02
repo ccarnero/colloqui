@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS memories (
     scope       VARCHAR(20) NOT NULL CHECK (scope IN ('SESSION', 'USER', 'TENANT')),
     kind        VARCHAR(20) NOT NULL CHECK (kind IN ('PROMO', 'INCIDENT', 'NOTICE', 'PREFERENCE', 'FACT')),
     status      VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+    CONSTRAINT memories_status_check
+                CHECK (status IN ('PROPOSED', 'ACTIVE', 'REJECTED', 'ARCHIVED')),
     title       TEXT NOT NULL,
     content     TEXT NOT NULL,
     metadata    JSONB NOT NULL DEFAULT '{}',
@@ -81,17 +83,31 @@ sequenceDiagram
     else new entry
         AMS->>DB: INSERT memories (status = ACTIVE or PROPOSED)
     end
-    AMS->>N: publish memory.proposed event (if TENANT scope)
+    AMS->>N: publish memory_proposed (EVERY scope)
+    AMS->>DB: persist envelope id in metadata.proposedEventId
 
     alt scope = TENANT
         N-->>ADM: notification
         ADM->>AMS: PATCH /admin/memories/:id/approve
         AMS->>DB: UPDATE status = ACTIVE
-        AMS->>N: publish memory.approved event
+        AMS->>N: publish memory_published (causation = proposedEventId)
     end
 ```
 
-**Key rule:** Only `TENANT` scope memories start as `PROPOSED`. `SESSION` and `USER` scope memories become `ACTIVE` immediately regardless of who creates them.
+**Key rule:** Only `TENANT` scope memories start as `PROPOSED`. `SESSION` and `USER`
+scope memories become `ACTIVE` immediately regardless of who creates them. A
+`skipApproval` flag forces `ACTIVE` even for `TENANT` scope.
+
+**The `memory_proposed` event is NOT scope-gated.** `proposeMemory` publishes it on
+every successful create *and* on every `REPLACE`-kind upsert, whatever the scope, as
+long as a NATS publisher is wired. Only the approve/reject follow-ups are
+TENANT-specific, because only `TENANT` memories can be in `PROPOSED`.
+
+Event names, from `EVENT_TYPES` in `services/agent-memory-service/src/providers/nats.provider.ts`
+(each type is projected from its own subject by `buildEventTypeFromSubject`, so the
+two can never disagree): `memory_proposed`, **`memory_published`** (the approve
+event — not "approved"), `memory_rejected`, `memory_expired`. Publishing is
+best-effort: a failure is logged and leaves the memory row unchanged.
 
 ## API Endpoints
 
@@ -149,13 +165,13 @@ Supported actions:
 | `approve` | `id` | Approve a PROPOSED memory |
 | `reject` | `id` | Reject a PROPOSED memory |
 
-Output is capped at 16 384 characters; large list/search results are truncated to the first 5 items with a `truncated: true` flag.
+Output is capped at `MAX_OUTPUT_CHARS` (16 384). `buildTruncatedListOutput` enforces it in three steps, because an item count alone is not enough — one memory can exceed the whole budget: keep the first **5** items, clamp each item's `content` to **500** chars (suffixed `…[truncated]`), then drop items until the serialized envelope fits. The result carries `truncated: true` and a `message` stating the real total.
 
 `MemoryClientService` (`services/agent-ai-service/src/modules/memory/memory-client.service.ts`) calls `agent-memory-service` via HTTP using `MEMORY_SERVICE_URL` and passes `x-yoizen-tenant` on every request.
 
 ## Memory Context Injection
 
-Before each LLM call, `MemoryContextBuilderService` (`services/agent-ai-service/src/modules/memory/memory-context-builder.service.ts`) calls `MemoryClientService.search` with the incoming user message as the query (limit 10, status=ACTIVE). The top 5 results are joined into a summary string; all 10 are formatted as a bullet list. `formatForPrompt` returns:
+Before each LLM call, `MemoryContextBuilderService` (`services/agent-ai-service/src/modules/memory/memory-context-builder.service.ts`) calls `MemoryClientService.search` with the incoming user message as the query — an HTTP `GET {MEMORY_SERVICE_URL}/admin/memories?search=<message>&limit=10&status=ACTIVE`, i.e. the ADMIN endpoint, not the `/tools/*` one. The top 5 contents are joined with `"; "` into a summary string; up to 10 items are formatted as a bullet list. Any failure is caught and degrades to an empty context. `formatForPrompt` returns:
 
 ```
 Tenant memory summary:
@@ -166,7 +182,10 @@ Tenant memories:
 ...
 ```
 
-This block is prepended to the system prompt before the LLM sees the user message.
+`ContextBuilderService` puts this string on `memoryContext`, and
+`SessionChatService` **appends** it as the LAST section of the assembled system
+prompt (after the agent instructions, skill, and rules blocks) — it is not
+prepended.
 
 ## Sample Request/Response
 

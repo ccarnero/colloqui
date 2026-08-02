@@ -36,9 +36,13 @@ Recorded here rather than edited into the decision above, because a decision
 record states what was decided at the time.
 
 - The rationale cites "200 parallel" activities. The worker now sets
-  `maxConcurrentActivityTaskExecutions: 400`
-  (`services/connector-runtime/src/worker.ts:35`). The decision itself is
+  `maxConcurrentActivityTaskExecutions: 400` in
+  `services/connector-runtime/src/worker.ts`. The decision itself is
   unaffected; only the number moved.
+- The rationale says "generic HTTP execution activities (`endpointCall`,
+  `serviceCall`)". A third has since joined them on the same task queue:
+  `mcpCall` (`src/activities/mcp-call.activity.ts`). The separation argument is
+  unchanged; the activity set grew.
 - The rationale assumes KEDA-based scaling. KEDA is not in the codebase — guard
   K6b in `scripts/checks/doc-code-guards.sh` actively fails on any live
   `ScaledObject`, and developer mode runs a fixed replica count. The

@@ -2,7 +2,10 @@
 
 This document explains how UI actions in Angular consoles map to backend services and internal execution paths.
 
-All UI traffic goes through `api-gateway`.
+All UI traffic goes through `api-gateway`. The console's `environment.apiUrl` is
+`"/api"` (both `environment.ts` and `environment.prod.ts`), which matches the
+gateway's `app.setGlobalPrefix("api")` — so every path written below without the
+prefix is really `/api/<path>` on the wire.
 
 ## YoizenClaw Agent CRUD (admin-console)
 
@@ -102,8 +105,13 @@ sequenceDiagram
 
 ### Result Delivery Mode
 
-- Current playground uses polling (`GET /runtime/executions/:id` every ~1s, max wait ~5m).
-- Runtime gateway also exposes SSE stream endpoint (`/runtime/executions/stream`) for future UI use.
+- The playground polls: `PlaygroundComponent.waitForExecution()` loops on
+  `GET /api/runtime/executions/:id` with a fixed `setTimeout(1000)` between reads and a
+  `Date.now() + 300_000` deadline (5 min), returning on `completed`/`failed` and
+  throwing `Execution '<id>' timed out` otherwise. There is no backoff and no SSE.
+- The streaming endpoint is **`POST /api/runtime/executions/stream`** (`@Post("stream")`
+  on `RuntimeController`), not a GET. Today its consumer is the SDK's `runtime.stream()`,
+  not the console — see [runtime-streaming.md](../architecture/runtime-streaming.md).
 
 ## Channel Account Management (admin-console)
 

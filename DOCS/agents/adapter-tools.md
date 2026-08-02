@@ -62,7 +62,7 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 | `AdapterExecutorService` | `services/agent-ai-service/src/modules/tools/adapter-executor.service.ts` | Resolve adapter config from connector-admin, inject auth headers, execute HTTP call |
 | `ToolExecutorService` | `services/agent-ai-service/src/modules/tools/tool-executor.service.ts` | Dispatch to adapter or HTTP path based on tool definition |
 | `AdaptersService` (agent-admin) | `services/agent-admin-service/src/modules/adapters/adapters.service.ts` | Validate adapterRef existence on agent create/update |
-| `AdaptersController` | `services/agent-admin-service/src/modules/adapters/adapters.controller.ts` | `GET /admin/adapters` for UI |
+| `AdaptersController` | `services/agent-admin-service/src/modules/adapters/adapters.controller.ts` | `GET /admin/adapters` and `GET /admin/adapters/:adapterId` for the UI |
 | `AdaptersService` (admin-console) | `services/admin-console/src/app/core/services/adapters.service.ts` | Angular service for adapter API |
 | `ToolAdapterFormComponent` | `services/admin-console/src/app/features/automation/ai/tool-adapter-form.component.ts` | UI for adapter selection |
 
@@ -74,7 +74,9 @@ Traditional agent tools require explicit `endpoint` URLs and authentication cred
 |----------|---------|-------------|
 | `CONNECTOR_ADMIN_URL` | `http://connector-admin-api:3000` | Base URL for connector-admin API (consumed by `agent-ai-service`) |
 
-Note: The legacy `ADAPTER_SERVICE_URL`, `ADAPTER_TOOLS_ENABLED`, `ADAPTER_CACHE_TTL_SECONDS`, `ADAPTER_CACHE_HARD_TTL_SECONDS`, and `TOOL_RESPONSE_MAX_BYTES` variables referenced in older docs are **not present** in the current TypeScript implementation. The TypeScript `AdapterExecutorService` calls connector-admin directly on each tool invocation; there is no SWR cache layer at the agent-ai-service level.
+Read via `agentAiServiceConfig.connectorAdminUrl`.
+
+Note: The legacy `ADAPTER_SERVICE_URL`, `ADAPTER_TOOLS_ENABLED`, `ADAPTER_CACHE_TTL_SECONDS`, `ADAPTER_CACHE_HARD_TTL_SECONDS`, and `TOOL_RESPONSE_MAX_BYTES` variables referenced in older docs are **not present** in the current TypeScript implementation. The TypeScript `AdapterExecutorService` calls connector-admin directly on each tool invocation; there is no SWR cache layer at the agent-ai-service level. Response truncation still happens, but its ceiling is a hardcoded default parameter — `truncateResponse(data, maxBytes = 100_000)` — with no env override.
 
 ### Agent Tool Schema
 
@@ -203,6 +205,7 @@ When a connector ID does not exist in `connector-admin`:
 ```json
 {
   "success": false,
+  "output": null,
   "error": "Adapter not found: adapter-nonexistent"
 }
 ```
@@ -216,9 +219,13 @@ When an endpoint ID does not exist within the adapter:
 ```json
 {
   "success": false,
+  "output": null,
   "error": "Endpoint 'ep-nonexistent' not found in adapter 'adapter-crm-001'"
 }
 ```
+
+A missing tenant context short-circuits earlier still, with
+`"error": "Missing tenant context"`.
 
 ### Connector Admin Unavailable
 
@@ -232,20 +239,32 @@ Each adapter endpoint has a configurable timeout (default: 5000 ms, from the end
 
 ### Auth Credential Handling
 
-`AdapterExecutorService` supports five authentication types via `injectAuthHeaders`:
+`injectAuthHeaders` switches on four auth types; anything else — including the
+`none` default applied when the adapter has no `authType` — injects nothing:
 
 | Auth Type | Header Injected | Configuration |
 |-----------|----------------|---------------|
-| `none` | None | No credentials needed |
+| `none` (and any unrecognized value) | None — no `case` matches, the switch falls through | No credentials needed |
 | `api-key` | `X-Api-Key: {key}` (or `authConfig.headerName`) | `authConfig.key`, `authConfig.headerName` |
-| `bearer` | `Authorization: Bearer {token}` | `authConfig.token` or `authConfig.bearerToken` |
-| `basic` | `Authorization: Basic {base64}` | `authConfig.username`, `authConfig.password` |
+| `bearer` | `Authorization: Bearer {token}` | `authConfig.token`, `authConfig.bearerToken` or `authConfig.bearer_token` |
+| `basic` | `Authorization: Basic {btoa(user:pass)}` | `authConfig.username`, `authConfig.password` |
 | `oauth2-client` | `Authorization: Bearer {access_token}` | `authConfig.access_token` |
+
+Every case is no-clobber: an already-present header (e.g. one set by the endpoint
+config) is never overwritten by the injected credential.
 
 Key security principles:
 
 - **Resolved at execution time**: Credentials are fetched from `connector-admin` for each tool execution, never stored in agent configuration.
 - **Tenant isolation**: Every connector request includes the `X-Yoizen-Tenant` header. `connector-admin` enforces tenant-scoped access.
+- **SSRF guard**: `validateUrl` runs before the outbound call and rejects, in order:
+  unparseable URLs, non-`http(s)` protocols, `localhost`/`127.0.0.1`/`::1`, the
+  `169.254.169.254` cloud-metadata endpoint, link-local ranges (`169.254.`/`fe80:`),
+  and — for any dotted-quad hostname — the **RFC1918 private ranges** `10.0.0.0/8`,
+  `172.16.0.0/12` (second octet 16–31) and `192.168.0.0/16`
+  (`"Adapter URL must not target private/RFC1918 addresses"`). Note the private-range
+  check is literal-IP only: a hostname that *resolves* to a private address is not
+  caught, since there is no DNS resolution step before the `fetch`.
 
 ### Tenant Context Propagation
 

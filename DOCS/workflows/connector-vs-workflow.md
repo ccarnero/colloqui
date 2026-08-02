@@ -66,7 +66,7 @@ connector-admin resolves:
 tracedFetch to https://crm.example.com/api/customers/123
   with Authorization header
   ↓
-Return { status: 200, body: {...customer data...} }
+Return { status: 200, data: {...customer data...} }
 ```
 
 **Usage Pattern**:
@@ -91,7 +91,7 @@ const result = await client.activity.executeEndpointCall({
 })
 
 // Use result
-console.log(result.body.email)
+console.log(result.data.email)
 ```
 
 **Benefits**:
@@ -148,8 +148,9 @@ Workflow: processOrder
 > Current API split: `POST /workflows` creates or stores the definition only. Run it with
 > `POST /workflows/:id/execute`, then query one execution with
 > `GET /workflows/:id/executions/:executionId` or list executions with
-> `GET /workflows/:id/executions` (paginated: `{ items, total, page }`, query params
-> `page`/`pageSize`/`sort`).
+> `GET /workflows/:id/executions` (paginated: `{ items, total, page, pageSize }`, query
+> params `page`/`pageSize`/`sort`). `POST /workflows` answers **201**,
+> `POST /workflows/:id/execute` answers **202**, `DELETE /workflows/:id` answers **204**.
 
 - **State management**: All results stored in execution context
 - **Pseudocode**:
@@ -220,11 +221,11 @@ POST http://workflow-service/workflows
       name: "generateReceipt",
       args: {
         code: `
-          return {
+          (context) => ({
             orderId: context.request.orderId,
             transactionId: context.results.validatePayment.data.transactionId,
             timestamp: new Date().toISOString()
-          }
+          })
         `
       }
     }
@@ -282,7 +283,7 @@ GET http://workflow-service/workflows/wf_def_123/executions/exec_456
 
 **Limitations**:
 - ✗ Higher latency (queued orchestration)
-- ✗ Workflow step timeout (30s per activity)
+- ✗ Per-activity start-to-close ceiling: 30 s for `endpointCall`/`serviceCall`/`mcpCall`/`jsFunction`/`serviceBusCall`/`channelSend` — `agentCall` is the exception at 15 min with a 30 s heartbeat
 - ✗ No automatic compensation (manual rollback)
 - ✗ Temporal dependency required
 
@@ -332,6 +333,13 @@ Workflow: classifyAndRoute Incident
 // `agentId` + `message` (not `input`); there is no `timeout` or `systemPrompt`
 // field — the system prompt is configured on the agent itself in agent-admin-service.
 // Optional `context` is prior chat turns: `{ sender: "customer" | "agent", content }[]`.
+// The other optional fields are `conversationId`, `customerName`, `userId`, `channel`.
+//
+// DO NOT set `variables` in the args: `runWorkflow` dispatches
+// `{ ...resolvedArgs, variables: context.variables }`, so whatever you wrote is
+// overwritten by the engine's own five-scope `VariableResolutionContext`
+// (`system`/`workflow`/`previous`/`node`/`request`). Reference workflow data with
+// `{{...}}` templates in `message`/`context` instead.
 {
   activity: "agentCall",
   name: "classifyIncident",
@@ -340,11 +348,7 @@ Workflow: classifyAndRoute Incident
     message: "{{results.parseTicket.data.description}}",
     context: [
       { sender: "customer", content: "{{results.fetchHistory.data.lastMessage}}" }
-    ],
-    variables: {
-      customerId: "{{request.customerId}}",
-      timestamp: "{{workflow.startTime}}"
-    }
+    ]
   }
 }
 
@@ -477,9 +481,9 @@ Use case: Real-time CRM enrichment
 
 | Component | Concurrency (configured) | Notes |
 |-----------|--------------------------|-------|
-| **Connector Runtime** | 400 activities/replica (`maxConcurrentActivityTaskExecutions`) | Pure I/O worker; Knative KPA auto-scales horizontally |
-| **Workflow Worker** | 200 activity tasks, 150 workflow tasks per replica | Orchestration overhead adds latency relative to direct dispatch |
-| **Workflow API** | Knative KPA (min 1, max 5) | Stateless REST endpoint |
+| **Connector Runtime** | 400 activities/replica (`maxConcurrentActivityTaskExecutions`, `services/connector-runtime/src/worker.ts`) | Pure I/O worker. **Not a Knative Service** — `knative/services/base/connector-runtime.yaml` is a plain `apps/v1` `Deployment` (`replicas: 1`, RollingUpdate), as are its `connector-runtime-http` and `connector-runtime-invoke` siblings: a Temporal/JetStream pull worker has no inbound HTTP for the KPA to scale on. Scale it by replica count. |
+| **Workflow Worker** | 200 activity tasks, 150 workflow tasks per replica (`services/workflow-service/src/temporal/worker.ts`) | Also a plain Deployment (`workflow-worker.yaml`); orchestration overhead adds latency relative to direct dispatch |
+| **Workflow API** | Knative KPA, base `min-scale: 1` / `max-scale: 15` (`knative/services/base/workflow-service-api.yaml`) | Stateless REST endpoint. The dev overlay pins every ksvc to `min = max = 1`, so in developer mode there is exactly one replica. |
 
 **Recommendation**:
 - Use **Connector Runtime directly** for: Real-time, high-throughput, low-latency needs
@@ -495,7 +499,11 @@ Use case: Real-time CRM enrichment
 Connector Runtime:
   Caller provides: adapterId, endpointId, optional params
   Service resolves: URL, auth, headers, timeout, retries (via connector-admin)
-  Cache: Redis SWR (300s TTL, 60s stale window)
+  Cache: Redis stale-while-revalidate in the shared `AdapterClient`
+    soft TTL 60s  (DEFAULT_CACHE_TTL_S — when a refresh is attempted)
+    hard TTL 300s (soft x STALE_MULTIPLIER = 5 — how long stale data
+                   stays servable if connector-admin is down)
+    negative cache 10s (NEGATIVE_CACHE_TTL_S, so a new mirror propagates fast)
 
 Workflow Service (via connector-runtime):
   endpointCall action with adapterId/endpointId
@@ -575,10 +583,10 @@ POST /workflows
       name: "mergeData",
       args: {
         code: `
-          return {
+          (context) => ({
             user: context.results.fetchUserCRM.data,
             history: context.results.fetchUserHistory.data
-          }
+          })
         `
       }
     }
@@ -647,10 +655,9 @@ const result = await client.activity.executeEndpointCall({
   name: "classifyRequest",
   args: {
     agentId: "request-classifier",
-    message: "{{results.parseRequest.data.content}}",
-    variables: {
-      metadata: "{{results.fetchMetadata.data}}"
-    }
+    // Fold prior-step data into the message; `variables` in args is
+    // overwritten by the engine (see Scenario 3).
+    message: "{{results.parseRequest.data.content}} | meta: {{results.fetchMetadata.data}}"
   }
 }
 ```

@@ -7,36 +7,43 @@
 
 `channel-service` is the single service responsible for all channel I/O. It handles:
 
-- **Ingress**: receiving and verifying webhooks from Meta (WhatsApp, Instagram) and Telegram, then publishing canonical `ChannelEnvelope` events to NATS JetStream.
+- **Ingress**: receiving and verifying webhooks from Meta (WhatsApp, Instagram), Telegram and the generic HTTP channel, then publishing canonical `ChannelEnvelope` events to NATS JetStream.
 - **Auto-reply**: consuming canonical events and executing configured auto-reply rules.
 - **Egress**: sending outbound messages via the correct provider and shadow-publishing `sent` events.
 
-A `ChannelAccount` carries two discriminator fields — `channel` (`"whatsapp" | "instagram" | "telegram"`) and `provider` (`"meta" | "telegram"`) — that are embedded in every NATS subject token. The NATS bus, the envelope schema, and all downstream consumers are channel-agnostic.
+A `ChannelAccount` carries two discriminator fields — `channel` (`"whatsapp" | "instagram" | "telegram" | "http"`) and `provider` (`"meta" | "telegram" | "http"`), both declared in `packages/shared/src/channel.interfaces.ts` — that are embedded in every NATS subject token. The NATS bus, the envelope schema, and all downstream consumers are channel-agnostic.
 
 ## Implemented channels
 
-| Channel | Provider | Status |
-|---------|----------|--------|
-| WhatsApp | meta | Implemented |
-| Instagram | meta | Implemented |
-| Telegram | telegram | Implemented |
+| Channel | Provider | Direction | Status |
+|---------|----------|-----------|--------|
+| WhatsApp | meta | inbound + outbound | Implemented |
+| Instagram | meta | inbound + outbound | Implemented |
+| Telegram | telegram | inbound + outbound | Implemented |
+| HTTP | http | **inbound only** — `HttpProvider.sendMessage` always returns `{ success: false, error: "outbound not supported for http channel" }` | Implemented |
+
+The `http` channel is a generic JSON-in webhook: it accepts `{ from, text?, messageId?, timestamp?, type?, raw? }`, derives a deterministic `messageId` (sha1 of the top-level-sorted body, 16 hex chars) when the caller omits one, and authenticates with a shared token in `x-http-channel-token` compared via `timingSafeEqual`.
 
 ## Provider directory
 
 ```
 services/channel-service/src/providers/
-├── channel-router.ts                  ← IChannelProvider registry
+├── channel-router.ts                  ← ChannelRouter: aggregates every registry into Map<Channel, IChannelProvider>
 ├── meta/
-│   ├── meta-base.ts                   ← verifyWebhookSignature (shared HMAC-SHA256)
+│   ├── meta-base.ts                   ← verifyWebhookSignature (shared HMAC-SHA256), sendMetaMessage
 │   ├── meta-channel-provider.base.ts  ← base: signatureHeader, verifySignature
-│   ├── meta-token.ts                  ← Meta OAuth token exchange / refresh
-│   ├── provider-registry.ts
+│   ├── meta-token.ts                  ← exchangeForLongLivedToken (fb_exchange_token)
+│   ├── provider-registry.ts           ← ProviderRegistry: the Meta-family map
 │   ├── whatsapp/
 │   │   └── whatsapp.provider.ts       ← parseWebhook, sendMessage, buildSendPayload
 │   └── instagram/
 │       └── instagram.provider.ts      ← parseWebhook, sendMessage, buildSendPayload
-└── telegram/
-    └── telegram.provider.ts           ← signatureHeader, verifySignature, parseWebhook, sendMessage
+├── telegram/
+│   ├── telegram.module.ts
+│   └── telegram.provider.ts           ← signatureHeader, verifySignature, parseWebhook, sendMessage
+└── http/
+    ├── http.module.ts
+    └── http.provider.ts               ← inbound-only generic JSON webhook
 ```
 
 ## NATS subject format
@@ -66,8 +73,9 @@ When more than one account passes verification, a payload hint disambiguates:
 | **WhatsApp** | `phone_number_id` | `entry[].changes[].value.metadata.phone_number_id` |
 | **Instagram** | `ig_user_id` | `entry[].messaging[].recipient.id` |
 | **Telegram** | — (secret token is unique per account) | `x-telegram-bot-api-secret-token` header |
+| **HTTP** | — (shared token is unique per account) | `x-http-channel-token` header |
 
-For Telegram, a missing or non-matching secret token is an immediate `signature_mismatch`. For WhatsApp/Instagram, if no signature header is present at all, the first active account is used as a fallback. Signature/token comparison uses `timingSafeEqual` in all cases.
+For Telegram and HTTP, a missing secret/token header is an immediate `signature_mismatch`. For WhatsApp/Instagram, if no signature header is present at all, the first active account is used as a fallback. When a hint fails to single out an account, the webhook is rejected as `signature_mismatch` — never guessed. Signature/token comparison uses `timingSafeEqual` in all cases.
 
 ---
 
@@ -112,7 +120,7 @@ sequenceDiagram
 
     JS->>CS: WebhookIngressEnvelope (durable delivery)
 
-    Note over CS: 1. Verify HMAC-SHA256<br/>   (x-hub-signature-256 vs appSecret)<br/>2. Resolve ChannelAccount<br/>   by phone_number_id + tenantId<br/>3. Parse payload → InboundMessage[]<br/>4. Build ChannelEnvelope<br/>   (with real accountid)<br/>5. Publish to INGRESS-ACME
+    Note over CS: 1. Verify HMAC-SHA256 against every<br/>   active account's appSecret<br/>2. Resolve ChannelAccount = the one that<br/>   verified (phone_number_id only breaks ties)<br/>3. Parse payload → InboundMessage[]<br/>4. Build ChannelEnvelope per message<br/>   (with real accountid)<br/>5. Publish to INGRESS-ACME
 
     CS->>JS: ChannelEnvelope<br/>subject: evt.acme.channel-service.messaging<br/>.whatsapp.meta.received.v1
 
@@ -128,20 +136,34 @@ sequenceDiagram
 
 #### WebhookIngressEnvelope (stage 1)
 
+Built by `WebhookIngressPublisherService.publishWebhook`; `type` comes from
+`buildWebhookIngressType(channel)`.
+
 ```json
 {
   "specversion": "1.0",
   "id": "uuid-v4",
   "source": "//api-gateway/webhooks",
   "type": "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1",
+  "resource": "tenant/acme/channel/whatsapp/provider/webhook",
+  "time": "2026-08-02T10:00:00.000Z",
+  "traceid": "...",
+  "causation_id": null,
+  "correlation_id": "...",
   "tenant": "acme",
   "producer": "api-gateway",
   "domain": "messaging",
   "channel": "whatsapp",
   "provider": "webhook",
   "kind": "webhook_received",
+  "idempotencykey": "...",
+  "transport": { "method": "webhook", "protocol": "https", "depth": 0 },
   "data": {
+    "received_at": "2026-08-02T10:00:00.000Z",
     "payload_inline": true,
+    "payload_ref": null,
+    "payload_bytes": 512,
+    "payload_checksum": "...",
     "payload": { "...raw Meta body..." },
     "raw_body_b64": "...",
     "headers": {
@@ -152,16 +174,26 @@ sequenceDiagram
 }
 ```
 
+`data.instance` is added only for instance-addressed URLs (the account's `externalId`).
+
 **No `accountid`**: at this stage the signature has not been verified and the account is not yet resolved. Setting a placeholder would corrupt per-account billing metrics.
 
 #### ChannelEnvelope (stage 2)
+
+Built by `createChannelEnvelope` (`services/channel-service/src/domain/envelope.factory.ts`).
+One message in, one envelope out — a webhook carrying N messages produces N envelopes.
 
 ```json
 {
   "specversion": "1.0",
   "id": "uuid-v4",
-  "source": "//channel-service/accounts/69bea8cd",
+  "source": "//channel-service/accounts/69bea8cd868e860918359cc7",
   "type": "io.yoizen.messaging.whatsapp.meta.received.v1",
+  "resource": "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta",
+  "time": "2026-08-02T10:00:00.000Z",
+  "traceid": "...",
+  "causation_id": "<stage-1 envelope id>",
+  "correlation_id": "<propagated from stage 1>",
   "tenant": "acme",
   "producer": "channel-service",
   "domain": "messaging",
@@ -169,12 +201,36 @@ sequenceDiagram
   "provider": "meta",
   "kind": "received",
   "accountid": "69bea8cd868e860918359cc7",
+  "idempotencykey": "...",
+  "transport": { "method": "webhook", "protocol": "https", "depth": 1 },
   "data": {
+    "received_at": "2026-08-02T10:00:00.000Z",
     "payload_inline": true,
-    "payload": { "...raw Meta body, untouched..." }
+    "payload_ref": null,
+    "payload_bytes": 210,
+    "payload_checksum": "...",
+    "payload": {
+      "messageId": "wamid.xxx",
+      "from": "5215512345678",
+      "timestamp": "1712345678",
+      "type": "text",
+      "text": "ping",
+      "accountId": "69bea8cd868e860918359cc7"
+    },
+    "headers": { "content-type": "application/json", "user-agent": "..." }
   }
 }
 ```
+
+**The stage-2 payload is the NORMALIZED `InboundMessage`, not the raw provider body.**
+`data.payload` carries `messageId`, `from`, `timestamp`, `type` plus the optional
+`text`/`media`/`conversationId`, and `accountId` — the provider's `raw` object is
+deliberately excluded from `data.payload` (it feeds `idempotencykey` computation only).
+Consumers that need the untouched provider body must read the stage-1
+`WebhookIngressEnvelope`.
+
+`source` is the full `//channel-service/accounts/<accountId>` — the `accountid` value,
+not a truncated prefix.
 
 See [../messaging/envelope.md](../messaging/envelope.md) for the full field reference.
 
@@ -214,7 +270,10 @@ authenticate the webhook, and are stripped after the signature check — stage-2
 | `services/api-gateway/src/modules/channels/webhooks.controller.ts` | HTTP endpoint |
 | `services/api-gateway/src/modules/channels/webhook-ingress-publisher.service.ts` | Builds and publishes `WebhookIngressEnvelope` |
 | `packages/shared/src/webhook.interfaces.ts` | `WebhookIngressEnvelope` type |
-| `packages/shared/src/channel.constants.ts` | `WEBHOOK_FORWARDED_HEADERS`, `buildWebhookIngressSubject` |
+| `packages/shared/src/channel.constants.ts` | `WEBHOOK_FORWARDED_HEADERS`, `WEBHOOK_SECRET_HEADERS`, `WEBHOOK_INGRESS_SUBJECT_FILTER` |
+| `packages/shared/src/channel.utils.ts` | `buildWebhookIngressSubject`, `buildChannelSubject` |
+| `services/api-gateway/src/modules/channels/webhook-ingress-type.ts` | `buildWebhookIngressType` — the stage-1 `type` |
+| `services/channel-service/src/domain/envelope.factory.ts` | `createChannelEnvelope`, `createChannelSentEnvelope` |
 | `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.service.ts` | NATS durable consumer |
 | `services/channel-service/src/modules/webhooks/webhook-ingress.service.ts` | HMAC verification + account resolution |
 | `services/channel-service/src/providers/meta/whatsapp/whatsapp.provider.ts` | WhatsApp payload parse |
@@ -307,15 +366,15 @@ interface AutoReplyRule {
 }
 ```
 
-Defined in `packages/shared/src/channel.interfaces.ts`. Rules are managed via `POST /channels/auto-reply` on `channel-service` (proxied as `POST /api/channels/auto-reply` by `api-gateway`).
+Defined in `packages/shared/src/channel.interfaces.ts`. `AutoReplyController` is mounted at `channels/auto-reply` on `channel-service` and exposes exactly three routes — `POST` (create), `GET` (list), `DELETE :id`. There is no update route; a rule is replaced by deleting and re-creating it. `api-gateway` proxies all three verbatim under its `api` prefix (`POST/GET /api/channels/auto-reply`, `DELETE /api/channels/auto-reply/:id`).
 
 ### Design notes
 
 - **Zero coupling with api-gateway**: `AutoReplyService` only consumes from the bus and calls `EgressService`.
 - **Durable consumer**: if the service restarts, NATS redelivers pending messages from the last ack position.
-- **`sent.v1` is channel-agnostic**: the same `EgressService` handles WhatsApp, Instagram, and Telegram.
+- **`sent.v1` is channel-agnostic**: the same `EgressService` handles WhatsApp, Instagram, and Telegram (the `http` channel is inbound-only and always fails the send).
 - **No loop**: the consumer filters on `received.v1`; the `sent.v1` event published by `EgressService` does not match the filter.
-- **Circuit breaker**: `EgressService` uses a `DistributedCircuitBreaker` per account — if the provider API fails repeatedly, the breaker opens and messages go to the DLQ instead of retrying indefinitely.
+- **Circuit breaker**: `EgressService` uses a `DistributedCircuitBreaker` keyed by `computeBreakerKey({ tenantId, kind: "egress", target: "<channel>:<provider>" })` — **per tenant + channel/provider pair, not per account**. When the breaker denies, the send throws `PermanentError("egress.circuit_breaker")`; on the NATS `send-command` consumer path that TERMs the message straight to `DLQ-<tenant>`, and on the direct HTTP path the caller gets the error.
 
 ---
 
@@ -354,11 +413,11 @@ sequenceDiagram
     CS->>Provider: POST .../messages<br/>(channel-specific endpoint)
     Provider-->>CS: 200 { messageId: "..." }
 
+    Note over CS: shadow publish — awaited, but<br/>failures are caught and only logged<br/>(egress.shadow_publish_failed)
+    CS->>JS: ChannelEnvelope sent<br/>evt.acme.channel-service.messaging<br/>.whatsapp.meta.sent.v1
+
     CS-->>GW: 200 { success: true, providerMessageId, timestamp }
     GW-->>Op: response
-
-    Note over CS: shadow publish (fire-and-forget)
-    CS-)JS: ChannelEnvelope sent<br/>evt.acme.channel-service.messaging<br/>.whatsapp.meta.sent.v1
 
     JS->>Down: sent event (downstream consumers)
 ```
@@ -400,7 +459,13 @@ evt.acme.channel-service.messaging.whatsapp.meta.sent.v1
 
 ### Shadow publish
 
-The NATS publish is fire-and-forget — **it does not block the response to the operator**. If JetStream is under pressure, the event may be lost. The message has already been delivered to the provider and persisted.
+`EgressService.send()` `await`s `shadowPublish()` before returning, so the publish is
+**not** off the response path — but it is **best-effort**: `shadowPublish` wraps
+everything (`ensureTenantIngressStream`, envelope build, `js.publish`) in a
+`try/catch` that logs `egress.shadow_publish_failed` at `warn` and swallows the
+error. A publish failure therefore never fails the send, and under JetStream
+pressure the `sent` event can be lost while the message has already reached the
+provider. It only runs when `result.success` is true.
 
 ### Relevant files
 
@@ -453,7 +518,7 @@ sequenceDiagram
         CS_AR->>CS_EG: send({ to, type:"text", text:"pong" })
         CS_EG->>Meta: POST /messages (WhatsApp)
         Meta-->>CS_EG: 200 { messageId: "wamid.xxx" }
-        Note over CS_EG: shadow publish (fire-and-forget)
+        Note over CS_EG: shadow publish (awaited, best-effort)
         CS_EG->>JS: ChannelEnvelope<br/>evt.acme.channel-service.messaging<br/>.whatsapp.meta.sent.v1
     end
 
@@ -495,17 +560,26 @@ t~1-3s    Meta delivers "pong" to user in WhatsApp
 - **Two durable consumers in channel-service**: `webhook-ingress-consumer` handles stages 1→2; `auto-reply` handles stage 2→reply. They are separate NATS consumers with separate ack sequences.
 - **No loop**: `auto-reply` filters on `received.v1`. The `sent.v1` event published by `EgressService` does not match the filter.
 - **Durable = at-least-once**: if `channel-service` crashes between stage 2 and the auto-reply, NATS redelivers the canonical envelope on reconnect.
-- **Circuit breaker**: if Meta returns repeated errors, the `EgressService` circuit breaker opens and messages go to the DLQ instead of retrying.
-- **Claim-check**: stage-1 `WebhookIngressEnvelope` payloads are inline. If a canonical `ChannelEnvelope` published by `channel-service` exceeds 256 KB, `IngressService` stores the payload in Object Store `PAYLOAD-ACME` and publishes a slim envelope; `MultiTenantConsumerManager` resolves that reference before handler delivery.
+- **Circuit breaker**: if Meta returns repeated errors, the `EgressService` breaker (keyed per tenant + `channel:provider`) opens and further sends fast-fail with `PermanentError`, which the `send-command` consumer TERMs into `DLQ-<tenant>` instead of retrying.
+- **Claim-check**: stage-1 `WebhookIngressEnvelope` payloads are inline. If a canonical `ChannelEnvelope` published by `channel-service` exceeds `CLAIM_CHECK_THRESHOLD_BYTES`, `IngressService` stores the payload in Object Store `PAYLOAD-ACME` (`buildClaimCheckBucket`) and publishes a slim envelope; `MultiTenantConsumerManager.wrapHandler` resolves that reference before handler delivery. See [../messaging/claim-check.md](../messaging/claim-check.md).
 
 ---
 
 ## Adding a new channel
 
-1. Create `services/channel-service/src/providers/<provider>/<channel>/<channel>.provider.ts` implementing `IChannelProvider`.
-2. Register it in `channel-router.ts`.
-3. Define `signatureHeader` and the `verifySignature` logic.
+See [meta-provider-pattern.md](./meta-provider-pattern.md) for the full checklist; the short form:
+
+1. Create the provider class implementing `IChannelProvider` — Meta channels under
+   `providers/meta/<channel>/`, everything else at `providers/<channel>/`.
+2. Register it: `ProviderRegistry`'s map for a Meta channel, the `ChannelRouter`
+   constructor otherwise.
+3. Declare `signatureHeader` and `verifySignature` (inherited from
+   `MetaChannelProviderBase` for Meta channels).
 4. Implement `parseWebhook(rawBody) → InboundMessage[]`.
-5. Implement `sendMessage(account, message) → Promise<SendMessageResult>`.
-6. Add the `channel` token to the `Channel` type in `packages/shared/src/channel.interfaces.ts`.
-7. NATS subjects, streams, and consumers are generated automatically — no bus changes required.
+5. Implement `sendMessage(account, message) → Promise<SendMessageResult>` — or return a
+   failure result if the channel is inbound-only, as `HttpProvider` does.
+6. Add the tokens to the `Channel` and (if new) `ChannelProvider` unions in
+   `packages/shared/src/channel.interfaces.ts`.
+7. If a signature-verified tie needs a payload hint, add the extractor to
+   `webhook-ingress.service.ts`.
+8. NATS subjects, streams, and consumers are generated automatically — no bus changes required.

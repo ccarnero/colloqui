@@ -25,7 +25,7 @@ Welcome to the Yoizen platform! This guide walks you through understanding and w
 
 The Yoizen platform executes automated workflows and HTTP integrations:
 
-**Connector Runtime** — Standalone Temporal worker that executes HTTP requests at high concurrency (200 parallel). Used for single HTTP calls or as an activity within workflows.
+**Connector Runtime** — Standalone Temporal worker that executes HTTP requests at high concurrency (`maxConcurrentActivityTaskExecutions: 400` in `src/worker.ts`). Used for single HTTP calls or as an activity within workflows.
 
 **Connector Admin** — REST API that owns multi-tenant connector configurations (base URL, auth, headers, timeouts, retries) consumed by `connector-runtime`.
 
@@ -124,8 +124,12 @@ Every request includes a tenant identifier in the `x-yoizen-tenant` header:
 
 ```bash
 curl -H "x-yoizen-tenant: acme" \
-  http://localhost:3000/workflows
+  http://api-gateway.platform-services-dev.dev.local/api/workflows
 ```
+
+(Through the gateway the path carries the `/api` global prefix. `localhost:3000`
+only applies when you run a service directly on your host, as in "Common
+Development Tasks" below — those calls hit the service's own unprefixed routes.)
 
 **Why multi-tenant?**
 - Each customer (tenant) has isolated data
@@ -207,16 +211,22 @@ services/{service}/
 services/connector-runtime/
 ├── README.md
 ├── src/
-│   ├── worker.ts               # Main entry: Temporal worker + health server
+│   ├── worker.ts               # Temporal worker entry (one of three entrypoints)
 │   ├── activities/
 │   │   ├── endpoint-call.activity.ts     # HTTP execution
 │   │   ├── service-call.activity.ts      # Internal service calls
+│   │   ├── mcp-call.activity.ts          # MCP tool calls (mcpCall action)
 │   │   └── _shared/
-│   │       ├── adapter-client.provider.ts  # AdapterClient (Redis cache)
+│   │       ├── adapter-client.provider.ts  # AdapterClient (Redis SWR cache)
 │   │       ├── breaker.ts                # Circuit breaker
 │   │       ├── http-call-with-retry.ts   # Retry logic
+│   │       ├── validate-outbound-url.ts  # SSRF guard
 │   │       └── metrics.ts                # Metrics collection
 ```
+
+(Abridged — `_shared/` holds more helpers, and the deployable also ships
+`invoke-consumer-main.ts` and the HTTP invoke facade. See the service README's
+"Three entrypoints, one deployable".)
 
 **Key files to understand**:
 1. `worker.ts` — How Temporal worker is set up
@@ -310,6 +320,10 @@ bun run start:dev
 bun run start:worker:dev
 
 # Terminal 3: Test
+# NOTE: `JsFunctionArgs.code` is an EXPRESSION that must evaluate to a function.
+# The activity runs `new Function("return " + args.code)()` and then `await fn(context)`,
+# so a bare statement body like "return { ... }" becomes `return return { ... }` — a
+# SyntaxError at construction that fails the activity and the whole run.
 curl -X POST http://localhost:3000/workflows \
   -H "x-yoizen-tenant: acme" \
   -H "Content-Type: application/json" \
@@ -322,7 +336,7 @@ curl -X POST http://localhost:3000/workflows \
       "activity": "jsFunction",
       "name": "hello",
       "args": {
-        "code": "return { message: 'Hello World' }"
+        "code": "(context) => ({ message: 'Hello World' })"
       }
     }
   ]
@@ -337,7 +351,7 @@ EOF
 
 ### Task 3: Add a New Action Type
 
-Workflow Service supports 8 action types (`endpointCall`, `serviceCall`, `jsFunction`, `serviceBusCall`, `channelSend`, `agentCall`, `branch`, `conditional`). To add a 9th:
+Workflow Service supports 9 action types (`endpointCall`, `serviceCall`, `mcpCall`, `jsFunction`, `serviceBusCall`, `channelSend`, `agentCall`, `branch`, `conditional`). To add a 10th:
 
 1. **Define interface** in `packages/shared/src/workflow.interfaces.ts`:
    ```typescript
@@ -353,9 +367,9 @@ Workflow Service supports 8 action types (`endpointCall`, `serviceCall`, `jsFunc
 
 2. **Add to union** in same file:
    ```typescript
-   type WorkflowAction = 
+   type WorkflowAction =
      | EndpointCallAction
-      | ... (6 existing types)
+     | ... (the 8 other existing members)
      | MyActionAction  // New
    ```
 
@@ -472,14 +486,15 @@ curl http://localhost:7233/health
 # Connect to Redis
 redis-cli
 
-# List connector cache keys
+# List connector cache keys — the prefixes are adapter:config: / adapter:oauth: /
+# adapter:internal-by-service: (ADAPTER_KEY_PREFIX & friends in adapter-client.ts)
 KEYS "adapter:*"
 
-# Get specific connector config
-GET "adapter:acme:crm-connector"
+# Get specific connector config — `adapter:config:<tenantId>:<adapterId>`
+GET "adapter:config:acme:crm-connector"
 
 # Delete cache (force refresh)
-DEL "adapter:acme:crm-connector"
+DEL "adapter:config:acme:crm-connector"
 ```
 
 ### Monitor Task Queue Depth
@@ -517,30 +532,51 @@ bun test              # Run with coverage
 
 ```bash
 cd services/workflow-service
-# Note: No in-service integration tests; use local bootstrap instead
-# Run against local services:
+# `test:integration` is declared in package.json but `test/integration/` does not
+# exist in this service — `test/` holds only `unit/`. Exercise it over HTTP instead:
 bun run start:dev &
 bun run start:worker:dev &
-# Then run workflow via HTTP
-curl -X POST http://localhost:3000/workflows ...
+# then follow the create -> execute -> poll recipe below
 ```
 
 ### Manual Testing via REST
 
+Creating a definition and starting a run are **two different calls**. `POST /workflows`
+only persists the definition (201) — it starts nothing.
+
 ```bash
-# Start workflow
-WF_ID=$(curl -s -X POST http://localhost:3000/workflows \
-  -H "x-yoizen-tenant: test-tenant" \
-  -d '...' | jq -r '.workflowId')
+# The service's own port, unprefixed. Through the gateway the same routes live at
+# http://api-gateway.platform-services-dev.dev.local/api/workflows (and need a Bearer token).
+API=http://localhost:3000
+TEN='x-yoizen-tenant: test-tenant'
 
-# Poll for result
-curl http://localhost:3000/workflows/$WF_ID \
-  -H "x-yoizen-tenant: test-tenant"
+# 1. Create the DEFINITION -> 201, body is ICreateWorkflowResult { id, name,
+#    application, tenantId, actions, trigger, variables, status, createdAt }.
+#    There is no `workflowId` field on any response in this service.
+DEF_ID=$(curl -s -X POST $API/workflows -H "$TEN" \
+  -H 'content-type: application/json' \
+  -d '{"name":"hello","application":"test","actions":[{"activity":"jsFunction","name":"greet","args":{"code":"(ctx)=>({greeting:\"hi\"})"}}]}' \
+  | jq -r '.id')
 
-# List all workflows
-curl http://localhost:3000/workflows \
-  -H "x-yoizen-tenant: test-tenant"
+# 2. Start a RUN -> 202, body is IExecuteWorkflowResult { executionId, definitionId,
+#    temporalWorkflowId, runId, alreadyStarted? }.
+EXEC_ID=$(curl -s -X POST $API/workflows/$DEF_ID/execute -H "$TEN" \
+  -H 'content-type: application/json' -d '{"request":{}}' \
+  | jq -r '.executionId')
+
+# 3. Poll the EXECUTION -> IExecutionStatusResult { executionId, definitionId,
+#    temporalWorkflowId, status, result?, failure?, createdAt }. `status` is
+#    Temporal's own name, e.g. RUNNING then COMPLETED.
+curl -s $API/workflows/$DEF_ID/executions/$EXEC_ID -H "$TEN" | jq
+
+# List definitions (GET /workflows/:id returns the DEFINITION, not run results)
+curl -s $API/workflows -H "$TEN" | jq
 ```
+
+Executions of one definition are paginated at
+`GET /workflows/:id/executions` (`page`/`pageSize`/`sort` -> `{ items, total, page, pageSize }`).
+See [Connector Runtime vs Workflow Service](../workflows/connector-vs-workflow.md)
+for the same lifecycle from the API side.
 
 ---
 
@@ -561,7 +597,7 @@ Developer mode runs all Deployments at a fixed **1 replica** (no KEDA, no
 scale-to-zero). All Knative Services are pinned to `minScale: 1, maxScale: 1`.
 
 For future production deployments:
-- **Connector Runtime**: max 200 concurrent activities per replica; KEDA can scale 1-20 based on task queue depth.
+- **Connector Runtime**: max 400 concurrent activities per replica (`maxConcurrentActivityTaskExecutions`); a queue-depth autoscaler would have to be added.
 - **Workflow Service API**: Knative request-based autoscaling; Worker would use KEDA.
 - KEDA ScaledObjects are not currently in the codebase — they would need to be re-added for production scale.
 

@@ -48,7 +48,7 @@ This plan adds automated checks that catch drift between living docs and the cur
 | Envelope causality drift | Unit/integration test for webhook-ingress consumer | Stage-2 envelope carries original `correlation_id`, `causation_id` = stage-1 envelope id, `depth = 1` |
 | Stream casing drift | Unit test around `getTenantStreamName("acme")` and sample-doc static guard | Stream name is `INGRESS-ACME`; subject tenant remains `evt.acme...` |
 | Connector route/env drift | Connector-admin route test + connector-runtime config test | Public/admin routes are `/connectors`; runtime reads `CONNECTOR_ADMIN_URL` / connector-admin default |
-| SKB pending file endpoint drift | Gateway-to-agent-admin contract test or docs guard | File upload/list/delete/schema endpoints are pending until agent-admin implements matching routes |
+| SKB missing file-read endpoint drift | Gateway-to-agent-admin contract test or docs guard | Upload (`POST .../files`) is implemented end to end; list/delete/schema have no route in either service and must 404 until they are added |
 | SKB rate-limit drift | Guard unit test drives 31 query requests for one tenant | Request 31 is rejected; limit is 30/min in-memory; no rate-limit headers are expected |
 | Scheduler admin header drift | Guard unit test with `x-internal-api-key` and `X-Admin-Api-Key` | `x-internal-api-key` is accepted; stale header is rejected; unset `ADMIN_API_KEY` disables admin endpoints |
 | Scheduler config drift | Config unit test with empty env and leader URL env | Defaults to `PORT=3000`; leader election reads `LEADER_ELECTION_POSTGRES_URL` |
@@ -187,12 +187,14 @@ What it pins:
 
 **Genuine finding while calibrating K7**: the audit's lock description
 assumed only `workflow-service`'s `trigger-consumer` needed allowlisting for
-the 60s default. A full repo census found 9 registrations that omit
-`ackWaitMs` entirely (auto-reply, both usage-aggregator managers,
-webhook-ingress-consumer, execution-projector, ai-agent-gateway's
-executions consumer, channel-egress, and both audit-service consumers).
+the 60s default. A full repo census found that several registrations omit
+`ackWaitMs` entirely; the allowlist in `doc-code-guards.sh` now carries
+**11 entries** — auto-reply, both usage-aggregator managers,
+webhook-ingress-consumer, execution-projector, ai-agent-gateway's executions
+consumer, channel-egress, all three audit-service consumers, plus
+tracking-ingester's `main.ts` and its `consume-events.ts` doc-comment mention.
 None of their handlers do LLM/embedding calls or large-file processing, so
-the implicit 60s default is safe for all 9 today — they are allowlisted
+the implicit 60s default is safe for all of them today — they are allowlisted
 explicitly in the script with a one-line justification each, rather than
 silently ignored, so a *future* consumer with a slow handler that forgets
 `ackWaitMs` still fails this guard. `workflow-service`'s `trigger-consumer`

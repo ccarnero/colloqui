@@ -250,14 +250,21 @@ feature references, provisioned declaratively through the SDK), and
 │                                                                       │
 │  ┌─── Developer mode (single env: dev) ────────────────────────────┐  │
 │  │                                                                 │  │
-│  │  ┌─ platform-services-{env} (Knative Services) ──────────────┐  │  │
-│  │  │  api-gateway · auth-service · audit-service                │  │  │
-│  │  │  cache-service · channel-service · tenant-service          │  │  │
-│  │  │  registry-service · workflow-service · workflow-worker     │  │  │
-│  │  │  connector-runtime · connector-admin                       │  │  │
+│  │  ┌─ platform-services-{env} — Knative Services ──────────────┐  │  │
+│  │  │  api-gateway · auth-service · audit-service-api            │  │  │
+│  │  │  cache-service · channel-service-api · tenant-service      │  │  │
+│  │  │  registry-service · workflow-service-api · connector-admin-api │  │
 │  │  │  agent-admin-service · agent-ai-service · ai-agent-gateway │  │  │
 │  │  │  agent-memory-service · agent-scheduler-service            │  │  │
-│  │  │  usage-aggregator-service · proxy-service · admin-console  │  │  │
+│  │  │  usage-aggregator-api · proxy-service · provisioning-service │  │
+│  │  │  admin-console                                             │  │  │
+│  │  ├─ platform-services-{env} — plain Deployments (pull workers)┤  │  │
+│  │  │  workflow-worker · workflow-service-worker ·               │  │  │
+│  │  │  connector-runtime · connector-runtime-http ·              │  │  │
+│  │  │  connector-runtime-invoke · connector-admin-worker ·       │  │  │
+│  │  │  channel-service-worker · audit-service-worker ·           │  │  │
+│  │  │  usage-aggregator-worker · agent-admin-service-worker ·    │  │  │
+│  │  │  tracking-ingester-worker                                  │  │  │
 │  │  └────────────────────────────────────────────────────────────┘  │  │
 │  │                                                                 │  │
 │  │  ┌─ support-services-{env} (StatefulSets / Deployments) ─────┐  │  │
@@ -273,6 +280,11 @@ feature references, provisioned declaratively through the SDK), and
 │                                                                       │
 └───────────────────────────────────────────────────────────────────────┘
 ```
+
+The split is real, not cosmetic: `kind: Deployment` in
+`knative/services/base/*.yaml` marks every pull-based worker (Temporal or
+JetStream), because Knative's KPA has no inbound HTTP signal to scale them on.
+Only the first block is `kind: Service` (Knative).
 
 ### Environments
 
@@ -322,7 +334,7 @@ kubectl apply -k knative/services/overlays/local/postgres-dev   # or mongo-dev w
 
 Two-stage webhook ingress feeds durable per-tenant consumers; Temporal handles orchestration and egress:
 
-1. **Webhook ingress**: API Gateway authenticates the request, resolves the tenant, and publishes a `webhook_received` envelope to `INGRESS-<tenant>` (`evt.<tenant>.api-gateway.messaging.…`) — returns `202 Accepted` immediately
+1. **Webhook ingress**: the API Gateway webhook route is `@Public()`/`@SkipTenant()` — it does NOT authenticate or verify a signature; it packages the raw body into a `webhook_received` envelope, publishes it to `INGRESS-<tenant>` (`evt.<tenant>.api-gateway.messaging.…`), and only then answers **`200 OK` with `{ "status": "accepted" }`** (`@HttpCode(HttpStatus.OK)`). Publish backpressure surfaces as a 503 with `Retry-After` instead of a premature ack
 2. **Signature verification + canonical event**: channel-service's durable consumer reads from `INGRESS-<tenant>`, verifies the provider signature, and re-publishes a normalized `ChannelEnvelope` back to `INGRESS-<tenant>` (`evt.<tenant>.channel-service.messaging.…`)
 3. **Durable fan-out**: all services attach durable consumers to `INGRESS-<tenant>` — audit-service persists every event to per-tenant PostgreSQL; workflow-triggers starts Temporal workflows; usage-aggregator records usage; agent-ai-service drives AI executions
 4. **Orchestration**: Temporal workers (`workflow-service-worker`) execute JS functions locally and dispatch HTTP/agent activities to `connector-runtime` via the `connector-runtime` task queue
@@ -346,16 +358,18 @@ The API Gateway supports dynamic routing for tenant-registered services. Tenants
 
 ### Workflow Orchestration
 
-Temporal-based workflow orchestration supports eight action types:
+Temporal-based workflow orchestration supports nine action types — the full
+`WorkflowAction` union in `packages/shared/src/workflow.interfaces.ts`:
 
 | Action | Execution | Description |
 |--------|-----------|-------------|
-| `endpointCall` | Remote (`connector-runtime`) | HTTP request via `tracedFetch`; supports connector-driven config resolution via `adapterId`/`endpointId` |
-| `serviceCall` | Remote (`connector-runtime`) | Internal service call resolved against the registry mirror |
-| `jsFunction` | Local (workflow-worker) | Inline JS evaluation |
-| `serviceBusCall` | Local (workflow-worker) | NATS publish with tenant header |
-| `channelSend` | Local (workflow-worker) | Outbound channel message via channel-service |
-| `agentCall` | Remote (`connector-runtime`) | HTTP call to `agent-ai-service` chat endpoint |
+| `endpointCall` | Remote (`connector-runtime` queue) | HTTP request via `tracedFetch`; supports connector-driven config resolution via `adapterId`/`endpointId` |
+| `serviceCall` | Remote (`connector-runtime` queue) | Internal service call resolved against the registry mirror |
+| `mcpCall` | Remote (`connector-runtime` queue) | Calls a tool on a connected MCP server |
+| `jsFunction` | Local (`workflow-orchestrator` queue) | Inline JS evaluation |
+| `serviceBusCall` | Local (`workflow-orchestrator` queue) | NATS publish with tenant header |
+| `channelSend` | Local (`workflow-orchestrator` queue) | Outbound channel message via channel-service |
+| `agentCall` | Local (`workflow-orchestrator` queue) | **Not an HTTP call.** `YoizenClawExecutionClient` publishes `execution_requested.v1` to JetStream and waits on core NATS for the lifecycle events — 15 min start-to-close, 30 s heartbeat. See [`agents/execution.md`](./agents/execution.md) |
 | `branch` | Workflow-level | Parallel execution of sub-action branches |
 | `conditional` | Workflow-level | Evaluates branches in order; first match executes |
 
@@ -383,19 +397,24 @@ Each environment runs its own tenant-service scoped by `PLATFORM_ENVIRONMENT`. C
 
 | Stream / Bucket | Subjects | Purpose |
 |---|---|---|
-| `INGRESS-<tenant>` | `evt.<tenant>.>` | Canonical per-tenant event bus (producers: api-gateway, channel-service, registry-service, agent-admin-service, ai-agent-gateway) |
+| `INGRESS-<tenant>` | `evt.<tenant>.>` | Canonical per-tenant event bus. 11 producers today — see [`messaging/envelope.md`](./messaging/envelope.md) §2.1 for the census |
 | `DLQ-<tenant>` | `dlq.<tenant>.>` | Per-tenant dead letters and post-processing |
 | `PAYLOAD-<tenant>` | Object Store | Claim-check storage for large payloads (>256 KB); TTL 7 days, max 512 MB |
 | `GATEWAY_AUDIT` | `audit.gateway.>` | API Gateway per-request audit trail |
 | `PLATFORM_TENANTS` | `platform.tenant.>` | Tenant lifecycle provisioning messages (workqueue) |
 | `DLQ` | `dlq.webhook` | Legacy global DLQ for webhook delivery failures (no slim-stack producer; retained for ops replay) |
 
+Ingress-stream limits are **tier-dependent** since 2026-08-01
+(`TENANT_TIER_LIMITS` in `packages/shared/src/tenant-stream.constants.ts`); the
+flat `CHANNEL_STREAM_*` constants are only the lazy-ensure fallback. See
+[`messaging/tenant-messaging-tiers.md`](./messaging/tenant-messaging-tiers.md).
+
 | Setting | Value |
 |---|---|
 | `retention` | Limits |
-| `max_age` | 7 days (free tier) |
-| `max_bytes` | 256 MB per ingress stream (free tier); 512 MB Object Store |
-| `max_deliver` | 5 |
+| `max_age` | free 7 d · pro 14 d · enterprise 30 d (fallback `CHANNEL_STREAM_MAX_AGE_NS` = 7 d) |
+| `max_bytes` | free 1 GiB · pro 5 GiB · enterprise 20 GiB (fallback `CHANNEL_STREAM_MAX_BYTES` = 256 MB); Object Store 512 MB |
+| `max_deliver` | 5 (`CHANNEL_MAX_DELIVER`) |
 
 ### Shared Types Package
 
@@ -495,7 +514,9 @@ Arch/
 │   ├── agent-memory-service/          # NestJS + Fastify — Per-agent conversation/long-term memory
 │   ├── agent-scheduler-service/       # NestJS + Fastify — Multi-tenant agent job scheduling
 │   ├── ai-agent-gateway/              # NestJS + Fastify — Stateless inbound bridge to agent-ai-service
-│   └── agent-ai-service/              # NestJS + Fastify — Platform-tier agent execution runtime (Knative Service)
+│   ├── agent-ai-service/              # NestJS + Fastify — Platform-tier agent execution runtime (Knative Service)
+│   ├── provisioning-service/          # NestJS + Fastify — Declarative manifest apply + secrets broker
+│   └── tracking-ingester-service/     # Bus→Postgres message tracking + chain/run/payload reads (worker only)
 └── setup-tenant.sh                    # Create tenant + admin user (named flags, idempotent)
 ```
 
@@ -511,18 +532,29 @@ kubectl apply -k infrastructure/overlays/orbstack/dev
 
 ```bash
 kubectl apply -k knative/serving
-kubectl apply -k knative/services/overlays/local/dev
+kubectl apply -k knative/services/overlays/local/postgres-dev   # or mongo-dev
 ```
+
+`knative/services/overlays/local/dev` still resolves — it is a one-line
+backward-compatible alias whose only resource is `../postgres-dev` — but prefer the
+explicit engine overlay.
 
 ### Build images (OrbStack)
 
 OrbStack >= 1.6 shares the local Docker daemon with the cluster — just build normally:
 
 ```bash
-for svc in api-gateway auth-service audit-service cache-service channel-service tenant-service registry-service connector-admin connector-runtime workflow-service usage-aggregator-service proxy-service agent-admin-service agent-memory-service agent-scheduler-service ai-agent-gateway agent-ai-service; do
+# Drive the loop from services.conf — the build/rollout source of truth — so a new
+# service is never silently skipped:
+for svc in $(ls services); do
   docker build -t "dev.local/${svc}:local" -f "services/${svc}/Dockerfile" .
 done
 ```
+
+The hand-written list this used to carry omitted `provisioning-service`,
+`tracking-ingester-service` and `admin-console`. There are 20 directories under
+`services/`; prefer `./rebuild-changed.sh` or `./rebuild-redeploy.sh <svc>` over a
+manual loop.
 
 ### Check service status
 
@@ -544,7 +576,7 @@ OrbStack exposes the local cluster through `127.0.0.1.sslip.io`, so no tunnel is
 
 ```bash
 # Authenticate (get a token)
-curl -X POST http://api-gateway.platform-services-dev.127.0.0.1.sslip.io/auth/token \
+curl -X POST http://api-gateway.platform-services-dev.127.0.0.1.sslip.io/api/auth/token \
   -H "Content-Type: application/json" \
   -d '{"grant_type":"client_credentials","client_id":"...","client_secret":"..."}'
 ```

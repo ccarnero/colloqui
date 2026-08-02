@@ -140,7 +140,7 @@ final per-file dispositions.
 
 - [x] T01 — Inventory + ledger skeleton
 - [x] T02 — Audit: DOCS/messaging + DOCS/architecture
-- [ ] T03 — Audit: DOCS/channels, agents, workflows, skb, reference, adr, guides, runbooks
+- [x] T03 — Audit: DOCS/channels, agents, workflows, skb, reference, adr, guides, runbooks
 - [ ] T04 — Audit: the 20 service READMEs
 - [ ] T05 — Audit: packages + sdk docs
 - [ ] T06 — Audit: integrations, demos, examples
@@ -191,3 +191,30 @@ watching two nonexistent durables). Three attempts: R1 caught a residual
 unprefixed path + stale topology diagram + fresh line-cite assertions;
 R2/R3 narrowed to a self-contradicting subgraph label, fixed. 2× APPROVED.
 G0 green every attempt; docs-only (G1/G6b skipped).
+
+### T03 — 2026-08-02
+
+35/35 verdicts with evidence: 25 FIXED, 10 TRUE. Highest-stakes finds:
+**E9 — GENUINE SQL INJECTION (code bug, escalated NOT fixed):**
+`SKBRowsRepository.executeQuery` interpolates `containerId` (no
+ParseUUIDPipe) and `categories` into `sql.unsafe()` — the injection point
+is unbounded (simple query protocol, no keyword filtering); per-tenant
+`getSql(tenantId)` is the only real bound. Documented as security.md open
+risk 3b. Also: E6 (six source files cite a wrong METERING doc path), E7
+(jobs.yaml wrong on schedule semantics/fields), E8
+(`validateSelectOnly`/`enforceLimit` exported+tested+never called).
+Runbook executability: skb/runbook.md failed hard (kubectl scale on a
+ksvc, wrong labels/namespace, 400-rejected curl, four nonexistent SQL
+columns) — salvaged; storage-engines.md port-forward claim false —
+salvaged; temporal.md passes. jsFunction contract sweep (started by a
+review catch): EIGHT documented payloads were bare statements that throw
+SyntaxError under `new Function("return " + code)` — all converted to
+expression form and EXECUTED against the activity's literal contract
+(8 pass 0 fail). workflows/patterns.md: nine template variables silently
+resolving to "". T09 dispositions: merge meta-provider-pattern→instagram,
+split skb/architecture.md and doc-code-validation-tests.md, ai-sdk.md
+(1355-line vendor reference) delete-in-favor-of-link, adr
+agent-architecture-improvements accept/reject/move.
+Four attempts: R1 caught fence-split diagram + false REST recipe; R2/R3
+caught the jsFunction contract + a half-done body→data fix. Final
+2× APPROVED. G0 green every attempt; docs-only (G1/G6b skipped).

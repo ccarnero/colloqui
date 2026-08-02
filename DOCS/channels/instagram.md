@@ -156,7 +156,9 @@ Uses the same HMAC-SHA256 mechanism as WhatsApp: header `x-hub-signature-256` wi
 | `services/channel-service/src/providers/meta/instagram/instagram.provider.ts` | Main provider: `parseWebhook`, `sendMessage`, `buildSendPayload` |
 | `services/channel-service/src/providers/meta/meta-channel-provider.base.ts` | Shared Meta base: `signatureHeader`, `verifySignature` |
 | `services/channel-service/src/providers/meta/meta-base.ts` | `verifyWebhookSignature` (HMAC-SHA256), `sendMetaMessage` |
-| `services/channel-service/src/providers/channel-router.ts` | Provider registry by channel |
+| `services/channel-service/src/providers/meta/provider-registry.ts` | `ProviderRegistry` — the Meta-family map (`whatsapp`, `instagram`) |
+| `services/channel-service/src/providers/channel-router.ts` | `ChannelRouter` — aggregates `ProviderRegistry` plus the Telegram/HTTP providers into one `Map<Channel, IChannelProvider>` |
+| `services/channel-service/src/modules/webhooks/webhook-ingress.service.ts` | account resolution (`resolveAccount`, `extractInstagramBusinessIdHint`) |
 
 ### `parseWebhook`
 
@@ -240,24 +242,37 @@ const body = {
 };
 ```
 
-`account.igUserId` is the IG Professional Account ID (the `id` of `entry[]` in the webhook).
+`account.igUserId` is the IG Professional Account ID — the same value Meta puts in
+`entry[].id` and in `messaging[].recipient.id`. Only `recipient.id` is read by the
+code (`extractInstagramBusinessIdHint`); `entry[].id` is never inspected.
 
 ### Parse differences vs WhatsApp
 
+`parseWebhook` on either provider extracts messages only — no account identifier, no
+status/receipt handling. The first two rows below therefore name the *resolution*
+site (`webhook-ingress.service.ts`), not the parser.
+
 | Aspect | WhatsApp | Instagram |
 |--------|----------|-----------|
-| Account identifier | `metadata.phone_number_id` | `entry[].id` (= `recipient.id`) |
-| Sender identifier | `messages[].from` (phone/BSUID) | `messaging[].sender.id` (IGSID) |
+| Account hint (tie-break only) | `extractMetaPhoneNumberId` → `entry[0].changes[0].value.metadata.phone_number_id` | `extractInstagramBusinessIdHint` → `entry[].messaging[].recipient.id` |
+| Status updates | **not parsed** — `WhatsAppProvider.parseWebhook` reads `value.messages` and ignores `value.statuses[]` | not sent by the channel |
+| Sender identifier | `messages[].from` (phone/BSUID), normalized by `normalizeRecipient` | `messaging[].sender.id` (IGSID), verbatim |
 | Message path | `entry[].changes[].value.messages[]` | `entry[].messaging[]` |
 | Echo filter | Not needed | `message.is_echo === true` → skip |
-| Status updates | `changes[].value.statuses[]` | Not present |
 
 ### `ChannelAccount` fields for Instagram
+
+The Instagram-relevant subset of the `ChannelAccount` interface
+(`packages/shared/src/channel.interfaces.ts`) — `igUserId`, `appSecret`,
+`verifyToken` and `appId` are all optional on the type, and `id`, `tenantId`,
+`name`, `externalId`, `isActive`, `createdAt`, `updatedAt` are required on every
+account regardless of channel:
 
 ```typescript
 {
   channel: "instagram",
   provider: "meta",
+  externalId: "...",          // instance-addressed webhook URL segment
   igUserId: "17841400...",    // IG Professional Account ID
   accessToken: "...",         // Instagram User Access Token
   appSecret: "...",           // used to verify webhook signature

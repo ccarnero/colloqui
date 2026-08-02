@@ -38,12 +38,18 @@ Admin Console → api-gateway (AdminStructuredKBController)
 - `SERVICE_MODE=worker` — NATS consumer (ingestion pipeline + watchdog)
 - Both can run simultaneously on different pods.
 
-> **Known limitations in the current tree**: the file upload route is not
-> implemented in `agent-admin-service`, the worker's file-status updates target
-> a `skb_container_files` table that is never created, its `insertRows` call
-> does not match the repository signature, the watchdog stuck-file lookup is
-> stubbed, and query history is never recorded. See
-> `DOCS/skb/architecture.md` §8.1 "Known wiring defects" for details.
+> **Re-verified 2026-08-02 — the old "known limitations" list is obsolete.** The
+> upload route (`SKBContainersController.uploadFile`) is implemented and publishes
+> the ingestion event; file-status updates target `skb_files` (created by
+> `schema-initializer.ts`); `insertRows()` has an honest signature;
+> `findProcessingFilesOlderThan` really iterates
+> `connectionManager.getKnownTenantIds()` and queries `skb_files`; and query
+> history IS recorded — `SKBQueryService.recordQueryHistory()` calls
+> `SKBQueryHistoryService.recordQuery()` on both the success and the error path
+> (fire-and-forget, failures logged at `warn`).
+>
+> Two real gaps remain: `GET/DELETE .../files*` and `GET .../files/:fileId/schema`
+> have no routes at all, and none of the `skb_*` Prometheus metrics in §6 exist.
 
 **Key tables:**
 - `skb_containers` — Container metadata and status
@@ -58,26 +64,37 @@ Admin Console → api-gateway (AdminStructuredKBController)
 
 ### Kubernetes
 
+Two workloads run this image, in the **platform** namespace
+(`platform-services-dev`) — NOT a tenant namespace, which holds only that
+tenant's datastores:
+
+| Workload | Kind | `SERVICE_MODE` | Runs SKB ingestion? |
+|---|---|---|---|
+| `agent-admin-service` | Knative `Service` (`knative/services/base/agent-admin-service.yaml`) | `api` | no — HTTP + query only |
+| `agent-admin-service-worker` | plain `apps/v1` `Deployment` (`agent-admin-service-worker.yaml`) | `worker` | yes |
+
+Restart the **worker**; the label selector is `app.kubernetes.io/name`, not `app`:
+
 ```bash
-# Find worker pods
-kubectl get pods -l app=agent-admin-service -n <tenant-ns>
+kubectl get pods -l app.kubernetes.io/name=agent-admin-service-worker -n platform-services-dev
 
-# Restart by deleting the pod (deployment will recreate it)
-kubectl delete pod <worker-pod-name> -n <tenant-ns>
+# Rolling restart (preferred — it is a plain Deployment)
+kubectl rollout restart deployment/agent-admin-service-worker -n platform-services-dev
+kubectl rollout status  deployment/agent-admin-service-worker -n platform-services-dev
 
-# Or scale down/up
-kubectl scale deployment agent-admin-service --replicas=0 -n <tenant-ns>
-kubectl scale deployment agent-admin-service --replicas=1 -n <tenant-ns>
+# Or bounce a single pod
+kubectl delete pod <worker-pod-name> -n platform-services-dev
 ```
+
+Do **not** `kubectl scale deployment agent-admin-service`: that one is a Knative
+Service whose Deployment is owned by the KPA, which reverts any manual replica
+change.
 
 ### Verify startup
 
 ```bash
-# Check logs for successful init
-kubectl logs <worker-pod-name> -n <tenant-ns> | grep "SKB ingestion worker started"
-
-# Expected output:
-# SKB ingestion worker started, consuming 'evt.*.agent-admin-service....skb_file_ingestion.v1'
+kubectl logs -l app.kubernetes.io/name=agent-admin-service-worker \
+  -n platform-services-dev | grep -i "skb"
 ```
 
 ### NATS consumer health
@@ -108,11 +125,20 @@ nats consumer info INGRESS-<TENANT> skb-ingestion-worker | grep Redelivered
 
 ## 3. Checking Stuck Files
 
-The `SKBIngestionWatchdogService` is meant to detect files stuck in
-`processing` (threshold: 10 minutes), but its stuck-file lookup
-(`SKBContainersRepository.findProcessingFilesOlderThan`) is currently stubbed
-to return an empty list — automatic detection/reset does NOT happen. Use the
-manual checks below.
+`SKBIngestionWatchdogService` detects files stuck in `processing`
+(`DEFAULT_STUCK_THRESHOLD_MINUTES = 10`, swept every
+`DEFAULT_CHECK_INTERVAL_MS = 5 min`) and runs only when `SERVICE_MODE=worker`.
+Its lookup, `SKBContainersRepository.findProcessingFilesOlderThan`, iterates
+every tenant the process has an open connection for
+(`connectionManager.getKnownTenantIds()`) — so a tenant whose pool has not been
+opened yet in this pod is invisible to the sweep. Use the manual checks below to
+cover those.
+
+When it does find one, it acts: each stuck file is reset via
+`updateFileStatus(..., "failed", { error: "File stuck in 'processing' for more
+than 10 minutes — watchdog reset" })`, and every affected container is then
+recomputed with `updateStatus(tenantId, containerId)`. Both steps are per-file
+try/catch, so one failure does not abort the sweep.
 
 ### Manual check
 
@@ -156,17 +182,21 @@ nats stream view DLQ-<TENANT> --last
 
 ### Via API
 
+Through the api-gateway (note the `/api` global prefix, and no `file_id` — the
+server generates it; sending an unknown field is a **400** because the shared
+ValidationPipe runs `forbidNonWhitelisted: true`):
+
 ```bash
-# Re-ingest a specific file
-curl -X POST "https://<host>/admin/structured-kb/containers/<container-id>/files" \
+curl -X POST "https://<host>/api/admin/structured-kb/containers/<container-id>/files" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "x-yoizen-tenant: <tenant>" \
   -H "Content-Type: application/json" \
   -d '{
-    "file_id": "<file-id>",
     "filename": "data.csv",
-    "file_base64": "<base64-encoded-file>",
+    "file_base64": "'"$(base64 < data.csv | tr -d '\n')"'",
     "categories": ["sales", "q1"]
   }'
+# 202 {"fileId":"<uuid>","status":"pending"}
 ```
 
 ### Reset stuck file status (then re-ingest)
@@ -182,14 +212,22 @@ WHERE id = '<file-id>';
 
 ### Full container re-ingest
 
+There is no list-files route, so enumerate from the DB and re-upload each source
+file. Each upload gets a NEW server-generated `fileId`, so re-uploading does not
+replace the previous rows — delete them first if you want a clean re-ingest.
+
+```sql
+SELECT id, file_id, original_name, status
+FROM skb_files
+WHERE container_id = '<container-id>' AND is_active = true;
+```
+
 ```bash
-# 1. Get all files for the container (list-files route is pending implementation)
-# 2. For each file, re-upload via the files endpoint
-# (The ingestion pipeline deletes previous rows for the same file_id before inserting)
-curl -X POST "https://<host>/admin/structured-kb/containers/<container-id>/files" \
+curl -X POST "https://<host>/api/admin/structured-kb/containers/<container-id>/files" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "x-yoizen-tenant: <tenant>" \
   -H "Content-Type: application/json" \
-  -d '{ "file_id": "...", "filename": "data.csv", "file_base64": "..." }'
+  -d '{ "filename": "data.csv", "file_base64": "..." }'
 ```
 
 ---
@@ -198,20 +236,25 @@ curl -X POST "https://<host>/admin/structured-kb/containers/<container-id>/files
 
 ### Check query history
 
-> **Not currently usable**: query history recording is not wired —
-> `SKBQueryHistoryService.recordQuery()` has no call sites, so
-> `skb_query_history` is always empty (and the repository's insert targets
-> columns that don't exist in the DDL). Use service logs to inspect generated
-> SQL instead.
+Query history IS recorded. `SKBQueryService.recordQueryHistory()` fires on both
+the success and the error path and is intentionally not awaited — a failed insert
+is logged at `warn` and never fails the query.
+
+Column names come from `SKBQueryHistoryRepository.recordQuery`'s INSERT and the
+`skb_query_history` DDL — `nl_query` / `generated_sql` / `created_at`, **not**
+`natural_query` / `sql_where` / `sql_sort` / `executed_at`:
 
 ```sql
--- Recent queries with results (will return no rows until recording is wired)
-SELECT id, natural_query, sql_where, sql_sort, result_count, executed_at
+SELECT id, nl_query, generated_sql, result_count, duration_ms, error, created_at
 FROM skb_query_history
 WHERE container_id = '<container-id>'
-ORDER BY executed_at DESC
+ORDER BY created_at DESC
 LIMIT 20;
 ```
+
+`correlation_id`, `causation_id` and `execution_id` exist but are NULL for every
+row today: the only caller is `StructuredKBController.query`, which has no
+execution context to thread.
 
 ### Common failure patterns
 
@@ -245,16 +288,17 @@ WHERE tablename = 'skb_rows'
 
 ### Key Metrics
 
-| Metric | Source | Alert Threshold |
+> **None of the `skb_*` metrics below are emitted.** `rg 'skb_ingestion_duration_seconds|skb_query_duration_seconds|skb_query_safety_violations_total|skb_rows_total|skb_ingestion_files_stuck' services packages` returns nothing — SKB ships no instrumentation of its own. Today the only real signals are the generic NATS-consumer metrics (`nats.consumer.*`, `DOCS/architecture/observability.md` §3) plus the SQL queries below. The table is a wish list, not a dashboard.
+
+| Proposed metric (NOT emitted) | Intended source | Intended threshold |
 |--------|--------|-----------------|
 | `skb_ingestion_duration_seconds` | Worker | > 300s (5 min) |
 | `skb_ingestion_files_stuck` | Watchdog | > 0 |
 | `skb_query_duration_seconds` | API | > 10s |
 | `skb_query_safety_violations_total` | API | > 0 |
 | `skb_rows_total` (per container) | DB | > 500,000 |
-| `nats_dlq_messages` | NATS | > 0 |
 
-### Grafana Dashboard Panels
+### Grafana Dashboard Panels (proposed — no SKB dashboard is shipped)
 
 1. **Ingestion throughput** — Files processed per hour
 2. **Ingestion latency** — P50/P95/P99 file processing time
@@ -301,7 +345,9 @@ status stays `processing`.
 
 **Fix:**
 1. Check worker logs: `kubectl logs <pod> -n <ns> | grep <file-id>`
-2. The watchdog does NOT auto-reset today (stuck-file lookup is stubbed), so reset manually:
+2. The watchdog normally resets this for you (to `failed`, then recomputes the
+   container status). It only sweeps tenants whose connection pool this pod has
+   already opened — if it did not pick the file up, reset manually:
    ```sql
    UPDATE skb_files SET status = 'failed',
      error_message = 'Manual reset by ops',
@@ -324,7 +370,7 @@ status stays `processing`.
 **Symptoms:** User query returns 0 results for a container with data.
 
 **Diagnosis:**
-1. Check service logs for the generated SQL (`skb_query_history` is never populated — see Section 5)
+1. Read the generated SQL from `skb_query_history.generated_sql` (see Section 5), or from the service logs
 2. Verify the schema has the expected columns: `SELECT columns FROM skb_schemas WHERE container_id = '...'`
 3. Run the generated SQL directly against the DB to verify
 4. Check if column names match (normalization issues)

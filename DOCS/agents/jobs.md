@@ -156,10 +156,17 @@ Only one scheduler instance fires jobs at a time. Leadership uses a PostgreSQL a
 
 | ID | Name | Schedule | Agent | Purpose |
 |---|---|---|---|---|
-| `job-metrics-snapshot` | Metrics Snapshot | `interval:3600` (1 h) | `agent-default` | Collect conversation metrics |
+| `job-metrics-snapshot` | Metrics Snapshot | `interval:3600` | `agent-default` | Collect conversation metrics |
 | `job-demo-notification` | Demo Notification | `once` | `agent-sales-assistant` | Test job for admin UI |
 
 These are reference definitions only — the YAML is not auto-seeded; they must be created via the API or admin console.
+
+**Do not copy them verbatim.** The fixture has drifted from every shape on this page:
+`interval:3600` is **3 600 minutes (60 h)** under `parseSchedule`, not the "every hour"
+its own `description` claims (bare `"3600"` would be the hourly form); its keys are
+`enabled`/`payload.action`, while `IJob` uses `is_active` and the executor dispatches on
+`payload.action_type` — a job created from this payload would hit the unknown-action
+branch and publish `execution_failed`.
 
 ## Sample Requests
 
@@ -219,7 +226,9 @@ curl -X POST http://agent-admin-service/admin/jobs/550e.../trigger \
 | `services/agent-admin-service/data/jobs.yaml` | Reference seed jobs (not auto-applied) |
 | `services/agent-scheduler-service/src/modules/scheduler/scheduler.service.ts` | Reconcile loop, toad-scheduler management, leader election |
 | `services/agent-scheduler-service/src/modules/scheduler/job-reader.service.ts` | Reads active jobs from each tenant DB |
-| `services/agent-scheduler-service/src/modules/scheduler/job-trigger.service.ts` | Publishes job_trigger CloudEvents envelope |
+| `services/agent-scheduler-service/src/modules/scheduler/job-trigger.service.ts` | Fire callback — delegates to the publisher below |
+| `services/agent-scheduler-service/src/providers/nats.provider.ts` | `publishJobTrigger` — builds the envelope (`EVENT_TYPE_JOB_TRIGGER`) and publishes to `buildPlatformSubject(AGENT_ADMIN_JOB_TRIGGER, tenantId)` |
+| `services/agent-scheduler-service/src/modules/scheduler/leader-election.service.ts` | `pg_try_advisory_lock` leadership |
 | `services/agent-scheduler-service/src/modules/scheduler/execution-history.service.ts` | Redis-backed 7-day history |
 | `services/agent-scheduler-service/src/modules/admin/admin.controller.ts` | Internal read-only ops endpoint |
 | `services/agent-scheduler-service/src/config.ts` | `RECONCILE_INTERVAL_MS` (default 30 000), `LEADER_ELECTION_POSTGRES_URL` |

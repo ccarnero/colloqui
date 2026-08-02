@@ -4,7 +4,18 @@ Practical pseudocode examples for common use cases with `connector-runtime` and 
 
 > **Field name note**: The real `WorkflowAction` schema uses `activity` (not `type`) to identify the action kind. The recipes below use pseudo-JSON; in actual API payloads write `"activity": "endpointCall"` etc. See `packages/shared/src/workflow.interfaces.ts` for the canonical type definitions.
 
-> **Available action kinds** (verified in `services/workflow-service/src/temporal/workflows.ts`): `endpointCall`, `serviceCall`, `jsFunction`, `serviceBusCall`, `channelSend`, `agentCall`, `branch`, `conditional`.
+> **Available action kinds** (the whole `WorkflowAction` union, one dispatch `case` each in `services/workflow-service/src/temporal/workflows.ts`): `endpointCall`, `serviceCall`, `mcpCall`, `jsFunction`, `serviceBusCall`, `channelSend`, `agentCall`, `branch`, `conditional`.
+
+> **Template scopes are exactly what `WorkflowExecutionContext` holds.** A `{{...}}`
+> path that does not resolve is replaced with an **empty string**, silently
+> (`resolvePath` returns `""` for any missing segment) — a typo never fails a run, it
+> just injects nothing. The root keys are `workflow`, `request`, `results`,
+> `variables`, and the optional `causal` / `executionId`. Critically,
+> `context.workflow` carries only **`name`**, **`tenant`**, **`application`** (plus
+> `agentTimeoutMs` when the definition sets it): there is **no** `workflow.id`,
+> `workflow.tenantId`, `workflow.startTime`, `workflow.endTime` or
+> `workflow.channelAccountId`. Use `{{workflow.tenant}}`, and pass ids/timestamps
+> through `{{request.*}}` or compute them in a `jsFunction`.
 
 > **`serviceCall` args note**: `args.serviceId` is the UUID of a row in `registered_services`
 > (never a service name/slug). `workflow-service` pre-resolves it to `args.serviceSlug` at
@@ -16,13 +27,14 @@ Practical pseudocode examples for common use cases with `connector-runtime` and 
 
 > **`endpointCall`/`serviceCall` result shape note**: the real activity result is
 > `{ status: number, data: unknown, headers: Record<string, string> }`
-> (`IHttpCallResult` in `services/connector-runtime/src/activities/_shared/http-call-with-retry.ts`).
-> There is no `body`/`duration`/`retriesUsed` field, and `EndpointCallArgs`/`ServiceCallArgs`
-> have no `timeout`/`retries` fields — per-attempt timeout and retry count are fixed by the
-> Temporal activity policy (30s, 5 attempts), not settable per-action. Some recipes below
-> use `body`/`timeout`/`retries` as illustrative pseudocode for direct Temporal-client
-> dispatch outside the workflow JSON API — do not copy those field names into a real
-> `POST /workflows` action.
+> (`IHttpCallResult` in `services/connector-runtime/src/activities/_shared/http-call-with-retry.ts`,
+> plus an optional `cacheResult`). There is no `body`, `duration` or `retriesUsed` field —
+> read the payload as `result.data`, and in templates as `{{results.<name>.data.…}}`.
+> On the request side, `EndpointCallArgs`/`ServiceCallArgs` have no `timeout`/`retries`
+> fields: per-attempt timeout and retry count are fixed by the Temporal activity policy
+> (30 s, 5 attempts), not settable per-action. Pattern 1 shows `timeout`/`retries` only as
+> illustrative pseudocode for direct Temporal-client dispatch outside the workflow JSON API —
+> do not copy those two into a real `POST /workflows` action.
 
 ## Pattern 1: Simple HTTP Call via Connector Runtime
 
@@ -46,21 +58,19 @@ result = client.activity.executeEndpointCall({
   retries: 3
 })
 
-// Response
+// Response — IHttpCallResult, exactly these three fields
 {
   status: 200,
-  body: {
+  data: {
     id: "123",
     name: "Alice",
     email: "alice@example.com"
   },
-  headers: { "content-type": "application/json" },
-  duration: 145,
-  retriesUsed: 0
+  headers: { "content-type": "application/json" }
 }
 
 // Use result immediately
-console.log(result.body.email)  // "alice@example.com"
+console.log(result.data.email)  // "alice@example.com"
 ```
 
 ---
@@ -100,8 +110,8 @@ result = client.activity.executeEndpointCall({
 
 result = {
   status: 200,
-  body: { id: "123", name: "Alice", ... },
-  ...
+  data: { id: "123", name: "Alice", ... },
+  headers: { ... }
 }
 ```
 
@@ -176,7 +186,7 @@ POST /workflows
           orderId: "{{request.orderId}}",
           transactionId: "{{results.validatePayment.data.transactionId}}",
           amount: "{{results.fetchOrder.data.total}}",
-          timestamp: "{{workflow.startTime}}"
+          timestamp: "{{results.fetchOrder.data.placedAt}}"
         }
       }
     }
@@ -292,12 +302,12 @@ POST /workflows
       name: "mergeEnrichment",
       args: {
         code: `
-          return {
+          (context) => ({
             user: context.results.fetchUser.data,
             purchases: context.results.fetchHistory.data,
             preferences: context.results.fetchPreferences.data,
             loyalty: context.results.fetchLoyalty.data
-          }
+          })
         `
       }
     }
@@ -353,13 +363,15 @@ POST /workflows
       name: "shouldApprove",
       args: {
         code: `
-          const amount = parseInt(context.request.amount);
-          const isApproved = context.results.validateRequest.data.approved;
-          
-          if (amount > 10000 || !isApproved) {
-            return { action: "escalate", reason: "high_amount_or_validation_failed" };
-          } else {
-            return { action: "approve", reason: "auto_approved" };
+          (context) => {
+            const amount = parseInt(context.request.amount);
+            const isApproved = context.results.validateRequest.data.approved;
+
+            if (amount > 10000 || !isApproved) {
+              return { action: "escalate", reason: "high_amount_or_validation_failed" };
+            } else {
+              return { action: "approve", reason: "auto_approved" };
+            }
           }
         `
       }
@@ -381,7 +393,7 @@ POST /workflows
             payload: {
               requestId: "{{request.requestId}}",
               decision: "auto_approved",
-              timestamp: "{{workflow.startTime}}"
+              timestamp: "{{results.shouldApprove.data.decidedAt}}"
             }
           }
         }
@@ -392,7 +404,7 @@ POST /workflows
           activity: "channelSend",
           name: "notifyManager",
           args: {
-            accountId: "{{workflow.channelAccountId}}",
+            accountId: "{{request.channelAccountId}}",
             channel: "telegram",
             provider: "telegram",
             to: "{{request.managerChatId}}",
@@ -477,20 +489,26 @@ POST /workflows
         payload: {
           userId: "{{request.userId}}",              // {{request.X}}
           email: "{{results.getUser.data.email}}",   // {{results.X.data.Y}}
-          sentAt: "{{workflow.startTime}}",          // {{workflow.X}}
-          workflowId: "{{workflow.id}}"              // {{workflow.X}}
+          sentAt: "{{results.getUser.data.fetchedAt}}",  // from a step result
+          workflow: "{{workflow.name}}",                 // {{workflow.name|tenant|application}}
+          tenant: "{{workflow.tenant}}"                  // NOT {{workflow.tenantId}}
         }
       }
     }
   ]
 }
 
-// Template scopes:
-// - {{request.X}} — from initial workflow request
-// - {{results.actionName.data.Y}} — from previous action result
-// - {{workflow.id}} — workflow metadata
-// - {{workflow.tenantId}} — tenant ID
-// - {{workflow.startTime}} — workflow start time
+// Template scopes (every root key of WorkflowExecutionContext):
+// - {{request.X}}                  — from initial workflow request
+// - {{results.actionName.data.Y}}  — from a previous action result
+// - {{workflow.name}}              — definition name
+// - {{workflow.tenant}}            — tenant id (NOT `workflow.tenantId`)
+// - {{workflow.application}}       — definition application
+// - {{variables.system.X}} / .workflow.X / .previous.X / .node.<action>.X / .request.X
+// - {{executionId}}                — present once runWorkflow assigns it
+//
+// There is NO {{workflow.id}}, {{workflow.startTime}}, {{workflow.endTime}} or
+// {{workflow.channelAccountId}}. Those resolve to "" — silently.
 
 // Resolution happens at action execution time:
 // 1. getUser completes, results.getUser.data = { email: "alice@example.com", ... }
@@ -532,13 +550,15 @@ POST /workflows
       name: "checkSuccess",
       args: {
         code: `
-          const result = context.results.callPrimaryAPI;
-          if (result.status === 200) {
-            return { success: true, data: result.body };
-          } else if (result.status >= 500) {
-            return { success: false, reason: "server_error", retry: true };
-          } else {
-            return { success: false, reason: "client_error", retry: false };
+          (context) => {
+            const result = context.results.callPrimaryAPI;
+            if (result.status === 200) {
+              return { success: true, data: result.data };
+            } else if (result.status >= 500) {
+              return { success: false, reason: "server_error", retry: true };
+            } else {
+              return { success: false, reason: "client_error", retry: false };
+            }
           }
         `
       }
@@ -619,12 +639,14 @@ POST /workflows
       name: "parseRequest",
       args: {
         code: `
-          const text = context.request.text;
-          return {
-            length: text.length,
-            keywords: text.split(' '),
-            receivedAt: new Date().toISOString()
-          };
+          (context) => {
+            const text = context.request.text;
+            return {
+              length: text.length,
+              keywords: text.split(' '),
+              receivedAt: new Date().toISOString()
+            };
+          }
         `
       }
     },
@@ -632,18 +654,17 @@ POST /workflows
     // Invoke AI agent for classification
     // Note: `AgentCallArgs` requires `agentId` + `message` (not `input`); there is
     // no `timeout`/`systemPrompt` field — the agent's system prompt is configured
-    // in agent-admin-service. Free-form data goes in `variables`, not `context`
-    // (which is reserved for prior chat turns: `{ sender, content }[]`).
+    // in agent-admin-service. `context` is reserved for prior chat turns
+    // (`{ sender: "customer" | "agent", content }[]`), and `variables` must NOT be
+    // set here: `runWorkflow` dispatches `{ ...resolvedArgs, variables: context.variables }`,
+    // so any `variables` you write is replaced by the engine's own five-scope
+    // `VariableResolutionContext`. Fold free-form data into `message` instead.
     {
       activity: "agentCall",
       name: "classifyMessage",
       args: {
         agentId: "message-classifier-v2",
-        message: "{{request.text}}",
-        variables: {
-          messageLength: "{{results.parseRequest.data.length}}",
-          timestamp: "{{results.parseRequest.data.receivedAt}}"
-        }
+        message: "{{request.text}} (len={{results.parseRequest.data.length}}, at={{results.parseRequest.data.receivedAt}})"
       }
     },
     
@@ -689,11 +710,15 @@ POST /workflows
 }
 
 // Agent call characteristics:
-// - Async: Agent processes request autonomously
-// - Timeout: 60s (configurable)
-// - Context: Passed to agent for reasoning
-// - Output: Structured (expects JSON response)
-// - Idempotent: Can be retried on failure
+// - Async: the activity publishes execution_requested.v1 to JetStream and waits
+//   on core NATS for the lifecycle events; no HTTP connection is held.
+// - Timeout: 15 min startToCloseTimeout with a 30s heartbeatTimeout (the
+//   `httpAgent` proxyActivities block in workflows.ts). The activity's own wait
+//   is AGENT_CALL_TIMEOUT_MS (default 900_000 ms), overridable per definition
+//   via `workflow.agentTimeoutMs`. It is NOT 60s.
+// - Retry: maximumAttempts 3, 1s initial, 2x backoff, 60s maximum interval.
+// - Output: whatever the agent returns; nothing enforces JSON.
+// See DOCS/agents/long-running-executions.md for the full budget table.
 ```
 
 ---
@@ -720,8 +745,9 @@ POST /workflows
           transactionId: "{{request.transactionId}}",
           userId: "{{request.userId}}",
           amount: "{{request.amount}}",
-          timestamp: "{{workflow.startTime}}",
-          workflowId: "{{workflow.id}}"
+          timestamp: "{{request.startedAt}}",
+          workflow: "{{workflow.name}}",
+          executionId: "{{executionId}}"
         }
       }
     },
@@ -748,11 +774,12 @@ POST /workflows
         subject: "events.transactions.completed",
         payload: {
           transactionId: "{{request.transactionId}}",
-          workflowId: "{{workflow.id}}",
+          workflow: "{{workflow.name}}",
+          executionId: "{{executionId}}",
           chargeId: "{{results.executeTransaction.data.chargeId}}",
           status: "{{results.executeTransaction.data.status}}",
           duration: "{{results.executeTransaction.data.duration}}",
-          completedAt: "{{workflow.endTime}}"
+          completedAt: "{{results.executeTransaction.data.completedAt}}"
         }
       }
     }
