@@ -334,6 +334,13 @@ spec:
               value: "yoizen-dev-password"
             - name: PLATFORM_ENVIRONMENT
               value: "dev"
+            # Messaging tier ceilings (tenant-messaging-tiers T05, decision
+            # 3): same 2 GiB single-node NATS account as postgres-dev, so the
+            # same 512 MiB / 1 replica clamp applies.
+            - name: MESSAGING_MAX_BYTES_CEILING
+              value: "536870912"
+            - name: MESSAGING_MAX_REPLICAS_CEILING
+              value: "1"
             - name: TENANT_MONGO_IMAGE
               value: "mongo:7.0"
             - name: NODE_EXTRA_CA_CERTS

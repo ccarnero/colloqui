@@ -272,7 +272,7 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
    * service has always returned.
    *
    * Tier-aware limits are a FUTURE design — see
-   * `DOCS/v_next/tenant-messaging-tiers.md`.
+   * `DOCS/messaging/tenant-messaging-tiers.md`.
    */
   private async ensureTenantStream(tenantId: string): Promise<void> {
     if (this.ensuredStreams.has(tenantId)) {

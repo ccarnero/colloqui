@@ -238,7 +238,7 @@ describe("ensureTenantIngressStream", () => {
   });
 
   it("default path never asks the broker for account info (capacity check is opt-in)", async () => {
-    // 27 jsm mocks across the repo omit `getAccountInfo`; the 10 production
+    // 27 jsm mocks across the repo omit `getAccountInfo`; the 12 production
     // call sites publish on the hot path. The check must stay opt-in so the
     // default ensure keeps its single-round-trip contract.
     const jsm = makeCapacityJsmMock(0, 1_000_000_000);

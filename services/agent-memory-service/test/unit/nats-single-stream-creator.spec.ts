@@ -30,7 +30,7 @@ import { NatsPublisher } from "../../src/providers/nats.provider";
  * it delegates to the shared helper, which is now the only creator.
  *
  * Tier-aware limits remain the FUTURE design:
- * `DOCS/v_next/tenant-messaging-tiers.md`.
+ * `DOCS/messaging/tenant-messaging-tiers.md`.
  */
 
 function createMemory(overrides?: Partial<IMemory>): IMemory {

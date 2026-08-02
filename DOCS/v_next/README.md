@@ -49,4 +49,4 @@ consumer on the primary path.
 
 | Document | Subject | Prerequisites |
 |---|---|---|
-| [`tenant-messaging-tiers.md`](tenant-messaging-tiers.md) | Per-tenant messaging capacity tiers (`free`/`pro`/`enterprise`) for the ingress stream | 5, listed in the doc |
+| ~~`tenant-messaging-tiers.md`~~ | SHIPPED 2026-08-01 and left the folder (rule 5) — now descriptive at [`DOCS/messaging/tenant-messaging-tiers.md`](../messaging/tenant-messaging-tiers.md); loop record in `manual-loops/messaging/tenant-messaging-tiers.md` | — |

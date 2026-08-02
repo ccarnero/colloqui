@@ -124,18 +124,13 @@ Actual values come from `packages/shared/src/channel.constants.ts`:
 
 ### Tenant tiers
 
-Every tenant stream uses the SAME flat limits documented above
-(`CHANNEL_STREAM_MAX_AGE_NS` / `CHANNEL_STREAM_MAX_BYTES`). There is no
-per-tenant messaging tier in the platform today: `TENANT_TIER_LIMITS` exists in
-`packages/shared/src/tenant-stream.constants.ts` but no tenant record carries a
-`TenantTier`, and since 2026-07-31 `ensureTenantIngressStream` is the single
-creator of `INGRESS-<TENANT>`, so the flat config is the only one applied.
-
-Tiering is an agreed FUTURE direction with its limits table, prerequisites and
-migration questions in
-[`DOCS/v_next/tenant-messaging-tiers.md`](../v_next/tenant-messaging-tiers.md).
-Per `DOCS/v_next/README.md`, that document must not be read as current
-behaviour.
+SHIPPED 2026-08-01 (tenant-messaging-tiers T01–T05): a tenant's
+`messagingTier` (`free`/`pro`/`enterprise`) selects the `INGRESS-<TENANT>`
+limits at PROVISIONING time, clamped by the environment ceilings; tier
+changes reconcile the live stream with a shrink guard. The flat limits above
+remain the lazy-ensure fallback on publish paths (they no-op once the stream
+exists). Full as-built description:
+[`tenant-messaging-tiers.md`](tenant-messaging-tiers.md).
 
 ## Streams Reference
 
@@ -363,12 +358,13 @@ When a tenant is deactivated, the objective design is:
 
 ### Tier scaling
 
-JetStream supports live stream limit updates without downtime, but the platform
-does not use them: every tenant stream is created once with the flat limits
-above and is never reconciled. `buildTenantStreamConfig` has had no caller since
-2026-07-31 — see [Tenant tiers](#tenant-tiers) and
-[`DOCS/v_next/tenant-messaging-tiers.md`](../v_next/tenant-messaging-tiers.md),
-whose prerequisite 4 covers exactly this update path and its shrink semantics.
+SHIPPED 2026-08-01: tier changes now use JetStream's live `streams.update` via
+`TenantsService.reconcileMessagingTier` — full existing config with the four
+tier limit fields overridden, a 409 shrink guard on `max_bytes` below current
+usage, and broker rejections surfaced with their reason. See
+[Tenant tiers](#tenant-tiers) and
+[`tenant-messaging-tiers.md`](tenant-messaging-tiers.md).
+`buildTenantStreamConfig` still has no caller.
 
 ## Publish Semantics
 

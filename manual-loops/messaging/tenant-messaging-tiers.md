@@ -25,7 +25,8 @@ of today's flat `CHANNEL_STREAM_MAX_AGE_NS`/`CHANNEL_STREAM_MAX_BYTES`.
    environment does NOT change the tier — it CLAMPS the effective limits
    (decision 3). Distinct from the database `tier` (`shared`/`dedicated`);
    never derived from it.
-2. **Only the PROVISIONING path is tier-aware.** The other 9
+2. **Only the PROVISIONING path is tier-aware.** The other 11 [count
+   corrected from 9 at T05 — reviewer recount]
    `ensureTenantIngressStream` call sites sit on publish hot paths and keep
    the flat-config lazy-ensure fallback untouched: post-provisioning they are
    `STREAM_NAME_IN_USE` no-ops, and a pre-provisioning race is healed by the
@@ -52,7 +53,8 @@ of today's flat `CHANNEL_STREAM_MAX_AGE_NS`/`CHANNEL_STREAM_MAX_BYTES`.
   `messagingTier` (⇒ `free` at read); no existing stream is touched except
   through the explicit T04 reconciliation path.
 - `ensureTenantIngressStream`'s default (optionless) behavior is byte-for-byte
-  unchanged — 9 hot-path call sites must not gain lookups or round-trips.
+  unchanged — the 11 hot-path call sites must not gain lookups or
+  round-trips.
 - Every checkpoint: unit gates + `./scripts/e2e/http-workflow.sh` (cluster
   integration test) green before commit. The CRM demo smoke
   (`demos/crm-support-telegram/run.sh`) runs at the FINAL checkpoint (T05) as
@@ -118,7 +120,7 @@ G6b ./rebuild-redeploy.sh <touched-svc> dev && ./scripts/e2e/http-workflow.sh
 ## Out of scope (explicit)
 - Claim-check bucket + DLQ tiering (decision 5).
 - Force-downgrade / message-discarding shrink (decision 4).
-- Cross-service cached tier resolver; making the 9 lazy call sites
+- Cross-service cached tier resolver; making the 11 lazy call sites
   tier-aware (decision 2).
 - Billing/entitlement enforcement of tiers.
 
@@ -231,3 +233,33 @@ tenant-service build + 96 unit, rebuilt in dev, cluster e2e green.
 Dual review: round 1 2× REJECTED (transport-error catch-all, missing
 Progress entry, unmapped broker rejection) — all fixed; round 2
 2× APPROVED.
+
+### T05 — 2026-08-01/02
+
+Dev overlay ships the ceilings (`MESSAGING_MAX_BYTES_CEILING=536870912`,
+`MESSAGING_MAX_REPLICAS_CEILING=1` on tenant-service; NOTE
+`rebuild-redeploy.sh` does not apply env patches — `kubectl apply -k` the
+overlay did). LIVE VALIDATION (dev): tenant `tmtpro` created with
+`messagingTier: pro` → `INGRESS-TMTPRO` verified via `/jsz`: max_age 14d,
+max_bytes 536870912 (CLAMPED from 5 GiB), max_msg_size 1 MiB,
+num_replicas 1. Live PATCH → `enterprise`: stream reconciled to 30d with
+bytes/replicas still clamped. Tenant deleted (204). The 409 shrink guard is
+unit-pinned only — an empty dev stream cannot exercise it live.
+
+Docs/SDK sweep: v_next doc RETIRED per its rule 5 → new descriptive
+`DOCS/messaging/tenant-messaging-tiers.md`; service-bus.md "Tenant tiers" /
+"Tier scaling" rewritten as-built; v_next README row struck with pointer;
+code comments repointed; SDK tenants types gain `TenantMessagingTier` +
+both-optional Update + the stale "requires configuration" comment fixed
+(sdk build + 471 tests green); call-site count corrected 9→11 in decision 2
+and the `limits` option doc.
+
+Round-2 catch: the mongo-dev overlay deploys the same tenant-service image
+against the SAME 2 GiB NATS account and had no ceilings — added there too
+(both dev overlays now carry them), closing the T02 interim window in BOTH
+wired dev overlays.
+
+Integration: G0 guards clean, cluster e2e green ×2, CRM demo smoke
+(`demos/crm-support-telegram/run.sh`): first attempt 2/18 assertions failed
+(cold-start after the full rebuild wave; detail not captured), immediate
+re-runs 18/18 PASSED exit 0 — recorded as flake, not regression.

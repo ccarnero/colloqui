@@ -284,6 +284,15 @@ spec:
           value: '5432'
         - name: PLATFORM_ENVIRONMENT
           value: dev
+        # Messaging tier ceilings (tenant-messaging-tiers T05, decision 3):
+        # the dev JetStream account allows 2 GiB total on a single-node
+        # broker, so pro/enterprise tier limits are clamped to 512 MiB and
+        # 1 replica. The tier itself is untouched — only its effective
+        # limits shrink to what this cluster can hold.
+        - name: MESSAGING_MAX_BYTES_CEILING
+          value: '536870912'
+        - name: MESSAGING_MAX_REPLICAS_CEILING
+          value: '1'
         - name: TENANT_POSTGRES_IMAGE
           value: pgvector/pgvector:pg17
         - name: NODE_EXTRA_CA_CERTS

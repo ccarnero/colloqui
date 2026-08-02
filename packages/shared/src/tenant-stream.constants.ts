@@ -75,7 +75,9 @@ export function getTenantSubjectPattern(tenantId: string): string {
 }
 
 /**
- * RESERVED FOR A FUTURE DESIGN — see `DOCS/v_next/tenant-messaging-tiers.md`.
+ * Composes a config NOTHING applies — the shipped design
+ * (`DOCS/messaging/tenant-messaging-tiers.md`) passes clamped limits
+ * directly via `ensureTenantIngressStream` options instead.
  *
  * Had two callers (agent-admin, agent-memory) that both hardcoded
  * `tier: "free"`; both now delegate stream creation to

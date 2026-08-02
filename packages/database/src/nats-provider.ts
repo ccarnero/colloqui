@@ -294,7 +294,7 @@ export interface IEnsureTenantIngressStreamOptions {
   /**
    * Tier-resolved limits for the stream (tenant-messaging-tiers T02). The
    * CALLER resolves tier → `TENANT_TIER_LIMITS[tier]` →
-   * `clampTenantStreamLimits(...)`; this helper stays lookup-free so the 9
+   * `clampTenantStreamLimits(...)`; this helper stays lookup-free so the 11
    * hot-path lazy-ensure call sites keep their flat default untouched. When
    * omitted the flat `CHANNEL_STREAM_MAX_AGE_NS`/`CHANNEL_STREAM_MAX_BYTES`
    * config applies, byte-for-byte as before. Only the provisioning executor
