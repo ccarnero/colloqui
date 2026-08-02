@@ -186,3 +186,83 @@ describe("TenantProvisioningExecutor.ensureNamespace", () => {
     ).rejects.toThrow("did not finish terminating");
   });
 });
+
+describe("TenantProvisioningExecutor.run — tier-aware INGRESS creation (TMT T02)", () => {
+  const originalBytes = process.env.MESSAGING_MAX_BYTES_CEILING;
+  const originalReplicas = process.env.MESSAGING_MAX_REPLICAS_CEILING;
+
+  afterAll(() => {
+    if (originalBytes === undefined) {
+      delete process.env.MESSAGING_MAX_BYTES_CEILING;
+    } else {
+      process.env.MESSAGING_MAX_BYTES_CEILING = originalBytes;
+    }
+    if (originalReplicas === undefined) {
+      delete process.env.MESSAGING_MAX_REPLICAS_CEILING;
+    } else {
+      process.env.MESSAGING_MAX_REPLICAS_CEILING = originalReplicas;
+    }
+  });
+
+  async function makeRunExecutor() {
+    const mod = await import(
+      "../../src/modules/provisioning/tenant-provisioning-executor.service"
+    );
+    const coreApi: ICoreApiStub = {
+      createNamespace: mock(() =>
+        Promise.resolve({ body: { status: { phase: "Active" } } }),
+      ),
+      readNamespace: mock(() =>
+        Promise.resolve({ body: { status: { phase: "Active" } } }),
+      ),
+    };
+    const provisioner: IProvisionerStub = {
+      provision: mock(() => Promise.resolve()),
+      waitForReady: mock(() => Promise.resolve()),
+    };
+    const jsm = makeJsm();
+    const executor = new mod.TenantProvisioningExecutor(
+      coreApi as never,
+      jsm as never,
+      provisioner as never,
+    );
+    return { executor, jsm };
+  }
+
+  it("passes the tenant's tier limits, clamped by the env ceilings, to streams.add", async () => {
+    // enterprise: 20 GiB / 3 replicas — the dev-style ceilings must cap both.
+    process.env.MESSAGING_MAX_BYTES_CEILING = "536870912";
+    process.env.MESSAGING_MAX_REPLICAS_CEILING = "1";
+    const { executor, jsm } = await makeRunExecutor();
+
+    await executor.run({
+      name: "tmt-clamped-enterprise",
+      messagingTier: "enterprise",
+      configuration: {},
+    });
+
+    expect(jsm.streams.add).toHaveBeenCalledTimes(1);
+    const [cfg] = jsm.streams.add.mock.calls[0] as [Record<string, unknown>];
+    expect(cfg.max_bytes).toBe(536_870_912);
+    expect(cfg.num_replicas).toBe(1);
+    // Policy fields stay tier-defined: 30d retention, 1 MiB message cap.
+    expect(cfg.max_age).toBe(30 * 24 * 60 * 60 * 1_000_000_000);
+    expect(cfg.max_msg_size).toBe(1_048_576);
+  });
+
+  it("defaults to free-tier limits when no messagingTier is passed", async () => {
+    delete process.env.MESSAGING_MAX_BYTES_CEILING;
+    delete process.env.MESSAGING_MAX_REPLICAS_CEILING;
+    const { executor, jsm } = await makeRunExecutor();
+
+    await executor.run({
+      name: "tmt-default-free",
+      configuration: {},
+    });
+
+    const [cfg] = jsm.streams.add.mock.calls[0] as [Record<string, unknown>];
+    expect(cfg.max_bytes).toBe(1_073_741_824);
+    expect(cfg.max_age).toBe(7 * 24 * 60 * 60 * 1_000_000_000);
+    expect(cfg.num_replicas).toBe(1);
+  });
+});

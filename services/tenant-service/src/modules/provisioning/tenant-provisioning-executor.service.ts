@@ -1,14 +1,24 @@
-import { Inject, Injectable, InternalServerErrorException } from "@nestjs/common";
-import { PinoLoggerService } from "@yoizen/observability";
 import type * as k8s from "@kubernetes/client-node";
-import type { JetStreamManager } from "nats";
-import { ensureTenantIngressStream } from "@yoizen/database";
 import {
-  TenantDatabaseTier,
+  Inject,
+  Injectable,
+  InternalServerErrorException,
+} from "@nestjs/common";
+import { ensureTenantIngressStream } from "@yoizen/database";
+import { PinoLoggerService } from "@yoizen/observability";
+import {
+  clampTenantStreamLimits,
+  DEFAULT_TENANT_MESSAGING_TIER,
   invalidPlatformEnvironmentMessage,
-  tenantKubernetesNamespaceName,
+  readMessagingCeilingsFromEnv,
+  TENANT_TIER_LIMITS,
+  TenantDatabaseTier,
   type TenantDatabaseTierValue,
+  type TenantTier,
+  tenantKubernetesNamespaceName,
 } from "@yoizen/shared";
+import type { JetStreamManager } from "nats";
+import { tenantServiceConfig } from "../../config";
 import { K8S_CORE_API } from "../../providers/kubernetes.provider";
 import {
   isKubernetesConflictError,
@@ -16,10 +26,9 @@ import {
 } from "../../providers/kubernetes-errors";
 import { JETSTREAM_MANAGER } from "../../providers/nats.module";
 import {
-  TENANT_PROVISIONER,
   type ITenantProvisioner,
+  TENANT_PROVISIONER,
 } from "../../providers/tenant-provisioner.interface";
-import { tenantServiceConfig } from "../../config";
 import {
   type Environment,
   type TenantConfiguration,
@@ -46,6 +55,8 @@ function namespaceTerminationPollMs(): number {
 interface ITenantProvisioningRunParams {
   readonly name: string;
   readonly tier?: TenantDatabaseTierValue;
+  /** Messaging tier for the INGRESS stream limits; defaults to `free`. */
+  readonly messagingTier?: TenantTier;
   readonly configuration: TenantConfiguration;
 }
 
@@ -59,7 +70,7 @@ function unwrapNamespace(res: unknown): k8s.V1Namespace {
 @Injectable()
 export class TenantProvisioningExecutor {
   private readonly logger = new PinoLoggerService(
-    TenantProvisioningExecutor.name,
+    TenantProvisioningExecutor.name
   );
   private readonly environment: Environment;
 
@@ -92,7 +103,7 @@ export class TenantProvisioningExecutor {
     const phaseTag = `tenant=${name} tier=${tier} ns=${nsName}`;
 
     const phase = await this.runPhase(`namespace.ensure ${phaseTag}`, () =>
-      this.ensureNamespace(name, nsName),
+      this.ensureNamespace(name, nsName)
     );
 
     await this.runPhase(`database.provision ${phaseTag}`, () =>
@@ -100,19 +111,35 @@ export class TenantProvisioningExecutor {
         namespace: nsName,
         tenantId: name,
         tier,
-      }),
+      })
     );
     await this.runPhase(`database.waitForReady ${phaseTag}`, () =>
-      this.provisioner.waitForReady(nsName, tier),
+      this.provisioner.waitForReady(nsName, tier)
     );
 
-    await this.runPhase(`nats.ensure-ingress-stream ${phaseTag}`, () =>
-      ensureTenantIngressStream(this.jsm, name),
+    // Tier-aware creation (tenant-messaging-tiers T02, decision 2): the
+    // provisioning path is the ONLY tier-aware creator. Tier limits are
+    // clamped by the environment ceilings so a pro/enterprise tenant in a
+    // small cluster gets what the cluster can hold (decision 3).
+    // INTERIM (T02→T05): until T05 ships the dev overlay's MESSAGING_*
+    // ceilings, provisioning a pro/enterprise tenant in dev requests limits
+    // the 2 GiB single-node account cannot grant — streams.add fails and the
+    // tenant ends provisioning-failed (terminal; delete-and-recreate to
+    // retry). Recorded in the SPEC's T02 Progress entry.
+    const messagingTier: TenantTier =
+      params.messagingTier ?? DEFAULT_TENANT_MESSAGING_TIER;
+    const limits = clampTenantStreamLimits(
+      TENANT_TIER_LIMITS[messagingTier],
+      readMessagingCeilingsFromEnv()
+    );
+    await this.runPhase(
+      `nats.ensure-ingress-stream ${phaseTag} messagingTier=${messagingTier}`,
+      () => ensureTenantIngressStream(this.jsm, name, { limits })
     );
 
     const totalElapsedMs = Math.round(performance.now() - totalStarted);
     this.logger.log(
-      `Background provisioning complete for tenant '${name}' in ${nsName} (tier=${tier}, total=${totalElapsedMs}ms)`,
+      `Background provisioning complete for tenant '${name}' in ${nsName} (tier=${tier}, total=${totalElapsedMs}ms)`
     );
 
     return { nsName, namespacePhase: phase };
@@ -136,7 +163,9 @@ export class TenantProvisioningExecutor {
       const ns = unwrapNamespace(created);
       return ns.status?.phase ?? "Active";
     } catch (err: unknown) {
-      if (!isKubernetesConflictError(err)) throw err;
+      if (!isKubernetesConflictError(err)) {
+        throw err;
+      }
       return this.handleExistingNamespace(name, nsName, body);
     }
   }
@@ -150,7 +179,7 @@ export class TenantProvisioningExecutor {
   private async handleExistingNamespace(
     name: string,
     nsName: string,
-    body: k8s.V1Namespace,
+    body: k8s.V1Namespace
   ): Promise<string> {
     const read = await this.k8sApi.readNamespace({ name: nsName });
     const ns = unwrapNamespace(read);
@@ -158,13 +187,13 @@ export class TenantProvisioningExecutor {
 
     if (phase !== NAMESPACE_TERMINATING_PHASE) {
       this.logger.log(
-        `Namespace ${nsName} already exists (phase=${phase}), continuing provisioning`,
+        `Namespace ${nsName} already exists (phase=${phase}), continuing provisioning`
       );
       return phase;
     }
 
     this.logger.log(
-      `Namespace ${nsName} is Terminating; waiting for full deletion before recreating`,
+      `Namespace ${nsName} is Terminating; waiting for full deletion before recreating`
     );
     await this.waitForNamespaceDeleted(nsName);
 
@@ -182,37 +211,39 @@ export class TenantProvisioningExecutor {
       try {
         await this.k8sApi.readNamespace({ name: nsName });
       } catch (err: unknown) {
-        if (isKubernetesNotFoundError(err)) return;
+        if (isKubernetesNotFoundError(err)) {
+          return;
+        }
         throw err;
       }
       await new Promise<void>((resolve) => {
         const timer = setTimeout(resolve, pollMs);
-        if (typeof timer.unref === "function") timer.unref();
+        if (typeof timer.unref === "function") {
+          timer.unref();
+        }
       });
     }
     throw new InternalServerErrorException(
-      `Namespace ${nsName} did not finish terminating within ${timeoutMs}ms`,
+      `Namespace ${nsName} did not finish terminating within ${timeoutMs}ms`
     );
   }
 
   private async runPhase<T>(
     phaseLabel: string,
-    fn: () => Promise<T>,
+    fn: () => Promise<T>
   ): Promise<T> {
     const started = performance.now();
     this.logger.log(`phase=${phaseLabel} status=started`);
     try {
       const result = await fn();
       const elapsedMs = Math.round(performance.now() - started);
-      this.logger.log(
-        `phase=${phaseLabel} status=ok elapsedMs=${elapsedMs}`,
-      );
+      this.logger.log(`phase=${phaseLabel} status=ok elapsedMs=${elapsedMs}`);
       return result;
     } catch (err: unknown) {
       const elapsedMs = Math.round(performance.now() - started);
       const detail = err instanceof Error ? err.message : String(err);
       this.logger.error(
-        `phase=${phaseLabel} status=failed elapsedMs=${elapsedMs} error=${detail}`,
+        `phase=${phaseLabel} status=failed elapsedMs=${elapsedMs} error=${detail}`
       );
       throw err;
     }

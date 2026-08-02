@@ -32,19 +32,15 @@ export interface TenantStreamConfig {
 const DAY_NS = 24 * 60 * 60 * 1_000_000_000;
 
 /**
- * RESERVED FOR A FUTURE DESIGN — see `DOCS/v_next/tenant-messaging-tiers.md`.
- *
- * These limits are NOT applied to any stream today. Tenant records carry a
- * `messaging_tier` since 2026-08-01 (tenant-messaging-tiers T01), but
- * `ensureTenantIngressStream`
- * (`packages/database/src/nats-provider.ts`) — the single creator of
- * `INGRESS-<TENANT>` since 2026-07-31 — applies the flat
- * `CHANNEL_STREAM_MAX_AGE_NS` / `CHANNEL_STREAM_MAX_BYTES` instead.
- *
- * Kept in code (not deleted) because the v_next design references these exact
- * values; the doc lists the five prerequisites to make them live. Do not wire
- * them into a creation path without reading prerequisite 3 (cluster capacity)
- * and 4 (shrink semantics on existing streams).
+ * LIVE since 2026-08-01 (tenant-messaging-tiers T02): the provisioning
+ * executor applies `TENANT_TIER_LIMITS[messaging_tier]` — clamped by
+ * `clampTenantStreamLimits` with the environment ceilings — when it creates
+ * `INGRESS-<TENANT>`. Every OTHER `ensureTenantIngressStream` call site is a
+ * lazy-ensure fallback that still uses the flat
+ * `CHANNEL_STREAM_MAX_AGE_NS` / `CHANNEL_STREAM_MAX_BYTES` (SPEC decision 2)
+ * and no-ops once the stream exists. Applying a tier to an EXISTING stream is
+ * the T04 reconciliation path. `object_store_max_bytes` is carried here but
+ * not wired anywhere (SPEC decision 5: claim-check stays flat).
  */
 export const TENANT_TIER_LIMITS: Record<TenantTier, TenantStreamLimits> = {
   free: {
@@ -94,6 +90,72 @@ export function buildTenantStreamConfig(
     subjects: [getTenantSubjectPattern(tenantId)],
     limits: TENANT_TIER_LIMITS[tier],
     tier,
+  };
+}
+
+/**
+ * Per-environment ceilings for tier limits
+ * (`manual-loops/messaging/tenant-messaging-tiers.md` decision 3). The
+ * environment never changes a tenant's tier — it CLAMPS the effective
+ * limits so a `pro`/`enterprise` tenant in a small cluster gets what the
+ * cluster can actually hold. Unset field = no clamp on that axis.
+ */
+export interface TenantStreamLimitCeilings {
+  maxBytesCeiling?: number;
+  maxReplicasCeiling?: number;
+}
+
+/** Environment variable names for {@link readMessagingCeilingsFromEnv}. */
+export const MESSAGING_MAX_BYTES_CEILING_ENV = "MESSAGING_MAX_BYTES_CEILING";
+export const MESSAGING_MAX_REPLICAS_CEILING_ENV =
+  "MESSAGING_MAX_REPLICAS_CEILING";
+
+/**
+ * Parses the messaging ceilings from environment variables. Absent vars mean
+ * "no clamp"; a set-but-invalid value (non-numeric or < 1) throws, because
+ * silently ignoring a mistyped ceiling would deploy uncapped tier limits.
+ */
+export function readMessagingCeilingsFromEnv(
+  env: Record<string, string | undefined> = process.env
+): TenantStreamLimitCeilings {
+  const read = (name: string): number | undefined => {
+    const raw = env[name];
+    if (raw === undefined || raw === "") {
+      return undefined;
+    }
+    const value = Number(raw);
+    if (!Number.isInteger(value) || value < 1) {
+      throw new Error(
+        `${name} must be a positive integer, got: ${JSON.stringify(raw)}`
+      );
+    }
+    return value;
+  };
+  return {
+    maxBytesCeiling: read(MESSAGING_MAX_BYTES_CEILING_ENV),
+    maxReplicasCeiling: read(MESSAGING_MAX_REPLICAS_CEILING_ENV),
+  };
+}
+
+/**
+ * Applies the environment ceilings to a tier's limits. Only `max_bytes` and
+ * `num_replicas` clamp — retention age and message size are policy, not
+ * capacity, and stay tier-defined. Returns a new object; never mutates.
+ */
+export function clampTenantStreamLimits(
+  limits: TenantStreamLimits,
+  ceilings: TenantStreamLimitCeilings
+): TenantStreamLimits {
+  return {
+    ...limits,
+    max_bytes:
+      ceilings.maxBytesCeiling === undefined
+        ? limits.max_bytes
+        : Math.min(limits.max_bytes, ceilings.maxBytesCeiling),
+    num_replicas:
+      ceilings.maxReplicasCeiling === undefined
+        ? limits.num_replicas
+        : Math.min(limits.num_replicas, ceilings.maxReplicasCeiling),
   };
 }
 

@@ -485,16 +485,21 @@ export {
 export type {
   JetStreamStorageCheck,
   TenantStreamConfig,
+  TenantStreamLimitCeilings,
   TenantStreamLimits,
   TenantTier,
 } from "./tenant-stream.constants";
 export {
   buildTenantStreamConfig,
   checkJetStreamCapacity,
+  clampTenantStreamLimits,
   DEFAULT_TENANT_MESSAGING_TIER,
   getTenantStreamName,
   getTenantSubjectPattern,
   isTenantTier,
+  MESSAGING_MAX_BYTES_CEILING_ENV,
+  MESSAGING_MAX_REPLICAS_CEILING_ENV,
+  readMessagingCeilingsFromEnv,
   TENANT_TIER_LIMITS,
   TENANT_TIERS,
 } from "./tenant-stream.constants";

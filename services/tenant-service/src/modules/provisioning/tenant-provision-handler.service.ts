@@ -7,11 +7,11 @@ import {
   TENANT_PROVISION_MAX_DELIVER,
 } from "@yoizen/shared";
 import type { JsMsg } from "nats";
-import {
-  TENANTS_REPOSITORY,
-  type ITenantsRepository,
-} from "../tenants/tenants.repository.interface";
 import { TenantReadyPublisher } from "../../providers/tenant-ready-publisher.service";
+import {
+  type ITenantsRepository,
+  TENANTS_REPOSITORY,
+} from "../tenants/tenants.repository.interface";
 import { TenantProvisioningExecutor } from "./tenant-provisioning-executor.service";
 
 @Injectable()
@@ -40,7 +40,7 @@ export class TenantProvisionHandler {
     if (!isTenantProvisionRequestedMessageV1(json)) {
       throw new PermanentError(
         "Invalid TenantProvisionRequested message shape",
-        "validate",
+        "validate"
       );
     }
     const { tenantId, name, configuration } = json;
@@ -50,13 +50,13 @@ export class TenantProvisionHandler {
     if (!row) {
       throw new PermanentError(
         `No tenant row for id ${tenantId} (may have been deleted)`,
-        "lookup",
+        "lookup"
       );
     }
     if (row.name !== name) {
       throw new PermanentError(
         "Tenant name mismatch for provision message",
-        "validate",
+        "validate"
       );
     }
 
@@ -66,14 +66,19 @@ export class TenantProvisionHandler {
     }
     if (row.provisioning_status === ProvisioningStatus.Failed) {
       this.logger.warn(
-        `Tenant ${tenantId} already failed, ack to drop redelivery`,
+        `Tenant ${tenantId} already failed, ack to drop redelivery`
       );
       return;
     }
 
     try {
       await this.repository.markProvisioningStarted(tenantId);
-      await this.executor.run({ name, tier: row.tier, configuration });
+      await this.executor.run({
+        name,
+        tier: row.tier,
+        messagingTier: row.messaging_tier,
+        configuration,
+      });
       await this.repository.markProvisioningReady(tenantId);
       // Best-effort fan-out so per-tenant subscribers can run DDL
       // eagerly and avoid the lazy first-request
@@ -97,15 +102,15 @@ export class TenantProvisionHandler {
             : `provisioning failed: ${String(err)}`;
         await this.repository.markProvisioningFailed(tenantId, reason);
         this.logger.error(
-          `Marking tenant ${tenantId} failed after ${deliveryCount} deliveries: ${reason}`,
+          `Marking tenant ${tenantId} failed after ${deliveryCount} deliveries: ${reason}`
         );
         throw new PermanentError(
           `Provisioning exhausted retries: ${reason}`,
-          "provision",
+          "provision"
         );
       }
       this.logger.warn(
-        `Provision attempt ${deliveryCount}/${TENANT_PROVISION_MAX_DELIVER} for ${tenantId} will retry: ${err instanceof Error ? err.message : String(err)}`,
+        `Provision attempt ${deliveryCount}/${TENANT_PROVISION_MAX_DELIVER} for ${tenantId} will retry: ${err instanceof Error ? err.message : String(err)}`
       );
       throw err;
     }

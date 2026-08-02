@@ -1,14 +1,3 @@
-import {
-  connect,
-  type NatsConnection,
-  type JetStreamManager,
-  type JetStreamClient,
-  type Consumer,
-  RetentionPolicy,
-  AckPolicy,
-  DeliverPolicy,
-  ReplayPolicy,
-} from "nats";
 import type { FactoryProvider } from "@nestjs/common";
 import {
   CHANNEL_STREAM_MAX_AGE_NS,
@@ -16,7 +5,19 @@ import {
   checkJetStreamCapacity,
   getTenantStreamName,
   getTenantSubjectPattern,
+  type TenantStreamLimits,
 } from "@yoizen/shared";
+import {
+  AckPolicy,
+  type Consumer,
+  connect,
+  DeliverPolicy,
+  type JetStreamClient,
+  type JetStreamManager,
+  type NatsConnection,
+  ReplayPolicy,
+  RetentionPolicy,
+} from "nats";
 
 export const NATS_CONNECTION = "NATS_CONNECTION";
 
@@ -25,13 +26,12 @@ export const NATS_CONNECTION = "NATS_CONNECTION";
  * Reads `NATS_URL` from environment (default: `nats://localhost:4222`).
  */
 export function createNatsConnectionProvider(
-  name: string,
+  name: string
 ): FactoryProvider<Promise<NatsConnection>> {
   return {
     provide: NATS_CONNECTION,
     useFactory: async (): Promise<NatsConnection> => {
-      const url =
-        process.env.NATS_URL ?? "nats://localhost:4222";
+      const url = process.env.NATS_URL ?? "nats://localhost:4222";
       return connect({ servers: url, name, waitOnFirstConnect: true });
     },
   };
@@ -73,11 +73,15 @@ export interface EnsureStreamOptions {
  */
 function subjectsEqual(
   current: readonly string[] | undefined,
-  desired: readonly string[],
+  desired: readonly string[]
 ): boolean {
   const currentLength = current?.length ?? 0;
-  if (currentLength !== desired.length) return false;
-  if (currentLength === 0) return true;
+  if (currentLength !== desired.length) {
+    return false;
+  }
+  if (currentLength === 0) {
+    return true;
+  }
 
   const seen = new Map<string, number>();
   for (let i = 0; i < currentLength; i++) {
@@ -87,9 +91,14 @@ function subjectsEqual(
   for (let i = 0; i < desired.length; i++) {
     const key = desired[i]!;
     const count = seen.get(key);
-    if (count === undefined) return false;
-    if (count === 1) seen.delete(key);
-    else seen.set(key, count - 1);
+    if (count === undefined) {
+      return false;
+    }
+    if (count === 1) {
+      seen.delete(key);
+    } else {
+      seen.set(key, count - 1);
+    }
   }
   return seen.size === 0;
 }
@@ -112,10 +121,9 @@ function subjectsEqual(
  */
 export async function ensureStream(
   jsm: JetStreamManager,
-  options: EnsureStreamOptions,
+  options: EnsureStreamOptions
 ): Promise<void> {
-  const { name, subjects, maxAge, maxBytes, retention, logger } =
-    options;
+  const { name, subjects, maxAge, maxBytes, retention, logger } = options;
   try {
     const info = await jsm.streams.info(name);
     const cfg = info.config;
@@ -131,16 +139,14 @@ export async function ensureStream(
         const warn = logger?.warn ?? console.warn.bind(console);
         warn(
           `ensureStream: reconciling '${name}' subjects ` +
-            `[${(cfg.subjects ?? []).join(",")}] -> [${subjects.join(",")}]`,
+            `[${(cfg.subjects ?? []).join(",")}] -> [${subjects.join(",")}]`
         );
       }
       await jsm.streams.update(name, {
         ...cfg,
         ...(subjectsDrifted ? { subjects: [...subjects] } : {}),
         ...(maxAge !== undefined ? { max_age: maxAge } : {}),
-        ...(maxBytes !== undefined
-          ? { max_bytes: maxBytes }
-          : {}),
+        ...(maxBytes !== undefined ? { max_bytes: maxBytes } : {}),
       });
     }
   } catch {
@@ -148,9 +154,7 @@ export async function ensureStream(
       name,
       subjects: [...subjects],
       ...(maxAge !== undefined ? { max_age: maxAge } : {}),
-      ...(maxBytes !== undefined
-        ? { max_bytes: maxBytes }
-        : {}),
+      ...(maxBytes !== undefined ? { max_bytes: maxBytes } : {}),
       ...(retention !== undefined ? { retention } : {}),
     });
   }
@@ -205,8 +209,7 @@ const inFlightTenantIngressEnsures = new Map<string, Promise<void>>();
  */
 function isStreamNameInUseError(err: unknown): boolean {
   if (typeof err === "object" && err !== null) {
-    const apiError = (err as { api_error?: { err_code?: unknown } })
-      .api_error;
+    const apiError = (err as { api_error?: { err_code?: unknown } }).api_error;
     if (
       apiError &&
       typeof apiError.err_code === "number" &&
@@ -228,8 +231,9 @@ function isStreamNameInUseError(err: unknown): boolean {
  */
 /**
  * Thrown by {@link ensureTenantIngressStream} when `checkCapacity` is set and
- * the JetStream account cannot fit another stream of
- * `CHANNEL_STREAM_MAX_BYTES`. Carries the numbers so callers can map it to
+ * the JetStream account cannot fit another stream of the requested size
+ * (`options.limits.max_bytes` when tier limits are passed, else the flat
+ * `CHANNEL_STREAM_MAX_BYTES`). Carries the numbers so callers can map it to
  * their own transport error (agent-admin and agent-memory turn it into a
  * `ServiceUnavailableException`).
  */
@@ -237,7 +241,7 @@ export class JetStreamCapacityError extends Error {
   constructor(
     message: string,
     public readonly requestedBytes: number,
-    public readonly availableBytes: number,
+    public readonly availableBytes: number
   ) {
     super(message);
     this.name = "JetStreamCapacityError";
@@ -259,20 +263,34 @@ export interface IEnsureTenantIngressStreamOptions {
    * agent-memory) pass `true` to keep that behaviour.
    */
   readonly checkCapacity?: boolean;
+
+  /**
+   * Tier-resolved limits for the stream (tenant-messaging-tiers T02). The
+   * CALLER resolves tier → `TENANT_TIER_LIMITS[tier]` →
+   * `clampTenantStreamLimits(...)`; this helper stays lookup-free so the 9
+   * hot-path lazy-ensure call sites keep their flat default untouched. When
+   * omitted the flat `CHANNEL_STREAM_MAX_AGE_NS`/`CHANNEL_STREAM_MAX_BYTES`
+   * config applies, byte-for-byte as before. Only the provisioning executor
+   * passes this today; the ensure stays CREATE-only either way — applying a
+   * tier to an EXISTING stream is T04's reconciliation, never this path.
+   */
+  readonly limits?: TenantStreamLimits;
 }
 
 async function performTenantIngressEnsure(
   jsm: JetStreamManager,
   tenantId: string,
   streamName: string,
-  options: IEnsureTenantIngressStreamOptions,
+  options: IEnsureTenantIngressStreamOptions
 ): Promise<void> {
+  const requestedMaxBytes =
+    options.limits?.max_bytes ?? CHANNEL_STREAM_MAX_BYTES;
   if (options.checkCapacity === true) {
     const info = await jsm.getAccountInfo();
     const check = checkJetStreamCapacity(
-      CHANNEL_STREAM_MAX_BYTES,
+      requestedMaxBytes,
       info.storage,
-      info.limits.max_storage,
+      info.limits.max_storage
     );
     if (!check.ok) {
       // Deliberately BEFORE the add and before seeding the cache: a capacity
@@ -280,7 +298,7 @@ async function performTenantIngressEnsure(
       throw new JetStreamCapacityError(
         check.message ?? "Insufficient JetStream file storage",
         check.requestedBytes,
-        check.availableBytes,
+        check.availableBytes
       );
     }
   }
@@ -290,8 +308,14 @@ async function performTenantIngressEnsure(
       name: streamName,
       subjects: [getTenantSubjectPattern(tenantId)],
       retention: RetentionPolicy.Limits,
-      max_age: CHANNEL_STREAM_MAX_AGE_NS,
-      max_bytes: CHANNEL_STREAM_MAX_BYTES,
+      max_age: options.limits?.max_age ?? CHANNEL_STREAM_MAX_AGE_NS,
+      max_bytes: requestedMaxBytes,
+      ...(options.limits === undefined
+        ? {}
+        : {
+            max_msg_size: options.limits.max_msg_size,
+            num_replicas: options.limits.num_replicas,
+          }),
     });
   } catch (err) {
     if (!isStreamNameInUseError(err)) {
@@ -339,18 +363,22 @@ async function performTenantIngressEnsure(
  * `INGRESS-<TENANT>`. agent-admin and agent-memory used to create the same
  * stream themselves via `buildTenantStreamConfig(tenantId, "free")`, so a new
  * tenant's stream got free-tier limits or these flat limits depending on which
- * service touched it first. Both now delegate here. Tier-aware limits are a
- * FUTURE design — see `DOCS/v_next/tenant-messaging-tiers.md`.
+ * service touched it first. Both now delegate here. Since 2026-08-01
+ * (tenant-messaging-tiers T02) the provisioning executor passes
+ * caller-resolved tier limits via `options.limits`; every other call site
+ * stays on the flat default.
  *
  * @see REQ-RSE-002 — stream-ensure precondition before publish.
  */
 export async function ensureTenantIngressStream(
   jsm: JetStreamManager,
   tenantId: string,
-  options: IEnsureTenantIngressStreamOptions = {},
+  options: IEnsureTenantIngressStreamOptions = {}
 ): Promise<void> {
   const streamName = getTenantStreamName(tenantId);
-  if (ensuredTenantIngressStreams.has(streamName)) return;
+  if (ensuredTenantIngressStreams.has(streamName)) {
+    return;
+  }
 
   const existing = inFlightTenantIngressEnsures.get(streamName);
   if (existing) {
@@ -362,7 +390,7 @@ export async function ensureTenantIngressStream(
     jsm,
     tenantId,
     streamName,
-    options,
+    options
   ).finally(() => {
     inFlightTenantIngressEnsures.delete(streamName);
   });
@@ -384,7 +412,7 @@ export interface EnsureConsumerOptions {
  */
 export async function ensureConsumer(
   jsm: JetStreamManager,
-  options: EnsureConsumerOptions,
+  options: EnsureConsumerOptions
 ): Promise<void> {
   const {
     stream,
@@ -401,9 +429,7 @@ export async function ensureConsumer(
       replay_policy: ReplayPolicy.Instant,
       max_deliver: maxDeliver,
       ...(filterSubject ? { filter_subject: filterSubject } : {}),
-      ...(filterSubjects
-        ? { filter_subjects: [...filterSubjects] }
-        : {}),
+      ...(filterSubjects ? { filter_subjects: [...filterSubjects] } : {}),
     });
   } catch {
     // consumer already exists
@@ -423,7 +449,7 @@ export interface IJetStreamManagerBootstrapOptions {
  */
 export function createJetStreamManagerProvider(
   provideToken: string,
-  options: IJetStreamManagerBootstrapOptions,
+  options: IJetStreamManagerBootstrapOptions
 ): FactoryProvider<Promise<JetStreamManager>> {
   return {
     provide: provideToken,
@@ -453,14 +479,14 @@ export interface IJetStreamDurableConsumerProviderOptions {
  * Nest factory: resolves a durable JetStream consumer handle.
  */
 export function createJetStreamDurableConsumerProvider(
-  opts: IJetStreamDurableConsumerProviderOptions,
+  opts: IJetStreamDurableConsumerProviderOptions
 ): FactoryProvider<Promise<Consumer>> {
   return {
     provide: opts.provide,
     inject: [NATS_CONNECTION, opts.managerToken],
     useFactory: async (
       nc: NatsConnection,
-      _jm: JetStreamManager,
+      _jm: JetStreamManager
     ): Promise<Consumer> => {
       const js: JetStreamClient = nc.jetstream();
       return js.consumers.get(opts.streamName, opts.durableName);
@@ -477,7 +503,7 @@ export interface IJetStreamPublisherProviderOptions {
  * Nest factory: JetStream client for publishing.
  */
 export function createJetStreamPublisherProvider(
-  opts: IJetStreamPublisherProviderOptions,
+  opts: IJetStreamPublisherProviderOptions
 ): FactoryProvider<JetStreamClient> {
   return {
     provide: opts.provide,

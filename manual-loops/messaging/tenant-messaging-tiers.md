@@ -143,3 +143,31 @@ Gates: shared 365 + tsc; tenant-service build + 89 unit; api-gateway build +
 314 unit; both services rebuilt in dev; cluster e2e full pass ×2.
 Dual review: round 1 2× REJECTED (gateway mirror, missing acceptance tests,
 DDL literals, schema note) — all fixed; round 2 2× APPROVED.
+
+### T02 — 2026-08-01
+
+Tier-aware INGRESS creation at provisioning only (decision 2): shared
+`clampTenantStreamLimits` + `readMessagingCeilingsFromEnv`
+(`MESSAGING_MAX_BYTES_CEILING`/`MESSAGING_MAX_REPLICAS_CEILING`, absent ⇒ no
+clamp, set-but-invalid ⇒ throw → provisioning fails loud with the reason);
+`ensureTenantIngressStream` gains caller-resolved `options.limits` (flat path
+byte-for-byte pinned with toStrictEqual; capacity pre-flight uses the tier's
+bytes); executor resolves tier → limits → clamp and the handler threads
+`row.messaging_tier` (pinned by calledWith in the handler spec — the only
+link between persisted tier and creation).
+
+KNOWN INTERIM WINDOW (T02→T05): no environment sets the `MESSAGING_*`
+ceilings yet (T05 ships the dev overlay). Until then a pro/enterprise tenant
+provisioned in dev requests 5/20 GiB (and enterprise 3 replicas) against the
+measured 2 GiB single-node account — `streams.add` fails, the handler burns
+its redeliveries and the tenant lands provisioning-FAILED (terminal;
+delete-and-recreate). Free tenants (the only kind that exists today)
+unaffected. Flagged at the executor clamp site too.
+
+Gates: shared 371 + tsc, database 128, tenant-service build + 91, dev
+rebuild + cluster e2e pass. Dual review: round 1 2× REJECTED (stale
+TENANT_TIER_LIMITS/"single creator"/capacity-error doc comments now false,
+handler pass-through unasserted, toEqual-vs-toStrictEqual pin, unrecorded
+interim window) — all fixed; round 2 2× APPROVED. Reviewer nit for T05's
+docs pass: decision 2 / the `limits` option doc say "9" lazy call sites, a
+fresh grep counts 11 across 8 services.
