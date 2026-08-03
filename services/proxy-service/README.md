@@ -105,8 +105,15 @@ cd services/proxy-service
 bun test test/unit
 ```
 
-Only `test/unit/` exists; there is no `test/integration/` directory, so
-`package.json`'s `test:integration` script matches nothing.
+Run `bun test` directly, as shown — **do not use the package scripts.**
+`"test": "bun run build && pnpm test"` and
+`"test:unit": "bun run build && pnpm test test/unit"` both re-invoke this
+package's own `test` script, so `pnpm test` / `pnpm test:unit` recurse: they
+rebuild and re-enter forever and never reach a test runner (reproduced
+2026-08-02; the log is `$ bun run build && pnpm test test/unit` repeating).
+`test:integration` is not recursive but matches nothing: only `test/unit/`
+exists. Fixing the scripts is a code change, escalated by the docs-truth audit
+rather than done here.
 
 ## Deploy
 

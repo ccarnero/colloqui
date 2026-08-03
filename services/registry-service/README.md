@@ -20,8 +20,15 @@ access.
 
 ## Endpoints
 
-Every operation requires the `x-yoizen-tenant` header and is scoped by
-`tenant_id`.
+Every `/services**` operation reads the `x-yoizen-tenant` header and is scoped
+by `tenant_id`. Two endpoints are NOT: `GET /routes` (cross-tenant discovery,
+see below) and `GET /health` take no tenant at all.
+
+The header is read with a bare `@Headers(TENANT_HEADER)` parameter — there is
+no `TenantGuard` and no `@UseGuards` anywhere in this service — so an omitted
+header is `undefined` at the service layer rather than a `400`, and it reaches
+`knativeServiceName(dto.name, tenantId)` / `namespaceName(tenantId, env)` as-is.
+Callers arrive through api-gateway, which supplies the header.
 
 | Method | Path | Source |
 |---|---|---|
@@ -39,7 +46,7 @@ Every operation requires the `x-yoizen-tenant` header and is scoped by
 | `POST` | `/services/:serviceId/routes` | `src/modules/routes/routes.controller.ts:20` |
 | `GET` | `/services/:serviceId/routes` | `routes.controller.ts:30` |
 | `DELETE` | `/services/:serviceId/routes/:routeId` | `routes.controller.ts:38` |
-| `GET` | `/routes` | `routes.controller.ts:48` — discovery, polled by api-gateway |
+| `GET` | `/routes` | `routes.controller.ts:48` — discovery, polled by api-gateway. **No tenant parameter**: `RoutesService.discover()` caches under the single key `"__all__"` and returns every active route across every tenant, each row carrying its own `tenantId` |
 | `GET` | `/health` | `src/modules/health/health.controller.ts:24-48` |
 
 `GET /health` probes Kubernetes plus the active store and returns

@@ -9,9 +9,14 @@ consumes two of its own events to run the long ingestion pipelines.
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run --cwd services/agent-admin-service start:dev
 ```
+
+`pnpm`, not `bun install`: the root `package.json` declares no `workspaces`
+key, and `pnpm-workspace.yaml` is the single source of truth for workspace
+membership (its own header comment says so), so `bun install` at the root does
+not link the `@yoizen/*` `workspace:*` dependencies.
 
 Requires: NATS, Redis, and the per-tenant store for the active engine.
 
@@ -38,7 +43,7 @@ registered in `src/app.module.ts:21-37`.
 | `/admin/knowledge-bases/:kbId/documents` | `GET /`, `GET /:id`, `GET /:id/chunks`, `PUT /:docId/chunks/:chunkId`, `POST /upload`, `POST /upload-file`, `POST /:id/reingest`, `DELETE /:id` | `src/modules/knowledge-bases/documents.controller.ts:24-168` |
 | `/admin/structured-kb/containers` | `POST /`, `GET /`, `GET /:id`, `PATCH /:id`, `DELETE /:id`, `POST /:id/files` | `src/modules/structured-kb/containers.controller.ts:35-96` |
 | `/admin/structured-kb` | `POST /containers/:id/query` | `src/modules/structured-kb/structured-kb.controller.ts:9-20` |
-| `/admin/mcp-servers` | `GET /`, `POST /usage-events`, `GET /:id`, `GET /:id/tools`, `GET /:id/usage`, `POST /:id/test`, `POST /`, `PATCH /:id`, `DELETE /:id` | `src/modules/mcp-servers/mcp-servers.controller.ts:31-146` — `POST /:id/test` is declared BEFORE `GET /:id` on purpose, to avoid route shadowing (`:104-108`) |
+| `/admin/mcp-servers` | `GET /`, `POST /usage-events`, `GET /:id`, `GET /:id/tools`, `GET /:id/usage`, `POST /:id/test`, `POST /`, `PATCH /:id`, `DELETE /:id` | `src/modules/mcp-servers/mcp-servers.controller.ts:31-146` — declaration order is `GET /`, `POST /usage-events`, `GET /:id`, `GET /:id/tools`, `GET /:id/usage`, `POST /:id/test`, `POST /`, `PATCH /:id`, `DELETE /:id`. Two in-file comments discuss "declared before `:id`" ordering; neither matters here — this service runs on the Fastify adapter, whose router always prefers a static segment over a parametric one regardless of registration order, and no single-segment `:id` route shares a verb with a single-segment literal route anyway |
 | `/admin/skills` | `GET /`, `GET /:id`, `POST /`, `PATCH /:id`, `DELETE /:id` | `src/modules/skills/skills.controller.ts:18-60` |
 | `/admin/system-variables` | `GET /`, `GET /:id`, `POST /`, `PATCH /:id`, `DELETE /:id` | `src/modules/system-variables/system-variables.controller.ts:18-54` |
 | `/admin/memories` | `GET /proposals`, `POST /proposals/:id/approve`, `POST /proposals/:id/reject` | `src/modules/memories/memories.controller.ts:26-64` |

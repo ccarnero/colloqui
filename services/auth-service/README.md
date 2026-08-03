@@ -187,15 +187,29 @@ Postgres and Mongo repositories coexist; `DB_ENGINE` picks one at bootstrap (see
 | `PORT` | `3000` | HTTP server port (`src/config.ts:19-21`) |
 | `DB_ENGINE` | `postgres` | Storage engine: `postgres` or `mongo`; falls back to `STORAGE_ENGINE`, throws on any other value (`packages/database/src/engine.ts:13-23`) |
 | `MONGO_DB` | `yoizen` | Mongo database name when `DB_ENGINE=mongo` (`src/config.ts:25-27`) |
-| `POSTGRES_HOST` | `localhost` | PostgreSQL host |
+
+The block below is **not** read by `src/config.ts`. It is read by the shared
+`@yoizen/database` providers this service composes — `createPostgresProvider`
+(wired with `PLATFORM_POSTGRES_POOL_OPTIONS` in
+`src/providers/postgres.provider.ts`) and `createRedisClient`:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POSTGRES_HOST` | `localhost` | PostgreSQL host. The default is supplied by `createPostgresProvider`'s own `defaultHost = "localhost"` parameter default in `@yoizen/database` — `PLATFORM_POSTGRES_POOL_OPTIONS` sets only `max`/`connectTimeout`/`prepare`, so `defaultHost` falls back, and the factory passes `process.env.POSTGRES_HOST ?? defaultHost` to postgres.js as a literal string |
 | `POSTGRES_PORT` | `5432` | PostgreSQL port |
 | `POSTGRES_DB` | `yoizen` | PostgreSQL database |
 | `POSTGRES_USER` | `yoizen` | PostgreSQL username |
-| `POSTGRES_PASSWORD` | `yoizen-dev-password` | PostgreSQL password |
+| `POSTGRES_PASSWORD` | **required — no default** | Read with `requireEnv("POSTGRES_PASSWORD")`, which THROWS `"POSTGRES_PASSWORD environment variable is required"` when unset or empty. (`yoizen-dev-password` is the value the dev overlay's `postgres-credentials` Secret supplies — it is not a code default.) |
 | `REDIS_HOST` | `localhost` | Redis host |
 | `REDIS_PORT` | `6379` | Redis port |
-| `JWT_SECRET` | *(required)* | HS256 signing key |
-| `PLATFORM_ENVIRONMENT` | `dev` | Environment name |
+| `REDIS_CLUSTER_MODE` | *(off)* | Cluster client only on the literal `"true"` |
+
+Back to this service's own surface:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `JWT_SECRET` | *(required)* | HS256 signing key. `authServiceConfig.jwtSecret` returns `undefined` when unset — the failure surfaces at signing time, not at boot |
+| `PLATFORM_ENVIRONMENT` | `dev` | Environment name (`src/config.ts:28-30`) |
 | `ADMIN_EMAIL` | *(optional)* | Platform-admin seed email (`src/config.ts:34-36`) |
 | `ADMIN_PASSWORD` | *(optional)* | Platform-admin seed password (`src/config.ts:37-39`) |
 | `TENANT_ADMIN_TENANT_ID` | *(optional)* | Tenant to seed a `tenant_admin` into (`src/config.ts:40-42`) |

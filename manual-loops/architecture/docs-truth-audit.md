@@ -141,7 +141,7 @@ final per-file dispositions.
 - [x] T01 — Inventory + ledger skeleton
 - [x] T02 — Audit: DOCS/messaging + DOCS/architecture
 - [x] T03 — Audit: DOCS/channels, agents, workflows, skb, reference, adr, guides, runbooks
-- [ ] T04 — Audit: the 20 service READMEs
+- [x] T04 — Audit: the 20 service READMEs
 - [ ] T05 — Audit: packages + sdk docs
 - [ ] T06 — Audit: integrations, demos, examples
 - [ ] T07 — Audit: scripts (docs AND behavior contracts)
@@ -218,3 +218,36 @@ agent-architecture-improvements accept/reject/move.
 Four attempts: R1 caught fence-split diagram + false REST recipe; R2/R3
 caught the jsFunction contract + a half-done body→data fix. Final
 2× APPROVED. G0 green every attempt; docs-only (G1/G6b skipped).
+
+### T04 — 2026-08-03
+
+23/23 verdicts with evidence (20 READMEs + OPENAPI-TODO.md + trace README +
+agent-ai code-review SKILL.md): 21 FIXED, 2 TRUE (cache-service README,
+OPENAPI-TODO.md — its DTO counts and "0 `@ApiProperty`" still exact).
+Run interrupted by a machine crash mid-attempt-1 (8 READMEs edited, ledger
+untouched); resumed by re-verifying the 8 against source (all held; 3
+extended) rather than redoing. Biggest drifts: agent-scheduler README
+described a service that does not exist as written (phantom tenant
+discovery, wrong reconciler model, wrong ADMIN_API_KEY semantics, missing
+NATS/storage/test surface); workflow-service README self-contradicted on
+action-type count and three of four worked examples used nonexistent
+fields; connector-runtime "Error Handling" wrong on every axis (breaker
+constants, 4xx semantics, phantom 300 s timeout, phantom response fields
+`duration`/`retriesUsed`/`body`); POSTGRES_PASSWORD documented with a
+default in two READMEs but `requireEnv` throws. Escalations E10–E13 (code
+bugs, NOT fixed): E10 proxy-service + tenant-service `test` scripts recurse
+via `pnpm test` forever; E11 connector-admin accepts `authType:
+"oauth2-client"` but both header injectors switch on `"oauth2"` — such
+connectors get NO Authorization header; E12 `parseFrontmatter`'s
+`indexOf(":")` splitter turns `description: >` into a literal `">"`; E13
+agent-scheduler cannot schedule anything as deployed (no tenant seeding, no
+LEADER_ELECTION_POSTGRES_URL/REDIS_URL in manifest, health still `ok`).
+Rule-4 sweep: every `file:N-M` cite in the 23 docs machine-verified
+in-range; only stale/ambiguous ones converted to name-based (~34), rest
+recorded — full conversion parked as a T09 judgement call.
+Two attempts: R1 split (A APPROVED / B REJECTED — the POSTGRES_HOST "fix"
+was itself false: `createPostgresProvider` defaults `defaultHost =
+"localhost"`, postgres.js never sees `undefined`; plus a
+`bootstrapFastifyService` ghost cite). Attempt 2 corrected both;
+2× APPROVED (A recorded that B's catch was real). G0 green every attempt;
+docs-only (G1/G6b skipped).

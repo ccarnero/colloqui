@@ -112,15 +112,15 @@ Two global `APP_GUARD`s run in order:
 Dynamic public routes come from Redis through
 `src/modules/auth/public-routes-cache.service.ts`, cached in memory until
 `PUBLIC_ROUTES_CACHE_TTL` seconds elapse — 30 s
-(`packages/shared/src/auth.constants.ts:4`, applied at
-`public-routes-cache.service.ts:46`). A route added to auth-service is therefore not effective at
+(`packages/shared/src/auth.constants.ts`, applied by
+`PublicRoutesCacheService`). A route added to auth-service is therefore not effective at
 the gateway until that TTL expires.
 
 ## Dynamic routing
 
 A Fastify `onRequest` hook (`src/hooks/proxy.hook.ts`) intercepts every path
 that does NOT start with a platform prefix. The prefix list is explicit
-(`PLATFORM_PREFIXES`, `proxy.hook.ts:22-36`):
+(`PLATFORM_PREFIXES`, `proxy.hook.ts`):
 
 ```
 /api/audit  /api/tenants  /api/registry  /api/connectors  /api/channels
@@ -129,8 +129,8 @@ that does NOT start with a platform prefix. The prefix list is explicit
 ```
 
 Version segments are stripped before matching, so `/api/v1/workflows` and
-`/api/workflows` hit the same prefix (`stripVersionSegment`,
-`proxy.hook.ts:50-60`).
+`/api/workflows` hit the same prefix (`stripVersionSegment`, applied by
+`isPlatformRoutePath` in `proxy.hook.ts`).
 
 Everything else is matched against `DynamicRouteCacheService`
 (`src/modules/dynamic-routes/dynamic-route-cache.service.ts`), which polls
@@ -143,22 +143,24 @@ request is proxied to the tenant's Knative service.
 
 Introduced after the 2026-05-22 stress post-mortem, when the NATS client's
 default ~5 s request timeout fired during JetStream stalls and surfaced to
-providers as opaque 500s (`src/config/gateway.config.ts:134-151`):
+providers as opaque 500s (the reasoning is recorded in the doc comment above
+`gatewayConfig.webhook` in `src/config/gateway.config.ts`):
 
 | Setting | Env var | Default | Effect |
 |---|---|---|---|
-| Publish ack timeout | `WEBHOOK_PUBLISH_TIMEOUT_MS` | `10000` | On expiry the publisher raises `ServiceUnavailableException`, so the filter answers **503 + `Retry-After`** and WhatsApp/Telegram/Meta RETRY instead of dropping the webhook (`gateway.config.ts:152-153`) |
-| In-flight cap | `WEBHOOK_PUBLISH_INFLIGHT_CAP` | `200` | Bounds concurrent publishes per pod so a backend stall cannot grow pending acks without limit (`gateway.config.ts:154`) |
+| Publish ack timeout | `WEBHOOK_PUBLISH_TIMEOUT_MS` | `10000` | On expiry the publisher raises `ServiceUnavailableException`, so the filter answers **503 + `Retry-After`** and WhatsApp/Telegram/Meta RETRY instead of dropping the webhook (`gatewayConfig.webhook.publishTimeoutMs`) |
+| In-flight cap | `WEBHOOK_PUBLISH_INFLIGHT_CAP` | `200` | Bounds concurrent publishes per pod so a backend stall cannot grow pending acks without limit (`gatewayConfig.webhook.publishInflightCap`) |
 
-Both are parsed by `positiveIntEnv`, which falls back to the default on NaN or
-a non-positive value — a misconfiguration cannot silently turn the knob into a
-no-op (`gateway.config.ts:12-19`).
+Both are parsed by `positiveIntEnv` (`gateway.config.ts`), which falls back to
+the default on an empty, NaN or non-positive value — a misconfiguration cannot
+silently turn the knob into a no-op.
 
 ## Gateway audit
 
 A global `APP_INTERCEPTOR` (`AuditInterceptor`, `src/app.module.ts:63-64`) publishes one gateway-audit event per request to the
-`GATEWAY_AUDIT` JetStream stream, consumed by audit-service. Two flags
-(`gateway.config.ts:157-166`), both parsed with `parseBoolEnv` (`:21-34`):
+`GATEWAY_AUDIT` JetStream stream, consumed by audit-service. Two flags on
+`gatewayConfig.audit`, both `get` accessors over `parseBoolEnv`
+(`gateway.config.ts`), so a value change takes effect without a restart:
 
 | Env var | Default | Effect |
 |---|---|---|
@@ -173,42 +175,46 @@ The existing `AuthGuard` automatically enforces that a JWT with `scope: 'tenant:
 
 ## Environment Variables
 
-All of these live in `src/config/gateway.config.ts`.
+All of these live in `src/config/gateway.config.ts`, in the `gatewayConfig`
+object literal. Every `*_SERVICE_URL` / `*_URL` default is
+`platformServiceUrl(<name>, env)` under `gatewayConfig.services`, so the
+"Default" column names only the SERVICE the URL resolves to.
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3000` | HTTP server port (`:3`) |
-| `JWT_SECRET` | *(required)* | HS256 verification key. Read at ACCESS time, not module load, so tests can set it late (`:47-50`) |
-| `PLATFORM_ENVIRONMENT` | `dev` | Feeds every default service URL (`:4`) |
-| `CORS_ORIGIN` | `http://localhost:4200` | (`:45`) |
-| `API_GATEWAY_SELF_URL` | `http://127.0.0.1:<PORT>` | Used by the dashboard aggregator to fetch this gateway's own `/health` (`:43-44`) |
-| `AUTH_SERVICE_URL` | `platformServiceUrl("auth-service")` | (`:53-54`) |
-| `AUDIT_SERVICE_URL` | `…audit-service-api` | (`:59-61`) |
-| `TENANT_SERVICE_URL` | `…tenant-service` | (`:62-64`) |
-| `REGISTRY_SERVICE_URL` | `…registry-service` | (`:65-67`) |
-| `WORKFLOW_SERVICE_URL` | `…workflow-service-api` | (`:68-70`) |
-| `CONNECTOR_ADMIN_URL` | `…connector-admin-api` | (`:71-73`) |
-| `CACHE_SERVICE_URL` | `…cache-service` | (`:74-75`) |
-| `PROXY_SERVICE_URL` | `…proxy-service` | (`:76-77`) |
-| `CHANNEL_SERVICE_URL` | `…channel-service-api` | (`:78-80`) |
-| `ADMIN_SERVICE_URL` | `…agent-admin-service` | (`:81-83`) |
-| `AI_AGENT_GATEWAY_URL` | `…ai-agent-gateway` | (`:84-86`) |
-| `AGENT_MEMORY_SERVICE_URL` | `…agent-memory-service` | (`:87-89`) |
-| `TRACKING_SERVICE_URL` | `…tracking-ingester-worker:3000` | (`:96-98`) |
-| `CONNECTOR_RUNTIME_HTTP_URL` | `…connector-runtime-http:3100` | (`:109-111`) |
-| `PROVISIONING_SERVICE_URL` | `…provisioning-service` | (`:117-119`) |
-| `RATE_LIMIT_ALGORITHM` | `token-bucket` | Also accepts `sliding-window`, `fixed-window` (`:123-128`) |
-| `RATE_LIMIT_DEFAULT_LIMIT` / `_WINDOW_MS` / `_CAPACITY` / `_REFILL_RATE` | `100` / `60000` / `100` / `10` | (`:129-132`) |
-| `WEBHOOK_PUBLISH_TIMEOUT_MS` | `10000` | See webhook safety nets above (`:152`) |
-| `WEBHOOK_PUBLISH_INFLIGHT_CAP` | `200` | (`:153`) |
-| `GATEWAY_AUDIT_ENABLED` | `true` | (`:159-161`) |
-| `GATEWAY_AUDIT_SKIP_WEBHOOKS` | `false` | (`:162-165`) |
+| Variable | Default | `gatewayConfig` key | Description |
+|---|---|---|---|
+| `PORT` | `3000` | `port` | HTTP server port (module-level `gatewayPort`) |
+| `JWT_SECRET` | *(required)* | `jwtSecret` | HS256 verification key. A `get` accessor, so it is read at ACCESS time rather than module load and tests can set it late; an unset value falls back to `""`, not an error |
+| `PLATFORM_ENVIRONMENT` | `dev` | `environment` | Feeds every default service URL (module-level `env`) |
+| `CORS_ORIGIN` | `http://localhost:4200` | `corsOrigin` | |
+| `API_GATEWAY_SELF_URL` | `http://127.0.0.1:<PORT>` | `selfBaseUrl` | Used by the dashboard aggregator to fetch this gateway's own `/health` |
+| `AUTH_SERVICE_URL` | `auth-service` | `services.auth` | |
+| `AUDIT_SERVICE_URL` | `audit-service-api` | `services.audit` | |
+| `TENANT_SERVICE_URL` | `tenant-service` | `services.tenant` | |
+| `REGISTRY_SERVICE_URL` | `registry-service` | `services.registry` | |
+| `WORKFLOW_SERVICE_URL` | `workflow-service-api` | `services.workflow` | |
+| `CONNECTOR_ADMIN_URL` | `connector-admin-api` | `services.connectorAdmin` | |
+| `CACHE_SERVICE_URL` | `cache-service` | `services.cache` | |
+| `PROXY_SERVICE_URL` | `proxy-service` | `services.proxy` | |
+| `CHANNEL_SERVICE_URL` | `channel-service-api` | `services.channel` | |
+| `ADMIN_SERVICE_URL` | `agent-admin-service` | `services.admin` | |
+| `AI_AGENT_GATEWAY_URL` | `ai-agent-gateway` | `services.aiAgentGateway` | |
+| `AGENT_MEMORY_SERVICE_URL` | `agent-memory-service` | `services.agentMemory` | |
+| `TRACKING_SERVICE_URL` | `tracking-ingester-worker` **+ `:3000`** | `services.tracking` | see the port note below |
+| `CONNECTOR_RUNTIME_HTTP_URL` | `connector-runtime-http` **+ `:3100`** | `services.connectorRuntimeHttp` | see the port note below |
+| `PROVISIONING_SERVICE_URL` | `provisioning-service` | `services.provisioning` | plain ksvc — no port suffix |
+| `RATE_LIMIT_ALGORITHM` | `token-bucket` | `rateLimit.algorithm` | Typed as `token-bucket` \| `sliding-window` \| `fixed-window`, but the value is a bare cast — an unrecognised string is passed through, not rejected |
+| `RATE_LIMIT_DEFAULT_LIMIT` / `_WINDOW_MS` / `_CAPACITY` / `_REFILL_RATE` | `100` / `60000` / `100` / `10` | `rateLimit.*` | Parsed with bare `Number(...)`, unlike the webhook knobs below |
+| `WEBHOOK_PUBLISH_TIMEOUT_MS` | `10000` | `webhook.publishTimeoutMs` | See webhook safety nets above |
+| `WEBHOOK_PUBLISH_INFLIGHT_CAP` | `200` | `webhook.publishInflightCap` | |
+| `GATEWAY_AUDIT_ENABLED` | `true` | `audit.enabled` | `get` accessor — re-read per request |
+| `GATEWAY_AUDIT_SKIP_WEBHOOKS` | `false` | `audit.skipWebhookPaths` | `get` accessor — re-read per request |
 
 Two targets need an EXPLICIT port suffix because they are plain Deployments
 behind a ClusterIP Service rather than Knative ksvcs listening on port 80:
 `tracking-ingester-worker:3000` and `connector-runtime-http:3100`. Dropping the
 suffix makes the proxy connect to port 80 and hang until the 30 s timeout —
-the reason is recorded in the code (`gateway.config.ts:90-95`, `:99-108`).
+the reason is recorded in the code comments above `services.tracking` and
+`services.connectorRuntimeHttp`.
 
 `NATS_URL`, `REDIS_HOST` and `REDIS_PORT` are read by the shared
 `@yoizen/database` providers, not by `gateway.config.ts`.

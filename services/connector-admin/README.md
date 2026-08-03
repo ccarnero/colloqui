@@ -167,15 +167,18 @@ rejected the next time they are written through `POST`/`PATCH`.
 | `PORT` | `3000` | HTTP server port |
 | `SERVICE_MODE` | `api` when unset | Split-service mode: `api` or `worker` |
 | `DB_ENGINE` / `STORAGE_ENGINE` | `postgres` | Storage engine selector: `postgres` or `mongo` |
-| `POSTGRES_HOST` | `postgres.support-services-dev.svc.cluster.local` | PostgreSQL host when using Postgres |
+| `POSTGRES_HOST` | `postgres.support-services-<env>.svc.cluster.local` | TENANT-CATALOG host only (`catalogHost` — the tier lookup), and only as the fallback under `TENANT_POSTGRES_CATALOG_HOST`. Tenant data pools do NOT use it: dedicated-tier hosts are `<POSTGRES_SERVICE_NAME>.<tenant>-<env>-ns.svc.cluster.local` and shared-tier hosts come from `TENANT_POSTGRES_SHARED_HOST` |
+| `POSTGRES_SERVICE_NAME` | `postgres` | Host prefix for dedicated-tier tenant pools |
 | `POSTGRES_PORT` | `5432` | PostgreSQL port |
 | `POSTGRES_DB` | `yoizen` | Database name |
 | `POSTGRES_USER` | `yoizen` | Database user |
-| `POSTGRES_PASSWORD` | `yoizen-dev-password` | Database password |
+| `POSTGRES_PASSWORD` | **required — no default** | `TenantConnectionManager`'s constructor calls `requireEnv("POSTGRES_PASSWORD")`, so the process throws before serving if it is unset or empty. (`yoizen-dev-password` is what the dev overlay's `postgres-credentials` Secret supplies; it is not a code default.) |
 
-`src/config.ts` itself declares only `PORT` and the engine (`:9-16`); the
-Postgres/Mongo host and credential variables above are read by the shared
-`@yoizen/database` providers.
+`src/config.ts` itself declares only `PORT` and `dbEngine`; every
+Postgres/Mongo host and credential variable above is read by the shared
+`@yoizen/database` `TenantConnectionManager`, plus the
+`TENANT_POSTGRES_SHARED_USAGE_*` family read by `UsageTenantConnectionManager`
+(`src/providers/tenant-connection-manager.usage.ts`).
 
 ## Testing
 

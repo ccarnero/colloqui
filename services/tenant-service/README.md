@@ -28,17 +28,25 @@ Requires: Kubernetes cluster access (in-cluster or kubeconfig), NATS
 | `POST` | `/tenants` | `202 Accepted` — writes the row and enqueues provisioning (`:48-54`) |
 | `GET` | `/tenants` | List. Optional `?status=` filters on `provisioningStatus`; an unknown value is a `400`, not a silent unfiltered list (`:67-83`) |
 | `GET` | `/tenants/:nameOrId` | Dual lookup: a UUID resolves by platform row id (async status polling), anything else by tenant NAME (`:88-96`) |
-| `PATCH` | `/tenants/:name` | Replace `configuration` (`:98-104`) |
+| `PATCH` | `/tenants/:name` | Replaces `configuration` and/or `messagingTier` (`UpdateTenantDto`; both `@IsOptional`, `configuration` additionally `@IsNotEmpty`) |
 | `DELETE` | `/tenants/:name` | `204 No Content`. A tenant still `provisioning` yields `409` WITH a `Retry-After` header so clients back off instead of hammering (`:106-130`) |
 | `GET` | `/health` | See below |
 
 ### Tenant name validation
 
-`CreateTenantDto` (`src/modules/tenants/tenant.dto.ts:40-57`): `name` is
-`@MaxLength(32)` and must match `/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/` — lowercase
-alphanumeric with optional inner hyphens, never leading or trailing (`:44-47`).
-`tier` is optional and constrained to the shared `TenantDatabaseTier` enum
-(`:50-52`); `configuration` is a free-form JSON object (`:54-56`).
+`CreateTenantDto` (`src/modules/tenants/tenant.dto.ts`) has exactly four
+properties, and the global pipe runs with `whitelist` + `forbidNonWhitelisted`,
+so any fifth key is a `400`:
+
+| Property | Validators | Notes |
+|---|---|---|
+| `name` | `@IsString` `@IsNotEmpty` `@MaxLength(32)` `@Matches(/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/)` | lowercase alphanumeric with optional inner hyphens, never leading or trailing |
+| `tier` | `@IsOptional` `@IsIn(Object.values(TenantDatabaseTier))` | database topology: `shared` \| `dedicated` |
+| `messagingTier` | `@IsOptional` `@IsIn(TENANT_TIERS)` | JetStream limits tier: `free` \| `pro` \| `enterprise` — a DIFFERENT axis from `tier` |
+| `configuration` | `@IsOptional` `@IsObject` | free-form JSON object |
+
+`UpdateTenantDto` carries `configuration` and `messagingTier`; `PATCH` forwards
+both (`TenantsController.update` → `updateTenant`).
 
 ### Health
 
@@ -58,7 +66,7 @@ statuses onto two HTTP codes (`src/modules/health/health.controller.ts:10-35`):
 
 | Subject | Transport | Publisher |
 |---|---|---|
-| `platform.tenant.provision.requested` (`packages/shared/src/tenant-events.ts:39-40`) | JetStream, `Nats-Msg-Id = tenantId` for idempotency (`tenant-events.ts:48-49`) | `src/providers/tenant-provision-publisher.service.ts:39` |
+| `platform.tenant.provision.requested` (`TENANT_PROVISION_REQUESTED_SUBJECT`, `packages/shared/src/tenant-events.ts`) | JetStream, publish option `msgID: params.tenantId` for deduplication — a JetStream `msgID` is wire-encoded as the `Nats-Msg-Id` header (`TenantProvisionPublisherService.publishProvisionRequested`) | `src/providers/tenant-provision-publisher.service.ts:39` |
 | `platform.tenant.ready` (`tenant-events.ts:86`) | Core NATS | `src/providers/tenant-ready-publisher.service.ts:57` |
 | `platform.tenant.deleted` (`tenant-events.ts:128`) | Core NATS | `src/providers/tenant-deletion-publisher.service.ts:58` |
 
@@ -93,7 +101,9 @@ Both a Postgres and a Mongo provisioner exist
 
 Within the Postgres engine the TIER decides the topology:
 
-- **`shared`** (the column default, `src/providers/platform-postgres.provider.ts:21`) — a logical database and role are created on
+- **`shared`** (the `tier` column's `DEFAULT`, and a `CHECK` constraint allows
+  only `shared`/`dedicated` — both inside `TENANTS_PLATFORM_SCHEMA_SQL` in
+  `src/providers/platform-postgres.provider.ts`) — a logical database and role are created on
   the shared CNPG cluster, plus tenant-namespace credentials and a `postgres`
   ExternalName Service pointing at the shared host.
 - **`dedicated`** — real per-tenant resources in the tenant namespace,
@@ -101,8 +111,9 @@ Within the Postgres engine the TIER decides the topology:
 
 ## Namespace labels
 
-Applied by `TenantProvisioningExecutor`
-(`src/modules/provisioning/tenant-provisioning-executor.service.ts:29-34`):
+Applied by `TenantProvisioningExecutor` from the `LABEL_*` / `*_VALUE`
+constants at the top of
+`src/modules/provisioning/tenant-provisioning-executor.service.ts`:
 
 | Label | Value |
 |---|---|
@@ -112,12 +123,15 @@ Applied by `TenantProvisioningExecutor`
 | `yoizen.io/managed-by` | `tenant-service` |
 
 Every list/get query is a label selector over these, which is why the service is
-environment-scoped without any extra bookkeeping (`tenants.service.ts:40-42`).
+environment-scoped without any extra bookkeeping — `TenantsService` builds
+`labelSelector: "<managed-by>=tenant-service,<tenant>=…,<environment>=…"` from
+its own copies of the same `LABEL_*` constants.
 
 Namespace deletion waits for the `Terminating` phase to clear, polling every
-`TENANT_NAMESPACE_TERMINATION_POLL_MS` (default 1000) up to
-`TENANT_NAMESPACE_TERMINATION_TIMEOUT_MS` (default 60000)
-(`tenant-provisioning-executor.service.ts:36-44`).
+`TENANT_NAMESPACE_TERMINATION_POLL_MS` (default `1_000`) up to
+`TENANT_NAMESPACE_TERMINATION_TIMEOUT_MS` (default `60_000`) — both read
+through small helper functions in
+`tenant-provisioning-executor.service.ts`, not from `src/config.ts`.
 
 ## Environment Variables
 
@@ -139,17 +153,27 @@ read (`:70-71`). The full surface is large; the load-bearing ones:
 | `TENANT_MONGO_IMAGE` | `mongo:7.0` | Mongo-engine image (`src/config.ts:9`, `:193-195`) |
 | `MONGO_HOST` / `_PORT` / `_DB` / `_USAGE_DB` / `_USER` / `_ROOT_USER` / `_ROOT_PASSWORD` | `mongo-platform.support-services-dev...`, `27017`, `yoizen`, `yoizen_usage`, `yoizen`, `root` | Mongo-engine settings (`src/config.ts:142-165`) |
 | `TENANT_MONGO_SHARED_HOST` / `_PORT` / `_ADMIN_USER` / `_ADMIN_PASSWORD` / `_PASSWORD` | `mongo-shared.support-services-<env>...`, `27017`, … | Shared-tier Mongo (`src/config.ts:166-192`) |
-| `TENANT_NAMESPACE_TERMINATION_TIMEOUT_MS` / `_POLL_MS` | `60000` / `1000` | Namespace deletion wait (`tenant-provisioning-executor.service.ts:38-44`) |
+| `TENANT_NAMESPACE_TERMINATION_TIMEOUT_MS` / `_POLL_MS` | `60000` / `1000` | Namespace deletion wait (`tenant-provisioning-executor.service.ts`) |
 
 ## Testing
 
-Every script injects a `MONGO_PASSWORD` fallback, because `src/config.ts:11-29`
-throws when neither password env var is set (`package.json:9-11`):
+`src/config.ts`'s `requirePostgresPassword` / `requireMongoPassword` throw when
+neither `POSTGRES_PASSWORD` nor `MONGO_PASSWORD` is set, so the suites need one
+of them. Supply it yourself and call `bun test` directly:
 
 ```bash
 cd services/tenant-service
-bun run test:unit
+MONGO_PASSWORD=test bun test test/unit
 ```
+
+**Do not use the package scripts.** All three of them
+(`"test": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} pnpm test"` and the `:unit` /
+`:integration` variants, `package.json:9-11`) re-invoke this package's own
+`test` script, so `pnpm test:unit` recurses forever and never reaches a test
+runner (reproduced 2026-08-02: the line
+`$ MONGO_PASSWORD=${MONGO_PASSWORD:-test} pnpm test test/unit` repeats until
+killed). proxy-service has the identical defect. Fixing the scripts is a code
+change, escalated by the docs-truth audit rather than done here.
 
 Only `test/unit/` exists; `test:integration` matches no directory today.
 

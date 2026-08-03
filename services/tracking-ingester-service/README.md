@@ -9,9 +9,14 @@ telemetry) at the edges (`src/main.ts`).
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run --cwd services/tracking-ingester-service src/main.ts
 ```
+
+`pnpm`, not `bun install`: the root `package.json` declares no `workspaces`
+key, and `pnpm-workspace.yaml` is the single source of truth for workspace
+membership, so `bun install` at the root does not link the `@yoizen/*`
+`workspace:*` dependencies.
 
 Requires: NATS (credentials in `NATS_URL`), Postgres (DSN in `POSTGRES_URL` /
 `DATABASE_URL`).
@@ -238,6 +243,10 @@ Query params:
   `"adapter/<adapterId>"`).
 - `from` (optional) — inclusive lower bound on `occurred_at`, ISO-8601.
   `400` if present but not a parseable date.
+- `endpointId` (optional) — matches `data.payload.endpointId`, narrowing a
+  connector's events to ONE of its endpoints (`parse-events-query.ts`).
+- `toolName` (optional) — matches `data.payload.toolName`, the MCP-side
+  sibling of `endpointId`.
 - `limit` (optional) — clamped via the shared `clampListLimit` helper:
   default `50`, hard cap `500`.
 
@@ -317,6 +326,36 @@ standard tenant/auth guards, forwarding query params verbatim — same
 explicit-proxy-module pattern as the chain/run/payload routes
 (`services/api-gateway/src/modules/tracking`).
 
+### Per-node aggregate endpoints (`/node-stats`, `/node-runs`)
+
+Two further static-path routes served by `src/main.ts`, both tenant-header
+required, both backing the admin console's workflow builder inspector:
+
+| Route | Required query params | Handler |
+|---|---|---|
+| `GET /node-stats` | `correlationIds` (comma-separated) | `handle-node-stats-request.ts` + `build-node-stats-query.ts` — per-node execution stats aggregated across the supplied correlations |
+| `GET /node-runs` | `correlationIds`, `actionName` | `handle-node-runs-request.ts` + `build-node-runs-query.ts` — the ungrouped recent-runs list for ONE node |
+
+Neither endpoint resolves a workflow definition itself: the caller
+(admin-console's `WorkflowApiService`, through api-gateway) resolves
+`definitionId → correlationIds[]` against workflow-service first and passes
+the bounded list here.
+
+## Full route table (`src/main.ts`)
+
+`Bun.serve` matches these directly — there is no framework router, and any
+other path/method is a bare `404 not found`:
+
+| Method + path | Matcher |
+|---|---|
+| `GET /health` | literal |
+| `GET /chains/:correlationId` | `matchChainRoute` |
+| `GET /chains/:correlationId/events/:eventId/payload` | `matchPayloadRoute` |
+| `GET /runs/:workflowId/:runId` | `matchRunRoute` |
+| `GET /events` | literal + query params |
+| `GET /node-stats` | literal + query params |
+| `GET /node-runs` | literal + query params |
+
 ## `compliance` column
 
 Every row records how close its stored body is to a canonical `EventEnvelope`:
@@ -339,6 +378,17 @@ Every row records how close its stored body is to a canonical `EventEnvelope`:
 | `TRK_CONCURRENCY` | `= TRK_BATCH_SIZE` | Concurrent handlers per tenant runner (clamped to `TRK_MAX_ACK_PENDING`). |
 | `TRK_MAX_DELIVER` | `-1` | Max delivery attempts; `-1` = unlimited (DLQ disabled). |
 | `TRK_BACKOFF_MS` | `30000,60000,120000,300000` | Redelivery backoff schedule (ms). |
+| `CLAIM_CHECK_RESOLVE_TIMEOUT_MS` | `2000` | Bound on the ingest-time claim-check resolve (see above). Must be a positive integer. |
+| `OTEL_EXPORT_ENABLED` | `false` | Gates the span export path (`emit-otel-spans.ts`). |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Required only when `OTEL_EXPORT_ENABLED` is on. |
+
+All of the above are parsed by `load-config.ts`. The scrub script
+(`src/scripts/scrub-payloads.ts`) is a separate entrypoint with its own two:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PAYLOAD_RETENTION_DAYS` | `30` | `DEFAULT_PAYLOAD_RETENTION_DAYS` (`src/lib/resolve-retention-days.ts`). |
+| `SCRUB_BATCH_SIZE` | `5000` | `DEFAULT_SCRUB_BATCH_SIZE`; a non-positive-integer value falls back to it with a warn. |
 
 ## Testing + golden gate
 

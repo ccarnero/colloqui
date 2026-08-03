@@ -236,7 +236,7 @@ Manifest-time ID substitution walks ONLY the argument keys listed in two hand-ke
 never a structural walk that substitutes every key literally named `*Ref` wherever it appears (that
 would risk substituting an unrelated same-named field).
 
-**Scalar** (`modules/apply/lib/substitution-allowlist.ts`, `SUBSTITUTION_ALLOWLIST` — one ref-object
+**Scalar** (`modules/plan/lib/substitution-allowlist.ts`, `SUBSTITUTION_ALLOWLIST` — one ref-object
 value per key):
 
 | Arg key | Ref type | Source |
@@ -250,7 +250,7 @@ value per key):
 | `provider_connector_id` | `connectorRef` | KB `ingestion_config.provider_connector_id` |
 | `catalog_skill_id` | `skillRef` | agent `profile.model_config.subagents[].catalog_skill_id` |
 
-**Array** (`modules/apply/lib/array-substitution-allowlist.ts`, `ARRAY_SUBSTITUTION_ALLOWLIST` —
+**Array** (`modules/plan/lib/array-substitution-allowlist.ts`, `ARRAY_SUBSTITUTION_ALLOWLIST` —
 an ARRAY of single-key ref-objects, substituted element-wise):
 
 | Arg key | Ref type | Source |
@@ -258,7 +258,9 @@ an ARRAY of single-key ref-objects, substituted element-wise):
 | `accountIds` | `channelRef` | workflow trigger `config.accountIds` — the plural sibling of `accountId`; every migrated manifest pins its trigger to its own manifest-created channel this way |
 
 `accountIds` is the ONLY known plural ref-bearing key today; a separate map (not a scalar-or-array
-flag on the scalar entry shape) keeps the seven scalar entries' consuming code unchanged.
+flag on the scalar entry shape) keeps the eight scalar entries' consuming code unchanged. (The
+in-file comment in `array-substitution-allowlist.ts` still says "seven" — it predates the
+`catalog_skill_id` entry; the list above is the current one.)
 
 ## Secret scope kinds exclude `systemVariable` and `skill` (inert)
 

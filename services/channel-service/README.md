@@ -16,9 +16,14 @@ Runs as two processes from one image, selected by `SERVICE_MODE`
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run --cwd services/channel-service start:dev
 ```
+
+`pnpm`, not `bun install`: the root `package.json` declares no `workspaces`
+key, and `pnpm-workspace.yaml` is the single source of truth for workspace
+membership, so `bun install` at the root does not link the `@yoizen/*`
+`workspace:*` dependencies.
 
 Requires: NATS (JetStream), the OLTP store for the active engine, and Redis (the
 egress circuit breaker, `src/providers/redis.provider.ts:29-34`).
@@ -40,7 +45,10 @@ consumes nothing:
 
 ### HTTP endpoints
 
-All routes require the tenant header `x-yoizen-tenant` (`TENANT_HEADER`).
+Every `/channels/**` route reads the tenant header `x-yoizen-tenant`
+(`TENANT_HEADER`) via a bare `@Headers` parameter — there is no `TenantGuard`
+in this service, so an omitted header reaches the service layer as `undefined`
+rather than being rejected with a `400`. `/health` takes no tenant.
 
 | Method | Path | Source |
 |---|---|---|
@@ -57,7 +65,7 @@ All routes require the tenant header `x-yoizen-tenant` (`TENANT_HEADER`).
 | `GET` | `/channels/streams` | `src/modules/streams/streams.controller.ts:10-11` |
 | `GET` | `/channels/streams/:key/messages` | `streams.controller.ts:15-16` |
 | `GET` | `/channels/usage` | `src/modules/usage/usage.controller.ts:17-18` |
-| `GET` | `/channels/usage/summary` | `usage.controller.ts:29-30` — declared BEFORE `totals` on purpose, to avoid route shadowing (`usage.controller.ts:27`) |
+| `GET` | `/channels/usage/summary` | `usage.controller.ts:29-30`. The in-file comment says it is "declared before `@Get('totals')` to avoid route shadowing" — that rationale is wrong: `summary` and `totals` are both static siblings and cannot shadow each other in any order, and this service runs on the Fastify adapter, whose router prefers static over parametric segments regardless of registration order |
 | `GET` | `/channels/usage/totals` | `usage.controller.ts:34-35` |
 | `GET` | `/health` | `src/modules/health/health.controller.ts:23-47` |
 
@@ -99,12 +107,14 @@ ensuring the tenant's INGRESS and DLQ streams exist
 (`ensureTenantIngressStream` / `ensureTenantDlqStream`, imported at
 `ingress.service.ts:23`).
 
-**Claim-check**: when a serialized envelope exceeds
-`CLAIM_CHECK_THRESHOLD_BYTES` (256 KiB, `channel.constants.ts:21`) the service
-stores the payload in a per-tenant NATS Object Store bucket and publishes a slim
-envelope instead (threshold check at `ingress.service.ts:192`, bucket name via
-`buildClaimCheckBucket` at `:115` / `:257`, bucket TTL and max size at
-`channel.constants.ts:24-26`).
+**Claim-check**: when the serialized payload exceeds
+`CLAIM_CHECK_THRESHOLD_BYTES` (256 KiB, `packages/shared/src/channel.constants.ts`)
+the service stores it in a per-tenant NATS Object Store bucket and publishes a
+slim envelope instead. The `payloadBytes.byteLength > CLAIM_CHECK_THRESHOLD_BYTES`
+test and both `buildClaimCheckBucket(tenantId)` call sites live in
+`ingress.service.ts`; bucket TTL (`CLAIM_CHECK_BUCKET_TTL_NS`, equal to
+`CHANNEL_STREAM_MAX_AGE_NS`) and cap (`CLAIM_CHECK_BUCKET_MAX_BYTES`, 512 MiB)
+are constants in the same shared file.
 
 ## Storage
 

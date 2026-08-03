@@ -138,9 +138,14 @@ and recorded as the T01 findings of
 budget it actually crosses is the 900 s ack wait.
 
 **Serial per-tenant consumer (know this before you design around it):**
-`packages/database/src/multi-tenant-consumer-manager.ts:324-334` builds one
-runner per tenant stream without a `concurrency` option, so
-`nats-consumer-runner.ts:427-431` takes the serial path. While one execution of
+`MultiTenantConsumerManager.bindStream`
+(`packages/database/src/multi-tenant-consumer-manager.ts`) builds one
+`NatsConsumerRunner` per tenant stream and forwards `config.runnerOptions`
+verbatim. This service's `IMultiTenantConsumerConfig` sets `runnerOptions` to
+`{ workingIntervalMs }` only — no `concurrency` — so `NatsConsumerRunner`'s
+`runSession` resolves `concurrency` to 1 and takes `runSerial`. (The manager
+itself is not serial: audit-service passes `runnerOptions.concurrency = 16`
+through the same code path.) While one execution of
 tenant X is in flight, other agent messages of the SAME tenant queue behind it
 — they are not lost and not redelivered (`num_ack_pending` reads 1 and drains).
 Work that must not wait behind a long agent execution simply must not go

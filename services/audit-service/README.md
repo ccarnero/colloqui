@@ -32,7 +32,7 @@ via `MultiTenantConsumerManager`, each with `runnerOptions.concurrency = 16`
 | Durable | Filter | Source |
 |---|---|---|
 | `audit-events` | `evt.*.*.platform.>` (`CANONICAL_AUDIT_PATTERN`) | `src/modules/audit/audit.service.ts:47-51`, `:68-76` |
-| `channel-audit` | `CHANNEL_AUDIT_SUBJECT_PATTERN` = `evt.*.channel-service.messaging.>` (`packages/shared/src/channel.constants.ts:28-29`) | `src/modules/channel-audit/channel-audit.service.ts:49-51`, `:68-76` |
+| `channel-audit` | `CHANNEL_AUDIT_SUBJECT_PATTERN` = `evt.*.channel-service.messaging.>` (`packages/shared/src/channel.constants.ts`) | `src/modules/channel-audit/channel-audit.service.ts:49-51`, `:68-76` |
 | `execution-audit` | the three `ai-agent-gateway` execution lifecycle subjects, tenant-wildcarded (`src/modules/execution-audit/execution-audit.service.ts:55-59`) | `execution-audit.service.ts:43-45`, `:75-84` |
 
 **Why `execution-audit` exists as a separate consumer**: the canonical
@@ -46,8 +46,8 @@ per-tenant INGRESS streams.
 
 | | Value | Source |
 |---|---|---|
-| Stream | `GATEWAY_AUDIT`, subjects `audit.gateway.>`, max 128 MiB | `packages/shared/src/constants.ts:81-85` |
-| Durable | `gateway-audit-writer` | `constants.ts:84` |
+| Stream | `GATEWAY_AUDIT`, subjects `audit.gateway.>`, max 128 MiB | `GATEWAY_AUDIT_STREAM_NAME` / `GATEWAY_AUDIT_STREAM_SUBJECTS` / `GATEWAY_AUDIT_STREAM_MAX_BYTES` (`packages/shared/src/constants.ts`) |
+| Durable | `gateway-audit-writer` | `GATEWAY_AUDIT_CONSUMER_NAME` (same file) |
 | Created by | this service at bootstrap | `src/providers/nats.provider.ts:38-47` |
 
 ## HTTP endpoints
@@ -55,18 +55,32 @@ per-tenant INGRESS streams.
 | Method | Path | Source |
 |---|---|---|
 | `GET` | `/audit/events` | `src/modules/audit/audit.controller.ts:16` |
-| `GET` | `/audit/events/chain/:correlationId` | `audit.controller.ts:34` — declared ABOVE `:id` to prevent route shadowing (`:32`) |
+| `GET` | `/audit/events/chain/:correlationId` | `audit.controller.ts:34` — declared above `:id`; see the ordering note below |
 | `GET` | `/audit/events/:id` | `audit.controller.ts:46` |
 | `GET` | `/audit/channel-events` | `src/modules/channel-audit/channel-audit.controller.ts:19` |
-| `GET` | `/audit/channel-events/chain/:correlationId` | `channel-audit.controller.ts:37` — same shadowing note (`:35`) |
+| `GET` | `/audit/channel-events/chain/:correlationId` | `channel-audit.controller.ts:37` — same ordering note |
 | `GET` | `/audit/channel-events/:id` | `channel-audit.controller.ts:55` |
 | `GET` | `/audit/execution-events` | `src/modules/execution-audit/execution-audit.controller.ts:18` |
 | `GET` | `/audit/execution-events/:id` | `execution-audit.controller.ts:35` |
-| `GET` | `/audit/gateway/stats` | `src/modules/gateway-audit/gateway-audit.controller.ts:16` — declared ABOVE `:requestId` |
+| `GET` | `/audit/gateway/stats` | `src/modules/gateway-audit/gateway-audit.controller.ts:16` — declared above `:requestId`; see the ordering note below |
 | `GET` | `/audit/gateway` | `gateway-audit.controller.ts:24` |
 | `GET` | `/audit/gateway/:requestId` | `gateway-audit.controller.ts:41` |
 | `GET` | `/readyz` | `src/modules/health/health.controller.ts:20-23` — static `{ status: "ok" }`, no dependency probe |
 | `GET` | `/health` | `health.controller.ts:25-47` — `{ status, nats, postgres }` or `{ status, nats, mongo }` by engine |
+
+**Route-ordering note.** Three in-file comments say a route is "declared ABOVE
+`:id` to prevent NestJS route shadowing". The ordering is real, but it is
+defensive rather than load-bearing: this service runs on the Fastify adapter,
+whose router (find-my-way) prefers a static segment over a parametric one
+independently of registration order. `chain/:correlationId` could not collide
+with `:id` in any case — it is two segments deep. `stats` vs `:requestId` is the
+only same-depth pair, and Fastify resolves that by static priority.
+
+All four audit controllers — and only those four — carry
+`@UseGuards(TenantGuard)` (`@yoizen/database`), so every `/audit/**` call needs
+an `x-yoizen-tenant` header matching `/^[a-zA-Z0-9-]{3,32}$/`; a missing or
+malformed value is a `400` from the guard, before any handler runs. The health
+controller is unguarded.
 
 `/readyz` and `/health` are deliberately different: `/readyz` answers as soon as
 the process is up, `/health` actually probes NATS and the tenant pools.

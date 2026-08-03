@@ -82,25 +82,52 @@ Both processes use the same NestJS module structure and dependency injection, bu
 ```
 API Server:
   NestJS bootstrap → Fastify adapter → REST endpoints
-  Provides: /workflows (POST, GET, GET /:id)
-  
+  Provides: /workflows (full table below) + /health
+
 Orchestrator Worker:
   Temporal worker bootstrap → register workflows + activities
   Executes: workflow orchestration, action dispatch
 ```
 
+Every route on `WorkflowsController` (`@Controller("workflows")`), in
+declaration order:
+
+| Method | Path | Notes |
+|---|---|---|
+| `POST` | `/workflows` | Create a definition |
+| `PUT` | `/workflows/:id` | Replace a definition |
+| `PATCH` | `/workflows/:id/status` | Enable/disable — see "Per-Tenant Enable/Disable" |
+| `GET` | `/workflows` | List definitions |
+| `GET` | `/workflows/summary` | Definition summary ranked by execution count |
+| `GET` | `/workflows/executions/counts` | Execution counts across definitions |
+| `GET` | `/workflows/executions` | Tenant-wide execution list |
+| `GET` | `/workflows/:id` | One definition's metadata |
+| `DELETE` | `/workflows/:id` | Soft-delete (`deleted_at`) |
+| `POST` | `/workflows/:id/execute` | Start a run |
+| `GET` | `/workflows/:id/executions` | Runs of one definition |
+| `GET` | `/workflows/:id/executions/:executionId` | One run's status/result |
+| `GET` | `/workflows/:id/correlation-ids` | Correlation ids of a definition's runs (the `definitionId → correlationIds[]` hop tracking-ingester's `/node-stats` and `/node-runs` expect the caller to make) |
+
+`GET /health` lives on its own `@Controller()` and takes no tenant header.
+The three `summary` / `executions/counts` / `executions` literals are declared
+before `@Get(":id")`; the in-file comments call this shadowing avoidance,
+which is defensive rather than load-bearing on the Fastify adapter (its router
+prefers static segments over parametric ones regardless of order).
+
 ### Action Types
 
-Workflows support 8 action activities, each with distinct execution semantics:
+`WorkflowAction` (`packages/shared/src/workflow.interfaces.ts`) is a **9-member**
+union — the `activity` discriminant values below are the complete set:
 
 | Action | Task Queue | Scope | Description |
 |--------|-----------|-------|-------------|
-| `endpointCall` | `connector-runtime` (remote) | Single HTTP call | Call external endpoint with optional adapter config |
-| `serviceCall` | `connector-runtime` (remote) | Single HTTP call | Call internal service (resolves via DNS) |
-| `agentCall` | `workflow-orchestrator` (local) | AI agent execution | Invoke YoizenClaw agent with execution context |
+| `endpointCall` | `connector-runtime` (remote) | Single HTTP call | Call external endpoint with optional connector config |
+| `serviceCall` | `connector-runtime` (remote) | Single HTTP call | Call a tenant-registered service, resolved by `serviceId`/`serviceSlug` through the internal-adapter mirror, falling back to registry-service |
+| `mcpCall` | `connector-runtime` (remote) | MCP tool call | Invoke one tool (`toolName`) on a registered MCP server (`serverId`) |
+| `agentCall` | `workflow-orchestrator` (local) | AI agent execution | Invoke a YoizenClaw agent with execution context |
 | `jsFunction` | `workflow-orchestrator` (local) | Inline code | Execute arbitrary JavaScript code |
-| `serviceBusCall` | `workflow-orchestrator` (local) | NATS publish | Publish event to NATS subject |
-| `channelSend` | `workflow-orchestrator` (local) | Channel delivery | Send message to configured channel (email, SMS, etc.) |
+| `serviceBusCall` | `workflow-orchestrator` (local) | NATS publish | Publish an event to a NATS subject |
+| `channelSend` | `workflow-orchestrator` (local) | Channel delivery | Send a message through a configured channel account (`whatsapp` \| `instagram` \| `telegram` \| `http` — there is no email/SMS channel) |
 | `branch` | — (workflow control) | Parallel execution | Execute multiple action lists concurrently |
 | `conditional` | — (workflow control) | Conditional branch | Execute the first matching branch or an optional default branch |
 
@@ -198,11 +225,15 @@ Calls external HTTP endpoint with optional adapter-driven configuration.
     headers: {
       "Authorization": "Bearer {{results.getToken.data.accessToken}}",
       "Accept": "application/json"
-    },
-    timeout: 30000
+    }
   }
 }
 ```
+
+`EndpointCallArgs` is `{ method, url, adapterId?, endpointId?, params?, data?,
+headers? }` — there is no per-action `timeout` or `retries` field; the retry
+chain comes from the connector's own `timeoutMs`/`maxRetries`/`retryBackoffMs`,
+and the raw (no-`adapterId`) branch is a fixed 30 s single attempt.
 
 Result stored as:
 ```
@@ -215,14 +246,20 @@ results.fetchCustomer = {
 
 ### serviceCall
 
-Calls internal service via Kubernetes DNS. Identical to endpointCall but targets internal services.
+Calls a service the TENANT registered in registry-service. `ServiceCallArgs` is
+`{ serviceId, serviceSlug?, method, path, data?, headers?, endpointId? }` —
+`serviceId` is the `registered_services` row id (a UUID, never the slug), and
+there is no `service` field and no `timeout`. `serviceSlug` is pre-populated by
+workflow-service at start time so connector-runtime can hit the internal-adapter
+mirror in one hop.
 
 ```
 {
   activity: "serviceCall",
   name: "auditLog",
   args: {
-    service: "audit-service",
+    serviceId: "0f4c…-uuid",
+    serviceSlug: "echo-service",
     path: "/events/log",
     method: "POST",
     data: {
@@ -244,15 +281,21 @@ Invokes a YoizenClaw AI agent for autonomous decision-making or complex reasonin
   name: "classifyIncident",
   args: {
     agentId: "incident-classifier",
-    input: "{{results.parseTicket.data.description}}",
-    context: {
-      ticketId: "{{request.ticketId}}",
-      customerHistory: "{{results.fetchCustomer.data}}"
-    },
-    timeout: 60000
+    message: "{{results.parseTicket.data.description}}",
+    conversationId: "{{request.ticketId}}",
+    context: [
+      { role: "user", content: "{{results.fetchCustomer.data}}" }
+    ]
   }
 }
 ```
+
+`AgentCallArgs` is `{ agentId, message, conversationId?, customerName?,
+userId?, channel?, context?, variables? }` — the prompt field is `message`
+(not `input`), `context` is an ARRAY of `AgentCallContextEntry`, and there is
+no per-action `timeout`. The per-run agent budget is the
+`agentTimeoutSec` field on `POST /workflows/:id/execute` (see below), bounded
+by `AGENT_CALL_TIMEOUT_MS` inside `agent-call.activity.ts`.
 
 Result stored as:
 ```
@@ -282,11 +325,13 @@ Executes arbitrary inline JavaScript code with access to execution context.
         valid: domain.endsWith('.example.com'),
         domain: domain
       };
-    `,
-    timeout: 5000
+    `
   }
 }
 ```
+
+`JsFunctionArgs` has exactly ONE field, `code`. There is no `timeout` — the
+bound is the activity's Temporal `startToCloseTimeout`.
 
 Result stored as:
 ```
@@ -353,14 +398,14 @@ Executes multiple action sequences in parallel, then waits for all to complete.
     {
       activity: "serviceCall",
       name: "enrichData1",
-      args: { service: "service1", path: "/enrich", method: "POST", data: {...} }
+      args: { serviceId: "…-uuid-1", serviceSlug: "service1", path: "/enrich", method: "POST", data: {...} }
     }
   ],
   enrichData2Branch: [
     {
       activity: "serviceCall",
       name: "enrichData2",
-      args: { service: "service2", path: "/enrich", method: "POST", data: {...} }
+      args: { serviceId: "…-uuid-2", serviceSlug: "service2", path: "/enrich", method: "POST", data: {...} }
     }
   ]
 }
@@ -756,11 +801,15 @@ Branch on failure: if results.processResource.status === FAILED
 
 ### API Server Scaling
 
+`knative/services/base/workflow-service-api.yaml` is the ONLY manifest — this
+repo carries a single developer-mode config; there is no qa/staging/prod
+overlay to compare against.
+
 - **Type**: Knative Service (KPA-managed autoscaling)
-- **Min replicas**: 1 (dev/qa), 2 (staging/prod)
-- **Max replicas**: 5 (dev), 20 (staging/prod)
-- **Scale-to-zero**: Enabled in non-production environments
-- **Request routing**: Per-request load balancing
+- **Min replicas**: `1` (`autoscaling.knative.dev/min-scale`)
+- **Max replicas**: `15` (`autoscaling.knative.dev/max-scale`)
+- **Scale-to-zero**: NOT enabled — min-scale 1 keeps a replica warm
+- **Image**: `dev.local/workflow-service:local`
 
 ### Orchestrator Worker Scaling
 
@@ -789,11 +838,13 @@ Branch on failure: if results.processResource.status === FAILED
 | `NATS_URL` | `nats://localhost:4222` | NATS server URL |
 | `REDIS_HOST` | `localhost` | Redis host. **Required on the worker process** — `executeAgentCall` uses Redis for the distributed circuit breaker and as the `YoizenClawExecutionClient` status cache. Missing on the deployment causes every agentCall to fail with `MaxRetriesPerRequestError` / `REDIS_UNAVAILABLE`. |
 | `REDIS_PORT` | `6379` | Redis port (worker only). |
-| `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
+| `LOG_LEVEL` | `info` | Read by the shared `PinoLoggerService` (`packages/observability/src/logger.ts`), not by `src/config.ts` |
 | `SERVICE_MODE` | `api` | Process mode: `api` or `worker` |
-| `DB_ENGINE` | `postgres` | Repository engine for definitions/executions: `postgres` or `mongo`; falls back to `STORAGE_ENGINE`, throws on any other value (`packages/database/src/engine.ts:13-23`, read at `src/config.ts:36-38`). Does NOT affect Temporal's own store |
-| `POSTGRES_USER` / `POSTGRES_PASSWORD` | — | Credentials used against each tenant's own Postgres; platform-level `POSTGRES_HOST`/`_PORT`/`_DB` are deliberately NOT consumed (`src/config.ts:18-28`) |
-| `REGISTRY_SERVICE_URL` | `http://registry-service.platform-services-dev.svc.cluster.local` | Service-slug lookup for `serviceCall` (`src/config.ts:29-30`) |
+| `DB_ENGINE` | `postgres` | Repository engine for definitions/executions: `postgres` or `mongo`; falls back to `STORAGE_ENGINE`, throws on any other value (`resolveStorageEngine`, `packages/database/src/engine.ts`, read by `workflowServiceConfig.dbEngine`). Does NOT affect Temporal's own store |
+| `POSTGRES_USER` / `POSTGRES_PASSWORD` | — | Read by `WorkflowTenantConnectionManager` against each tenant's own Postgres; platform-level `POSTGRES_HOST`/`_PORT`/`_DB` are deliberately NOT consumed — `src/config.ts` declares no Postgres settings at all and says so in its header comment |
+| `REGISTRY_SERVICE_URL` | `http://registry-service.platform-services-dev.svc.cluster.local` | Service lookup for `serviceCall` (`workflowServiceConfig.registryServiceUrl`; trailing slashes are stripped) |
+| `REGISTRY_LOOKUP_TIMEOUT_MS` | `5000` | Bound on that registry lookup (`registryLookupTimeoutMs`) |
+| `SERVICE_SLUG_CACHE_TTL_MS` | `3600000` (1 h) | TTL of the `serviceId → slug` cache (`serviceSlugCacheTtlMs`) |
 
 ## Debugging Tips
 
@@ -854,7 +905,11 @@ Usually available at `http://localhost:8080`:
 
 - **api-gateway**: Proxies workflow REST endpoints
 - **External clients**: Any HTTP client can call workflow REST API
-- **event-processor**: Can trigger workflows on events
+- **This service's own `TriggerConsumerService`**
+  (`src/modules/triggers/trigger-consumer.service.ts`): fires trigger-bound
+  definitions off the tenant's JetStream traffic. There is no separate
+  `event-processor` service — no `services/event-processor` directory exists
+  and nothing under `services/` registers that name.
 
 ### Calls To
 
@@ -901,13 +956,14 @@ LLM call is still alive (`agent-call.activity.ts:267-270`).
 Workflow **definitions and executions** support both Postgres (default) and
 Mongo through repository adapters — `workflows.mongo.repository.ts`,
 `executions.mongo.repository.ts`, `tenant-connection-manager.mongo.ts` — selected
-by `DB_ENGINE` via `resolveStorageEngine()` (`src/config.ts:36-38`). **Temporal
+by `DB_ENGINE` via `resolveStorageEngine()` (`workflowServiceConfig.dbEngine`). **Temporal
 itself stays on its own dedicated Postgres regardless of this setting.**
 
 `src/config.ts` deliberately declares no platform Postgres settings: workflow
 data is per-tenant, so only `POSTGRES_USER` / `POSTGRES_PASSWORD` are read, to
 authenticate against each tenant's own instance. `POSTGRES_HOST` / `_PORT` /
-`_DB` are no longer consumed (`src/config.ts:18-28`).
+`_DB` are no longer consumed — `src/config.ts`'s own header comment records
+this.
 
 ### Execution projector buffering
 

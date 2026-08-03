@@ -5,9 +5,15 @@ Tenant-scoped administration dashboard for the Yoizen platform. Built with Angul
 ## Quick Start
 
 ```bash
-npm install
-ng serve
+pnpm install     # from the repo root — see below
+pnpm start       # = ng serve
 ```
+
+`pnpm`, not `npm`: `pnpm-workspace.yaml` is this repo's single source of
+workspace membership, and this package's own `postinstall`
+(`pnpm run build:shared && pnpm exec patch-package`) builds
+`packages/angular-shared` before anything can compile. `prebuild`/`prewatch`
+re-run the same shared-library build.
 
 Open `http://localhost:4200/`. Unauthenticated users are redirected to `/login`.
 
@@ -32,7 +38,7 @@ The shell uses top header sections plus a left sub-nav, not the older role-filte
 | Channels | `/channels` | WhatsApp, Telegram, HTTP |
 | Connections | `/connections` | Overview, HTTP, MCP, Hosted services |
 | AI | `/ai` | Agents, Playground, Memories, Skills, Knowledge Bases, System Variables |
-| Processes | `/processes` | Workflows, Schedules |
+| Processes | `/processes` | Workflows, Schedules, Trace |
 | Settings | `/settings` | Users, Roles, API keys, Billing |
 
 Route access is protected by `authGuard` at the shell level. Individual feature pages should not be documented as permission-gated unless the route actually has a guard.
@@ -57,23 +63,35 @@ src/
 │   │   ├── interceptors/     # auth + tenant headers
 │   │   ├── models/
 │   │   └── services/
-│   ├── features/
+│   ├── features/            # 10 dirs, all of them:
 │   │   ├── auth/             # Login
 │   │   ├── overview/         # Dashboard, Analytics
 │   │   ├── channels/         # Channel landing and channel account detail
 │   │   ├── connections/      # Connections landing, MCP list/detail
+│   │   ├── data-integrations/# HTTP connector detail (the `/connections/http/:id` target)
 │   │   ├── automation/       # Workflows, schedules, hosted services, AI feature pages
-│   │   ├── processes/        # Processes landing and direct message trace route
+│   │   ├── processes/        # Processes landing, trace and run-view routes
 │   │   ├── identity/         # Users, Roles, API keys
+│   │   ├── tenant-management/
 │   │   └── settings-hub/     # Settings landing hub
-│   ├── layout/
+│   ├── layout/              # 6 dirs, all of them:
 │   │   ├── shell/            # Header + sub-nav + main outlet
 │   │   ├── header/           # Top section tabs
 │   │   ├── nav/              # NAV_SECTIONS source of truth
-│   │   └── sub-nav/          # Left section sub-nav
-│   └── shared/components/    # PageHeader, KPI, ActivityFeed, SubTabs, status primitives
+│   │   ├── sub-nav/          # Left section sub-nav
+│   │   ├── sidebar/          # pre-redesign sidebar (kept during migration)
+│   │   └── right-panel/      # activity right panel
+│   └── shared/components/    # 15 primitives: activity-feed, breadcrumbs,
+│                             # confirm-dialog, detail-dialog,
+│                             # http-adapter-dialog, inventory-table,
+│                             # kpi-card, mcp-server-dialog,
+│                             # needs-attention-panel, page-header,
+│                             # progress-bar, section-landing-shell,
+│                             # sparkline, status-badge, sub-tabs
 ├── environments/
+├── index.html
 ├── styles.scss
+├── test-providers.ts
 └── main.ts
 ```
 
@@ -88,10 +106,19 @@ The production build is packaged into an nginx container via the Dockerfile.
 
 ## Environment Configuration
 
-| File | `apiUrl` |
-|------|----------|
-| `environment.ts` (dev) | `http://api-gateway.platform-services-dev.192.168.49.2.sslip.io` |
-| `environment.prod.ts` | `/api` |
+Both files export the same six keys; only three values differ.
+
+| Key | `environment.ts` (dev) | `environment.prod.ts` |
+|---|---|---|
+| `production` | `false` | `true` |
+| `apiUrl` | `/api` | `/api` |
+| `temporalUiBaseUrl` | `http://localhost:8233` | `""` (empty ⇒ the Message-trace Temporal deep link is hidden) |
+| `tempoBaseUrl` | `""` | `""` (empty ⇒ the Tempo deep link is hidden in BOTH configs) |
+| `temporalNamespace` | `default` | `default` |
+
+`apiUrl` is a relative `/api` in both, so the console always talks to whatever
+origin serves it — the dev flow relies on the Angular dev-server proxy /
+ingress, not on a hard-coded gateway hostname.
 
 ## Component testing strategy
 
@@ -515,8 +542,8 @@ run-view data pipelines, per
 - **Up to four tabs (orchestrator ruling, applying the "design wins" + "real
   data only" precedents, post-T01)** — `TraceDetailComponent` defines three
   static tabs (`TABS`) plus a **run** tab that `visibleTabs()` appends only
-  when the chain contains a workflow run
-  (`trace-detail.component.ts:877-879`), matching the binding visual
+  when the chain contains a workflow run (`TraceDetailComponent.visibleTabs`
+  over its `workflowRun` computed, `trace-detail.component.ts`), matching the binding visual
   contract (`Rediseño Terminal.dc.html`'s `traceTabs` script) rather than
   the SPEC Goal section's original four-view wording:
   - **Waterfall** — time-ordered bars per event (`TraceWaterfallComponent`),
@@ -834,8 +861,10 @@ console redesign builder v2".
   (`build-node-stats-query.ts`, `handle-node-stats-request.ts`) that groups
   `tracking.tracked_events` by `(action_name, branch)` for the resolved
   correlation ids and returns `{runs, p95Ms, okRatio}` per node — the join
-  key is the definition JSON's stable `action.name`
-  (`flow-deserializer.ts:166`), not the builder's regenerated node `key`.
+  key is the definition JSON's stable `action.name` (copied onto the node by
+  `deserializeFlow` in
+  `features/automation/workflows/domain/flow-deserializer.ts`), not the
+  builder's regenerated node `key`.
   Both hops are proxied through api-gateway; admin-console's
   `WorkflowApiService` fetches once per builder load (never per-node,
   never blocking canvas render), maps the response to per-node view models

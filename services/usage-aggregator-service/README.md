@@ -12,9 +12,14 @@ Runs as two processes from one image, selected by `SERVICE_MODE`
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run --cwd services/usage-aggregator-service start:dev
 ```
+
+`pnpm`, not `bun install`: the root `package.json` declares no `workspaces`
+key, and `pnpm-workspace.yaml` is the single source of truth for workspace
+membership, so `bun install` at the root does not link the `@yoizen/*`
+`workspace:*` dependencies.
 
 Requires: NATS (JetStream), and the usage database tier for the active engine
 (Postgres/TimescaleDB by default).

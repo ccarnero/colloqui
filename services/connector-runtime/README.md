@@ -39,7 +39,9 @@ This starts both the Temporal worker and the health server on port 3000.
 curl http://localhost:3000
 ```
 
-Returns `200 OK` when ready, `503 Service Unavailable` during startup.
+`startTemporalWorkerHealthServer` (`src/temporal-worker-health.ts`) answers on
+EVERY path and method: `200 {"status":"ok"}` once the worker has connected,
+`503 {"status":"starting"}` before that and again after shutdown begins.
 
 ### Running tests
 
@@ -67,9 +69,11 @@ bun test test/unit
 - Returns `{ status, body, headers }` to caller
 
 **Activity: `executeServiceCall`** (`src/activities/service-call.activity.ts`)
-- Resolves internal service calls via adapter mirror (if configured)
-- Falls back to registry-service DNS lookup
-- Delegates to `executeEndpointCall` for HTTP execution
+- Resolves a tenant-registered service (`serviceId` / `serviceSlug`) via the
+  internal-adapter mirror in connector-admin
+- Falls back to a registry-service lookup on a mirror miss
+- Delegates to the same `endpoint-call-core` pipeline for HTTP execution
+- Returns the same `IHttpCallResult` shape
 
 **Connector Resolution** (`src/activities/_shared/adapter-client.provider.ts`)
 - `AdapterClient` class wraps connector-admin REST API calls
@@ -105,45 +109,50 @@ Return { status, body, headers } to Temporal
 
 ### Request/Response Shapes
 
-**Endpoint Call Request**
+These are the real interfaces in `packages/shared/src/workflow.interfaces.ts`
+(args) and `src/activities/_shared/http-call-with-retry.ts` (result) — there
+are no per-call `timeout` / `retries` overrides on either activity, and the
+result field is `data`, not `body`.
+
+**Endpoint Call Request** — `EndpointCallArgs`
 
 ```
 {
   method: string              // GET, POST, PUT, DELETE, PATCH
-  url: string                 // Target URL (used if no adapter)
-  adapterId?: string          // Adapter ID for config resolution
-  endpointId?: string         // Endpoint ID within adapter (requires adapterId)
-  params?: Record<string, *>  // URL query parameters
-  data?: any                  // Request body (JSON or form data)
-  headers?: Record<string, string>  // Additional headers (merged with adapter)
-  timeout?: number            // Optional timeout override (ms)
-  retries?: number            // Optional retry count override
+  url: string                 // Absolute target URL on the raw branch; the
+                              // adapter branches derive the URL from the
+                              // connector's baseUrl (+ endpoint path)
+  adapterId?: string          // Connector ID for config resolution
+  endpointId?: string         // Endpoint ID within the connector (requires adapterId)
+  params?: Record<string, unknown>  // URL query parameters
+  data?: unknown              // Request body (JSON-serialized)
+  headers?: Record<string, string>  // Additional headers (merged with the connector's)
 }
 ```
 
-**Endpoint Call Response**
+**Endpoint Call Response** — `IEndpointCallResult` (= `IHttpCallResult`)
 
 ```
 {
-  status: number              // HTTP status code (200, 404, 500, etc.)
-  body: string | object       // Response body (parsed JSON if Content-Type: application/json)
+  status: number              // HTTP status code (200, 404, 500, …)
+  data: unknown               // Response body (parsed JSON when the response is JSON)
   headers: Record<string, string>  // Response headers
-  duration: number            // Execution time (ms)
-  retriesUsed: number         // Count of retries consumed
+  cacheResult?: "hit" | "miss" | "bypass" | null   // HTTP-response cache outcome
 }
 ```
 
-**Service Call Request**
+**Service Call Request** — `ServiceCallArgs`
 
 ```
 {
-  service: string             // Internal service name
-  path: string                // Service path
+  serviceId: string           // registered_services row id (UUID, never the slug)
+  serviceSlug?: string        // registry slug, pre-populated by workflow-service
+                              // so the adapter-mirror lookup is O(1)
   method: string              // HTTP method
-  data?: any                  // Request body
+  path: string                // Service path
+  data?: unknown              // Request body
   headers?: Record<string, string>  // Additional headers
-  adapterId?: string          // Optional adapter for service config
-  timeout?: number            // Optional timeout override
+  endpointId?: string         // Optional endpoint id from the internal-adapter mirror
 }
 ```
 
@@ -156,42 +165,41 @@ Executes an HTTP request with optional adapter-driven configuration.
 **Example 1: Raw HTTP call**
 
 ```
-// Caller (workflow-service)
+// Caller (workflow-service). No adapterId → the raw branch: one fetch,
+// fixed 30 s timeout, no retries.
 activity = executeEndpointCall({
   method: "GET",
   url: "https://api.example.com/users/123",
-  headers: { "Accept": "application/json" },
-  timeout: 30000
-})
+  headers: { "Accept": "application/json" }
+}, "acme")
 
 // Result
 {
   status: 200,
-  body: { id: 123, name: "Alice" },
+  data: { id: 123, name: "Alice" },
   headers: { "content-type": "application/json" },
-  duration: 150,
-  retriesUsed: 0
+  cacheResult: null
 }
 ```
 
 **Example 2: Connector-driven call**
 
 ```
-// Caller provides minimal info; adapter resolves the rest
+// Caller provides minimal info; the connector resolves the rest
 activity = executeEndpointCall({
   method: "GET",
-  url: "/users/123",          // Relative path
+  url: "/users/123",          // ignored on this branch — the endpoint's path wins
   adapterId: "crm-adapter",
-  endpointId: "get-customer",
-  timeout: 30000
-})
+  endpointId: "get-customer"
+}, "acme")
 
 // AdapterClient resolves from connector-admin:
 // - Base URL: https://crm.example.com/api
-// - Auth: Bearer token (OAuth2 client credentials)
-// - Custom headers: { "X-API-Key": "..." }
-// - Timeout: 45000 (adapter configured)
-// - Retries: 3 (adapter configured)
+// - authType/authConfig → Authorization header
+// - Custom headers from the connector's `headers` array
+// - timeoutMs   (connector-configured, capped at ADAPTER_TIMEOUT_MS_MAX = 60000)
+// - maxRetries  (capped at ADAPTER_MAX_RETRIES_MAX = 3)
+// - retryBackoffMs (capped at ADAPTER_RETRY_BACKOFF_MS_MAX = 10000)
 
 // Full request becomes:
 // GET https://crm.example.com/api/users/123
@@ -204,43 +212,43 @@ activity = executeEndpointCall({
 // Result
 {
   status: 200,
-  body: { customerId: 123, name: "Alice", email: "alice@example.com" },
+  data: { customerId: 123, name: "Alice", email: "alice@example.com" },
   headers: { "content-type": "application/json" },
-  duration: 250,
-  retriesUsed: 1
+  cacheResult: "miss"
 }
 ```
 
 ### executeServiceCall
 
-Resolves and calls internal services (e.g., `event-processor`, `audit-service`). Similar signature to `executeEndpointCall` but targets internal service via DNS discovery.
+Resolves and calls a TENANT-registered service (a row in registry-service's
+`registered_services`), addressed by its registry id — not by an arbitrary
+platform service name. Delegates to the same HTTP core as
+`executeEndpointCall`.
 
 **Example**
 
 ```
-// Caller
+// Caller (workflow-service, which pre-populates serviceSlug at start time)
 activity = executeServiceCall({
-  service: "audit-service",
+  serviceId: "0f4c…-uuid",
+  serviceSlug: "echo-service",
   path: "/events/log",
   method: "POST",
   data: { action: "user.login", userId: "123" }
-})
+}, "acme")
 
 // Service resolution:
-// 1. Check if an audit connector is configured in connector-admin
-// 2. If yes, use connector config (URL, auth, headers)
-// 3. If no, resolve via Kubernetes DNS: audit-service.default.svc.cluster.local
+// 1. Look the slug up in the tenant's internal-adapter mirror
+//    (connector-admin, context=internal) — O(1), no registry hop
+// 2. On a miss, fall back to registry-service to resolve the URL
+// 3. Execute through the shared core (breaker + cache + audit event)
 
-// Request sent to: http://audit-service.default.svc.cluster.local/events/log
-// With tenant header injection: x-yoizen-tenant: acme
-
-// Result
+// Result — same IHttpCallResult shape as executeEndpointCall
 {
   status: 200,
-  body: { eventId: "evt_abc123" },
+  data: { eventId: "evt_abc123" },
   headers: { "content-type": "application/json" },
-  duration: 50,
-  retriesUsed: 0
+  cacheResult: null
 }
 ```
 
@@ -359,30 +367,58 @@ event.
 
 ### Circuit Breaker
 
-If a remote endpoint fails repeatedly, the service activates a circuit breaker to fail fast without attempting additional calls. Thresholds are connector-configurable.
+If a remote endpoint fails repeatedly, the breaker fails fast without
+attempting the call. **The thresholds are module constants in
+`src/activities/_shared/breaker.ts`, NOT connector-configurable** — a
+connector's `timeoutMs`/`maxRetries`/`retryBackoffMs` tune the retry chain,
+never the breaker. Two named configs exist:
 
-```
-Attempt 1: Failure (timeout)
-Attempt 2: Failure (5xx error)
-Attempt 3: Failure (connection refused)
-Circuit breaker opens → immediate 503 error on next call
-After cooldown period → half-open state (1 test request)
-If test succeeds → circuit closes, normal operation resumes
-```
+| Config | `failureThreshold` | `windowMs` | `cooldownMs` | `successThreshold` | `probeTimeoutMs` | Redis key prefix |
+|---|---|---|---|---|---|---|
+| `HTTP_BREAKER_CONFIG` | `5` | `60_000` | `HTTP_BREAKER_COOLDOWN_MS` = `30_000` | `2` | `60_000` | `cb:workflow:http` |
+| `AGENT_BREAKER_CONFIG` | `10` | `120_000` | `AGENT_BREAKER_COOLDOWN_MS` = `60_000` | `3` | `300_000` | `cb:workflow:agent` |
+
+So the HTTP breaker opens after **5** failures inside a rolling 60 s window
+(not 3), and half-open needs **2** consecutive successes to close (not 1).
+State lives in Redis with a 500 ms L1 cache and a 1 s per-op budget
+(`BREAKER_REDIS_TIMEOUT_MS`); `fallbackOnRedisError: "allow"` means a Redis
+outage fails OPEN in the permissive direction — calls are allowed, not
+blocked. Note the threshold is counted per breaker instance, so with N pods
+it takes up to N × threshold total failures to trip everywhere (the code
+says so at the top of `breaker.ts`).
 
 ### Retries & Backoff
 
-- **Strategy**: Exponential backoff (1s, 2s, 4s)
-- **Max retries**: 3 (configurable per connector)
-- **Retryable errors**: Network timeouts, 5xx status codes, connection refused
-- **Non-retryable errors**: 4xx status codes (immediate failure)
+`httpCallWithRetry` (`src/activities/_shared/http-call-with-retry.ts`):
+
+- **Strategy**: `retryBackoffMs × 2^(attempt-1)` before attempts 2, 3, … —
+  exponential, but the BASE is the connector's own `retryBackoffMs`, not a
+  fixed 1 s. A connector with `retryBackoffMs: 1000` gives 1 s / 2 s / 4 s.
+- **Max retries**: the connector's `maxRetries` (`maxRetries = 0` means one
+  attempt, no retry). connector-admin caps it at `ADAPTER_MAX_RETRIES_MAX = 3`
+  and `retryBackoffMs` at `ADAPTER_RETRY_BACKOFF_MS_MAX = 10_000` on write.
+- **Retried**: `res.status >= 500` and any thrown error (network failure,
+  `AbortSignal.timeout` abort).
+- **Not retried**: every response with `status < 500` — including 4xx — is
+  returned to the caller as-is, not thrown. A non-2xx is a normal result
+  here, not an exception.
+- **The raw (no-`adapterId`) branch does not retry at all**:
+  `src/lib/endpoint-call-core/execute-raw.ts` issues ONE `tracedFetch` with a
+  fixed `RAW_TIMEOUT_MS = 30_000` signal.
 
 ### Timeout Strategy
 
-1. Use connector-configured timeout if connector-driven request
-2. Use caller-provided timeout override if present
-3. Fall back to 30s default
-4. Maximum: 300s (circuit breaker prevents infinite hangs)
+| Branch | Timeout used |
+|---|---|
+| Raw (`url` only, no `adapterId`) | Fixed `RAW_TIMEOUT_MS` = **30 s** (`execute-raw.ts`). A caller-supplied `timeout` is NOT honoured on this branch |
+| Adapter-driven (`adapterId` [+ `endpointId`]) | The resolved connector's `timeoutMs`, passed straight through to `httpCallWithRetry` (`execute-with-adapter-base.ts` / `execute-with-adapter-endpoint.ts`) |
+
+The ceiling on a connector's `timeoutMs` is `ADAPTER_TIMEOUT_MS_MAX =
+60_000` (60 s), enforced by connector-admin's DTO on write — there is no
+300 s timeout anywhere. The 300 s figure that belongs to this service is
+`INVOKE_CONSUMER_ACK_WAIT_MS` (`src/config.ts`), the async invoke consumer's
+JetStream ack window, which the worst-case retry chain must stay under
+(asserted by `test/unit/invoke-ack-wait-invariant.spec.ts`).
 
 ## Performance
 
@@ -408,7 +444,11 @@ so SIGTERM/SIGINT drain in-flight activities within the grace window and exit.
 
 - **Max concurrent activities**: 400 per replica (`src/worker.ts:35`)
 - **Task dequeue**: Pull-based from Temporal (prevents overload)
-- **Activity timeout**: 30s default, configurable per connector
+- **HTTP timeout**: 30 s fixed on the raw branch (`RAW_TIMEOUT_MS`), the
+  connector's `timeoutMs` on the adapter branches — see "Timeout Strategy".
+  The Temporal-level `startToCloseTimeout` for these activities is declared
+  by the CALLER, in `workflow-service`'s `proxyActivities` blocks
+  (`services/workflow-service/src/temporal/workflows.ts`), not here.
 
 ### Scaling
 
@@ -740,11 +780,15 @@ Deployment gets independent resource requests and (if enabled) HPA targets.
 | `TEMPORAL_ADDRESS` | `localhost:7233` | Temporal server address:port |
 | `TEMPORAL_NAMESPACE` | `default` | Temporal namespace |
 | `CONNECTOR_ADMIN_URL` | `platformServiceUrl("connector-admin-api", env)` | Connector admin API URL |
-| `REDIS_HOST` | `localhost` | Redis host for connector config cache |
+| `PLATFORM_ENVIRONMENT` | `dev` | Feeds every `platformServiceUrl(...)` default below |
+| `REDIS_HOST` | `localhost` | Redis host for the connector-config cache, breaker state and invocation parking |
 | `REDIS_PORT` | `6379` | Redis port |
-| `REDIS_DB` | `0` | Redis database number |
-| `REDIS_PASSWORD` | *(unset)* | Redis password (if required) |
-| `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
+| `REDIS_CLUSTER_MODE` | *(off)* | Cluster client only on the literal `"true"` (`workflowHttpWorkerConfig.redisClusterMode`) |
+| `HTTP_RESPONSE_CACHE_ENABLED` | `true` | Disabled only by the literal `"false"` (case-insensitive) |
+| `REGISTRY_SERVICE_URL` | `platformServiceUrl("registry-service", env)` | Registry DNS-fallback lookup for `executeServiceCall` |
+| `AGENT_ADMIN_SERVICE_URL` | `platformServiceUrl("agent-admin-service", env)` | Target of `reportMcpUsageEvent` |
+| `NATS_URL` | `nats://localhost:4222` | JetStream endpoint for the audit events and the async invoke transport |
+| `LOG_LEVEL` | `info` | Read by the shared `PinoLoggerService` (`packages/observability/src/logger.ts`), NOT by this service's `src/config.ts` |
 | `HTTP_FACADE_PORT` | `3100` | Port for the HTTP invoke facade (`src/http-main.ts`) — separate from the worker's health `PORT` |
 | `INVOKE_RATE_LIMIT` | `RATE_LIMIT_DEFAULT_LIMIT` (`@yoizen/shared`, currently `1000`) | Per-tenant request limit for the invoke facade's sliding window |
 | `INVOKE_RATE_LIMIT_WINDOW_MS` | `RATE_LIMIT_DEFAULT_WINDOW_MS` (`@yoizen/shared`, currently `60000`) | Sliding-window duration (ms) for the invoke facade's rate limit |
@@ -756,22 +800,30 @@ Deployment gets independent resource requests and (if enabled) HPA targets.
 
 Connectors are managed by connector-admin. connector-runtime queries connector-admin for runtime configuration:
 
+The wire shape is `AdapterConfig` (`packages/shared/src/adapter.interfaces.ts`)
+— note there is no nested `auth` object and no `timeout`/`retries` fields;
+auth is the flat `authType` + `authConfig` pair, and the retry chain is
+`timeoutMs`/`maxRetries`/`retryBackoffMs`:
+
 ```
 GET /connectors/{adapterId}
 → {
     id: string,
+    tenantId: string,
+    name: string,
+    context: string,
     baseUrl: string,
-    auth: {
-      type: "bearer" | "apiKey" | "oauth2" | "basic",
-      credentials: Record<string, string>
-    },
-    headers: Record<string, string>,
-    timeout: number,
-    retries: number,
-    endpoints: [
-      { id, label, method, path },
-      ...
-    ]
+    authType: string,                       // "none" | "api-key" | "bearer" | "basic" | "oauth2-client"
+    authConfig: Record<string, unknown>,
+    headers: IAdapterHeaderEntry[],         // an ARRAY, not a map
+    timeoutMs: number,
+    maxRetries: number,
+    retryBackoffMs: number,
+    healthCheckPath: string,
+    status: AdapterStatusValue,
+    tags: string[],
+    defaultCache?: AdapterCacheStrategy,
+    endpoints: AdapterEndpointConfig[]
   }
 ```
 

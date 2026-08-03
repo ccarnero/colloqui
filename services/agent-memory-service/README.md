@@ -12,9 +12,14 @@ manager unconditionally (`src/providers/providers.module.ts:12-25`).
 ## Quick Start
 
 ```bash
-bun install
+pnpm install
 bun run --cwd services/agent-memory-service start:dev
 ```
+
+`pnpm`, not `bun install`: the root `package.json` declares no `workspaces`
+key, and `pnpm-workspace.yaml` is the single source of truth for workspace
+membership (its own header comment says so), so `bun install` at the root does
+not link the `@yoizen/*` `workspace:*` dependencies.
 
 Requires: per-tenant Postgres, and NATS for the publish path.
 
@@ -80,10 +85,12 @@ Both controllers are guarded by `TenantGuard`, and the tenant comes from the
 
 Subjects are built from `AGENT_MEMORY_SUBJECT_PREFIX =
 "evt.{tenant}.agent-memory-service.agent-memory.platform.internal"`
-(`packages/shared/src/constants.ts:145-153` — moved out of this service on
-2026-07-31 by envelope-drift T08, so every internal producer's subject
-constants now live together), with `{tenant}` substituted by
-`buildPlatformSubject` (`src/providers/nats.provider.ts:337`).
+(`packages/shared/src/constants.ts`, composed from `AGENT_MEMORY_PRODUCER`,
+`AGENT_MEMORY_DOMAIN`, `PLATFORM_CHANNEL` and `PLATFORM_PROVIDER` — moved out of
+this service on 2026-07-31 by envelope-drift T08, so every internal producer's
+subject constants now live together), with `{tenant}` substituted by
+`buildPlatformSubject` inside `NatsPublisher`'s shared `publishEvent`
+(`src/providers/nats.provider.ts`).
 
 The envelope body reports `producer: AGENT_MEMORY_PRODUCER`
 (`agent-memory-service`) and `domain: AGENT_MEMORY_DOMAIN` (`agent-memory`) —
@@ -98,7 +105,8 @@ rows ingested earlier keep the old values.
 
 The envelope `type` is projected from the subject constant by
 `src/providers/agent-memory-event-type.ts`, giving the prescriptive
-`io.yoizen.<domain>.<channel>.<provider>.<kind>.v1` of `DOCS/messaging/envelope.md:77`
+`io.yoizen.<domain>.<channel>.<provider>.<kind>.v1` of `DOCS/messaging/envelope.md`
+§2.1 (the `type` row)
 — e.g. `io.yoizen.agent-memory.platform.internal.memory_proposed.v1`. Deriving it
 from the subject means the kind token can never disagree with the one the event
 is published on. Before 2026-07-31 it was a hardcoded
@@ -109,14 +117,14 @@ kind); events published earlier keep that value and stay queryable by it.
 accident: every internal producer on the `platform`/`internal` family uses that
 shared sentinel (agent-admin, agent-scheduler, agent-memory), because these
 events have no channel account and `accountid` means "logical account ID, not
-the tenant" (`envelope.md:88`).
+the tenant" (`envelope.md` §2.1, the `accountid` row).
 
 | Subject | Publisher | Constant |
 |---|---|---|
-| `.memory_proposed.v1` | `publishMemoryProposed` (`nats.provider.ts:386-412`) | `AGENT_MEMORY_PROPOSED` (`packages/shared/src/constants.ts:150`) |
-| `.memory_published.v1` | `publishMemoryApproved` (`nats.provider.ts:414-438`) | `AGENT_MEMORY_PUBLISHED` (`packages/shared/src/constants.ts:151`) |
-| `.memory_rejected.v1` | `publishMemoryRejected` (`nats.provider.ts:440-463`) | `AGENT_MEMORY_REJECTED` (`packages/shared/src/constants.ts:152`) |
-| `.memory_expired.v1` | `publishMemoryExpired` (`nats.provider.ts:465-487`) | `AGENT_MEMORY_EXPIRED` (`packages/shared/src/constants.ts:153`) |
+| `.memory_proposed.v1` | `publishMemoryProposed` (`nats.provider.ts`) | `AGENT_MEMORY_PROPOSED` (`packages/shared/src/constants.ts`) |
+| `.memory_published.v1` | `publishMemoryApproved` (`nats.provider.ts`) | `AGENT_MEMORY_PUBLISHED` (same file) |
+| `.memory_rejected.v1` | `publishMemoryRejected` (`nats.provider.ts`) | `AGENT_MEMORY_REJECTED` (same file) |
+| `.memory_expired.v1` | `publishMemoryExpired` (`nats.provider.ts`) | `AGENT_MEMORY_EXPIRED` (same file) |
 
 `memory_proposed`'s envelope id is persisted into `metadata.proposedEventId` and
 becomes the causation anchor for the later `memory_published` /

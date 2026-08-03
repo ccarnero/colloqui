@@ -4,9 +4,9 @@ An authenticated debug view that follows a single message across services by its
 forward (origin → reply) and reverse (any event → origin). It answers "what happened to this
 message, end to end, and why?" without hand-crafting `curl` calls or grepping pod logs.
 
-- **Where:** direct authenticated route `/processes/trace`, with deep-link `/processes/trace/:correlationId`. It is under the Processes section URL space but is not currently listed in the Processes sub-nav.
-- **Who:** authenticated console users with the `diagnostics:read` permission. The route itself is only under the shell `authGuard`; the trace component gates the view/data load with `auth.hasPermission("diagnostics:read")`. It is not currently listed in the Processes sub-nav.
-- **Spec:** `.sdd/changes/processes-message-trace/` (design, ADRs, tasks).
+- **Where:** authenticated route `/processes/trace`, with deep-link `/processes/trace/:correlationId`. It **is** reachable from the Processes sub-nav — `NAV_SECTIONS`' `processes` section carries a `{ label: "Trace", route: "/processes/trace" }` page (`src/app/layout/nav/nav.config.ts`), added by the console-redesign-polish loop's T07. The "URL-only, not in the sub-nav" statement this file used to carry is stale.
+- **Who:** authenticated console users with the `diagnostics:read` permission. The route itself is only under the shell `authGuard`; the trace component gates the view/data load with `auth.hasPermission("diagnostics:read")` (`message-trace.component.ts`).
+- **Spec:** `.sdd/changes/processes-message-trace/` at the REPO ROOT (design, ADRs, tasks) — not `services/admin-console/.sdd/`, which holds only `landing-page-aggregation`.
 
 ## The two traces
 
@@ -104,8 +104,13 @@ addition (already shipped).
 | Workflow run + Temporal id | `GET /api/workflows/executions?correlation_id={cid}` |
 | Reverse resolve | `GET /api/audit/channel-events/{id}` → fallback `GET /api/audit/events/{id}` → `correlation_id` |
 
-> **Gateway constraint.** The audit proxy whitelists only `from`/`to`/`limit` (not
-> `correlation_id`) and exposes list + by-id but not `chain/:id`. That's why the chain is assembled
+> **Gateway constraint.** The audit proxy DTOs
+> (`services/api-gateway/src/modules/audit/audit-proxy-query.dto.ts`) whitelist
+> `from`/`to`/`limit`/`offset` — plus `channel`/`kind`/`accountId` on the
+> channel-events variant — and **never** `correlation_id`; `limit` is
+> `@Max(500)`. Both gateway audit controllers expose only `@Get()` and
+> `@Get(":id")`, so the audit-service `chain/:correlationId` routes that DO
+> exist server-side are not proxied. That's why the chain is assembled
 > **client-side** from a time window. The `correlation_id`-scoped path is workflow-service only
 > (executions); for arbitrary-age audit lookup see Slice 1.5 in the SDD tasks.
 
@@ -118,6 +123,10 @@ addition (already shipped).
 | `temporalUiBaseUrl` | `http://localhost:8233` | Temporal UI base. Reach it with `kubectl port-forward svc/temporal-ui 8233:8233`. Empty → link hidden. |
 | `tempoBaseUrl` | `""` | Tempo/Grafana explore base for the `traceid` link. Empty → link hidden. |
 | `temporalNamespace` | `default` | Temporal namespace for the deep link. |
+
+Both keys are read from `environment.ts` / `environment.prod.ts`; `tempoBaseUrl`
+is `""` in BOTH, so the Tempo link is hidden in every shipped configuration, and
+`temporalUiBaseUrl` is `""` in the prod file, so the Temporal link is dev-only.
 
 Access: authenticated shell route (`authGuard`) plus component-level `diagnostics:read` gate. No route-level permission guard is currently implemented.
 
