@@ -15,10 +15,10 @@ TypeScript source directly (`main`/`types` both point at `src/index.ts`,
 |---|---|
 | Storage-engine selection | `resolveStorageEngine`, `StorageEngine` (`src/engine.ts`), `createRepositoryProvider` (`src/repository.provider.ts`), `src/engine-module.factory.ts` |
 | Per-tenant connections | `TenantConnectionManager` (`src/tenant-connection-manager.ts`), `TenantMongoConnectionManager` (`src/tenant-mongo-connection-manager.ts`) |
-| Tenant lifecycle listeners | `TenantDeletionEvictionListener`, `TenantMongoDeletionEvictionListener`, `TenantReadySchemaListener` (`src/index.ts:10-12`) |
+| Tenant lifecycle listeners | `TenantDeletionEvictionListener`, `TenantMongoDeletionEvictionListener`, `TenantReadySchemaListener` (one file each: `src/tenant-deletion-eviction-listener.ts`, `src/tenant-mongo-deletion-eviction-listener.ts`, `src/tenant-ready-schema-listener.ts`) |
 | Platform providers | `PostgresModule` / `POSTGRES_SQL` (`src/postgres-provider.ts`), `redisProvider` / `REDIS_CLIENT` (`src/redis-provider.ts`), Mongo (`src/mongo-provider.ts`), Kubernetes (`src/kubernetes-provider.ts`) |
 | NATS + JetStream | `createNatsConnectionProvider`, `ensureStream`, `ensureTenantIngressStream` (`src/nats-provider.ts`), `ensureDurableConsumer` (`src/nats-durable-consumer.ts`), `MultiTenantConsumerManager` (`src/multi-tenant-consumer-manager.ts`), `NatsConsumerRunner` (`src/nats-consumer-runner.ts`), DLQ helpers (`src/nats-dlq.ts`), claim-check (`src/claim-check.ts`) |
-| Health probes | `checkPostgres`, `checkMongo`, `checkNats`, `checkRedis`, `checkK8s` (`src/health-checks.ts`, re-exported at `src/index.ts:53-59`) plus the aggregate `getNatsTenant*HealthStatus` helpers |
+| Health probes | `checkPostgres`, `checkMongo`, `checkNats`, `checkRedis`, `checkK8s` (`src/health-checks.ts`, all five re-exported by name from `src/index.ts`) plus the aggregate `getNatsTenantPostgresHealthStatus` / `getNatsTenantMongoHealthStatus` helpers |
 | HTTP tenancy | `TenantGuard`, `@TenantId()` (`src/tenant-guard.ts`) |
 
 ## Storage-engine selection
@@ -47,7 +47,9 @@ token to the adapter for the active engine.
 one pool per tenant. `SharedTenantDatabaseMode` picks the topology:
 `PerTenantDatabase` (the database itself is the tenant boundary — no
 `tenant_id` columns) or `SingleDatabase` (one shared database, tenant-scoped
-rows), exported from `src/tenant-connection-manager.ts` via `src/index.ts:1-4`.
+rows); both `SharedTenantDatabaseMode` and its `SharedTenantDatabaseModeValue`
+type come from `src/tenant-connection-manager.ts` and are re-exported by name
+from `src/index.ts`.
 
 ## Durable consumers
 
@@ -69,10 +71,16 @@ Three behaviours worth knowing:
    issued on drift (`:112-118`, `reconcileDurableConsumer` at `:213`). That is
    what makes a default change in this file actually reach running clusters
    without a delete/recreate cycle.
-2. **Immutable fields are NOT reconciled** — filter subjects, ack/deliver/replay
-   policies, `backoff` and `deliver_group`. The server rejects changes to those,
-   so a drift there requires an operator to delete and recreate the durable
-   (`:120-123`).
+2. **Immutable fields are NOT reconciled** — filter subjects,
+   ack/deliver/replay policies and `deliver_group`. The server rejects changes
+   to those, so a drift there requires an operator to delete and recreate the
+   durable. **`backoff` is the exception the source's own comment gets wrong**:
+   the JSDoc above `ensureDurableConsumer` lists `backoff` as immutable, but
+   `reconcileDurableConsumer` both compares it (`nanoArraysEqual(currentBackoff,
+   opts.backoffNanos)` is one of the `drifted` terms) and sends it in the
+   `jsm.consumers.update(...)` payload — which is exactly what the "single
+   atomic update" note further down that same file describes. Trust the code:
+   `backoff` IS reconciled.
 3. **Ensures are cached in-process** in a `Map` keyed `"<stream>::<durable>"`
    (`:87-91`), so repeated hot-path calls short-circuit (`:135-136`).
 
@@ -110,16 +118,16 @@ generous. The default schedule therefore anchors its first step at
 
 Because the 60 s default is safe for fast I/O-bound handlers but dangerous for
 slow ones (LLM calls, large-file ingestion, multi-step provisioning), the
-platform enforces a census rather than trusting review:
-`k7_ack_wait_census` in `scripts/checks/doc-code-guards.sh:311`.
+platform enforces a census rather than trusting review: the
+`k7_ack_wait_census` guard in `scripts/checks/doc-code-guards.sh`.
 
 It discovers every `new MultiTenantConsumerManager(...)` / `ensureDurableConsumer(...)`
 registration under `services/` and fails when one is not in the script's
 `known_files` list, or declares no explicit `ackWaitMs` and is not on the
 allowlist with a written justification. A new consumer with a slow handler that
 forgets `ackWaitMs` fails the build until someone consciously triages it — see
-the guard's header comment (`scripts/checks/doc-code-guards.sh:288-310`) for
-the full rationale.
+the `# K7 — NATS durable consumer ackWait census.` header block immediately
+above that function for the full rationale.
 
 Rule of thumb when adding a consumer: if the handler can exceed a few seconds,
 set `ackWaitMs` explicitly. Existing long handlers use `300_000`
@@ -142,7 +150,7 @@ name so replicas compete for deliveries on each stream (`:34-38`).
 - Per-stream lookup is O(1) via `Map<streamName, IRunnerEntry>` (`:158-159`,
   `:162`).
 
-Notable config (`IMultiTenantConsumerConfig`, `:39-130`):
+Notable config (the `IMultiTenantConsumerConfig` interface in the same file):
 
 | Option | Default | Meaning |
 |---|---|---|
@@ -182,11 +190,26 @@ own config objects.
 | `TENANT_POSTGRES_SHARED_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_DATABASE` / `_DATABASE_MODE` | see source | Shared-tier target |
 | `TENANT_POSTGRES_CATALOG_HOST` / `_PORT` / `_DB` / `_USER` / `_PASSWORD` | see source | Catalog used for tier lookup |
 | `TENANT_MONGO_SHARED_*` / `TENANT_MONGO_CATALOG_*` | mirror the Postgres names | Mongo-engine equivalents |
-| `POSTGRES_SERVICE_NAME` / `POSTGRES_PORT` / `POSTGRES_USER` / `POSTGRES_DB` | — | Per-tenant Postgres connection parts |
-| `MONGO_SERVICE_NAME` / `MONGO_PORT` / `MONGO_USER` / `MONGO_PASSWORD` / `MONGO_DB` / `MONGO_HOST` | — | Per-tenant Mongo connection parts |
+| `POSTGRES_HOST` / `POSTGRES_SERVICE_NAME` / `POSTGRES_PORT` / `POSTGRES_USER` / `POSTGRES_DB` | host falls back to the caller's `defaultHost` | Platform + per-tenant Postgres connection parts (`createPostgresProvider`, `TenantConnectionManager`) |
+| **`POSTGRES_PASSWORD`** | **none — throws** | `requireEnv("POSTGRES_PASSWORD")` in BOTH `postgres-provider.ts` and `TenantConnectionManager`; unset means `POSTGRES_PASSWORD environment variable is required` at construction, not a silent empty password |
+| `MONGO_URI` | — | Wins outright in `buildMongoUri`; the host/port/db/credential vars below are ignored when it is set |
+| `MONGO_SERVICE_NAME` / `MONGO_PORT` / `MONGO_USER` / `MONGO_DB` / `MONGO_HOST` | `27017` / `yoizen` | Per-tenant Mongo connection parts |
+| **`MONGO_PASSWORD`** | **none — throws** | Same `requireEnv` treatment as `POSTGRES_PASSWORD` (`mongo-provider.ts`, `TenantMongoConnectionManager`) |
+| `NATS_URL` | `nats://localhost:4222` | Read by `createNatsConnectionProvider` |
 | `REDIS_HOST` / `REDIS_PORT` / `REDIS_CLUSTER_MODE` | `localhost` / `6379` | Read by `createRedisClient` (`src/redis-provider.ts`) |
 
-Full list: `rg -o 'process\.env\.[A-Z_0-9]+' packages/database/src | sort -u`.
+Partial list (45 names): `rg -o 'process\.env\.[A-Z_0-9]+' packages/database/src | sort -u`.
+That grep has two blind spots, and both hide vars listed above:
+
+- `DB_ENGINE` / `STORAGE_ENGINE` — `resolveStorageEngine` takes an `env` parameter that
+  merely defaults to `process.env`, so it reads `env.DB_ENGINE`, never
+  `process.env.DB_ENGINE`.
+- `POSTGRES_PASSWORD` — reached only through `requireEnv("POSTGRES_PASSWORD")`, which does
+  the `process.env[name]` lookup by variable, so the literal never appears. (`MONGO_PASSWORD`
+  escapes this because both its call sites spell it `process.env.MONGO_PASSWORD ??
+  requireEnv("MONGO_PASSWORD")`.) Catch the required ones with
+  `rg -o 'requireEnv\("[A-Z_0-9]+"\)' packages/database/src | sort -u` — four hits, two
+  names.
 
 ## Testing
 

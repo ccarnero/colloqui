@@ -30,7 +30,8 @@ with an actionable error rather than skipping silently).
 ## The `AUTH_CONTEXT` seam
 
 Everything in this package depends on a three-method interface, not on a
-concrete service (`src/auth-context.ts:7-13`):
+concrete service (`IAuthContext` in `src/auth-context.ts`, bound through the
+`AUTH_CONTEXT` injection token declared in the same file):
 
 ```ts
 interface IAuthContext {
@@ -41,7 +42,8 @@ interface IAuthContext {
 ```
 
 An app wires its own service in with
-`{ provide: AUTH_CONTEXT, useExisting: AuthService }` (`:4-5`). That is what
+`{ provide: AUTH_CONTEXT, useExisting: AuthService }` — which is exactly what
+`provideCoreApp` does with its `authServiceClass` option. That is what
 lets the interceptors and guard stay app-agnostic.
 
 ## API
@@ -97,10 +99,34 @@ proactive refresh, `:45-48`) and `onBeforeLogout` (e.g. clear refresh timers,
 Session tokens are persisted to `localStorage` under the subclass's keys and
 cleared on logout (`:151-152`, `:179-182`).
 
+### Session methods
+
+The base class is not read-only state — it also owns the HTTP session, so a
+subclass inherits these without writing them:
+
+All six live in `src/base-auth.service.ts`.
+
+| Method | Behaviour |
+|---|---|
+| `login(email, password, tenantId?)` | Fire-and-forget wrapper: subscribes to `postLogin` and calls `completeLogin` on success, but its `error` arm is an empty block — the failure is swallowed, so a UI that needs it must subscribe to `postLogin` itself |
+| `postLogin(...)` (protected) | `POST {apiBaseUrl}/auth/login`; sends `tenant_id` in the BODY when `loginTenantMode === "body"`, otherwise as the `x-yoizen-tenant` HEADER — this is the only thing `loginTenantMode` controls |
+| `completeLogin(res)` (protected) | `setTokens(res.access_token, res.refresh_token)` then `router.navigate(["/"])` |
+| `logout()` | Calls the `onBeforeLogout` hook, removes both storage keys, resets the token signal to `null`, navigates to `/login` |
+| `refreshToken()` | `POST {apiBaseUrl}/auth/refresh` with `{ refresh_token }`; **any** failure — no stored refresh token, or a rejected response — falls through to `logout()` |
+| `setTokens(access, refresh?)` (protected) | Persists (refresh only when present), updates the signal, then calls the `onAfterSetTokens` hook |
+
 ## Consumers
 
-`services/admin-console` — `src/app/app.config.ts`, `src/app/core/guards/auth.guard.ts`,
-`src/test-providers.ts` (`rg -l '@yoizen/angular-shared' services`).
+`services/admin-console` is the only consumer, but it uses more of the surface
+than a single wiring file — `rg -l '@yoizen/angular-shared' services` returns
+`package.json` plus seven sources and three specs:
+`src/app/app.config.ts`, `src/test-providers.ts`,
+`src/app/core/services/auth.service.ts` (the `BaseAuthService` subclass),
+`src/app/core/services/structured-kb.service.ts`,
+`src/app/core/guards/auth.guard.ts`,
+`src/app/core/interceptors/auth.interceptor.ts`,
+`src/app/core/interceptors/tenant.interceptor.ts`, and the matching
+`auth.guard.spec.ts` / `auth.interceptor.spec.ts` / `tenant.interceptor.spec.ts`.
 
 ## Testing
 

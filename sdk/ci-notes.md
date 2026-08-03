@@ -7,45 +7,46 @@ below for the evidence.
 
 ## Why there's no pipeline file yet
 
-This repo has no live/wired CI pipeline anywhere, for any service, as of
-this writing. Confirmed by direct inspection:
+This repo has no live/wired CI pipeline anywhere, for any service. Confirmed
+by direct inspection (re-verified 2026-08-03 — three of the original bullets
+had rotted and are corrected here):
 
-- `find .github -type f` → only `.github/prompts/*.md` (SDD tooling
-  prompts for Copilot/agents), no `.github/workflows/*.yml`.
-- `fd -i 'azure-pipelines' .` (repo-wide) → the only matches are
-  `skills/devops/assets/azure-pipelines.yml` and
-  `skills/devops/assets/azure-pipelines-dev.yml`. These are **scaffolding
-  template assets** bundled with the `skills/devops` Claude Code skill
-  (used to *generate* pipelines for other projects on request) — they
-  contain placeholder values (`your-product-name`,
-  `your-acr-service-connection`, `yourregistry.azurecr.io`, generic
-  `api1`/`api2`/`api3` matrix entries) and are not referenced by any Azure
-  DevOps project pointed at this repo.
+- `find .github -type f` → **zero files**. The directory still exists but is
+  empty; the `.github/prompts/*.md` SDD tooling prompts this note originally
+  cited are gone. No `.github/workflows/*.yml` exists (this inspection cannot
+  speak to what may have existed historically — check `git log` if that
+  matters).
+- `fd -H -i 'azure-pipelines' .` (repo-wide) → **no matches at all**. The
+  `skills/devops/assets/azure-pipelines.yml` / `azure-pipelines-dev.yml`
+  template assets this note used to cite no longer exist — there is no
+  `skills/devops` skill any more (`ls skills` → `_shared`, `angular`,
+  `envelope-messages`, `git-commit`, `judgment-day`, `multi-tenant`,
+  `playwright`, `skill-registry`, `yz-ui`). So the repo now contains not even
+  a *template* pipeline to imitate.
 - No `azure-pipelines.yml` at the repo root, no `.azure-pipelines`
-  directory, no `devops/` directory at the repo root (only
-  `skills/devops`, which is skill infrastructure, not project infra).
-- `fd -d 1 -t f '^(Makefile|package\.json)$' .` → only a root
-  `package.json`. It is a bare devDependency holder
-  (`@playwright/test`, `reflect-metadata`, `tsx`, `typescript`) with no
-  `scripts` block at all — no root-level `test`/`ci`/`build` convention
-  to extend.
+  directory, no `devops/` directory anywhere.
+- The root `package.json` is a bare devDependency holder — `@playwright/test`,
+  `@yoizen/database`, `@yoizen/shared`, `ioredis`, `mongodb`, `nats`,
+  `postgres`, `reflect-metadata`, `tsx`, `typescript` — with no `scripts`
+  block at all, so there is no root-level `test`/`ci`/`build` convention to
+  extend.
 - No `services/*/azure-pipelines*.yml` and no `services/*/.github`
   anywhere under `services/`.
-- No `lefthook` config found in the repo despite being mentioned in
-  `.claude/CLAUDE.md` — that reference describes an intended workflow,
-  not something currently wired.
+- No `lefthook` config anywhere (`fd -H -i lefthook .` → nothing). The
+  `.claude/CLAUDE.md` that used to mention it no longer exists either; the
+  repo's normative doc is now the root `AGENTS.md`.
 - Per-service `package.json` scripts (checked `services/workflow-service`)
   show a de facto *local* test convention (`bun test`, `test:unit`,
   `test:integration`) but this is invoked manually/locally — nothing runs
   it in CI, since there is no CI.
 
-Conclusion: there is no existing CI convention anywhere in this repo to
-extend. Per the SDK growth plan's own fallback instruction, this document
-proposes the SDK's CI jobs instead of inventing a pipeline file with
-nothing real behind it. The stage/job naming and structure below mirror
-`skills/devops/assets/azure-pipelines.yml` / `azure-pipelines-dev.yml` so
-that if/when this org wires up real CI, the SDK stage slots in with the
-same conventions already established for other services.
+Conclusion (stronger than when this was written): there is no existing CI
+convention anywhere in this repo to extend, and no template to mirror either.
+Per the SDK growth plan's own fallback instruction, this document proposes the
+SDK's CI jobs instead of inventing a pipeline file with nothing real behind
+it. The stage/job naming below is plain Azure DevOps convention — the
+`skills/devops` assets it was originally modelled on are gone, so treat the
+shape as illustrative, not as alignment with an existing house style.
 
 ## Proposed jobs for `sdk/`
 
@@ -58,13 +59,17 @@ same conventions already established for other services.
 
 2. **Unit tests**
    - Command: `cd sdk && npm ci && npm test` (`tsx --test 'test/**/*.test.ts'`,
-     276 tests as of Phase 2). Fully offline — no cluster, no network
-     dependency, safe to run on every PR.
+     343 tests across 38 files, verified 2026-08-03). Fully offline — no
+     cluster, no network dependency, safe to run on every PR.
    - Trigger: every PR touching `sdk/**`.
+   - Gap to fix when this is wired: that glob misses the 14 co-located CLI
+     specs under `src/cli/**/*.test.ts`. A CI job running only `npm test`
+     leaves the CLI untested.
 
 3. **E2E tests** (env-gated, NOT on every PR)
    - Command: `cd sdk && SDK_E2E=1 npm run test:e2e`
-     (`tsx --test --test-concurrency=1 'test/e2e/**/*.e2e.ts'`, 53 tests).
+     (`tsx --test --test-concurrency=1 'test/e2e/**/*.e2e.ts'`, 9 files /
+     62 `test()` cases, verified 2026-08-03).
    - Trigger: **manual or scheduled only** — explicitly not on every PR,
      because it requires a live dev cluster reachable from the runner
      (via port-forward or a directly reachable dev gateway URL), which
@@ -88,17 +93,14 @@ same conventions already established for other services.
 
 ## Proposal sketch (NOT a live file)
 
-The following is illustrative only, styled after the stage/job/pool
-conventions in `skills/devops/assets/azure-pipelines.yml` and
-`azure-pipelines-dev.yml`. It is **not** created as an actual
+The following is illustrative only. It is **not** created as an actual
 `azure-pipelines.yml` anywhere in this repo — this fenced block is the
 entire extent of it.
 
 ```yaml
 # PROPOSAL — illustrative only, not a live pipeline file.
-# Mirrors the stage/job naming conventions used in
-# skills/devops/assets/azure-pipelines.yml for consistency if/when
-# real CI is wired up for this repo.
+# Plain Azure DevOps stage/job conventions; there is no in-repo pipeline
+# (or pipeline template) left to mirror.
 
 trigger:
   branches:
@@ -132,7 +134,7 @@ stages:
               cd sdk
               npm ci
               npm test
-            displayName: 'npm test (276 tests, offline)'
+            displayName: 'npm test (343 tests, offline)'
 
   - stage: SdkE2E
     displayName: 'SDK — E2E (manual/scheduled, needs dev cluster)'
@@ -152,7 +154,7 @@ stages:
               cd sdk
               npm ci
               SDK_E2E=1 npm run test:e2e
-            displayName: 'SDK_E2E=1 npm run test:e2e (53 tests)'
+            displayName: 'SDK_E2E=1 npm run test:e2e (9 files / 62 cases)'
             env:
               SDK_E2E_TENANT_CREDENTIALS: $(SdkE2ETenantCredentials) # pipeline secret
 

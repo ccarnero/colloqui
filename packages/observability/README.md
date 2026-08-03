@@ -11,9 +11,35 @@ the package does not pin the host's Nest version.
 
 ## Bootstrap and the api/worker split
 
-Every service is deployed twice from one image — a Knative Service (`*-api`)
-serving HTTP and a plain Deployment (`*-worker`) driving NATS consumers — with
-the entry point branching on `SERVICE_MODE` (`src/runtime-mode.ts:2-13`).
+A **split** service is deployed twice from one image — a Knative Service
+(`*-api`) serving HTTP and a plain Deployment (`*-worker`) driving NATS
+consumers — with the entry point branching on `SERVICE_MODE` (the module
+docblock at the top of `src/runtime-mode.ts` states the contract).
+
+The split is opt-in, not universal. Six of the twenty services call
+`bootstrapSplitService` (`agent-admin-service`, `audit-service`,
+`channel-service`, `connector-admin`, `usage-aggregator-service`,
+`workflow-service` — `rg -l bootstrapSplitService services`), and those six own
+all 11 base manifests that actually set a `SERVICE_MODE` env var. Five use
+`-api`/`-worker` pairs; agent-admin pairs `agent-admin-service.yaml` with
+`agent-admin-service-worker.yaml` and sets the var only on the worker, letting
+the ksvc fall through to the `api` default. Every other service ships a single
+ksvc and never reads `SERVICE_MODE`, so it silently resolves to `api`.
+
+Two worker Deployments under `knative/services/base/` are **not** part of this
+mechanism, and neither sets `SERVICE_MODE`:
+
+- `tracking-ingester-worker.yaml` — worker-ONLY, no ksvc twin. Its header
+  comment says the omission is deliberate; `main.ts` always bootstraps the
+  consumer engine. (`tracking-ingester-worker-svc.yaml` is just a ClusterIP
+  `v1.Service` for it, not a second workload.)
+- `workflow-worker.yaml` — a Temporal worker running
+  `command: ["bun", "dist/temporal/worker.js"]` off the same
+  `dev.local/workflow-service:local` image, with its own `/health` served by
+  `temporal-worker-health.ts`. So **workflow-service is deployed three times
+  from one image** — `workflow-service-api` (ksvc), `workflow-service-worker`
+  (the `SERVICE_MODE=worker` NATS consumer) and `workflow-worker` (Temporal) —
+  and only the first two go through `bootstrapSplitService`.
 
 ```ts
 await bootstrapSplitService({ baseServiceName, module, port, apiOptions });
@@ -106,8 +132,9 @@ The package reads exactly four (`rg -o 'process\.env\.[A-Z_0-9]+' packages/obser
 
 ## Testing
 
-`test/unit/` holds the suites; the package declares no `test` script, so run
-them from the repo root with your usual Bun invocation, e.g.:
+`test/unit/` holds the package's only suite today
+(`nats-consumer-metrics.spec.ts`); `package.json` declares no `scripts` block at
+all, so run it with your usual Bun invocation, e.g.:
 
 ```bash
 bun test packages/observability/test/unit

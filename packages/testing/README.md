@@ -36,7 +36,7 @@ const sql = createMockPostgresSql(mock, [{ id: "1" }]);
 | `createMockMongoCollection(handler, mock)` (`:39`) | → `IMockMongoCollection` | Every operation delegates to `handler` |
 | `createMockMongoClient(collections, mock, databaseName = "yoizen")` (`:89`) | → `MongoClient` | Map of collection name → handler. An unmapped collection returns a handler that yields `null` rather than throwing (`:96-98`) — a typo'd collection name reads as "no rows", not as an error. Also fakes `startSession()` with a `withTransaction` that simply invokes the callback (`:101-108`), so transactional code runs without a real session |
 | `createMockTenantDb(collections, mock)` (`:121`) | → `Db` | Thin wrapper over `createMockMongoClient(...).db("yoizen")` (`:125`) |
-| `createQueuedSql(rowsQueue, mock)` (`:131`) | → `Sql` | postgres.js mock that DEQUEUES one row batch per tagged-template call, returning `[]` once the queue is drained (`:132-137`). Use when a test needs different results per query, in order. Also stubs `.json()` (identity) and `.unsafe()` (`:139-141`) |
+| `createQueuedSql(rowsQueue, mock)` | → `Sql` | postgres.js mock that DEQUEUES one row batch per tagged-template call (`rowsQueue.shift()`), returning `[]` once the queue is drained. Use when a test needs different results per query, in order. Also stubs `.json()` (identity) and `.unsafe()` via the `Object.assign` on the returned mock |
 | `createMockPostgresSql(mock, defaultRows = [])` (`:145`) | → `Sql` | Returns the SAME rows for every query (`:146-147`). Use when the query order is irrelevant. Note it does NOT stub `.json()` / `.unsafe()` — reach for `createQueuedSql` if the code under test calls those |
 
 Two caveats worth knowing before choosing a helper:

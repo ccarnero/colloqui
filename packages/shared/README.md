@@ -118,6 +118,14 @@ src/
 ├── paginated-query.dto.ts          # PaginatedQueryDto (class-validator DTO with @Type transforms)
 ├── async.utils.ts                  # sleep(ms) — backoff and test timing
 │
+│── Declarative provisioning (manifest schema + validators)
+├── provisioning/manifest.schema.ts        # Zod manifest schema (the `zod` dependency's only consumer)
+├── provisioning/validate-manifest.ts      # schema validation entry point
+├── provisioning/validate-structural-rules.ts # cross-resource rules (cycles, dangling refs)
+├── provisioning/collect-symbolic-refs.ts  # symbolic-reference collector
+├── provisioning/validation-error.interfaces.ts # ManifestValidationError
+├── provisioning/index.ts                  # sub-barrel re-exported through src/index.ts
+│
 │── Other interfaces
 ├── dashboard.interfaces.ts         # DashboardStats, DashboardActivity, DashboardQuota, etc.
 ├── embedding-client.interfaces.ts  # EmbeddingClientConfig, IEmbeddingClient
@@ -125,6 +133,20 @@ src/
 ├── knowledge-base.interfaces.ts    # IKnowledgeBase, IDocument, DocumentStatus, etc.
 ├── variable.interfaces.ts          # VariableResolutionContext, VariableDeclaration, IDataConnection
 ├── chunker.interfaces.ts           # Chunker interfaces for knowledge-base document splitting
+├── audit.interfaces.ts             # GatewayAuditEvent, GatewayAuditUpstream (the audit.gateway.> payload)
+├── mcp-usage.interfaces.ts         # IMcpUsageEvent
+├── mcp-usage-client.ts             # reportMcpUsageEvent — fire-and-forget MCP usage reporter
+├── runtime-stream.interfaces.ts    # RuntimeToken/ToolCall/ToolResult/Cancel payloads for the rt.* surface
+├── schedule.utils.ts               # parseSchedule — ParsedSchedule (cron vs interval)
+├── validate-outbound-url.ts        # validateOutboundUrl — SSRF guard for connector/MCP egress
+├── connector-call-usage-schema.ts  # CONNECTOR_CALL_USAGE_SCHEMA_SQL — connector call usage DDL
+├── lib/result.ts                   # Result<T,E> + ok()/err() helpers
+│
+│── Tests co-located under src/ (see also the separate test/unit/ dir)
+├── __tests__/                      # 10 specs: agent-admin/agent-memory/platform/doc-locks/
+│                                   #   runtime-stream constants, execution-client, ingress stream
+│                                   #   name, schedule + tenant utils, tenant-stream clamp
+├── provisioning/__tests__/         # 4 specs + fixtures for the manifest schema/validators
 ```
 
 ## NATS Stream Topology
@@ -137,7 +159,7 @@ The canonical topology is **per-tenant**. See `DOCS/messaging/envelope.md` (enve
 |---|---|
 | `getTenantStreamName(tenantId)` | `INGRESS-<TENANT>` (tenant id upper-cased) |
 | `getTenantSubjectPattern(tenantId)` | `evt.<tenant>.>` |
-| `buildTenantStreamConfig(tenantId, tier)` | Returns `TenantStreamConfig` with tier-scoped limits |
+| `buildTenantStreamConfig(tenantId, tier)` | Returns `TenantStreamConfig` with tier-scoped limits. **Nothing calls it** — its own JSDoc says so; the shipped path passes clamped limits straight to `ensureTenantIngressStream` (see `DOCS/messaging/tenant-messaging-tiers.md`) |
 | `TENANT_TIER_LIMITS` | `free` / `pro` / `enterprise` limits (max_age, max_bytes, replicas, object store) |
 | `buildClaimCheckBucket(tenant)` | `PAYLOAD-<tenant>` (Object Store) |
 | `buildDlqStreamName(tenantId)` | `DLQ-<tenantId>` |
@@ -313,6 +335,22 @@ for s in services/*/; do rg -lq '@yoizen/shared' "$s" && basename "$s"; done
 - **Naming**: `SCREAMING_SNAKE_CASE` for constants, `PascalCase` for interfaces and classes.
 - **Versioning**: not published to npm; consumed as a workspace package (`"@yoizen/shared": "workspace:*"`, e.g. `services/auth-service/package.json:20`).
 - **TypeScript strict mode**: all strict checks enabled.
+
+## Testing
+
+`package.json` declares `"test": "bun test"`. Two suite locations, both picked
+up by that one command:
+
+```bash
+cd packages/shared
+bun test
+```
+
+- `src/__tests__/` (10 specs) + `src/provisioning/__tests__/` (4 specs +
+  `fixtures.ts`) — co-located with the code they cover.
+- `test/unit/` (6 specs) — `adapter-client`, `circuit-breaker`,
+  `envelope.utils`, `envelope-schema`, `channel-usage-schema`,
+  `mcp-usage-client`.
 
 ## Common Tasks
 

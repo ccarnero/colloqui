@@ -1,21 +1,30 @@
 # SDK e2e (live cluster)
 
-`http-ingest.e2e.ts` reproduces the flow of `scripts/e2e/http-workflow.sh` — login, create a
-fresh http channel account, send a message, assert `"accepted"` — but drives the send through
-the SDK's public API (`createClient` → `send` / `sendText`) instead of raw curl. Account
-create/delete uses plain `fetch` because account CRUD isn't part of the SDK yet.
+Nine suites live here — `admin-final`, `admin-resources`, `agents`, `channels`,
+`connectors-registry`, `http-ingest`, `runtime`, `runtime-stream`, `workflows` — 62 `test()`
+cases in total (9 top-level, 53 subtests).
 
-This suite is gated behind `SDK_E2E=1` and excluded from `npm test` (it only matches
-`test/e2e/**/*.e2e.ts`, a different glob than `test/**/*.test.ts`). Run it explicitly:
+`http-ingest.e2e.ts` is the original one: it reproduces the flow of
+`scripts/e2e/http-workflow.sh` — login, create a fresh http channel account, send a message,
+assert `"accepted"` — but drives the send through the SDK's public API (`createClient` →
+`send` / `sendText`) instead of raw curl. Account create/delete uses plain `fetch` because
+account CRUD isn't part of the SDK yet.
+
+Every suite is gated behind `SDK_E2E=1` and excluded from `npm test` (the e2e script matches
+`test/e2e/**/*.e2e.ts`, a different glob than `test/**/*.test.ts`). Run them explicitly:
 
 ```bash
 cd sdk
 SDK_E2E=1 npm run test:e2e
 ```
 
+`--test-concurrency=1` is baked into the `test:e2e` script and is required: the gateway
+enforces a per-tenant rate limit and concurrent files trip 429s.
+
 ## Required cluster access
 
-The test needs a reachable api-gateway. Base URL resolution mirrors
+The tests need a reachable api-gateway. Each suite inlines the same resolution logic (there
+is no shared helper module under `test/e2e/`), mirroring
 `integrations/lib/resolve-env.sh`:
 
 1. `YOIZEN_BASE_URL` if set, used as-is.
@@ -42,6 +51,7 @@ To start the port-forward (from the repo root):
 | `YWAI_ENV` | `dev` | namespace suffix, only used for the ingress-hostname probe |
 | `DEV_DOMAIN` / `MINIKUBE_DOMAIN` | `dev.local` | ingress domain, only used for the ingress-hostname probe |
 
-The test creates its own http channel account per run (unique `externalId`, prefix
-`sdk-e2e-http-`) and deletes it in a `finally` block; it also does best-effort cleanup of any
-stale accounts left over from a previous failed run.
+`http-ingest.e2e.ts` creates its own http channel account per run (unique `externalId`, built
+from `ACCOUNT_PREFIX = "sdk-e2e-http"`) and deletes it in a `finally` block; it also does
+best-effort cleanup of any stale accounts left over from a previous failed run. The other
+suites follow the same discipline: uniquely-named resources, cleanup in `finally`.

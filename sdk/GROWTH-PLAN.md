@@ -1,8 +1,37 @@
 # Platform SDK Growth Plan
 
-Status: approved
+Status: approved — **all phases DONE (0 through 5); this document is now a
+dated RECORD of that effort, not a live plan.**
 Audience: LLM agents and developers executing SDK expansion work
 Scope: evolve `sdk/` (`@yoizen/http-sdk` v0.1.0) into a full platform SDK covering every REST API exposed by the api-gateway, following versioning best practices, without breaking the current stable state.
+
+> **Read this before trusting any number below (re-verified 2026-08-03).**
+> Every "Status: DONE" block and every §1 audit finding is dated and is kept
+> verbatim as history. Current reality differs on four checkable points:
+>
+> - **Package name**: the Scope line above and §1.1 say `@yoizen/http-sdk`.
+>   P0.3 renamed it — `sdk/package.json` says `@yoizen/platform-sdk`, still
+>   `v0.1.0`, still `private: true`.
+> - **Namespace count**: Phase 2 records "All 19 namespaces shipped". There
+>   are **21** today (`ls sdk/src/resources` and the 21 `create*Client(...)`
+>   calls in `src/infrastructure/create-client.ts`) — `manifests` and
+>   `secrets` were added afterwards by the declarative-provisioning /
+>   samples-reorg efforts, not by this plan.
+> - **Test tallies**: Phase 5's closing "unit `283/283`, e2e `57/57`" is a
+>   2026-07-05 snapshot. Today `npm test` reports **343 tests across 38
+>   files** and `test/e2e/` holds **9 files / 62 `test()` cases**.
+> - **§1.2's "No API versioning" / "No OpenAPI"** are the 2026-07-04 audit's
+>   findings; Phase 0 closed both. `/api/v1` + `/api/docs` are live.
+>
+> **On the resource types' `verified YYYY-MM-DD` headers** (the claim this
+> document is the anchor for): 16 of the 21 resources carry one, all reading
+> `verified 2026-07-04, see sdk/GROWTH-PLAN.md Phase 2` — plus
+> `src/core/pagination.ts`. Only `tenants/types.ts` has been re-dated since
+> (`messagingTier surface re-verified 2026-08-01`). Five resources carry **no
+> verified-date header at all**: `manifests`, `secrets`, `mcp-servers`,
+> `runtime`, `skills`. The dates are historical claims and are left as
+> written; treat any 2026-07-04 header as "last checked a month ago", not as
+> a standing guarantee.
 
 ---
 

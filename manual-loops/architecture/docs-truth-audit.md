@@ -142,7 +142,7 @@ final per-file dispositions.
 - [x] T02 — Audit: DOCS/messaging + DOCS/architecture
 - [x] T03 — Audit: DOCS/channels, agents, workflows, skb, reference, adr, guides, runbooks
 - [x] T04 — Audit: the 20 service READMEs
-- [ ] T05 — Audit: packages + sdk docs
+- [x] T05 — Audit: packages + sdk docs
 - [ ] T06 — Audit: integrations, demos, examples
 - [ ] T07 — Audit: scripts (docs AND behavior contracts)
 - [ ] T08 — Audit: root docs, cowork notes, skills
@@ -251,3 +251,42 @@ was itself false: `createPostgresProvider` defaults `defaultHost =
 `bootstrapFastifyService` ghost cite). Attempt 2 corrected both;
 2× APPROVED (A recorded that B's catch was real). G0 green every attempt;
 docs-only (G1/G6b skipped).
+
+### T05 — 2026-08-03
+
+13/13 verdicts with evidence: 10 FIXED, 3 TRUE (`sdk/CHANGELOG.md` —
+classified RECORD, dated claims never rewritten; `sdk/examples/README.md`;
+`reference-pattern/README.es.md`, the more accurate of the two twins).
+Biggest drifts: `sdk/README.md` contradicted ITSELF seven times (per-resource
+"Bug:/Pending deploy" notes vs its own "Known platform gaps" section saying
+the same items were fixed — the e2e suite settles it); `sdk/ci-notes.md`'s
+evidence block had rotted into falsehoods (`.github` now holds zero files,
+no `azure-pipelines` match repo-wide, the `skills/devops` template it claims
+to mirror is gone); `packages/shared/README.md` was missing 14 modules
+including the whole `provisioning/` subsystem and had no Testing section;
+`packages/database/README.md`'s three `src/index.ts:NN` cites had all rotted
+onto unrelated exports; `packages/observability/README.md` claimed "every
+service is deployed twice" — 6 of 20 call `bootstrapSplitService`, and
+`workflow-service` actually runs THREE pods off one image. Counts corrected:
+SDK unit tests 283→343, e2e "57 across 8 files"→9 files/62 cases,
+"19 namespaces"→21. Escalations E14–E16 (NOT fixed): E14
+`ensureDurableConsumer`'s JSDoc calls `backoff` immutable while
+`reconcileDurableConsumer` both diffs and updates it; E15 `sdk/package.json`'s
+`"test": "tsx --test 'test/**/*.test.ts'"` never runs the 14 co-located
+`src/cli/**/*.test.ts` specs, so the whole `yoizen` CLI (incl.
+`--secrets-from-env`) is untested by its documented command — `bun test`
+catches them (471 vs 343); E16 five `sdk/src` resource headers (registry,
+agents, structured-kb, config-files, channels) still assert "pending
+deploy / 404s" against e2e files that assert the opposite, and
+`config-files/types.ts` contradicts itself in consecutive sentences —
+`sdk/src` is outside the allowed-file list, so T09 rules on it.
+Two attempts, both reviewers REJECTED R1 independently on the SAME defect:
+the README rewrite declared those gaps closed while leaving the contradicting
+`sdk/src` comments silent (E16 was the fix), plus a `runtime.stream()` claim
+that asserted deployment when the evidence proved only "committed", plus six
+FRESH `:NNN` cites re-seeded in `angular-shared`'s new table by the same diff
+that called such cites "textbook rule 4". Attempt 2 fixed all three;
+2× APPROVED. Rule-4 note: `packages/testing/README.md` keeps untouched-row
+offsets — partial sweep by design, same judgement call parked in T04.
+Gates: G0 green every attempt; `cd sdk && bun run build && bun test` green
+(tsc clean, 471 pass / 0 fail).

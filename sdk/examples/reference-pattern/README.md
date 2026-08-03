@@ -189,6 +189,12 @@ next to `setup.sh` — no manual sourcing needed.
 | `BRIDGE_DISCOVER_WAIT_SECONDS` | `60` | If a webhook was active, the cap on the interactive "press Enter once everyone has messaged the bot" prompt (or the sleep duration in non-interactive shells) |
 | `BRIDGE_DISCOVER_POLL_INTERVAL` | `2` | Seconds between the few post-confirmation retries that absorb Telegram's own delivery lag |
 | `RECREATE` | `1` | Deletes + recreates the HTTP instance and the workflow on every run by default; set `0` to reuse an existing one by name instead |
+| `BRIDGE_APPLICATION` | `samples` | `application` tag stamped on the workflow this sample creates (`src/setup.ts`) |
+| `RUN_TEXT` | `hola desde run.sh` | Body text `run.sh` posts; `src/index.ts` appends ` [<epoch seconds>]` so each run is distinguishable |
+
+The shell wrappers additionally read `YWAI_ENV` (`dev`), `API_GATEWAY_PORT`
+(`8080`) and `DEV_DOMAIN` / `MINIKUBE_DOMAIN` (`dev.local`) while resolving the
+gateway — see the inlined resolver at the top of `run.sh` / `setup.sh`.
 
 ## Design notes & gotchas
 

@@ -1,7 +1,7 @@
 # @yoizen/platform-sdk
 
 TypeScript (strict, ESM) SDK for the **full Yoizen platform API**. One `createClient()` gives
-you the original message-ingest primitives (`send` / `sendText`) plus **19 namespaced resource
+you the original message-ingest primitives (`send` / `sendText`) plus **21 namespaced resource
 clients** (`client.workflows.*`, `client.agents.*`, `client.channels.*`, ...) covering every
 REST resource the api-gateway exposes. The SDK keeps the original hexagonal architecture
 (`domain` / `application` / `infrastructure`, plus a shared `core`), has zero runtime
@@ -205,8 +205,15 @@ relogin, and concurrent callers share a single in-flight token request.
 `createClient()` returns `{ send, sendText }` plus one namespace per resource. All resource
 clients share a single authenticated transport (`Authorization: Bearer`, `x-yoizen-tenant`,
 `x-request-id` injected automatically). Method one-liners below; **full request/response types
-live in each resource's `types.ts`** — the linked file is the source of truth, including
-verified notes on platform gaps.
+live in each resource's `types.ts`** — the linked file is the source of truth for the TYPES.
+
+> **Do not trust those files' deploy-status prose.** Five resources —
+> `registry`, `agents`, `structured-kb`, `config-files`, `channels` — still carry
+> "404s on the dev cluster" / "PENDING DEPLOY" / "not confirmed live" header comments for
+> fixes that `test/e2e/` now hard-asserts as live (see "Known platform gaps" below). The
+> e2e suite is the current record; those comments are a month stale and are tracked as a
+> known inconsistency (`cowork/DOCS-TRUTH-LEDGER.md`, escalation E16). `skills/types.ts` and
+> `jobs/types.ts` show what a reconciled header looks like.
 
 ### workflows — [`src/resources/workflows/types.ts`](./src/resources/workflows/types.ts)
 
@@ -227,12 +234,9 @@ verified notes on platform gaps.
 - `create` / `update` / `list` / `get` / `remove` — agent CRUD (`list` uses `limit`/`offset`)
 - `publish` / `unpublish` — snapshot / revert published state
 - `listVersions` / `rollbackToVersion` / `deleteVersion` — version history management
-- `updateEnabledTools` / `updateEnabledMcpServers` / `updateToolDescriptionOverrides` — config patches
+- `updateEnabledTools` / `updateEnabledMcpServers` / `updateEnabledMcpTools` / `updateToolDescriptionOverrides` — config patches
 - `revert` — discard the draft and restore the last published snapshot
 - `listMemoryProposals` / `approveMemoryProposal` / `rejectMemoryProposal` — memory-proposals sub-resource
-
-Pending deploy (2026-07-05): the gateway routes for `revert`/memory-proposals exist in
-source but 404/mis-route on the dev cluster's running pod — see `types.ts`.
 
 ### runtime — [`src/resources/runtime/types.ts`](./src/resources/runtime/types.ts)
 
@@ -304,22 +308,26 @@ instead of 404 for missing ids.
 
 - `create` / `list` / `get` / `update` / `remove` — skill CRUD
 
-Bug: `update()` currently returns HTTP 500 for every payload (downstream SQL-building bug).
-A fix exists in `agent-admin-service`'s working tree but is not confirmed live on the dev
-cluster as of 2026-07-05 (still 500s) — see the types file for the verified root cause.
+`update()` used to 500 on every payload (a `postgres.js` fragment-join bug in
+`agent-admin-service`'s `SkillsService.update`). Fixed and confirmed live 2026-07-05 — the
+e2e suite now hard-asserts the persisted update (`test/e2e/admin-resources.e2e.ts`), with no
+tolerant branch left.
 
 ### systemVariables — [`src/resources/system-variables/types.ts`](./src/resources/system-variables/types.ts)
 
 - `create` / `list` / `get` / `update` / `remove` — system-variable CRUD
 
-Bug: scalar `value` round-trips double-JSON-encoded through `create()` but not `update()`
-(two different downstream code paths). A unifying fix exists in `agent-admin-service`'s
-working tree but is not confirmed live on the dev cluster as of 2026-07-05 (still
-double-encodes).
+`create()` used to double-JSON-encode a scalar `value` (a `::jsonb` cast in
+`agent-admin-service`'s `SystemVariablesService.create`) while `update()` — a different
+code path — was already correct. Fixed and confirmed live 2026-07-05; the e2e suite
+hard-asserts `created.value === "hello"` (`test/e2e/admin-resources.e2e.ts`).
 
 ### mcpServers — [`src/resources/mcp-servers/types.ts`](./src/resources/mcp-servers/types.ts)
 
 - `create` / `list` / `get` / `update` / `remove` — MCP server CRUD (normal REST 404 semantics; `update` is PUT, not PATCH)
+- `listTools` — the server's advertised tool list (`GET :id/tools`)
+- `testConnection` — probe the server without saving anything (`POST :id/test`)
+- `getUsage` — per-server call statistics from the shared `mcp_call_events` table (`GET :id/usage`)
 
 ### connectors — [`src/resources/connectors/types.ts`](./src/resources/connectors/types.ts)
 
@@ -383,10 +391,10 @@ poll (or rely on the webhook) well inside that window.
 - `discoverRoutes` — read-only feed of all registered routes (the gateway's own routing source)
 
 **Caution**: routes and canary operations mutate live, cluster-wide gateway routing/traffic.
-Known race: `services.update()` right after `create()` can lose a K8s optimistic-concurrency
-409 and surface as a 500. A server-side retry fix exists in `registry-service`'s working
-tree but is not confirmed live as of 2026-07-05 — the SDK e2e suite keeps a client-side
-backoff workaround until it is.
+`services.update()` right after `create()` used to lose a K8s optimistic-concurrency 409 and
+surface as a 500; the server-side retry in `registry-service` was confirmed live 2026-07-05
+(three back-to-back create-then-update probes, zero delay, all 200), and the SDK e2e suite's
+client-side `withKnativeConflictRetry` workaround was removed.
 
 ### authAdmin — [`src/resources/auth-admin/types.ts`](./src/resources/auth-admin/types.ts)
 
@@ -415,7 +423,7 @@ proxied. List envelopes carry no `total`, so `hasMore` is a heuristic.
 - `create` / `list` / `get` / `update` / `remove` — scheduled job CRUD
 - `enable` / `disable` — toggle scheduling
 - `run` — manual run without payload
-- `trigger` — manual run with payload (the gateway now maps `payload` to the downstream `event_payload` field — pending deploy as of 2026-07-05, see `types.ts`)
+- `trigger` — manual run with payload (the gateway maps `payload` to the downstream `event_payload` field; confirmed live 2026-07-05 with the enable-first flow, see `types.ts`)
 - `executions.list` — execution history
 
 ### memories — [`src/resources/memories/types.ts`](./src/resources/memories/types.ts)
@@ -429,10 +437,12 @@ proxied. List envelopes carry no `total`, so `hasMore` is a heuristic.
 ### structuredKb — [`src/resources/structured-kb/types.ts`](./src/resources/structured-kb/types.ts)
 
 - `containers.create` / `list` / `get` / `update` / `remove` — structured-KB container CRUD
+- `containers.uploadFile` — ingest a tabular file into a container
 - `containers.query` — translate a natural-language query to SQL and run it (rate-limited: 30 req/min/tenant)
 
-Pending deploy (2026-07-05): the gateway route for `query` exists in source but 404s on
-the dev cluster's running pod — see `types.ts`.
+`containers.query` used to 404 at the gateway; the route was confirmed live 2026-07-05. A
+container with no ingested schema still fails downstream with a business-state error (not a
+`NotFoundError`) — that is what the e2e asserts.
 
 ### configFiles — [`src/resources/config-files/types.ts`](./src/resources/config-files/types.ts)
 
@@ -442,9 +452,9 @@ the dev cluster's running pod — see `types.ts`.
 - `runtimeStatus` — connected runtime status
 - `templates` — list agent templates
 
-Pending deploy (2026-07-05): the gateway's DTOs for both routes were fixed to match the
-downstream contract, but the dev cluster's running pod still rejects the fixed shapes —
-see `types.ts`.
+The gateway's DTOs for `upsert`/`deploy` were fixed to match the downstream contract and
+confirmed live 2026-07-05; the e2e suite hard-asserts the `{name,path,content,format}`
+shape (`test/e2e/admin-final.e2e.ts`).
 
 ### dashboard — [`src/resources/dashboard/types.ts`](./src/resources/dashboard/types.ts)
 
@@ -591,8 +601,9 @@ shape is identical either way, so nothing breaks when the gateway adds real pagi
 
 ## E2E testing
 
-Unit tests (`npm test`, 283 tests) are fully offline — mocked transport, no network. The e2e
-suite (`test/e2e/`, 57 tests across 8 files) runs against a **live dev cluster**:
+Unit tests (`npm test`, 343 tests across 38 files) are fully offline — mocked transport, no
+network. The e2e suite (`test/e2e/`, 9 files, 62 `test()` cases — 9 top-level plus 53
+subtests) runs against a **live dev cluster**:
 
 ```bash
 # From the repo root: expose the gateway on localhost:8080
@@ -615,19 +626,37 @@ SDK_E2E=1 npm run test:e2e
 
 These are **gateway/downstream issues, not SDK bugs** — the SDK deliberately omits or
 documents the affected surface rather than encoding broken behavior. Each resource's
-`types.ts` carries the verified evidence (exact controllers/files read side by side); see also
-GROWTH-PLAN.md Phase 2 acceptance notes.
+`types.ts` carries the verified CONTRACT evidence (exact controllers/files read side by
+side) — but see the warning under "Resource clients": five of those files' deploy-status
+notes contradict the e2e suite and are stale (escalation E16). See also GROWTH-PLAN.md
+Phase 2 acceptance notes.
 
-1. **runtime.stream()** — implemented SDK-side (2026-07-05); the platform side (api-gateway
-   `proxyStream()`, ai-agent-gateway `submitAndStream()`, agent-ai-service mock provider) is
-   done in the working tree but **not yet deployed**. `test/e2e/runtime-stream.e2e.ts` probes
-   the live route and gracefully skips its streaming assertions (`streaming_unsupported`)
-   until that lands — this is expected today, not a bug.
-2. **audit** — chain endpoints (`/audit/events/chain/:correlationId`) not proxied; list envelopes carry no `total`. Still open, not addressed by the 2026-07-05 hardening pass.
-3. **channels.usageSummary()** — `GET channels/usage/summary` is correctly routed by the
-   gateway, but `channel-service`'s usage-summary SQL references a nonexistent `events`
-   column and 500s (task #17, tracked separately). The e2e suite keeps a tolerant
-   diagnostic-log branch for this one method until the downstream fix ships.
+1. **audit** — chain endpoints (`/audit/events/chain/:correlationId`) not proxied; list
+   envelopes carry no `total`. Still open: `services/api-gateway`'s audit module declares only
+   `@Get()` and `@Get(":id")` on each of `audit.controller.ts` / `channel-audit.controller.ts`
+   — no chain route anywhere. (The `chains/:correlationId` route that does exist belongs to
+   the unrelated `tracking` module.) `hasMore` therefore stays a heuristic.
+
+**Closed since this list was written** (kept here because the entries were load-bearing):
+
+- **runtime.stream()** — the "done in the working tree, not committed" half of this gap is
+  closed: the platform side is **committed** (commit `4d77d0a`, `git ls-files` confirms all
+  three files are tracked) — `RUNTIME_STREAM_SUBJECT_PREFIX`/`buildRuntimeStreamSubject` in
+  `@yoizen/shared`, `@Post("stream")` on both `api-gateway`'s and `ai-agent-gateway`'s runtime
+  controllers, `pipe-upstream-sse-to-reply.util.ts`, and the mock provider gated by
+  `RUNTIME_ALLOW_MOCK_PROVIDER_ENV`. `DOCS/architecture/runtime-streaming.md` reports
+  `Status: Implemented`. **What is NOT established here is liveness**: nothing in this repo
+  can prove which build the dev cluster's pods are running, and no live probe was performed.
+  So `test/e2e/runtime-stream.e2e.ts`'s `streaming_unsupported` probe stays meaningful — run
+  it (`SDK_E2E=1 npm run test:e2e`) to find out whether the route answers today. Note that
+  suite's own file header still says the platform side is "NOT deployed/committed", which is
+  now wrong on the committed half and unverified on the deployed half.
+- **channels.usageSummary()** — the downstream SQL was fixed (see CHANGELOG.md, 2026-07-05
+  hardening pass). Both `getSummary` and `getSharedSummary` in
+  `services/channel-service`'s `usage.postgres.repository.ts` now `SELECT channel, direction,
+  count(*)::BIGINT AS events FROM channel_events` — `events` is an ALIAS on `count(*)`, not a
+  column read, so the old "references a nonexistent `events` column" diagnosis no longer
+  describes the code.
 
 All other previously-listed gaps (`workflows.summary()`, `agents.revert()` /
 `listMemoryProposals()` / `approveMemoryProposal()` / `rejectMemoryProposal()`,
@@ -741,12 +770,17 @@ never logged.
 cd sdk
 npm install        # dev deps only (typescript, tsx, @types/node)
 npm run build      # tsc — strict typecheck + emit dist/ (ESM + .d.ts)
-npm test           # unit tests (offline, 283 tests)
+npm test           # unit tests (offline, 343 tests)
 npm run test:e2e   # live-cluster e2e (requires SDK_E2E=1, see above)
 ```
 
 Layout: `src/domain` (pure value objects + errors), `src/application` (ingest use case +
 ports), `src/infrastructure` (fetch wrapper, adapters, config, composition root),
 `src/core` (session, transport, retry, pagination — shared by all resource clients),
-`src/resources/<name>/` (`types.ts` + `client.ts` + `index.ts` per resource). Tests mirror
-`src/` 1:1 under `test/`.
+`src/resources/<name>/` (`types.ts` + `client.ts` + `index.ts` per resource),
+`src/cli/` + `bin/yoizen.ts` (the CLI layer). Tests mirror `src/` 1:1 under `test/`, with
+one exception: the CLI's own 14 specs are co-located as `src/cli/**/*.test.ts`.
+
+> **Caveat**: `npm test`'s glob is `test/**/*.test.ts`, so those 14 co-located CLI specs are
+> **not** run by it. `bun test` (which discovers every `*.test.ts`) does run them — mind the
+> difference before trusting a green `npm test` on a CLI change.
