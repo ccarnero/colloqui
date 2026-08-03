@@ -33,7 +33,7 @@ del propio `manifest.yaml` y el reporte de esta migración.
 | Recurso | Nombre | Notas |
 | --- | --- | --- |
 | MCP server | `sample-mcp-server` | `transport_type: http`, `authType: bearer` vía `secretRef`, URL **falsa/de ejemplo** (`https://mcp.example.com/mcp`) |
-| Agente | `mcp-connections-demo-agent` | `enabledMcpTools: { sample-mcp-server: [search, lookup] }` + un `toolDescriptionOverrides` (`sample-mcp-server:search`) |
+| Agente | `mcp-connections-demo-agent` | `enabledMcpTools: { sample-mcp-server: [search, lookup] }` + un `toolDescriptionOverrides` (`sample-mcp-server__search` — doble guion bajo, ver abajo) |
 | Workflow | `mcp-connections-demo` | Una acción `mcpCall`, `serverId: { mcpServerRef: sample-mcp-server }` — sin trigger, deliberadamente mínimo |
 
 La URL del MCP server es **falsa a propósito** — el objetivo es demostrar las formas del manifest/

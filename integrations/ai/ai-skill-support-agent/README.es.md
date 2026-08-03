@@ -72,8 +72,10 @@ del catálogo; las instrucciones operativas viajan en el `system_prompt` del ski
 
 ### Origen del documento (inline, no file/bundle)
 
-El manual de políticas (originalmente `policy/acme-telco-policy.md`) se embebe VERBATIM en
-`manifest.yaml` vía `type: inline` (~3,4 KiB, muy por debajo del límite de 64 KiB). `type: file`
+El manual de políticas se embebe VERBATIM en `manifest.yaml` vía `type: inline` (3450 bytes, muy
+por debajo del límite de 64 KiB). El archivo commiteado `policy/acme-telco-policy.md` es un
+**espejo** de esa copia inline, mantenido idéntico byte a byte para poder leerlo/diffearlo aparte —
+editar solo el archivo no cambia nada: lo que se ingesta es el manifest. `type: file`
 (path + sha256, vía bundle tar) se descartó: la CLI `yoizen` no tiene un flag `--bundle` hoy — solo
 el SDK acepta uno directamente — así que `type: file` sería inexpresable a través del flujo de CLI
 de este README.

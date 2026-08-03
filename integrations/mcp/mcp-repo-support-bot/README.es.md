@@ -109,6 +109,25 @@ comando de apply de abajo las remapea a los nombres de binding exactos vía
 
 ## Cómo ejecutarlo y qué esperar
 
+Prerrequisitos: clúster de desarrollo con el tenant provisionado (`acme` por defecto), la CLI
+`yoizen`, las variables `YOIZEN_*` habituales, una API key real de OpenAI (un token de @BotFather
+solo hace falta para la entrega real por Telegram) y egreso del clúster hacia `mcp.deepwiki.com`.
+
+**Primero aplicar el manifest** (sin esto, el driver falla con `MISSING mcp server / agent /
+workflow`):
+
+```bash
+cd sdk && bun link   # por única vez; o anteponé `bun run bin/yoizen.ts`
+
+yoizen manifests validate -f ../integrations/mcp/mcp-repo-support-bot/manifest.yaml
+yoizen manifests plan     -f ../integrations/mcp/mcp-repo-support-bot/manifest.yaml
+env "mcp-repo-support-bot-openai-api-key=$OPENAI_API_KEY" \
+    "mcp-repo-support-bot-telegram-token=$TELEGRAM_BOT_TOKEN" \
+  yoizen manifests apply  -f ../integrations/mcp/mcp-repo-support-bot/manifest.yaml --secrets-from-env
+```
+
+Un segundo `apply` es no-op una vez convergido. Después:
+
 ```bash
 cd integrations/mcp/mcp-repo-support-bot
 cp env.example .env      # env.example NO tiene punto inicial; setear OPENAI_API_KEY

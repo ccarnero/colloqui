@@ -152,8 +152,8 @@ curl -s "https://api.telegram.org/bot<token>/setWebhook" \
 > **Causa raíz y por qué a veces hay que hacerlo a mano.** `channel-service`
 > ya auto-registra el webhook al crear la cuenta (`registerTelegramWebhook`,
 > `services/channel-service/src/modules/accounts/accounts.service.ts`), usando
-> `channelServiceConfig.channelServicePublicUrl`
-> (`services/channel-service/src/config.ts:25`) como base de la URL. Si
+> `channelServiceConfig.channelServicePublicUrl` (el getter de
+> `CHANNEL_SERVICE_PUBLIC_URL` en `services/channel-service/src/config.ts`) como base de la URL. Si
 > `CHANNEL_SERVICE_PUBLIC_URL` no está seteada en el deployment, esa base cae
 > a la URL interna `http://` del clúster — Telegram rechaza `setWebhook` con
 > `bad webhook: An HTTPS URL must be provided`, así que la cuenta queda
@@ -166,7 +166,8 @@ curl -s "https://api.telegram.org/bot<token>/setWebhook" \
 > `apply` no expone el `appSecret` auto-generado de la cuenta en su propia
 > salida. La forma principal de leerlo es el endpoint autenticado del
 > gateway `GET /api/channels/accounts/<id>`, que devuelve `appSecret` en el
-> DTO de la cuenta (`services/channel-service/src/modules/accounts/accounts.service.ts:36`).
+> DTO de la cuenta (el mapper fila→DTO de
+> `services/channel-service/src/modules/accounts/accounts.service.ts` pasa `app_secret` tal cual).
 > Usando el helper `auth()` definido en la sección de Troubleshooting del
 > README en inglés (headers bearer + `x-yoizen-tenant`):
 >
@@ -212,6 +213,25 @@ hace correr el workflow igual, pero Telegram rechaza la respuesta con `Bad Reque
 found`). El driver espera hasta 60 s una ejecución del workflow y la imprime (`id`, `status`,
 tiempos).
 
+### Entorno (solo el driver de ejecución)
+
+`run.sh` sourcea `../../lib/resolve-env.sh`, que carga un `.env` local de este directorio y exporta
+las coordenadas `YOIZEN_*`. `src/index.ts` lee exactamente estas:
+
+| Var | Default | Notas |
+| --- | --- | --- |
+| `TELEGRAM_WEBHOOK_SECRET` | — (**requerida**) | El `appSecret` de la cuenta; firma el update sintético |
+| `TELEGRAM_TEST_CHAT_ID` | — (**requerida**) | Chat id numérico real que ya hizo `/start` |
+| `TG_EXTERNAL_ID` | `manifest:telegram-transform-reply-bot` | externalId derivado por el motor de apply |
+| `TG_WORKFLOW_NAME` | `telegram-transform-reply` | Debe coincidir con el workflow del `manifest.yaml` |
+| `TG_POLL_TIMEOUT_S` | `60` | Cuánto esperar una ejecución |
+
+> El `.env.example` que se distribuye refleja esta tabla. Dos de sus entradas son históricas y no
+> las lee nadie acá: `TG_PUBLIC_URL` (el webhook lo auto-registra `channel-service`, o se registra
+> a mano — ver arriba) y el viejo switch `SIMULATE_INBOUND`, que ya no existe: `run.sh` siempre
+> inyecta el update sintético. `TELEGRAM_BOT_TOKEN` en el `.env` tampoco llega a la cuenta: el
+> token viaja solo como binding `telegram-bot-token` en la línea de `apply`.
+
 ## Detalles y advertencias
 
 - **Recibir funciona pero el bot no responde.** Causa típica: token placeholder o inválido —
@@ -223,10 +243,14 @@ tiempos).
 - **El path del webhook lleva `/api`.** El prefijo global del gateway hace que la ruta real sea
   `/api/webhooks/telegram/<tenant>/<externalId>`; la auto-registración de la plataforma omite
   `/api` y Telegram termina en 404. Registrar el webhook con `setWebhook` como se muestra arriba.
-- **El `appSecret` solo se devuelve al crear la cuenta.** Consultá la cuenta después de aplicar
-  para obtenerlo; es el `secret_token` del webhook y el `TELEGRAM_WEBHOOK_SECRET` del driver.
-- **El trigger del manifest no tiene pin.** `trigger.config` es
-  `{channels:["telegram"], providers:["telegram"]}` (sin `accountIds`), por la ausencia de
-  sustitución de ids en tiempo de aplicación en manifest v1.
+- **El `appSecret` no lo expone `apply`, pero SÍ la API de cuentas.** El mapper fila→DTO de
+  `accounts.service.ts` pasa `app_secret` tal cual, así que tanto `GET /api/channels/accounts`
+  como `GET /api/channels/accounts/<id>` lo devuelven en cualquier momento (solo
+  `POST /channels/accounts/:id/refresh-token` enmascara su token). Es el `secret_token` del webhook
+  y el `TELEGRAM_WEBHOOK_SECRET` del driver.
+- **El trigger SÍ está pineado.** `trigger.config` incluye
+  `accountIds: [{channelRef: telegram-transform-reply-bot}]` — la sustitución de arreglo llegó con
+  `ARRAY_SUBSTITUTION_ALLOWLIST` (ver la nota de arriba); la afirmación contraria de versiones
+  previas de este documento era anterior a esa capacidad.
 - **Persistencia.** La cuenta vive en Postgres por tenant y el workflow en Mongo; re-aplicar el
   manifest reconcilia (idempotente, un re-apply convergido es no-op).

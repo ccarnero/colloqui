@@ -185,8 +185,8 @@ mirroring the existing `mcpServer`-before-`agent` ordering. See
 
 A workflow trigger's `config.accountIds` accepts an ARRAY of `{channelRef:
 <name>}` entries, substituted element-wise to the real channel account id at
-apply time (`ARRAY_SUBSTITUTION_ALLOWLIST`,
-`services/provisioning-service/src/modules/apply/lib/array-substitution-allowlist.ts`
+apply time (`ARRAY_SUBSTITUTION_ALLOWLIST`, declared in
+`array-substitution-allowlist.ts` under provisioning-service's `plan/lib`
 — the plural sibling of the scalar `accountId`/`channelRef` mapping). Every
 migrated manifest pins its trigger to its own manifest-created channel this
 way, so no other workflow fires on that channel's traffic.

@@ -57,7 +57,8 @@ flowchart TD
     L --> N
 ```
 
-Cada nodo del diagrama, salvo los dos pasos `jsFunction`, es un recurso real de la plataforma
+Cada nodo del diagrama, salvo los tres pasos `jsFunction` (`normalizeContact`,
+`buildAgentContext`, `buildEscalationReply`), es un recurso real de la plataforma
 declarado en el manifest: el canal de Telegram, el connector `demo-hubspot` (+ sus 5 endpoints),
 el agente de IA `crm-support-agent`, el servicio hosteado `priority-scorer` y el workflow
 `crm-support-telegram` que los conecta.
@@ -178,7 +179,12 @@ directamente `bootstrap.sh`/`run.sh`):
 
 No se commitea ningún secreto — cada credencial de arriba se lee del entorno (`.env`, no
 trackeado; ver `.env.example` para el formato documentado) en tiempo de ejecución, cargado por
-`lib/resolve-demo-env.sh` (la misma convención que usan `bootstrap.sh` y `run.sh`).
+`lib/resolve-demo-env.sh` (la misma convención que usan `bootstrap.sh` y `run.sh`). Ese resolver
+carga, en orden y sobreescribiendo, `integrations/ai/ai-agent-playground/.env`,
+`integrations/channels/telegram-transform-reply/.env` y el `.env` propio de este demo; los tres son
+opcionales. Las `YOIZEN_*` NO hace falta ponerlas en ninguno: el propio resolver aplica los
+defaults de la semilla de desarrollo (`acme` / `yclawd@demo.io` / `admin123` y el host del gateway
+derivado de `PLATFORM_ENVIRONMENT`/`DEV_DOMAIN`).
 
 ## Invocación asincrónica: idempotencyKey y la ventana de polling
 

@@ -24,8 +24,15 @@ connector LLM. Verificado localmente contra `integrationManifestSchema.safeParse
 
 | Recurso | Nombre | Notas |
 | --- | --- | --- |
-| Connector | `sample-openai-llm` | `type: llm`, `authType: bearer` vía `secretRef` |
+| Connector | `sample-openai-llm` | `type: llm`, `authType: bearer` vía `secretRef`, `tags: [llm]` |
 | Agente | `ai-sample-playground` | `model_config.llm.connectorId: { connectorRef: sample-openai-llm }`, publicado |
+
+`tags: [llm]` NO es decorativo: el resolver de credenciales de agent-admin-service exige el tag
+`llm` en el adapter al que apunta `model_config.llm.connectorId` de un agente — sin él, todo agente
+que lo referencie es rechazado con `Adapter '<id>' is not tagged as 'llm'`
+(`services/agent-admin-service/src/modules/agents/agents.service.ts`). "Publicado" tampoco es un
+campo del manifest: `publishAgent()` de `agents-writer.ts` corre como ÚLTIMO paso de cada create Y
+de cada update, así que un agente declarado en un manifest siempre queda publicado.
 
 ## Secretos (auth bearer del connector LLM)
 
@@ -70,3 +77,9 @@ plataforma.
 - `run.sh` solo busca el agente por nombre; nunca provisiona nada, así que un nombre distinto entre
   `.env`/variables de entorno y `manifest.yaml` falla con "agent not found — apply manifest.yaml
   first".
+- Las únicas variables que `run.sh` lee del `.env` local (cargado por `../../lib/resolve-env.sh`)
+  son `AI_AGENT_NAME`, `AI_AGENT_MESSAGE` y `POLL_TIMEOUT_S`. `OPENAI_API_KEY` aparece en
+  `.env.example` solo como recordatorio: `--secrets-from-env` lee el VALOR desde el nombre del
+  BINDING (`ai-agent-playground-openai-api-key`), así que poner `OPENAI_API_KEY` en el `.env` no
+  alcanza para el `apply` — hay que remapearlo en la línea de apply como muestra el bloque de
+  arriba.

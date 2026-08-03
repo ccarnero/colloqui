@@ -23,7 +23,7 @@ Este manifest provisiona un connector + una base de conocimiento + un agente —
 | --- | --- | --- |
 | Connector | `sample-openai-llm` | Reusado para el LLM del agente Y el proveedor de embeddings de la KB |
 | Base de conocimiento | `ai-sample-support-kb` | Un documento inline (`support-faq`), `ingestion_config.provider_connector_id: { connectorRef: sample-openai-llm }` |
-| Agente | `ai-sample-kb-agent` | `knowledgeBaseRefs: [ai-sample-support-kb]` |
+| Agente | `ai-sample-kb-agent` | `knowledgeBaseRefs: [ai-sample-support-kb]`, `model_config.llm.connectorId: { connectorRef: sample-openai-llm }`, una tool builtin (`loadSkill`) |
 
 ## Origen del documento (inline, no file/bundle)
 
@@ -71,6 +71,13 @@ polling, e imprime el resultado. La respuesta debería mencionar la frase de ver
 
 - Editar el contenido del FAQ, el chunking o el modelo de embedding requiere editar
   `manifest.yaml` y volver a aplicar.
+- **`docs/support-faq.md` es un espejo, no la fuente.** Lo que se ingesta es la copia
+  `type: inline` dentro de `manifest.yaml`; el archivo commiteado se mantiene idéntico byte a byte
+  (781 bytes, verificado) para poder leerlo/diffearlo aparte. Editar solo el archivo no cambia
+  nada — hay que editar el manifest (y mantener el espejo sincronizado).
+- El agente declara una sola tool builtin, `loadSkill`, únicamente para ejercitar el camino de
+  runtime **con tools** — no habilita ningún skill propio (el catálogo de skills es el tema de
+  `../ai-skill-support-agent`).
 - Si la respuesta nunca menciona `CONDOR-KB-READY`, verificá que `OPENAI_API_KEY` esté seteada en
   el entorno propio de `agent-ai-service` (camino de embeddings/búsqueda), no solo en el binding de
   secreto del manifest (camino de auth del connector).

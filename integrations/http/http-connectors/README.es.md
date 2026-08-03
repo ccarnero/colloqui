@@ -11,7 +11,8 @@ Después de aplicar `manifest.yaml`, la plataforma queda con **cinco connectors 
 (`httpbin-basic-auth`), con **31 endpoints** registrados en total. No se crea ningún workflow ni
 canal: el comportamiento observable es que cualquier workflow del tenant puede, desde ese
 momento, invocar esas APIs públicas mediante una acción `endpointCall` sin conocer URLs,
-cabeceras ni credenciales. Es la contraparte de salida de `http-bridge` (que empuja mensajes
+cabeceras ni credenciales. Es la contraparte de salida de
+[`sdk/examples/reference-pattern`](../../../sdk/examples/reference-pattern) (que empuja mensajes
 *hacia adentro* de la plataforma). El provisioning es **declarativo**: un único
 [`manifest.yaml`](./manifest.yaml) aplicado con la CLI `yoizen` (sin scripts de setup).
 
@@ -110,6 +111,10 @@ Los connectors se consumen con la actividad `endpointCall` (ver `EndpointCallArg
   contra los endpoints en vivo por esa clave — no por orden ni por un id declarado en el manifest.
 - **Provisionar ≠ poder llamar.** El connector se crea aunque la API pública no sea alcanzable; en
   runtime la llamada sale desde **dentro del clúster** (egress), no desde la laptop.
+- **El directorio `connectors/*.json`** guarda los cinco payloads previos al manifest. NO los lee
+  `manifest.yaml`, ni `run.sh`, ni `src/index.ts` (el provisioning es 100 % declarativo), pero
+  tampoco están muertos: `scripts/e2e/README.md` usa `pokeapi.json` como body listo para un
+  `POST /api/connectors`. Si cambiás la forma de un connector, sincronizalos a mano.
 - **Credenciales de ejemplo, no secretos reales.** `user`/`passwd` son valores públicos de prueba
   de httpbin. Para connectors reales, las credenciales deben salir de un secret store real, nunca
   de un archivo commiteado (el manifest ya lo garantiza por schema: `auth` es `secretRef`-only).

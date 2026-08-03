@@ -3,9 +3,9 @@
 Declarative **outbound HTTP connectors** for the platform. Each connector wraps a well-known
 public developer API as a platform *adapter*, so a workflow can call it with an `endpointCall`
 action instead of hard-coding URLs and credentials. This is the outbound counterpart to the
-[`http-bridge`](../../../sdk/examples/reference-pattern) sample (which pushes messages *into* the
-platform). Provisioning is **declarative**: a single [`manifest.yaml`](./manifest.yaml) applied
-through the `yoizen` CLI (no setup scripts).
+[`sdk/examples/reference-pattern`](../../../sdk/examples/reference-pattern) sample (which pushes
+messages *into* the platform). Provisioning is **declarative**: a single
+[`manifest.yaml`](./manifest.yaml) applied through the `yoizen` CLI (no setup scripts).
 
 ```
 manifest.yaml ─► yoizen manifests apply ─► connector-admin (5 connectors, 31 endpoints)
@@ -101,6 +101,15 @@ cd integrations/http/http-connectors
 `run.sh` (`src/index.ts`) is **read-only**: it lists `context=external` connectors and confirms
 all 5 manifest-declared connectors exist, printing each one's id, `authType`, and endpoint count.
 It never creates or modifies platform objects — apply the manifest first.
+
+### The `connectors/*.json` directory
+
+`connectors/` holds the five pre-manifest connector payloads (`catfacts.json`, `httpbin.json`,
+`httpbin-basic-auth.json`, `jsonplaceholder.json`, `pokeapi.json`). They are **not** read by
+`manifest.yaml`, `run.sh` or `src/index.ts` — provisioning is entirely manifest-driven — but they
+are not dead either: `scripts/e2e/README.md` uses `pokeapi.json` as a ready-made
+`POST /api/connectors` body (`curl … -d @integrations/http/http-connectors/connectors/pokeapi.json`).
+Keep them in sync with `manifest.yaml` by hand if you change a connector's shape.
 
 ## Calling a connector from a workflow
 

@@ -7,7 +7,8 @@
 
 Después de aplicar `manifest.yaml`, un mensaje que llega por una **instancia HTTP dedicada** es
 clasificado por un **agente de IA publicado** (`agentCall`) en intención / sentimiento / prioridad /
-resumen, la respuesta JSON del agente se parsea con un `jsFunction` (solo parseo), y un gateway
+resumen, la respuesta JSON del agente se parsea con un `jsFunction` (que además arma los dos textos
+de notificación y el flag `escalate`), y un gateway
 `conditional` excluyente envía un resumen por Telegram — 🚨 escalación o ✅ rutina. El provisioning
 es **declarativo**: un único [`manifest.yaml`](./manifest.yaml) aplicado con la CLI `yoizen`.
 
@@ -75,9 +76,33 @@ cd integrations/ai/ai-agent-triage
 ```
 
 `run.sh` (`src/index.ts`) verifica (solo lectura) el workflow y la instancia HTTP dedicada, y
-publica tres mensajes de ejemplo (enojado / curioso / feliz). Esperá un DM de Telegram por mensaje.
+publica tres mensajes de ejemplo (enojado / curioso / feliz). Esperá un DM de Telegram por mensaje,
+con exactamente una de estas dos formas (el texto lo arma `route`, no `channelSend`):
+
+```text
+🚨 ESCALATION — priority: urgent | sentiment: negative | intent: refund
+<resumen de una línea del agente>
+Original: <el mensaje del cliente>
+```
+
+```text
+✅ Triage — priority: normal | sentiment: neutral | intent: shipping
+<resumen de una línea del agente>
+Original: <el mensaje del cliente>
+```
+
+El brazo `🚨` se toma cuando `priority` es `high`/`urgent` O `sentiment` es `negative`; todo lo
+demás cae en el brazo `✅` por defecto. (La última línea de log de `src/index.ts` todavía imprime un
+ejemplo `🎧 Triage — priority: urgent …` que ningún brazo puede emitir — registrado como escalación
+**E19** del ledger.)
 
 ## Detalles y advertencias
 
 - La respuesta JSON del agente vive en `results.triage.data.reply`; `route` la parsea con fallback
   seguro (no parseable -> prioridad `high`, escala).
+- **El connector lleva `tags: [llm]`** — lo exige el resolver de credenciales de
+  agent-admin-service para el adapter al que apunta `model_config.llm.connectorId`; sin él, el
+  agente falla con `Adapter '<id>' is not tagged as 'llm'`.
+- **El nombre del binding ES la variable de entorno** — el `.env` solo aporta los tres overrides
+  `TRIAGE_*` del lado de ejecución (vía `../../lib/resolve-env.sh`); tener `OPENAI_API_KEY` en el
+  `.env` no sirve para el `apply`, que lee el valor de `ai-agent-triage-openai-api-key`.

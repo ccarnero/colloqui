@@ -61,8 +61,30 @@ cd integrations/ai/ai-system-variables
 ./run.sh
 ```
 
-`run.sh` verifica el workflow, muestra los valores ACTUALES de las tres variables, y publica un
-mensaje FURIOSO y uno TRANQUILO. Esperá DMs de Telegram con el valor de `company-name` estampado.
+`run.sh` verifica el workflow, muestra los valores actuales de las variables de sistema, y publica
+un mensaje FURIOSO y uno TRANQUILO. Esperá DMs de Telegram con el valor de `company-name`
+estampado:
+
+```text
+🚨 [Acme Telco] escalation — priority: high
+<resumen de una línea con la voz de marca>
+Original: <el mensaje del cliente>
+```
+
+```text
+✅ [Acme Telco] handled — priority: low
+<resumen de una línea con la voz de marca>
+Original: <el mensaje del cliente>
+```
+
+> **BUG CONOCIDO (escalación E18 del ledger) — el paso 2/3 siempre imprime `(missing!)`.**
+> `src/index.ts` busca las variables por sus nombres camelCase PREVIOS al manifest (`companyName`,
+> `escalationPriority`, `brandVoice`), pero este manifest declara los slugs `company-name`,
+> `escalation-priority`, `brand-voice` y el writer manda `name` tal cual — así que ningún nombre
+> matchea. Los tres valores salen como `(missing!)` y el hint final para cambiar la política en
+> vivo cae a `<id>` en vez del id real. Los DMs de Telegram NO se ven afectados (el workflow
+> resuelve los MISMOS slugs que declara el manifest). Hasta que se arregle el driver, leé los
+> valores vivos con `GET /api/admin/system-variables`.
 
 ## Detalles y advertencias
 

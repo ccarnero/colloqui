@@ -163,6 +163,17 @@ sample's own placeholder value, unedited:
    when the `to` field is an invalid chat id: the rejection happens
    downstream, after this activity has already returned.
 
+### `run.sh` logs "instance URL not accepted … using token-only legacy URL"
+
+`src/index.ts` posts to the per-instance ingest URL first and, if the response `status` is not
+`accepted`, retries ONCE against the legacy tenant-only URL (same `x-http-channel-token`, no
+`instance` segment). That fallback still lands on the same account —
+`WebhookIngressService.resolveAccount` rejects an unknown `instance` outright rather than falling
+back internally, and on the token-only path it verifies the signature against every active `http`
+account and requires **exactly one** match (two matches are an "Ambiguous webhook" rejection). So
+seeing that line means the instance segment was not recognised: check that `manifest.yaml` was
+applied and that the account's `externalId` really is `manifest:http-fanout-telegram`.
+
 ### `workflow-worker` logs `unregistered external sink 'exporter'`
 
 If you see this in `workflow-worker`'s logs while diagnosing a delivery

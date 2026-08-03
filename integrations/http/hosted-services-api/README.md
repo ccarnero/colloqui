@@ -35,17 +35,37 @@ HTTP webhook ─► workflow-service ─► serviceCall(sample-echo) ─► Tele
 > [`../../channels/telegram-transform-reply/manifest.yaml`](../../channels/telegram-transform-reply/manifest.yaml)
 > first, or this manifest's `apply` fails loud with `unresolvable_external_ref`.
 
-## Documented gap (env vars — NOT expressed)
+## Historical note (env vars — the old gap is CLOSED)
 
 The deleted `setup.ts` declared one env var on the hosted service,
 `envVars: { YOIZEN_SAMPLE: "hosted-services-api" }` — a non-functional debug marker read by
-nothing in the workflow or the echo-server image. Manifest v1's `serviceSchema.env` has no
-plain-value field (only `{name, secretRef}`), and `registry-services-writer.ts`'s
-`checkEnvSupport()` fails loud on **any** non-empty `env` array regardless — a still-open
-restriction from `declarative-provisioning.md` that this loop's T05 did not lift even though it
-extended this exact schema section for the scaling fields. This env var is therefore **omitted**
-from `manifest.yaml`, not approximated — see the schema-adjacent comment in `manifest.yaml` for
-the full citation. This does not change the sample's observable behavior.
+nothing in the workflow or the echo-server image. When this sample was migrated, manifest v1
+could not express it and `registry-services-writer.ts`'s `checkEnvSupport()` rejected any
+non-empty `env` array, so it was dropped rather than approximated.
+
+**That restriction no longer exists.** `checkEnvSupport()` is gone; `serviceSchema.env` now takes
+`{ name, value }` where `value` is a plain string, `{ secretRef }`, `{ connectorRef }`, or a
+connector-endpoint ref (`serviceEnvValueSchema`, `packages/shared/src/provisioning/
+manifest.schema.ts`), and `registry-services-writer.ts`'s `buildEnvVars()` resolves each shape —
+literal strings pass through, a `secretRef` becomes a k8s-native `valueFrom.secretKeyRef` and its
+VALUE is never forwarded. The sibling `../../ai/ai-call-center-supervisor/manifest.yaml` already
+ships `env: [{ name: YOIZEN_SAMPLE, value: ai-call-center-supervisor }]` on its hosted service.
+
+This sample's `manifest.yaml` still omits the marker: it changes no observable behavior, so there
+is nothing to demonstrate by adding it. If you DO add an `env` entry, the planner sees it — the
+`kind === "service"` branch of `build-manifest-plan.ts` projects both sides through
+`serviceEnvMechanismComparable`, which emits one `{ name, mechanism, value? }` entry per env var;
+for a plain literal the desired side always carries `value`, while the live side echoes `value`
+only when the running value is byte-for-byte equal, and otherwise omits the key — so a
+value-only edit diffs and yields an honest `update`. (Only genuinely unresolvable shapes — an
+endpoint ref, or a `connectorRef` with no live id yet — degrade to a mechanism-only entry, per
+env var, so they cannot forever-diff.)
+
+Two stale in-repo comments still describe the OLD behaviour and are escalated rather than edited
+(both outside this audit's editable set): this sample's own `manifest.yaml` header, which presents
+the lifted `checkEnvSupport` restriction as current — ledger escalation **E20** — and
+`registry-services-writer.ts`'s "COMPARABLE LIMITATION" block, which still says env vars are
+compared by NAME only and that a value-only change produces no diff — **E22**.
 
 ## Trigger is pinned to this sample's own channel
 
@@ -122,13 +142,15 @@ That marker differentiates it from `http-fanout-telegram`, even if both send to 
 
 ## Troubleshooting
 
-- **The gateway excludes platform-owned paths** (`/api/auth`, `/api/registry`, `/api/workflows`,
-  `/api/webhooks`, `/health`) from dynamic routing — this is why the route uses
-  `/samples/hosted-echo`, a non-platform prefix.
-- **Dynamic routes are discovered by the gateway on a polling cache** — wait ~15s after `apply`
-  before the first invoke.
+- **The gateway excludes platform-owned paths** from dynamic routing — `PLATFORM_PREFIXES` in
+  `services/api-gateway/src/hooks/proxy.hook.ts` currently lists `/api/audit`, `/api/tenants`,
+  `/api/registry`, `/api/connectors`, `/api/channels`, `/api/webhooks`, `/api/workflows`,
+  `/api/proxy`, `/api/auth`, `/api/dashboard`, `/api/admin`, `/api/runtime` and `/health`. This is
+  why the route uses `/samples/hosted-echo`, a non-platform prefix.
+- **Dynamic routes are discovered by the gateway on a polling cache** — `DynamicRouteCacheService`'s
+  `POLL_INTERVAL_MS` is 15 s, hence the sample's 16 s default wait after `apply`.
 - **`registry-service` hardcodes a `/health` readiness probe and `runAsUser: 1001`** — your image
   must support both, or the route may return `502` while the Knative Service is not ready.
-- **`env` vars are not provisionable** (see § Documented gap) — if your own hosted service NEEDS a
-  real env var, this sample cannot demonstrate that shape yet; track
-  `manual-loops/provisioning-manifest-gaps.md`'s human-ruling backlog.
+- **Need a real env var on your own hosted service?** Declare it — `env: [{ name, value }]` with a
+  plain string, or `{ secretRef }` for a credential (see § Historical note); the worked example is
+  `../../ai/ai-call-center-supervisor/manifest.yaml`.

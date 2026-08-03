@@ -24,11 +24,11 @@ Internal reference for support agents. Verification phrase: `ACME-POLICY-V3-VERI
 ## 3. Shipping SLAs
 
 | Service            | Coverage        | SLA (business days) | Notes                          |
-| ------------------ | --------------- | ------------------- | ------------------------------ |
-| Standard shipping  | Nationwide      | 3–5                 | Free on orders above $49       |
-| Express shipping   | Metro areas     | 1–2                 | Flat $9.90                     |
-| Same-day courier   | Capital city    | Same day (< 6 h)    | Orders placed before 12:00     |
-| Replacement (RMA)  | Nationwide      | 2–4 after RMA scan  | Prepaid label included         |
+| ------------------ | --------------- | -------------------- | ------------------------------ |
+| Standard shipping  | Nationwide      | 3–5                  | Free on orders above $49       |
+| Express shipping   | Metro areas     | 1–2                  | Flat $9.90                     |
+| Same-day courier   | Capital city    | Same day (< 6 h)     | Orders placed before 12:00     |
+| Replacement (RMA)  | Nationwide      | 2–4 after RMA scan   | Prepaid label included         |
 
 - If a shipment exceeds its SLA by more than 2 business days, the customer is entitled to a
   $10 service credit — apply it proactively, do not wait for the customer to ask.
@@ -45,12 +45,12 @@ Internal reference for support agents. Verification phrase: `ACME-POLICY-V3-VERI
 
 ## 5. Escalation matrix
 
-| Situation                                        | Escalate to            | Target response |
-| ------------------------------------------------ | ---------------------- | --------------- |
-| Refund request outside policy window             | Tier 2 — Billing       | 24 h            |
-| Confirmed outage above 48 h                      | Network Operations     | 4 h             |
-| Legal threat or regulator mention                | Customer Advocacy team | Same day        |
-| Repeated SLA breach (2+ shipments, same account) | Logistics supervisor   | 24 h            |
+| Situation                                         | Escalate to             | Target response |
+| -------------------------------------------------- | ------------------------ | --------------- |
+| Refund request outside policy window              | Tier 2 — Billing         | 24 h             |
+| Confirmed outage above 48 h                        | Network Operations       | 4 h              |
+| Legal threat or regulator mention                  | Customer Advocacy team   | Same day         |
+| Repeated SLA breach (2+ shipments, same account)   | Logistics supervisor     | 24 h             |
 
 ## 6. Agent conduct rules
 

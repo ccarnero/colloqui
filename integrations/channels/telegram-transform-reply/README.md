@@ -1,6 +1,7 @@
 # telegram-transform-reply
 
-A sibling of [`http-bridge`](../../../sdk/examples/reference-pattern), from the **automation side** of the platform.
+A sibling of [`sdk/examples/reference-pattern`](../../../sdk/examples/reference-pattern) (the
+sample whose workflow is still named `http-bridge`), from the **automation side** of the platform.
 A message that arrives on **Telegram** is transformed by a workflow (echo + a millisecond
 timestamp) and **replied back over Telegram** to the same chat.
 
@@ -108,8 +109,8 @@ curl -s "https://api.telegram.org/bot<token>/setWebhook" \
 > **Root cause + why you may need to do this by hand.** `channel-service`
 > already self-registers the webhook on account creation
 > (`registerTelegramWebhook`, `services/channel-service/src/modules/accounts/accounts.service.ts`),
-> using `channelServiceConfig.channelServicePublicUrl`
-> (`services/channel-service/src/config.ts:25`) as the URL base. If
+> using `channelServiceConfig.channelServicePublicUrl` (the `CHANNEL_SERVICE_PUBLIC_URL` getter in
+> `services/channel-service/src/config.ts`) as the URL base. If
 > `CHANNEL_SERVICE_PUBLIC_URL` is unset on the deployment, that base falls
 > back to the internal `http://` cluster URL — Telegram rejects `setWebhook`
 > with `bad webhook: An HTTPS URL must be provided`, so the account ends up
@@ -121,7 +122,10 @@ curl -s "https://api.telegram.org/bot<token>/setWebhook" \
 > `apply` does not surface the account's auto-generated `appSecret` in its
 > own output. The primary way to read it is the authenticated gateway
 > endpoint `GET /api/channels/accounts/<id>`, which returns `appSecret` on
-> the account DTO (`services/channel-service/src/modules/accounts/accounts.service.ts:36`).
+> the account DTO — the row→DTO mapper in
+> `services/channel-service/src/modules/accounts/accounts.service.ts` maps `app_secret` straight
+> through, so LIST and GET both carry it (only `POST /channels/accounts/:id/refresh-token` masks
+> a token).
 > Using the `auth()` helper defined under Troubleshooting below (bearer +
 > `x-yoizen-tenant` headers):
 >
@@ -165,6 +169,25 @@ TELEGRAM_WEBHOOK_SECRET=<appSecret> TELEGRAM_TEST_CHAT_ID=<your-numeric-chat-id>
 `TELEGRAM_TEST_CHAT_ID` must be a real chat that has already `/start`-ed the bot (a fake id makes
 the workflow run but Telegram rejects the reply with `Bad Request: chat not found`). The driver
 waits up to 60 s for a workflow execution and prints it (`id`, `status`, timestamps).
+
+### Environment (run driver only — provisioning is manifest-driven)
+
+`run.sh` sources `../../lib/resolve-env.sh`, which loads a local `.env` from this directory and
+exports the `YOIZEN_*` coordinates. `src/index.ts` reads exactly these:
+
+| Var | Default | Notes |
+| --- | --- | --- |
+| `TELEGRAM_WEBHOOK_SECRET` | — (**required**) | The account's `appSecret`; signs the synthetic update |
+| `TELEGRAM_TEST_CHAT_ID` | — (**required**) | A real numeric chat id that has `/start`-ed the bot |
+| `TG_EXTERNAL_ID` | `manifest:telegram-transform-reply-bot` | The apply engine's derived externalId |
+| `TG_WORKFLOW_NAME` | `telegram-transform-reply` | Must match `manifest.yaml`'s workflow name |
+| `TG_POLL_TIMEOUT_S` | `60` | How long to wait for an execution |
+
+> The shipped `.env.example` mirrors this table. Two of its entries are historical and read by
+> nothing here: `TG_PUBLIC_URL` (the webhook is self-registered by `channel-service`, or set by
+> hand — see above) and the old `SIMULATE_INBOUND` switch, which no longer exists: `run.sh` always
+> injects the synthetic update. `TELEGRAM_BOT_TOKEN` in `.env` never reaches the account either —
+> the token travels only as the `telegram-bot-token` binding on the `apply` line.
 
 ## Persistence & reuse
 

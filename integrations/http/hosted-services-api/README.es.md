@@ -25,14 +25,36 @@ CLI `yoizen` (sin scripts de setup).
 > estado vivo de la plataforma, nunca se crea desde este manifest. Aplicá primero
 > [`telegram-transform-reply/manifest.yaml`](../../channels/telegram-transform-reply/manifest.yaml).
 
-## Gap documentado — variables de entorno
+## Nota histórica — variables de entorno (el gap está CERRADO)
 
-El `setup.ts` eliminado declaraba una env var no funcional (`YOIZEN_SAMPLE`) en el servicio. El
-schema de manifest v1 (`serviceSchema.env`) no tiene campo de valor plano (solo
-`{name, secretRef}`), y el writer del registro (`checkEnvSupport()`) rechaza CUALQUIER `env` no
-vacío — una restricción previa a este loop que el gap 5 (T05) no levantó pese a tocar la misma
-sección para los campos de escalado. Por eso esta env var **se omite** del manifest, no se
-aproxima — ver el comentario dedicado en `manifest.yaml` para la cita exacta del código.
+El `setup.ts` eliminado declaraba una env var no funcional (`YOIZEN_SAMPLE`) en el servicio. Al
+migrar este sample, el schema no podía expresarla y `checkEnvSupport()` del writer del registro
+rechazaba cualquier `env` no vacío, así que se descartó en vez de aproximarla.
+
+**Esa restricción ya no existe.** `checkEnvSupport()` fue eliminada; `serviceSchema.env` acepta
+`{ name, value }` donde `value` es un string plano, `{ secretRef }`, `{ connectorRef }` o una ref a
+un endpoint de connector (`serviceEnvValueSchema` en
+`packages/shared/src/provisioning/manifest.schema.ts`), y `buildEnvVars()` de
+`registry-services-writer.ts` resuelve cada forma — los strings pasan tal cual y un `secretRef` se
+convierte en un `valueFrom.secretKeyRef` nativo de k8s, sin reenviar nunca el VALOR. El sample
+hermano `../../ai/ai-call-center-supervisor/manifest.yaml` ya declara
+`env: [{ name: YOIZEN_SAMPLE, value: ai-call-center-supervisor }]` en su servicio hosteado.
+
+Este sample sigue omitiendo el marcador: no cambia ningún comportamiento observable, así que no
+hay nada que demostrar agregándolo. Si agregás una entrada `env`, el planner la ve — la rama
+`kind === "service"` de `build-manifest-plan.ts` proyecta ambos lados con
+`serviceEnvMechanismComparable`, que emite una entrada `{ name, mechanism, value? }` por env var:
+para un literal plano el lado deseado siempre lleva `value`, mientras que el lado vivo solo lo
+replica si el valor en ejecución es idéntico byte a byte, y si no OMITE la clave — así que una
+edición de solo-valor difiere y produce un `update` honesto. (Solo las formas realmente
+irresolubles —una ref a endpoint, o un `connectorRef` sin id vivo todavía— degradan a una entrada
+sin valor, por env var, para que no queden difiriendo para siempre.)
+
+Dos comentarios del repo siguen describiendo el comportamiento VIEJO y se escalan en vez de
+editarse (ambos fuera del set editable de esta auditoría): la cabecera del `manifest.yaml` de este
+sample, que presenta como vigente la restricción `checkEnvSupport` ya levantada — escalación
+**E20** — y el bloque "COMPARABLE LIMITATION" de `registry-services-writer.ts`, que todavía afirma
+que las env vars se comparan solo por NOMBRE y que un cambio de solo-valor no produce diff — **E22**.
 
 ## El trigger está pineado al canal propio del sample
 
@@ -101,13 +123,15 @@ mismo chat.
 
 ## Problemas frecuentes
 
-- **El gateway excluye paths propios de la plataforma** (`/api/auth`, `/api/registry`,
-  `/api/workflows`, `/api/webhooks`, `/health`) del ruteo dinámico — por eso la ruta usa
-  `/samples/hosted-echo`, un prefijo no-plataforma.
-- **Las rutas dinámicas se descubren por polling** — esperá ~15 s tras el `apply` antes de la
-  primera invocación.
+- **El gateway excluye paths propios de la plataforma** del ruteo dinámico — `PLATFORM_PREFIXES`
+  en `services/api-gateway/src/hooks/proxy.hook.ts` lista hoy `/api/audit`, `/api/tenants`,
+  `/api/registry`, `/api/connectors`, `/api/channels`, `/api/webhooks`, `/api/workflows`,
+  `/api/proxy`, `/api/auth`, `/api/dashboard`, `/api/admin`, `/api/runtime` y `/health`. Por eso la
+  ruta usa `/samples/hosted-echo`, un prefijo no-plataforma.
+- **Las rutas dinámicas se descubren por polling** — el `POLL_INTERVAL_MS` de
+  `DynamicRouteCacheService` es de 15 s, de ahí la espera por defecto de 16 s tras el `apply`.
 - **`registry-service` hardcodea un readiness probe en `/health` y `runAsUser: 1001`** — tu imagen
   debe soportar ambos, o la ruta puede devolver `502` mientras el Knative Service no está listo.
-- **Las env vars no son provisionables** (ver § Gap documentado) — si tu propio hosted service
-  NECESITA una env var real, este sample todavía no puede demostrar esa forma; seguí el backlog de
-  rulings humanos de `manual-loops/provisioning-manifest-gaps.md`.
+- **¿Necesitás una env var real en tu propio hosted service?** Declarala — `env: [{ name, value }]`
+  con string plano, o `{ secretRef }` para una credencial (ver § Nota histórica); el ejemplo
+  trabajado es `../../ai/ai-call-center-supervisor/manifest.yaml`.

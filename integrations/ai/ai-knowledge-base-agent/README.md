@@ -24,7 +24,7 @@ count toward this check).
 | --- | --- | --- |
 | Connector | `sample-openai-llm` | Reused for BOTH the agent's LLM and the KB's embedding provider |
 | Knowledge base | `ai-sample-support-kb` | One inline document (`support-faq`), `ingestion_config.provider_connector_id: { connectorRef: sample-openai-llm }` |
-| Agent | `ai-sample-kb-agent` | `knowledgeBaseRefs: [ai-sample-support-kb]`, `model_config.llm.connectorId: { connectorRef: sample-openai-llm }` |
+| Agent | `ai-sample-kb-agent` | `knowledgeBaseRefs: [ai-sample-support-kb]`, `model_config.llm.connectorId: { connectorRef: sample-openai-llm }`, one builtin tool (`loadSkill`) |
 
 `ingestion_config.provider_connector_id` is a manifest-time symbolic ref (`manual-loops/
 provisioning-manifest-gaps-2.md` T03, gap 2) resolved to the real connector-admin id by
@@ -102,6 +102,13 @@ The reply should mention the FAQ's verification phrase, `CONDOR-KB-READY`.
 
 - Editing the FAQ content, chunking config, or embedding model requires editing `manifest.yaml`
   and re-applying.
+- **`docs/support-faq.md` is a mirror, not the source.** What gets ingested is the `type: inline`
+  copy inside `manifest.yaml`; the checked-in file is kept byte-identical (781 bytes, verified) so
+  the FAQ stays readable/diffable on its own. Editing only the file changes nothing — edit the
+  manifest (and keep the mirror in sync).
+- The agent declares a single builtin tool, `loadSkill`, purely to exercise the **tool-capable**
+  runtime path — it enables no skill of its own (the skill catalog is `../ai-skill-support-agent`'s
+  subject).
 - If the reply never mentions `CONDOR-KB-READY`, check that `OPENAI_API_KEY` is set in
   `agent-ai-service`'s own runtime environment (embeddings/search path), not just in the manifest
   secret binding (connector auth path).

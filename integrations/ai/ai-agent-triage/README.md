@@ -2,8 +2,9 @@
 
 **AI triage inside a workflow**: a customer message arriving over a **dedicated HTTP channel
 instance** is classified by a **published AI agent** (`agentCall`) into intent / sentiment /
-priority / one-line summary, the agent's JSON reply is parsed by a `jsFunction` (parse-only), and
-an exclusive `conditional` gateway DMs a Telegram summary — 🚨 escalation or ✅ routine. Provisioning
+priority / one-line summary, the agent's JSON reply is parsed by a `jsFunction` (which also builds
+both notification texts and the `escalate` flag), and an exclusive `conditional` gateway DMs a
+Telegram summary — 🚨 escalation or ✅ routine. Provisioning
 is **declarative**: a single [`manifest.yaml`](./manifest.yaml) applied through the `yoizen` CLI
 (no setup scripts).
 
@@ -13,7 +14,8 @@ HTTP msg ─► trigger (message_received, channels:["http"])
               ▼
             triage       agentCall    ─► agent 'ai-sample-triage' replies compact JSON classification
               ▼
-            route        jsFunction   ─► parses results.triage.data.reply (fail-safe fallback)
+            route        jsFunction   ─► parses results.triage.data.reply -> { escalate, priority,
+                                         sentiment, alertText, normalText } (fail-safe fallback)
               ▼
             notify       conditional  ─► escalate==true -> 🚨 alert / default -> ✅ resolved (channelSend)
 ```
@@ -99,8 +101,25 @@ cd integrations/ai/ai-agent-triage
 
 `run.sh` (`src/index.ts`) verifies (read-only) the workflow and the dedicated HTTP instance, then
 POSTs three sample customer messages (angry / curious / happy) through the instance's own ingest
-URL. Expect one Telegram DM per message, e.g. `"🎧 Triage — priority: urgent | sentiment: negative
-| intent: refund"` followed by the one-line summary.
+URL. Expect one Telegram DM per message, in exactly one of two shapes built by `route` (the text is
+assembled in the `jsFunction`, not in `channelSend`):
+
+```text
+🚨 ESCALATION — priority: urgent | sentiment: negative | intent: refund
+<the agent's one-line summary>
+Original: <the customer's message>
+```
+
+```text
+✅ Triage — priority: normal | sentiment: neutral | intent: shipping
+<the agent's one-line summary>
+Original: <the customer's message>
+```
+
+The `🚨` arm fires whenever `priority` is `high`/`urgent` OR `sentiment` is `negative`; everything
+else takes the `✅` default arm. (`src/index.ts`'s own closing log line still prints a `🎧 Triage —
+priority: urgent …` sample that no branch can emit — tracked as ledger escalation **E19**; the two
+shapes above are what the workflow actually sends.)
 
 ## Environment (run.sh overrides only — provisioning is manifest-driven)
 
@@ -115,3 +134,9 @@ URL. Expect one Telegram DM per message, e.g. `"🎧 Triage — priority: urgent
 - **`{{...}}` templating is string-coercing** — the agent's JSON reply lives at
   `results.triage.data.reply`; `route`'s `jsFunction` safely parses it (fail-safe fallback:
   unparseable -> priority `high`, escalates).
+- **The connector carries `tags: [llm]`** — required by agent-admin-service's credential resolver
+  for any adapter an agent's `model_config.llm.connectorId` points at; without it the agent 400s
+  with `Adapter '<id>' is not tagged as 'llm'`.
+- **The secret binding name is the env var** — `.env` is only read for the three `TRIAGE_*`
+  run-side overrides (via `../../lib/resolve-env.sh`); `OPENAI_API_KEY` sitting in `.env` does
+  nothing for `apply`, which reads the value from `ai-agent-triage-openai-api-key`.

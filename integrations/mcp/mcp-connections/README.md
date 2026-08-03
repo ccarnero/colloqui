@@ -29,7 +29,7 @@ committed — see the manifest's own header comment and this batch's migration r
 | Resource | Name | Notes |
 | --- | --- | --- |
 | MCP server | `sample-mcp-server` | `transport_type: http`, `authType: bearer` via `secretRef`, pointed at a **fake/example** URL (`https://mcp.example.com/mcp`) |
-| Agent | `mcp-connections-demo-agent` | `enabledMcpTools: { sample-mcp-server: [search, lookup] }` + one `toolDescriptionOverrides` entry (`sample-mcp-server:search`) |
+| Agent | `mcp-connections-demo-agent` | `enabledMcpTools: { sample-mcp-server: [search, lookup] }` + one `toolDescriptionOverrides` entry (`sample-mcp-server__search` — double underscore, see below) |
 | Workflow | `mcp-connections-demo` | One `mcpCall` action, `serverId: { mcpServerRef: sample-mcp-server }` — no trigger, kept intentionally minimal |
 
 The MCP server URL is **intentionally fake** — this sample's job is to demonstrate the manifest/

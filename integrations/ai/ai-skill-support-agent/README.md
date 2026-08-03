@@ -51,8 +51,10 @@ manifest declares both from the same values, so a normal edit + re-apply keeps t
 
 ## Document source (inline, not file/bundle)
 
-The Acme Telco policy handbook (originally `policy/acme-telco-policy.md`) is embedded VERBATIM in
-`manifest.yaml` via `type: inline` (~3.4 KiB, well under the 64 KiB cap). `type: file` (path +
+The Acme Telco policy handbook is embedded VERBATIM in `manifest.yaml` via `type: inline` (3450
+bytes, well under the 64 KiB cap). The checked-in `policy/acme-telco-policy.md` is a **mirror** of
+that inline copy, kept byte-identical so the handbook stays readable and diffable on its own —
+editing only the file changes nothing, the manifest is what gets ingested. `type: file` (path +
 sha256, resolved through an uploaded tar bundle) was considered and rejected: the `yoizen` CLI's
 `manifests apply`/`plan`/`validate` commands have no `--bundle` flag today — only the SDK's
 `client.manifests.apply(..., { bundle })` accepts one directly — so `type: file` would be

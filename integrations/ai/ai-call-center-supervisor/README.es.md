@@ -15,7 +15,7 @@ provisioning es **declarativo**: un único [`manifest.yaml`](./manifest.yaml) ap
 | Recurso | Nombre | Notas |
 | --- | --- | --- |
 | Canal | `ai-call-center-supervisor` | Instancia HTTP dedicada |
-| Connector | `sample-openai-llm` | Compartido con los otros samples de IA |
+| Connector | `sample-openai-llm` | Compartido con los otros samples de IA; `tags: [llm]` (lo exige el resolver de credenciales de agent-admin-service) |
 | Agente | `ai-sample-supervisor` | `model_config.llm.connectorId: { connectorRef: sample-openai-llm }` |
 | Servicio hosteado | `sample-crm` | `ealen/echo-server:latest`, `env: [{ name: YOIZEN_SAMPLE, value: ai-call-center-supervisor }]` |
 | Variable de sistema | `ai-call-center-supervisor-chat-id` | Destinatario de Telegram — ver § Configurar |
@@ -51,18 +51,30 @@ env "ai-call-center-supervisor-openai-api-key=$OPENAI_API_KEY" \
   yoizen manifests apply  -f ../integrations/ai/ai-call-center-supervisor/manifest.yaml --secrets-from-env
 ```
 
+Un segundo `apply` es no-op una vez convergido (el servicio hosteado puede tardar en quedar Ready;
+`serviceCall` lo despierta en frío igual en la primera llamada).
+
 ## Configurar (destinatario de Telegram)
 
 Editá `spec.systemVariables[0].value` en `manifest.yaml` y volvé a aplicar. Se lee en RUNTIME vía
 `{{variables.system.ai-call-center-supervisor-chat-id}}`.
 
 ```bash
+yoizen manifests apply -f ../integrations/ai/ai-call-center-supervisor/manifest.yaml --secrets-from-env
+```
+
+## Ejecutar / probar
+
+```bash
 cd integrations/ai/ai-call-center-supervisor
 ./run.sh
 ```
 
-`run.sh` publica un mensaje ENOJADO (esperá 🚨 SUPERVISOR ESCALATION) y uno TRANQUILO (esperá ✅
-AUTO-RESOLVED) unos segundos después.
+`run.sh` (`src/index.ts`) verifica (solo lectura) el workflow y la instancia HTTP dedicada, y
+publica un mensaje ENOJADO (esperá 🚨 SUPERVISOR ESCALATION) y uno TRANQUILO (esperá ✅
+AUTO-RESOLVED) unos segundos después. Overrides del driver: `SUPERVISOR_WORKFLOW_NAME`,
+`AI_AGENT_NAME` (solo aparece en un log), `SUPERVISOR_HTTP_EXTERNAL_ID`,
+`SUPERVISOR_RUN_TEXT_ANGRY`/`_CALM` y `SUPERVISOR_RUN_PAUSE_SECONDS` (3 s).
 
 ## Detalles y advertencias
 

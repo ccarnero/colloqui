@@ -26,7 +26,7 @@ HTTP msg ─► trigger (message_received, channels:["http"])
 | Resource | Name | Notes |
 | --- | --- | --- |
 | Channel | `ai-call-center-supervisor` | Dedicated HTTP ingest instance |
-| Connector | `sample-openai-llm` | Shared with the other AI samples |
+| Connector | `sample-openai-llm` | Shared with the other AI samples; `tags: [llm]` (required by agent-admin-service's credential resolver) |
 | Agent | `ai-sample-supervisor` | `model_config.llm.connectorId: { connectorRef: sample-openai-llm }` |
 | Hosted service | `sample-crm` | `ealen/echo-server:latest`, `env: [{ name: YOIZEN_SAMPLE, value: ai-call-center-supervisor }]` (T05 gap 5 plain-string env) |
 | System variable | `ai-call-center-supervisor-chat-id` | Telegram recipient — see § Configure |

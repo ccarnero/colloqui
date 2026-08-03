@@ -25,8 +25,15 @@ manifest.
 
 | Resource | Name | Notes |
 | --- | --- | --- |
-| Connector | `sample-openai-llm` | `type: llm`, `authType: bearer` via `secretRef` |
+| Connector | `sample-openai-llm` | `type: llm`, `authType: bearer` via `secretRef`, `tags: [llm]` |
 | Agent | `ai-sample-playground` | `model_config.llm.connectorId: { connectorRef: sample-openai-llm }`, published |
+
+`tags: [llm]` is **not decoration**: agent-admin-service's credential resolver requires the `llm`
+tag on the adapter an agent's `model_config.llm.connectorId` points at — without it every
+referencing agent is rejected with `Adapter '<id>' is not tagged as 'llm'`
+(`services/agent-admin-service/src/modules/agents/agents.service.ts`). "Published" is also not a
+manifest field: `agents-writer.ts`'s `publishAgent()` runs as the LAST step of every create AND
+every update, so a manifest-declared agent is always published.
 
 `model_config.llm.connectorId` is a manifest-time symbolic ref (`manual-loops/provisioning-
 manifest-gaps-2.md` T03, gap 2) — resolved to the real connector-admin id by the apply engine's
@@ -83,6 +90,12 @@ platform objects.
 | `AI_AGENT_NAME` | `ai-sample-playground` | Must match `manifest.yaml`'s agent name |
 | `AI_AGENT_MESSAGE` | see `.env.example` | The message submitted to the agent |
 | `POLL_TIMEOUT_S` | `90` | Execution poll timeout |
+
+> **`.env.example` caveat.** The three vars above are the ONLY ones `run.sh` reads from a local
+> `.env` (loaded by `../../lib/resolve-env.sh`). `OPENAI_API_KEY` is listed there as a convenience
+> reminder only — `--secrets-from-env` reads the VALUE from the BINDING name
+> (`ai-agent-playground-openai-api-key`), so putting `OPENAI_API_KEY` in `.env` does nothing for
+> `apply` on its own; remap it on the apply line exactly as § Provision shows.
 
 ## Design notes & gotchas
 

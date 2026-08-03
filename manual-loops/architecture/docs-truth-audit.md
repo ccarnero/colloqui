@@ -143,7 +143,7 @@ final per-file dispositions.
 - [x] T03 — Audit: DOCS/channels, agents, workflows, skb, reference, adr, guides, runbooks
 - [x] T04 — Audit: the 20 service READMEs
 - [x] T05 — Audit: packages + sdk docs
-- [ ] T06 — Audit: integrations, demos, examples
+- [x] T06 — Audit: integrations, demos, examples
 - [ ] T07 — Audit: scripts (docs AND behavior contracts)
 - [ ] T08 — Audit: root docs, cowork notes, skills
 - [ ] T09 — Structure proposal + purge list ⟶ HUMAN DECISION ROUND
@@ -290,3 +290,53 @@ that called such cites "textbook rule 4". Attempt 2 fixed all three;
 offsets — partial sweep by design, same judgement call parked in T04.
 Gates: G0 green every attempt; `cd sdk && bun run build && bun test` green
 (tsc clean, 471 pass / 0 fail).
+
+### T06 — 2026-08-03
+
+30/30 verdicts with evidence: 27 FIXED, 3 TRUE (`demos/README.md`,
+`GUION-DEMO.md`, the `support-faq.md` fixture — byte-identical to the
+manifest's inline copy). Nine `.env`/`env.example` templates were fixed
+alongside their READMEs. Biggest drifts: `hosted-services-api` EN+ES
+documented a `checkEnvSupport` restriction that no longer exists anywhere
+under `services/` (`serviceEnvValueSchema` is now a 4-way union and
+`buildEnvVars` resolves all four) while a sibling sample documented the
+opposite; `ai-agent-triage` showed an expected Telegram DM no branch can
+emit (`route` builds only `🚨 ESCALATION — ` / `✅ Triage — `);
+`telegram-transform-reply/README.es.md` contradicted itself twice, false
+half each time (the manifest DOES pin `accountIds`; the appSecret mapper
+returns it on every read); the `acme-telco-policy.md` FIXTURE had drifted
+from the manifest's inline copy (3420 vs 3450 bytes) and was restored to
+byte parity; `mcp-repo-support-bot/README.es.md` had no `manifests apply`
+step at all, so following the ES twin alone ran the driver against an
+unprovisioned tenant. Escalations: E18 `ai-system-variables/src/index.ts`
+looks up camelCase names while the manifest declares slugs — the sample's
+headline step always prints `(missing!)`; E19 the `🎧 Triage` sample
+output; E20 `hosted-services-api/manifest.yaml`'s header still asserts the
+lifted restriction; E21 restated as a pair (template FIXED,
+`reference-pattern/src/setup.ts`'s `resolve-env.sh` comment still false);
+E22 `registry-services-writer.ts`'s "COMPARABLE LIMITATION" header
+describes the SUPERSEDED comparator; E23 two dot-less `env.example`
+templates — disproved cause removed, rename deferred to T10 for a T09
+ruling. **E17 is the lesson of this task**: attempt 1 raised it as
+"every `.env.*` file is unwritable from this environment" — false; the
+Write/Edit TOOLS refuse those paths, the filesystem does not, and the
+orchestrator disproved it by fixing one through the shell. A tool refusal
+is not a filesystem fact. E17 survives only as a FIXED summary (eight
+files, five finding classes) plus that process note.
+Four attempts. R1 2× REJECTED on the same two defects, both self-inflicted
+by the fixes: (a) the `hosted-services-api` rewrite IMPORTED a falsehood
+from E22's stale source comment ("a VALUE-only edit produces no `update`
+verdict") — the planner's `serviceEnvMechanismComparable` omits `value` on
+mismatch precisely so the diff surfaces, pinned by
+`service-comparable.spec.ts`; and (b) the disproved E17 sandbox claim
+survived VERBATIM in `mcp-repo-support-bot`'s README and `env.example`
+while that row was graded TRUE with a four-line defence of the omission —
+a row cannot return TRUE while the ledger it lives in refutes a sentence
+inside the file. Both fixed in attempt 3; 2× APPROVED. A final polish
+round corrected the census recipe: the ledger cited
+`fd -H -g '.env.example'` = 11 when unscoped it returns 13 (`scripts/e2e`
+and `scripts/reset` ship templates too) — the conclusion was right, the
+command did not reproduce its own number, and 13 happened to be both the
+correct sample total and the wrong unscoped count. Now scoped to
+`integrations demos sdk/examples` and verified: 11 / 13 / 2.
+G0 green every attempt; docs-only (G1/G6b skipped).

@@ -171,9 +171,16 @@ webhook-registration notes if you need a public HTTPS tunnel.
 
 ### `env.example` has no leading dot
 
-The shipped template is named `env.example` (not `.env.example`): a sandbox
-restriction in the authoring environment prevents writing `.env.*` files. Copy
-it to `.env` (`cp env.example .env`) — `resolve-env.sh` loads `.env`.
+The shipped template is named `env.example`, not `.env.example` like eleven of
+the repo's thirteen sample templates (this sample and `../mcp-connections` are
+the two exceptions). There is **no technical reason** for the difference: the
+dot was dropped under the belief that `.env.*` files could not be written in
+the authoring environment, and the 2026-08-03 docs audit disproved that (it
+edited eight dotted templates in place the same day). Renaming sample files is
+a structural change, so it is deferred to that audit's T10 —
+`cowork/DOCS-TRUTH-LEDGER.md`, escalation **E23**. Nothing depends on the name:
+copy it to `.env` (`cp env.example .env`) and `../../lib/resolve-env.sh`, which
+`run.sh` sources, loads `.env` from this directory.
 
 ## Trigger is pinned to this sample's own channel
 

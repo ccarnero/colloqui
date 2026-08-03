@@ -120,6 +120,18 @@ es el valor placeholder del sample, sin editar:
    inválido: el rechazo ocurre río abajo, después de que esta actividad ya
    devolvió su resultado.
 
+### `run.sh` loguea "instance URL not accepted … using token-only legacy URL"
+
+`src/index.ts` publica primero contra la URL de ingesta por instancia y, si el `status` de la
+respuesta no es `accepted`, reintenta UNA vez contra la URL legacy solo-tenant (mismo
+`x-http-channel-token`, sin segmento de instancia). Ese fallback igual cae en la misma cuenta:
+`resolveAccount` de `WebhookIngressService` rechaza una `instance` desconocida en vez de degradar
+internamente, y en el camino solo-token verifica la firma contra todas las cuentas `http` activas
+exigiendo **exactamente una** coincidencia (dos son un rechazo por "Ambiguous webhook"). Ver esa
+línea significa entonces que el segmento de instancia no fue reconocido: revisá que el
+`manifest.yaml` esté aplicado y que el `externalId` de la cuenta sea realmente
+`manifest:http-fanout-telegram`.
+
 ### `workflow-worker` loguea `unregistered external sink 'exporter'`
 
 Si ves esto en los logs de `workflow-worker` mientras diagnosticás un
