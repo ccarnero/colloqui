@@ -36,7 +36,8 @@ fi
 #      of the SPEC forbids.
 #   2. CONTENTION PROBE (stage 7) — while the long execution waits, one
 #      normal `e2e-http-log`-style workflow run (jsFunction + endpointCall +
-#      serviceCall, the manifest shape of http-workflow.sh:684-721) is fired
+#      serviceCall, the action shape http-workflow.sh builds for its
+#      `e2e-http-log` workflow) is fired
 #      over its own http channel and must reach COMPLETED within
 #      PROBE_BUDGET_S, AND the long execution must still be non-terminal at
 #      that moment (proving the two really overlapped). Per T01 finding 1 the
@@ -538,8 +539,9 @@ e2e_manifest_body() {
   #    a property of the agent — it travels per execution in
   #    `metadata.__test_delay_ms`, so this agent is only "slow" for the one
   #    execution stage 6 submits,
-  #  - the contention-probe workflow: the `e2e-http-log` action shape of
-  #    http-workflow.sh:684-721 (jsFunction + endpointCall + serviceCall),
+  #  - the contention-probe workflow: the same action shape http-workflow.sh
+  #    builds for its `e2e-http-log` workflow — the `logMessage` jsFunction +
+  #    `probeEndpoint` endpointCall + `probeService` serviceCall trio —
   #    which deliberately touches NEITHER agent-ai-service NOR its serial
   #    per-tenant consumer (T01 finding 1),
   #  - (T04) the agentCall workflow, whose single action targets the SAME

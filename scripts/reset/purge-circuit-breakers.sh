@@ -32,15 +32,15 @@
 #      with no surviving keys is a no-op.
 #
 # What it preserves (NEVER touched):
-#   - rate-limit counters     (prefix `ratelimit:*`)
-#   - http-response cache     (prefix `http:cache:*`)
-#   - adapter SWR cache       (prefix `adapter:swr:*`)
+#   - rate-limit counters  `ratelimit:*`   (RATE_LIMIT_KEY_PREFIX)
+#   - http-response cache  `httpcache:v1:*` (connector-runtime cache-policy)
+#   - adapter SWR caches   `adapter:config:*` / `adapter:internal-by-service:*`
 #   - any key not matching one of the configured `--prefix` values
 #
-# Default prefixes (matches the constitution as of 2026-05):
-#   cb:workflow:http     connector-runtime  service / endpoint calls
-#   cb:workflow:agent    connector-runtime  LLM / agent calls
-#   cb:channel:egress    channel-service    outbound providers
+# Default prefixes (verified against every `keyPrefix:` in the code):
+#   cb:workflow:http   connector-runtime                    endpoint calls
+#   cb:workflow:agent  connector-runtime + workflow-service  agent/LLM calls
+#   cb:channel:egress  channel-service                      outbound providers
 #
 # Subcommands:
 #   purge   (default) UNLINK every matching key
@@ -65,8 +65,8 @@
 #   --yes / -y            Skip the interactive confirmation.
 #
 # Exit codes:
-#   0  succeeded (or count subcommand finished)
-#   1  one or more masters were unreachable / errored mid-purge
+#   0  purge/count finished. NOTE: per-master failures are swallowed by the
+#      `|| true` in the main loop, so a PARTIAL sweep also exits 0 today.
 #   2  bad input / preflight failed before any mutation
 
 set -euo pipefail

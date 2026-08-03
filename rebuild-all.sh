@@ -5,8 +5,12 @@
 #   ./rebuild-all.sh                     # build + deploy all, env=dev
 #   ./rebuild-all.sh qa                  # build + deploy all, env=qa
 #   ./rebuild-all.sh --build-only        # only build images, skip rollouts
+#   ./rebuild-all.sh --deploy-only       # only roll out, skip Docker builds
 #   ./rebuild-all.sh --no-cache          # bust Docker layer cache on all builds
 #   ./rebuild-all.sh --skip api-gateway,auth-service   # exclude specific services
+#
+# The service list and its build order come from services.conf (YZ_SERVICES,
+# 20 services today) — not from a copy kept here.
 #
 # Infrastructure (postgres, redis, nats, temporal) is never touched.
 set -euo pipefail

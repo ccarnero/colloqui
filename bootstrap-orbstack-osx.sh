@@ -20,13 +20,19 @@ set -euo pipefail
 #
 # Prerequisites:
 #   - OrbStack installed with Kubernetes enabled (Settings > Kubernetes > Enable).
-#   - docker, kubectl, helm, npm on PATH.
+#   - docker, kubectl, helm, npm on PATH (all four are preflight-checked).
+#   - sudo: the run rewrites a managed `yoizen-dev` block in /etc/hosts. If
+#     sudo is unavailable it warns and prints the lines to add by hand
+#     instead of failing.
 #
-# Usage:
+# Usage (run `--help` for the full flag list — usage() below is authoritative):
 #   ./bootstrap-orbstack-osx.sh                     # full dev bring-up (support + platform)
 #   ./bootstrap-orbstack-osx.sh support-services    # infra only
 #   ./bootstrap-orbstack-osx.sh platform-services   # build + deploy only
+#   ./bootstrap-orbstack-osx.sh --smoke             # bring-up + scripts/smoke-test.sh
+#   ./bootstrap-orbstack-osx.sh --storage-engine=mongo support-services
 #   STORAGE_ENGINE=mongo ./bootstrap-orbstack-osx.sh support-services
+#   BUILD_PARALLELISM=4 ./bootstrap-orbstack-osx.sh # concurrent docker builds (default 2)
 # =============================================================================
 
 ALL_GROUPS=(support-services platform-services)

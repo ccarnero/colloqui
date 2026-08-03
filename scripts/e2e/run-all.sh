@@ -21,6 +21,11 @@ set -euo pipefail
 # invasive than the other three. Run it explicitly via
 # `--only teardown-regression`.
 #
+# NOT ORCHESTRATED AT ALL: scripts/e2e/long-agent-execution.sh. It is a
+# standalone e2e (long-running agent executions) with its own env-gated
+# prerequisite (`AGENT_TEST_DELAY_ENABLED` on agent-ai-service) and no
+# stage entry here — run it directly.
+#
 # See scripts/e2e/README.md for what each stage covers and rough runtimes.
 #
 # Flags:

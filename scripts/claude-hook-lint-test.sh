@@ -8,6 +8,13 @@
 # Non-blocking by design: ALWAYS exits 0 so it never interrupts the agent. It prints a
 # short result to stderr (which Claude sees) and a verbose log to .claude/hook.log.
 # To make lint failures BLOCK instead, change the final `exit 0` after biome to `exit 2`.
+#
+# CAVEAT on the "test" half: it runs `vitest related`, but vitest is a devDependency
+# of services/admin-console ONLY — every other package in this repo runs its tests
+# with `bun test` or `tsx --test`. So for almost every edited file this step finds no
+# vitest project and reports nothing useful; treat the biome half as the real check.
+# Swapping the runner is a behavior change, tracked as E28 in
+# cowork/DOCS-TRUTH-LEDGER.md.
 
 set -uo pipefail
 

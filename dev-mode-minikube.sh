@@ -30,12 +30,14 @@ set -euo pipefail
 #   ./dev-mode-minikube.sh <service> status  # show dev-mode state for one service
 #   ./dev-mode-minikube.sh status            # show dev-mode state for all services
 #
-# Supported services:
+# Supported services (every case in get_targets — i.e. all of YZ_SERVICES
+# except admin-console, which is what `usage` prints at runtime):
 #   auth-service, tenant-service, cache-service, proxy-service,
 #   registry-service, audit-service, channel-service, connector-admin,
 #   usage-aggregator-service, workflow-service, connector-runtime,
 #   api-gateway, agent-memory-service, agent-ai-service,
-#   agent-scheduler-service, agent-admin-service, ai-agent-gateway
+#   agent-scheduler-service, agent-admin-service, ai-agent-gateway,
+#   tracking-ingester-service, provisioning-service
 #
 # Not supported:
 #   admin-console — Angular SPA; stays on image flow.

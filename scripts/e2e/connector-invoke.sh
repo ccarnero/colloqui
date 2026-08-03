@@ -15,11 +15,14 @@ fi
 # End-to-end cluster check of the connector invoke API
 # (manual-loops/connector-invoke-api.md T07): sync + async round trip through
 # the api-gateway proxy, driven with plain curl against the SDK-visible
-# gateway contract (POST .../invoke, GET .../invocations/:id) — no runnable
-# SDK harness exists in this repo today (the `sdk/` package ships unit tests
-# against a mocked HTTP client, not an e2e-capable client factory wired to a
-# live gateway), so this script asserts the exact wire contract the SDK's
-# `connectors.invoke()`/`connectors.invocations.get()` depend on instead.
+# gateway contract (POST .../invoke, GET .../invocations/:id), so this script
+# asserts the exact wire contract the SDK's
+# `connectors.invoke()`/`connectors.invocations.get()` depend on.
+# (When this was written the `sdk/` package had unit tests against a mocked
+# HTTP client only. That is no longer true — `sdk/test/e2e/` now holds nine
+# live-cluster suites behind `SDK_E2E=1`, and scripts/e2e/manifest-apply.sh
+# drives the REAL SDK via manifest-showcase-driver.ts — but connector invoke
+# is still not covered there, so this curl-level check stays the only one.)
 #
 #   1. Login as tenant admin (acme by default)
 #   2. Create a fresh adapter/connector ("e2e-connector-invoke-<nonce>")
@@ -73,8 +76,9 @@ CONNECTOR_NAME_PREFIX="e2e-connector-invoke"
 # In-cluster target for the seeded adapter's single endpoint —
 # connector-admin-api's own GET /health ALWAYS returns HTTP 200 with a
 # `{status: "ok"|"degraded", ...}` body regardless of downstream NATS/DB
-# state (health.controller.ts:55-73 never sets a non-2xx status on this
-# route, unlike its /readyz sibling) — the most deterministic same-namespace
+# state (connector-admin's `HealthController.check` — the `@Get("health")`
+# handler — never sets a non-2xx status on this route, unlike its /readyz
+# sibling) — the most deterministic same-namespace
 # target available, and connector-admin is a hard dependency of this very
 # adapter-resolution call, so it is always reachable when the test can run
 # at all.

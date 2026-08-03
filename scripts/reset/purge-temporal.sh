@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # purge-temporal.sh — TRUNCATE Temporal workflow state in postgres-temporal
-# AND `executions_visibility` in postgres-temporal-visibility WITHOUT
-# dropping any database, schema, or registered namespace.
+# AND `executions_visibility` wherever it currently lives (see the Topology
+# note below — the visibility target is resolved at runtime, not assumed),
+# WITHOUT dropping any database, schema, or registered namespace.
 #
 # Use case: between stress runs you want a clean slate (no Running, no
 # pending tasks, no visibility rows) without paying the cost of a full
@@ -9,25 +10,32 @@
 # re-register the `default` namespace + bootstrap NUM_HISTORY_SHARDS=16).
 # Truncating the data tables drops it to ~5–10s end-to-end.
 #
-# Topology note (2026-05-22 split — see
-# `DOCS/runbooks/temporal-visibility-split.md`): the visibility datasource
-# now lives on its OWN CNPG cluster (`postgres-temporal-visibility`,
-# primary pod `postgres-temporal-visibility-1`). The workflow-state
-# datasource remains on `postgres-temporal` (primary pod
-# `postgres-temporal-1`). This script targets BOTH pods. Legacy
-# single-cluster setups (everything on `postgres-temporal-1`) can still
-# be purged by passing `--vis-pg-pod=postgres-temporal-1`.
+# Topology note — BOTH the 2026-05-22 visibility split and the 2026-05 HA
+# split were later REVERTED, and both runbooks now live under
+# `DOCS/runbooks/archive/` (`temporal-visibility-split.md`,
+# `temporal-ha-migration.md`); the live runbook is
+# `DOCS/runbooks/temporal.md`. Nothing here is hardcoded to one topology:
+#   - Deployments are auto-detected (`ensure_deployments_exist`): the 4-role
+#     HA set when ALL of them exist, otherwise the single `temporal`
+#     auto-setup Deployment. A PARTIAL HA set is refused loudly.
+#   - The visibility target is RESOLVED, not assumed
+#     (`ensure_vis_pg_pod_exists` + `resolve_visibility_target`): the default
+#     `--vis-pg-pod` is still `postgres-temporal-visibility-1`, but when
+#     `executions_visibility` is not on it the script falls back to the
+#     workflow-state pod, and skips the visibility stage entirely if the
+#     relation exists on neither.
+# The workflow-state datasource is on `postgres-temporal` (primary pod
+# `postgres-temporal-1`).
 #
 # What it does:
-#   1. Scales every Temporal role Deployment (`temporal-frontend`,
-#      `temporal-history`, `temporal-matching`, `temporal-worker` —
-#      post-HA-migration topology, see
-#      `DOCS/runbooks/temporal-ha-migration.md`) to 0 so no in-flight
-#      writer is holding row locks while we TRUNCATE (TRUNCATE takes
-#      AccessExclusiveLock; an active history pod would deadlock the
-#      script). Each Deployment's original replica count is captured
-#      FIRST so we can restore each one independently at the end.
-#   2. Waits for every temporal pod (all 4 roles) to terminate (otherwise
+#   1. Scales every DETECTED Temporal Deployment (the 4 HA roles
+#      `temporal-frontend`/`temporal-history`/`temporal-matching`/
+#      `temporal-worker`, or the single `temporal` auto-setup Deployment) to
+#      0 so no in-flight writer is holding row locks while we TRUNCATE
+#      (TRUNCATE takes AccessExclusiveLock; an active history pod would
+#      deadlock the script). Each Deployment's original replica count is
+#      captured FIRST so we can restore each one independently at the end.
+#   2. Waits for every detected Deployment's pods to terminate (otherwise
 #      the locks from a draining shard owner can survive long enough to
 #      block).
 #   3. Connects to each CNPG primary as the `postgres` local-socket
@@ -35,18 +43,23 @@
 #      `enableSuperuserAccess: false`) and runs a single `TRUNCATE ...
 #      RESTART IDENTITY` per DB:
 #        - workflow-state tables on `postgres-temporal-1` / `temporal`
-#        - `executions_visibility` on `postgres-temporal-visibility-1`
-#          / `temporal_visibility`
+#        - `executions_visibility` on `temporal_visibility`, on whichever
+#          pod `resolve_visibility_target` picked: the `--vis-pg-pod`
+#          default `postgres-temporal-visibility-1`, else the
+#          workflow-state primary. When the relation is on neither, this
+#          stage is SKIPPED with a warning and only the workflow-state
+#          TRUNCATE runs.
 #   4. Prints row counts before/after for the most relevant tables so
 #      you have a visual confirmation that the wipe landed.
-#   5. Restores the deployment to its original replica count and waits
-#      for it to roll fully Ready (auto-setup is a no-op on a clean
-#      schema, so the second start is fast).
+#   5. Restores every detected Deployment to its own original replica count
+#      and waits for each to roll fully Ready (auto-setup is a no-op on a
+#      clean schema, so the second start is fast).
 #
 # What it preserves (NEVER touched):
 #   - namespaces, namespace_metadata
 #   - cluster_metadata, cluster_metadata_info
-#   - schema_version, schema_update_history                (BOTH clusters)
+#   - schema_version, schema_update_history      (in BOTH the workflow-state
+#       and visibility DBs, whether or not they share a cluster)
 #   - nexus_endpoints, nexus_endpoints_partition_status
 #   - queue, queue_messages, queues, queue_metadata  (replication / DLQ
 #       ack-levels — wiping them is unsafe in HA setups)
@@ -54,7 +67,14 @@
 #
 # Subcommands:
 #   purge   (default) wipe the data; full scale-down → truncate → scale-up cycle
-#   counts            read-only: print row counts in workflow-data tables
+#   counts            read-only: print row counts for the workflow-state
+#                     tables on --pg-pod AND for `executions_visibility` on
+#                     the pod resolve_visibility_target picked — unless that
+#                     resolution found the relation nowhere, in which case a
+#                     one-line "visibility stage skipped" notice replaces the
+#                     second table. The workflow-state set is the SAME list
+#                     `purge` would truncate, so --keep-task-queues narrows
+#                     what `counts` reports too.
 #
 # Flags:
 #   --namespace=NS       k8s ns where temporal lives
@@ -65,17 +85,22 @@
 #                          (default: postgres — local peer-auth role
 #                          ships with CNPG and bypasses the per-DB ACL
 #                          dance)
-#   --vis-pg-pod=NAME    CNPG primary pod for the visibility cluster
-#                          (default: postgres-temporal-visibility-1;
-#                          pass `postgres-temporal-1` for legacy
-#                          single-cluster topologies)
+#   --vis-pg-pod=NAME    CNPG primary pod to look for the visibility DB on
+#                          (default: postgres-temporal-visibility-1). Rarely
+#                          needed: when that pod is absent, or is present but
+#                          does not hold `executions_visibility`, the script
+#                          falls back to the workflow-state primary on its
+#                          own. Pass `postgres-temporal-1` only to pin the
+#                          collapsed single-cluster layout explicitly.
 #   --vis-pg-user=USER   postgres role on the visibility cluster
 #                          (default: postgres)
 #   --db=NAME            primary DB (default: temporal)
 #   --visibility-db=NAME visibility DB (default: temporal_visibility)
-#   --skip-scale         do NOT scale temporal down/up (use ONLY when
-#                          temporal is already at 0 replicas)
-#   --skip-restart       wipe + leave temporal at 0 replicas
+#   --skip-scale         do NOT scale the detected Deployments down, and
+#                          consequently not back up either (use ONLY when
+#                          they are ALL already at 0 replicas)
+#   --skip-restart       wipe, then leave every detected Deployment at 0
+#                          replicas
 #   --keep-task-queues   skip truncating task_queues / task_queue_user_data /
 #                          build_id_to_task_queue (preserves worker
 #                          versioning rules; rarely needed)
@@ -86,12 +111,15 @@
 #                          or KUBECTL_CONTEXT)
 #
 # Exit codes:
-#   0  purge succeeded (data wiped, every role Deployment back to its
+#   0  purge succeeded (data wiped, every detected Deployment back to its
 #      prior replica count)
-#   1  purge failed somewhere; one or more role Deployments may be at
-#      0 replicas — re-run
-#      `kubectl -n <ns> scale deploy/temporal-{frontend,history,matching,worker} --replicas=N`
-#      to recover
+#   1  purge failed somewhere; one or more of the DETECTED Deployments may
+#      be left at 0 replicas. Recover with whichever topology is live —
+#      on the single auto-setup Deployment:
+#        `kubectl -n <ns> scale deploy/temporal --replicas=N`
+#      on the 4-role HA set:
+#        `kubectl -n <ns> scale deploy/temporal-{frontend,history,matching,worker} --replicas=N`
+#      (`kubectl -n <ns> get deploy` shows which one you have.)
 #   2  bad input / preflight failed before any mutation
 
 set -euo pipefail
@@ -103,7 +131,7 @@ DEFAULT_NAMESPACE="support-services-dev"
 # ensure_deployments_exist). The 2026-05 HA migration split `temporal`
 # into 4 role Deployments, but the cluster later reverted to the single
 # `temporalio/auto-setup` Deployment (2026-06-11 — see
-# DOCS/RUNBOOK-TEMPORAL.md). Both topologies are supported. The HA list
+# DOCS/runbooks/temporal.md). Both topologies are supported. The HA list
 # keeps its original order: history last on scale-up so the frontend
 # has a ring to discover when it boots.
 TEMPORAL_DEPLOYMENTS=()
@@ -116,9 +144,10 @@ HA_DEPLOYMENTS=(
 SINGLE_DEPLOYMENT="temporal"
 DEFAULT_PG_POD="postgres-temporal-1"
 DEFAULT_PG_USER="postgres"
-# Visibility moved to its own CNPG cluster on 2026-05-22 (see
-# runbooks/temporal-visibility-split.md). Default targets the dedicated
-# primary; legacy collapsed-cluster setups can override with
+# Visibility moved to its own CNPG cluster on 2026-05-22 and moved back
+# later (see DOCS/runbooks/archive/temporal-visibility-split.md). Default
+# still targets the dedicated primary; collapsed-cluster setups are handled
+# automatically by resolve_visibility_target, or can be pinned with
 # `--vis-pg-pod=postgres-temporal-1`.
 DEFAULT_VIS_PG_POD="postgres-temporal-visibility-1"
 DEFAULT_VIS_PG_USER="postgres"
@@ -344,8 +373,8 @@ ensure_vis_pg_pod_exists() {
     # If the operator did NOT override the flag, fall back to the
     # workflow-state pod: the 2026-05-22 visibility split was reverted
     # and single-cluster setups host temporal_visibility on the same
-    # CNPG primary (see DOCS/RUNBOOK-TEMPORAL-VISIBILITY-SPLIT.md,
-    # marked inactive).
+    # CNPG primary (see DOCS/runbooks/archive/temporal-visibility-split.md,
+    # archived because the split was reverted).
     if [[ "$VIS_PG_POD" == "$DEFAULT_VIS_PG_POD" ]]; then
       warn "Visibility pod ${VIS_PG_POD} not found — falling back to ${PG_POD}"
       warn "  (single-cluster topology: visibility lives on the workflow-state primary)"

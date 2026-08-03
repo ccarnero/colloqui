@@ -9,10 +9,19 @@ stage touches.
 
 ## 1. Main reset — `scripts/reset/reset-dev.ts`
 
-Wipes JetStream stream contents (ingress, DLQ, gateway audit, claim-check
-payload buckets), per-tenant Postgres data tables, the usage Timescale DB, and
-derived Redis keys. Never touches topology, schemas, tenant registry,
-credentials, or connector/channel/agent configuration.
+Wipes JetStream stream contents (`INGRESS-*`, `DLQ-*`, `GATEWAY_AUDIT`,
+`PLATFORM_TENANTS`, the legacy global `DLQ` if it still exists, and the
+`PAYLOAD-<tenant>` claim-check buckets), per-tenant Postgres data tables, the
+usage Timescale DB, and derived Redis keys. Never touches topology, schemas,
+the tenant registry, or `credentials` (deliberately excluded — real
+per-tenant connector secrets).
+
+Read the exclusion list carefully: it is NOT "definitions are safe". Per
+`INVENTORY.md`'s approved UNCERTAIN section, the script DOES truncate
+`agent_versions`, `document_chunks`/`document_chunks_embedding`,
+`canary_deployments`, and the `adapter:oauth:*` Redis keys. Channel accounts,
+workflows, agents and adapters themselves survive — those need
+`reset-tenant.sh` (§6).
 
 Dry-run first (default — prints counts only, deletes nothing):
 
@@ -60,24 +69,39 @@ trace wipe.
 
 ## 3. Temporal state — `scripts/reset/purge-temporal.sh`
 
-Truncates workflow histories + visibility rows (both CNPG clusters) without
-dropping databases or namespaces. ~5-10s.
+Truncates workflow histories + visibility rows without dropping databases or
+namespaces. ~5-10s. It scales Temporal down first, so it auto-detects the
+topology (4-role HA set, or the single `temporal` auto-setup Deployment) and
+RESOLVES where `executions_visibility` actually lives — dedicated
+`postgres-temporal-visibility-1`, else the workflow-state primary
+`postgres-temporal-1`, else the visibility stage is skipped with a warning.
 
 ```bash
-./scripts/reset/purge-temporal.sh
+./scripts/reset/purge-temporal.sh            # purge (asks for confirmation)
+./scripts/reset/purge-temporal.sh counts     # read-only row counts
+./scripts/reset/purge-temporal.sh --dry-run  # print the SQL + kubectl calls
 ```
 
 ## 4. Circuit breakers — `scripts/reset/purge-circuit-breakers.sh`
 
-Clears `cb:*` Redis state only (also included in reset-dev's Redis stage).
+Clears the three breaker key prefixes only — `cb:workflow:http`,
+`cb:workflow:agent`, `cb:channel:egress` (also included in reset-dev's Redis
+stage). Sub-commands `purge` (default) and `count`; `--dry-run` counts
+without unlinking. Note it currently exits 0 even if a master errors mid-sweep
+(its own header documents this).
 
 ## 5. e2e leftovers
 
-Since T08 (`manual-loops/connector-trace-linking.md`), `e2e-http-workflow.sh`
-cleans its own workflows/account/agent on exit and its triggers are scoped to
-its per-run account. If a pre-T08 run left `e2e-http-log` / `e2e-http-agent`
-definitions behind, either run the current script once (it converges and then
-deletes them) or delete them via the console.
+Since T08 (`manual-loops/connector-trace-linking.md`),
+`scripts/e2e/http-workflow.sh` cleans its own workflows/account/agent on exit
+(`cleanup_e2e_resources`, from an `EXIT` trap; skipped with `E2E_KEEP=1`) and
+its triggers are scoped to its per-run account. The workflow sweep matches by
+NAME PREFIX — `e2e-http-log*` and `e2e-http-agentflow*` — and the http
+account by the `manifest:e2e-http-workflow` externalId prefix, so leftovers
+from crashed or older runs (including the pre-nonce fixed names) are
+reclaimed by the next run too; the echo agent `e2e-http-agent-echo` is
+deleted by exact name. Anything the sweep misses can be deleted via the
+console.
 
 ## 6. Tenant definitions — `scripts/reset/reset-tenant.sh`
 

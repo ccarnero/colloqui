@@ -9,7 +9,7 @@
 # Pipeline:
 #   [--rebuild] rebuild-changed.sh
 #   [bootstrap] bootstrap-orbstack-osx.sh        (bring up support + platform)
-#   gate:       scripts/smoke-test.sh            (readiness preflight — fail fast)
+#   gate:       scripts/smoke-test.sh            (readiness preflight, POLLED)
 #   tenant:     setup-tenant.sh                  (tenant 'acme' + admin, idempotent)
 #   e2e:        scripts/e2e/http-workflow.sh     (http channel -> workflow create+run+assert)
 #
@@ -21,6 +21,7 @@
 #
 # Env overrides:
 #   API_URL   (default http://api-gateway.platform-services-dev.dev.local)
+#   READINESS_TIMEOUT_S   (default 420 — bound on the stage-2 smoke poll)
 #   STORAGE_ENGINE=mongo  (passed through to bootstrap)
 #
 set -euo pipefail
@@ -85,7 +86,7 @@ else
 fi
 
 # 2. Readiness gate — POLL the smoke-test until the rollout settles (cold-start +
-#    18 images on a fresh cluster takes minutes). Fail only after the timeout.
+#    20 images on a fresh cluster takes minutes). Fail only after the timeout.
 stage "2/4 Readiness gate (waiting for rollout)"
 READINESS_TIMEOUT_S="${READINESS_TIMEOUT_S:-420}"
 deadline=$(( $(date +%s) + READINESS_TIMEOUT_S ))

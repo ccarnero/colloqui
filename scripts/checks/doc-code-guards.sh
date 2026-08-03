@@ -1,11 +1,25 @@
 #!/usr/bin/env bash
 #
-# doc-code-guards.sh — static CI guard locking K6/K7/K8 from cowork/DOC-VS-CODE-AUDIT.md.
+# doc-code-guards.sh — static guard locking documented invariants against the code.
 #
-# Fails (non-zero exit) the moment code drifts from a documented invariant that
-# the 2026-07-07 doc-vs-code audit verified. Each failure prints the failing
-# guard's ID and a human-readable reason so a broken build points straight at
-# the doc or the code that needs fixing.
+# Fails (non-zero exit) the moment code drifts from an invariant a doc asserts.
+# Each failure prints the failing guard's ID and a human-readable reason so a
+# broken run points straight at the doc or the code that needs fixing.
+#
+# Guard families actually registered in main() below (the K-numbers are
+# historical labels, not a contiguous series):
+#   K6a..K6g  the 2026-07-07 doc-vs-code audit's K6 findings
+#             (cowork/DOC-VS-CODE-AUDIT.md) — service inventory, no
+#             ScaledObject, autoscaling table, referenced script paths, alert
+#             names, archive-runbook banners, no per-component AGENTS.md.
+#   K7        NATS durable-consumer ackWait census (same audit).
+#   K8        agent-call timeout ceiling (same audit).
+#   K9        type-only constructor-injection check; delegates to the sibling
+#             scripts/checks/check-di-imports.mjs. Added after the audit.
+#   K9b       numeric claims in docs vs the artifact they describe. Added
+#             after the audit; second guard in the K9 family, hence K9b.
+#   K10       relative markdown links resolve. Added after the audit.
+#   K11       dual-backend services document DB_ENGINE. Added after the audit.
 #
 # Usage:
 #   scripts/checks/doc-code-guards.sh          # run all guards
@@ -13,8 +27,10 @@
 #
 # Requires: bash 3.2+ (macOS's default /bin/bash — several guards note this
 # explicitly and use case statements instead of associative arrays for it),
-# ripgrep (rg), fd, yq (mikefarah v4+). All are already used elsewhere in
-# scripts/ and DOCS/guides/doc-code-validation-tests.md.
+# ripgrep (rg, built with PCRE2 — K6d uses `-oP`), fd, yq (mikefarah v4+), and
+# node (K9 runs check-di-imports.mjs through it; the guard fails loudly if node
+# is not on PATH). All are already used elsewhere in scripts/ and
+# DOCS/guides/doc-code-validation-tests.md.
 #
 # Verify with: /bin/bash scripts/checks/doc-code-guards.sh
 #
@@ -298,8 +314,10 @@ k6g_no_component_agents_md() {
 # cowork/ASYNC-RESILIENCE-AUDIT.md F1).
 #
 # The allowlist below is NOT "one consumer" as a first cut of this guard
-# assumed — a full repo census (see report) found 9 registrations that omit
-# ackWaitMs entirely. All 9 have fast, I/O-bound handlers (Postgres/Mongo
+# assumed — a full repo census found registrations that omit ackWaitMs
+# entirely; the allowlist has grown to 11 entries as more landed (count them
+# in ack_wait_allowlist_reason below, against the 18 known_files). All have
+# fast, I/O-bound handlers (Postgres/Mongo
 # inserts, Redis writes, outbound HTTP sends, in-memory rule matching) with
 # no LLM/embedding calls or large-file processing, so the implicit 60s
 # default is safe for them today. They are allowlisted explicitly (with a
@@ -501,8 +519,8 @@ k9_di_type_imports() {
 #
 # Claim 1 — tracking-ingester golden row count. Three statements must agree
 # with the data-row count of golden/labeled.tsv, computed exactly the way
-# loadGolden() parses it (services/tracking-ingester-service/test/
-# classify.golden.spec.ts:24-46: non-blank lines, minus the single header):
+# `loadGolden()` in services/tracking-ingester-service/test/
+# classify.golden.spec.ts parses it (non-blank lines, minus the single header):
 #   * services/tracking-ingester-service/README.md  "across the N audited rows"
 #   * test/classify.golden.spec.ts                  it("parses N labeled data rows")
 #   * test/classify.golden.spec.ts                  expect(rows.length).toBe(N)

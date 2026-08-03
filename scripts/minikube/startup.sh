@@ -13,7 +13,7 @@
 # Pipeline:
 #   [--rebuild] minikube docker-env + rebuild-changed.sh
 #   [bootstrap] bootstrap-minikube-linux.sh        (bring up support + platform)
-#   gate:       scripts/smoke-test.sh              (readiness preflight — fail fast)
+#   gate:       scripts/smoke-test.sh              (readiness preflight, POLLED)
 #   forward:    kubectl port-forward svc/kourier   (-> http://localhost:8080)
 #   tenant:     setup-tenant.sh                    (tenant 'acme' + admin, idempotent)
 #   e2e:        scripts/e2e/http-workflow.sh       (http channel -> workflow create+run+assert)
@@ -27,7 +27,7 @@
 # Env overrides:
 #   MINIKUBE_PROFILE   (default minikube)
 #   API_URL            (default http://localhost:8080 via port-forward)
-#   BUILD_PARALLELISM  (default 2 — paces the 18-image build on modest machines)
+#   BUILD_PARALLELISM  (default 2 — paces the 20-image build on modest machines)
 #   READINESS_TIMEOUT_S (default 600 — minikube cold image pulls are slow)
 #   STORAGE_ENGINE=mongo  (passed through to bootstrap)
 #

@@ -1,7 +1,12 @@
 # scripts/e2e/README.md — end-to-end checks against the live dev cluster
 
-Four scripts exercise the deployed platform (OrbStack dev cluster) end to
-end. Each is dry-run-free by design: it creates real e2e-prefixed resources,
+Five scripts exercise the deployed platform (OrbStack dev cluster) end to
+end — `manifest-apply.sh`, `http-workflow.sh`, `connector-invoke.sh`,
+`teardown-regression.sh`, `long-agent-execution.sh` — plus `run-all.sh`,
+which orchestrates the first three (and, with `--only`, the fourth).
+`long-agent-execution.sh` is NOT reachable from `run-all.sh` at all.
+
+Each check is dry-run-free by design: it creates real e2e-prefixed resources,
 asserts against them, and tears itself down (idempotent, via an `EXIT`
 trap) — there is no `--dry-run` mode here, unlike `scripts/reset/`.
 
@@ -10,9 +15,12 @@ trap) — there is no `--dry-run` mode here, unlike `scripts/reset/`.
 Full coverage of the T04 declarative-provisioning apply engine
 (`manual-loops/declarative-provisioning.md`): plan -> apply -> re-plan
 (all-noop) -> re-apply (no-op) -> teardown, talking directly to
-provisioning-service's Knative ingress (no api-gateway route existed when
-this was written — Knative ksvc are activator/ingress-routed, so
-`kubectl port-forward` does not work on them).
+provisioning-service's Knative ingress. api-gateway proxy routes for
+provisioning DO exist now (`ProvisioningController`: manifests
+validate/PUT/GET/plan/apply + secrets) and `http-workflow.sh` uses them;
+this script keeps hitting the service's own ingress, so it covers
+provisioning-service with the gateway out of the path. Knative ksvc are
+activator/ingress-routed, so `kubectl port-forward` does not work on them.
 
 Also covers, in the same run:
 - T06 knowledge-base documents (inline + `file:` tar bundle, re-embed-only-
@@ -173,9 +181,43 @@ assertion pass. Run it explicitly:
 ./scripts/e2e/run-all.sh --only teardown-regression
 ```
 
+## 6. Long-running agent executions — `long-agent-execution.sh` (standalone)
+
+Proves the async execution contract for an agent execution that outlives any
+default HTTP client timeout, on the real pipeline (api-gateway ->
+ai-agent-gateway -> JetStream -> agent-ai-service -> Redis projector). The
+slowness is injected by the env-gated delay hook
+(`services/agent-ai-service/src/nats-handlers/test-delay.ts`): a per-execution
+`metadata.__test_delay_ms`, honoured only when `AGENT_TEST_DELAY_ENABLED=true`
+is live on the running `agent-ai-service` revision — the script's preflight
+FAILS LOUD if it is not, rather than passing vacuously.
+
+Asserts, in order: an immediate 202 handle (< `E2E_LONG_HANDLE_MAX_S`, default
+5 s) with the curl process exiting while the execution is still non-terminal;
+a contention probe (a normal workflow run must complete within
+`E2E_LONG_PROBE_BUDGET_S`, default 90 s, while the long execution is still
+running); completion with duration >= the injected delay plus the hook's own
+log line for that execution id; zero JetStream redeliveries and a drained
+`num_ack_pending`; and `kubectl top pod` before/during/after, of which only
+the during-wait CPU is a hard assertion (`E2E_LONG_CPU_CEILING_MILLICORES`,
+default 500m). A final phase repeats the run through a workflow `agentCall`.
+
+Defaults: `E2E_LONG_DELAY_MS` / `E2E_WORKFLOW_DELAY_MS` = 120000 (the service
+caps both at 600000). Cleanup runs from an `EXIT` trap and is skipped with
+`E2E_KEEP=1`.
+
+**Not orchestrated by `run-all.sh`** — it has no stage entry there. Run it
+directly:
+
+```bash
+./scripts/e2e/long-agent-execution.sh
+```
+
 ## Full suite runtime
 
 ~2-4 minutes total for the three default stages, dominated by
 `http-workflow.sh`'s Temporal execution polling.
 `teardown-regression.sh` adds another manifest-apply.sh-sized round trip
-(~30-60s) when run explicitly.
+(~30-60s) when run explicitly. `long-agent-execution.sh` is the slowest of
+all and is not part of any suite: it deliberately waits out two 120 s
+injected delays.

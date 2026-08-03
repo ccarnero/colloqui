@@ -1,4 +1,46 @@
 #!/usr/bin/env bash
+#
+# port-forward.sh — hold open the dev port-forwards for one environment.
+#
+# Forwards, then blocks on `wait` until interrupted (an EXIT/INT/TERM trap
+# kills every child and removes its log file):
+#   platform-services-<env>  api-gateway, admin-console
+#   support-services-<env>   nats, temporal-ui, grafana, tempo
+#                            (+ mongo-platform / mongo-usage only when
+#                             STORAGE_ENGINE=mongo)
+#
+# Failure contract — three FATAL paths, all `exit 1`:
+#   - no reachable cluster (detect_context: neither the OrbStack context nor
+#     minikube profile '${MINIKUBE_PROFILE}'), before anything else runs;
+#   - the platform namespace `platform-services-<env>` does not exist,
+#     checked before the first forward is attempted;
+#   - no forward was ever STARTED, i.e. `FORWARD_PIDS` ends up empty. Only
+#     the paths that bail BEFORE `kubectl port-forward` is backgrounded can
+#     cause this: a platform ksvc that never goes Ready (skipped by the
+#     caller), `lookup_pod` finding no running pod, an absent support
+#     Service, or the support namespace missing so that block never runs.
+#     A forward whose local port never opens does NOT count — its pid is
+#     appended before the readiness wait, so it is already "started" and
+#     only warns.
+# Everything else warns and continues — every per-service forward is called
+# with `|| true`, so none of these can abort the run:
+#   - a MISSING SUPPORT namespace skips the whole support block;
+#   - in the platform namespace, a ksvc that never goes Ready or has no
+#     running pod is skipped;
+#   - in the support namespace, an absent Service is skipped;
+#   - in either, a forward whose local port never opens is reported and
+#     skipped.
+# A missing kourier namespace or an unreachable ingress is also non-fatal:
+# it only downgrades the ingress URLs printed in the summary.
+#
+# After the forwards are up it prints the ingress/host map and the trace
+# console entry points from DOCS/guides/trace-console.md (Grafana
+# tag-filtered dashboards, Tempo Explore, Temporal UI, the admin-console
+# trace page).
+#
+# Usage / env: run `./port-forward.sh --help` — usage() below is the
+# authoritative list of ports and overrides.
+#
 set -euo pipefail
 
 MINIKUBE_PROFILE="yoizen-arch"

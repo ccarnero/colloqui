@@ -144,7 +144,7 @@ final per-file dispositions.
 - [x] T04 — Audit: the 20 service READMEs
 - [x] T05 — Audit: packages + sdk docs
 - [x] T06 — Audit: integrations, demos, examples
-- [ ] T07 — Audit: scripts (docs AND behavior contracts)
+- [x] T07 — Audit: scripts (docs AND behavior contracts)
 - [ ] T08 — Audit: root docs, cowork notes, skills
 - [ ] T09 — Structure proposal + purge list ⟶ HUMAN DECISION ROUND
 - [ ] T10 — Execute the approved structure + purge
@@ -340,3 +340,58 @@ command did not reproduce its own number, and 13 happened to be both the
 correct sample total and the wrong unscoped count. Now scoped to
 `integrations demos sdk/examples` and verified: 11 / 13 / 2.
 G0 green every attempt; docs-only (G1/G6b skipped).
+
+### T07 — 2026-08-03
+
+31/31 verdicts with evidence: 23 FIXED, 8 TRUE. Every `.sh` change is
+comment-only — verified each round by a scripted scan of non-comment
+added/removed lines across `git diff -- '*.sh'` (empty), plus `bash -n`
+on all 28 scripts. Biggest drifts: `long-agent-execution.sh` (1409 lines)
+was documented NOWHERE and is reachable from no orchestrator;
+`purge-temporal.sh`'s four runbook paths were all dead and its header
+asserted an HA + split-visibility topology that was REVERTED (the code
+auto-detects and resolves precisely because of that); `http-workflow.sh`
+— the G6b script itself — claimed `workflowComparable` is existence-only
+and `workflows-writer.ts`'s `update()` a no-op stub, when `update()` is a
+real PUT; `purge-circuit-breakers.sh` listed two "NEVER touched" Redis
+prefixes that do not exist (`http:cache:*`, `adapter:swr:*` vs the real
+`httpcache:v1:*`, `adapter:config:*`); `doc-code-guards.sh` — this loop's
+own gate — advertised "K6/K7/K8" while `main()` runs 13 guards. Two
+scripts had NO header at all (`smoke-test.sh`, `port-forward.sh`) and
+were given one, verified line by line. Escalations E24–E35, all behavior
+(never fixed here): highlights are E27 `smoke-test.sh` gates on 8 of 11
+worker Deployments while both startup orchestrators poll it, E29 dev-mode
+flips 1 of connector-runtime's 3 Deployments while `rebuild-redeploy.sh`
+rolls all 3, E33 a phantom `connector-runtime` ksvc, E34
+`DOCS/guides/dev-mode.md` carrying the same omissions fixed in the
+scripts. Machine-verified TRUE and worth recording: `rebuild-redeploy.sh`'s
+mapping now diffs EMPTY against the 11 base Deployments — the 2026-08-01
+agent-admin worker fix is complete — and `reset-tenant.sh`'s 18 tables ≡
+INVENTORY's list ≡ INVENTORY's TRUNCATE block.
+Four attempts, three rejection rounds, every one finding something real.
+R1: the fix REWROTE A TRUE SENTENCE INTO A FALSE ONE in
+`kustomize-safe-apply.sh` (claimed the detector counts `^kind:` lines "so
+it is not limited to `$patch: delete` files" — backwards; the gate is
+`grep -cE '^\$patch: delete' > 1` in `fix_multidelete_in_tree`, and the
+`^kind:` count is a post-gate guard inside the splitter) — reverted
+byte-identical to HEAD, row FIXED→TRUE; and the brand-new
+`port-forward.sh` header invented a failure contract ("never fatal")
+contradicted by a hard `exit 1` on a missing platform namespace. R2: E30
+certified a false negative — `rebuild-changed.sh` DOES spill shell into
+`--help` (header ends 35, `usage()` is `sed -n '3,40p'`) — and
+`purge-temporal.sh`'s header still asserted, in the ALLOWED comment
+surface, the very topology E35 escalates, which made E35's own premise
+false. R3: a count carrying "Rendered and confirmed" that an actual
+render contradicted (5 printed lines, 3 live shell, ONE colour line — not
+"two colour lines"). Requiring the "N printed, M live shell" form then
+surfaced a second miscount nobody had named. The full sweep of
+`purge-temporal.sh`'s header found EIGHT stale claims across three
+passes, incl. an exit-code-1 recovery command (`kubectl scale
+deploy/temporal-{frontend,history,matching,worker}`) that fails outright
+against the single `temporal` Deployment the cluster runs. Final
+2× APPROVED. Structural note for T09: that header states the same
+topology fact in ~8 independent places with no single source of truth —
+the same shape as the `usage()`-heredoc duplication behind E33/E35.
+Gates: G0 green every attempt; `bash -n` clean; **G6b
+`./scripts/e2e/http-workflow.sh` run against the LIVE cluster four times,
+green every time** (all 17 stages + cleanup).

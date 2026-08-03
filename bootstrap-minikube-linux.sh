@@ -26,13 +26,21 @@ set -euo pipefail
 #
 # Prerequisites:
 #   - minikube installed and started (docker driver): minikube start -p minikube
-#   - docker, kubectl, helm, npm, minikube on PATH.
+#   - docker, kubectl, helm, npm, minikube on PATH (all five are
+#     preflight-checked).
+#   - sudo: the run rewrites a managed `yoizen-dev` block in /etc/hosts. If
+#     sudo is unavailable it warns and prints the lines to add by hand
+#     instead of failing.
 #
-# Usage:
+# Usage (run `--help` for the full flag list — usage() below is authoritative):
 #   ./bootstrap-minikube-linux.sh                     # full dev bring-up (support + platform)
 #   ./bootstrap-minikube-linux.sh support-services    # infra only
 #   ./bootstrap-minikube-linux.sh platform-services   # build + deploy only
+#   ./bootstrap-minikube-linux.sh --smoke             # bring-up + scripts/smoke-test.sh
+#   ./bootstrap-minikube-linux.sh --storage-engine=mongo support-services
 #   STORAGE_ENGINE=mongo ./bootstrap-minikube-linux.sh support-services
+#   BUILD_PARALLELISM=4 ./bootstrap-minikube-linux.sh # concurrent docker builds (default 2)
+#   READY_WAIT=600s ./bootstrap-minikube-linux.sh     # per-resource readiness wait
 # =============================================================================
 
 ALL_GROUPS=(support-services platform-services)

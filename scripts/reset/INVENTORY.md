@@ -16,9 +16,9 @@ Conventions:
 
 | Stream | Scope | Subjects | Created by | Citation |
 |---|---|---|---|---|
-| `INGRESS-<TENANT_UPPER>` | Per tenant | `evt.<tenant>.>` | Created idempotently from a SINGLE creator, `ensureTenantIngressStream`, which all services delegate to (since 2026-07-31 `agent-admin-service` and `agent-memory-service` no longer create it on their own) | `packages/database/src/nats-provider.ts` (`ensureTenantIngressStream`), `packages/shared/src/tenant-stream.constants.ts:58-59` |
-| `DLQ-<tenantId>` | Per tenant | `dlq.<tenantId>.>` | `packages/database/src/nats-dlq.ts:30-58` (`ensureTenantDlqStream`), invoked automatically when any consumer throws `PermanentError` | `packages/database/src/multi-tenant-consumer-manager.ts:447`; `packages/shared/src/channel.constants.ts:70-91` |
-| `DLQ` (global, legacy) | Global | `dlq.webhook` (previously `dlq.>`) | No live `streams.add` found in code — only mentioned in a historical comment | `packages/database/src/nats-provider.ts:96-107`; `packages/shared/src/constants.ts:1-11` — **UNCERTAIN, see below** |
+| `INGRESS-<TENANT_UPPER>` | Per tenant | `evt.<tenant>.>` | Created idempotently from a SINGLE creator, `ensureTenantIngressStream`, which all services delegate to (since 2026-07-31 `agent-admin-service` and `agent-memory-service` no longer create it on their own) | `packages/database/src/nats-provider.ts` (`ensureTenantIngressStream`); the name is built by `getTenantStreamName` in `packages/shared/src/tenant-stream.constants.ts` |
+| `DLQ-<tenantId>` | Per tenant | `dlq.<tenantId>.>` | `ensureTenantDlqStream` in `packages/database/src/nats-dlq.ts`, invoked automatically when any consumer throws `PermanentError` | `MultiTenantConsumerManager.resolvePermanentHandler` / `buildTenantDlqHandler` in `packages/database/src/multi-tenant-consumer-manager.ts`; `packages/shared/src/channel.constants.ts` |
+| `DLQ` (global, legacy) | Global | `dlq.webhook` (previously `dlq.>`) | No live `streams.add` found in code — `DLQ_STREAM_NAME` has no non-doc consumer left | `DLQ_STREAM_NAME` / `DLQ_STREAM_SUBJECTS` / `DLQ_STREAM_MAX_BYTES` in `packages/shared/src/constants.ts`, whose own doc comment explains the coexistence with `DLQ-<tenant>` — **UNCERTAIN, see below** |
 | `PLATFORM_TENANTS` | Global (control-plane) | `platform.tenant.>` | `tenant-service`, `RetentionPolicy.Workqueue` (self-cleans on ack) | `services/tenant-service/src/providers/nats.module.ts:23-35`; `packages/shared/src/tenant-events.ts:30-33` |
 | `GATEWAY_AUDIT` | Global | `audit.gateway.>` | `audit-service` (consumer) / `api-gateway` (publisher) | `services/audit-service/src/providers/nats.provider.ts:34-51`; `packages/shared/src/constants.ts:81-85` |
 
@@ -64,7 +64,7 @@ Design note: the durables (definition, `deliver_policy`, `ack_policy`, `filter_s
 
 ## 3. DLQ
 
-- Mechanism: any consumer under `MultiTenantConsumerManager` that throws `PermanentError` terminates the message (`msg.term()`) and republishes it on `dlq.<tenantId>.<original-subject>` inside `DLQ-<tenantId>`, with `X-Dlq-*` headers. Citation: `packages/database/src/multi-tenant-consumer-manager.ts:442-467`, `packages/database/src/nats-consumer-runner.ts:497-563`.
+- Mechanism: any consumer under `MultiTenantConsumerManager` that throws `PermanentError` terminates the message (`msg.term()`) and republishes it on `dlq.<tenantId>.<original-subject>` inside `DLQ-<tenantId>`, with `X-Dlq-*` headers. Citation: `MultiTenantConsumerManager.buildTenantDlqHandler` (`packages/database/src/multi-tenant-consumer-manager.ts`) and `NatsConsumerRunner.handlePermanent` (`packages/database/src/nats-consumer-runner.ts`).
 - All durables in the §2 table can generate DLQ traffic.
 - `usage-aggregator-service` reads back from the DLQ streams — purging them also resets its aggregation state.
 - Legacy global stream `DLQ` / subject `dlq.webhook`: see UNCERTAIN.
@@ -152,7 +152,7 @@ Everything above is DATA (derived caches, counters, breakers) except what is mar
 
 ## UNCERTAIN — decide before approving
 
-1. **Legacy global stream `DLQ` / subject `dlq.webhook`** (`packages/shared/src/constants.ts:1-11`) — no live `streams.add` in code, only mentioned in a historical comment (`packages/database/src/nats-provider.ts:96-107`). It may still exist in the dev NATS from an old deploy. **Verify with `nats stream ls` live before deciding whether to purge/delete it.**
+1. **Legacy global stream `DLQ` / subject `dlq.webhook`** (`DLQ_STREAM_NAME` in `packages/shared/src/constants.ts`) — no live `streams.add` in code; the only remaining references are that constant, its doc comment, and `packages/shared/README.md`, both of which label it **Legacy**. It may still exist in the dev NATS from an old deploy. **Verify with `nats stream ls` live before deciding whether to purge/delete it.**
 2. **`agent_versions`** (Postgres and Mongo) — history of published agent versions. Is it CONFIG (config history) or regenerable DATA? I recommend excluding it from the reset by default.
 3. **`document_chunks` / `document_chunks_embedding`** (Postgres, agent-admin-service) — ingested KB content and its embeddings. It is user-editable content, not conversational/event data. I recommend treating it as CONFIG/content and excluding it, unless a full KB reset is wanted.
 4. **`credentials` (Mongo, agent-admin-service)** — classified CONFIG because it stores connector credentials, but confirm it does not duplicate a token-cache function.
@@ -160,7 +160,7 @@ Everything above is DATA (derived caches, counters, breakers) except what is mar
 6. **`adapter:oauth:<adapterId>` (Redis)** — cached OAuth2 tokens for adapters. It is reconstructible (re-authenticates), but it touches credential material — ask for explicit confirmation before including it.
 7. **`agent-scheduler-service` Redis client** — provider instantiated (`services/agent-scheduler-service/src/providers/redis.provider.ts:1-38`) but no confirmed write sites in this trace. Confirm with the owner whether it is used and what it stores.
 8. **Claim-check buckets `PAYLOAD-<tenant>`** — no reliable purge/TTL (see §1). Classified DATA, but the script must purge objects explicitly instead of relying on expiration.
-9. **audit-service's `CLAUDE.md` is outdated**: it documents a global `EVENTS` stream and an `audit-writer` durable that no longer exist in the code (replaced by `audit-events`/`channel-audit`/`execution-audit` over `INGRESS-*`, per the comment in `services/audit-service/src/providers/nats.provider.ts:27-33`). Do not use that doc as a source of truth.
+9. **RESOLVED — audit-service's `CLAUDE.md` is gone.** When this inventory was written it documented a global `EVENTS` stream and an `audit-writer` durable that did not exist in the code. That file no longer exists (per-component agent files were absorbed into the service READMEs, and `scripts/checks/doc-code-guards.sh` guard K6g now forbids re-creating them). The live durables remain `audit-events`/`channel-audit`/`execution-audit` over `INGRESS-*`, per the comment in `services/audit-service/src/providers/nats.provider.ts`.
 10. **Config drift in `INGRESS-<tenant>`**: RESOLVED since this inventory was written. Since 2026-07-31 `ensureTenantIngressStream` is the single creator (see §1), and since 2026-08-01 the provisioning path applies the tenant's messaging tier (`DOCS/messaging/tenant-messaging-tiers.md`) while every lazy call site keeps the flat fallback. Streams created BEFORE those dates may still carry whichever config won the old race — the caution stands: do not "fix" drift by recreating streams from the reset script; tier reconciliation (PATCH `messagingTier`) is the sanctioned path.
 
 ---

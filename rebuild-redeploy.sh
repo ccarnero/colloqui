@@ -112,10 +112,23 @@ build_image() {
 
 # Phase 1.5 mapping: each "logical service" (the directory name under
 # services/ used as the Docker tag) translates into 0..N Knative Services
-# (`*-api`) and 0..N plain Deployments (`*-worker` / Temporal workers).
+# and 0..N plain Deployments (`*-worker`, Temporal workers, the
+# connector-runtime facades). Only SPLIT services carry the `*-api` suffix
+# on their ksvc; single-ksvc services (auth-service, agent-admin-service,
+# provisioning-service, ...) keep the bare name, which is why the default
+# case below echoes "$svc" unchanged.
 #
-# Implemented as two parallel pure functions instead of a Bash associative
+# Implemented as parallel pure functions instead of a Bash associative
 # array so the script stays portable to bash 3.x (macOS default).
+#
+# Coverage, machine-diffed against knative/services/base: get_deployment_names
+# maps EXACTLY the 11 worker Deployments, get_cronjob_names the 1 CronJob, and
+# get_ksvc_names all 18 ksvc — plus one phantom: connector-runtime is
+# Deployment-only but has no empty case here, so the default arm below emits
+# "connector-runtime" as a ksvc and rollout_ksvc logs a harmless "not found —
+# skipping" warning on every connector-runtime rebuild. Same footgun the
+# tracking-ingester-service case exists to avoid; see E33 in
+# cowork/DOCS-TRUTH-LEDGER.md (adding the case is a behavior change).
 get_ksvc_names() {
   local svc="$1"
   case "$svc" in

@@ -35,28 +35,33 @@ fi
 #          jsFunction that console.logs and a T06 endpointCall probe, and
 #          (workflow 2) an agentCall bound to the echo agent via the SCALAR
 #          `agentRef` substitution.
-#      DEVIATION (found during migration, reported): workflow-service's own
-#      `workflowComparable` (T03) is existence-only — the apply engine's
-#      `update()` path for a workflow is a documented no-op stub
-#      (`workflows-writer.ts`), so re-applying the SAME workflow name would
-#      NEVER re-point a stale trigger's `accountIds` at a new run's account.
-#      Unlike the channel, the two e2e workflow NAMES therefore also embed
-#      this run's nonce — every run creates a brand-new workflow pinned from
-#      birth to that same run's fresh channel, rather than relying on an
-#      update path that cannot exist for workflows today. The channel-account
-#      lookup for the appSecret (below) and the workflow enable/disable
+#      NONCE-SCOPED WORKFLOW NAMES: unlike the channel, the two e2e workflow
+#      NAMES also embed this run's nonce, so every run creates a brand-new
+#      workflow pinned from birth to that same run's fresh channel. This
+#      started as a workaround for a gap that NO LONGER EXISTS: at migration
+#      time `workflowComparable` was existence-only and `workflows-writer.ts`
+#      had a no-op `update()` stub, so re-applying the same workflow name
+#      could never re-point a stale trigger's `accountIds`. Since
+#      manual-loops/provisioning-manifest-gaps-5.md, `workflowComparable`
+#      (plan/lib/comparable-fields.ts) is CONTENT-AWARE and
+#      `workflows-writer.ts`'s `update()` really does PUT /workflows/:id.
+#      The nonce naming is KEPT anyway — it guarantees run isolation for
+#      concurrent/leftover runs — but it is now a choice, not a workaround.
+#      The channel-account lookup for the appSecret (below) and the
+#      workflow enable/disable
 #      toggle (stage 6/8) are UNCHANGED by this — they operate on whatever
 #      externalId the apply response reports for this run's resources.
 #      The endpointCall's `adapterId` stays the RAW pre-existing adapter id
 #      (E2E_ENDPOINT_ADAPTER_ID) exactly as before — it is a PRE-EXISTING
 #      connector-admin adapter, not manifest-created, so it is never wrapped
 #      in a `{ connectorRef: ... }` ref-object. Verified in
-#      `substitute-symbolic-refs.ts` (services/provisioning-service/src/
-#      modules/apply/lib/substitute-symbolic-refs.ts:258-303,360-362): `args.
-#      adapterId` IS in `SUBSTITUTION_ALLOWLIST` (connectorRef), but the
-#      walker only substitutes a value shaped `{ connectorRef: <name> }`
-#      (`readRecognizedRefObject`); a plain string at that same allowlisted
-#      key is "NOT a recognized single-key ref-object ... legitimately passes
+#      services/provisioning-service/src/modules/PLAN/lib/ (not apply/):
+#      `args.adapterId` IS in `SUBSTITUTION_ALLOWLIST`
+#      (substitution-allowlist.ts, refType `connectorRef`), but
+#      substitute-symbolic-refs.ts only substitutes a value shaped
+#      `{ connectorRef: <name> }` (`readRecognizedRefObject`); a plain
+#      string at that same allowlisted key is "NOT a recognized single-key
+#      ref-object ... legitimately passes
 #      through untouched" and falls through to the primitive case, returned
 #      byte-identical. So a raw UUID string at an allowlisted key is safe by
 #      design, not merely by accident.
@@ -227,15 +232,14 @@ PASSWORD="${E2E_PASSWORD:-admin123}"
 MANIFEST_NAME="e2e-http-workflow"
 ACCOUNT_EXTERNAL_PREFIX="manifest:e2e-http-workflow"
 CHANNEL_NAME_PREFIX="e2e-http-workflow"
-# DEVIATION (found during migration, reported in the header comment above):
-# workflow-service's `workflowComparable` is existence-only in the apply
-# engine (`workflows-writer.ts`'s `update()` is a documented no-op stub), so
-# a workflow name reused across runs could never have its trigger
-# `accountIds` re-pointed at a new run's account via manifest apply. Both e2e
-# workflow NAMES therefore also embed this run's nonce — a fresh
-# manifest-created workflow every run, pinned from birth to that same run's
-# channel — so `cleanup_e2e_resources` now sweeps workflows by NAME PREFIX
-# (like the channel account) instead of the old fixed-name exact match.
+# Both e2e workflow NAMES embed this run's nonce — a fresh manifest-created
+# workflow every run, pinned from birth to that same run's channel — so
+# `cleanup_e2e_resources` sweeps workflows by NAME PREFIX (like the channel
+# account) instead of a fixed-name exact match. This started as a workaround
+# for `workflowComparable` being existence-only and `workflows-writer.ts`'s
+# `update()` being a no-op stub; both were since fixed (see the header
+# comment's NONCE-SCOPED WORKFLOW NAMES note), and the nonce naming is kept
+# for run isolation.
 WORKFLOW_NAME_PREFIX="e2e-http-log"
 # The echo agent + agent-calling workflow sharing the same http trigger, so
 # the happy-path run also produces a real runtime execution (agent-ai-service)
@@ -425,9 +429,9 @@ cleanup_e2e_resources() {
   # Workflow definitions — DELETE /api/workflows/:id (same endpoint apply's
   # own workflow-writer POST uses). T2: matched by NAME PREFIX, not exact
   # name — every run's manifest-applied workflows carry a per-run nonce
-  # suffix (see the header comment's DEVIATION note on workflowComparable
-  # being existence-only), so this also reclaims any e2e-prefixed stragglers
-  # left by a crashed prior run, same as the http-account sweep below.
+  # suffix (see the header comment's NONCE-SCOPED WORKFLOW NAMES note), so
+  # this also reclaims any e2e-prefixed stragglers left by a crashed prior
+  # run, same as the http-account sweep below.
   local wf_ids
   wf_ids="$(api GET /api/workflows 2>/dev/null \
     | jq -r ".[] | select(.name | startswith(\"${WORKFLOW_NAME_PREFIX}\") or startswith(\"${AGENT_WORKFLOW_NAME_PREFIX}\")) | .id" 2>/dev/null || true)"

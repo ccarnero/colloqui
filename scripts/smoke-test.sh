@@ -1,4 +1,22 @@
 #!/usr/bin/env bash
+#
+# smoke-test.sh — READINESS PREFLIGHT for the platform namespace.
+#
+# Despite the name it sends no traffic and asserts no behavior: it only reads
+# the cluster and exits non-zero if any workload it knows about is not up.
+# Two checks, both in preflight_check():
+#   - every ksvc in ALL_KNATIVE_SERVICES has Ready=True
+#   - every Deployment in ALL_PLAIN_DEPLOYMENTS has availableReplicas >= 1
+# Nothing else runs; main() calls preflight_check() and stops.
+#
+# Used as the readiness gate of scripts/{orbstack,minikube}/startup.sh, which
+# POLL it in an `until` loop until it passes or their timeout expires.
+#
+# Env:
+#   SMOKE_TEST_NAMESPACE  namespace to check (default platform-services-dev)
+#
+# Exit codes: 0 = every listed workload is ready; 1 = at least one is not.
+#
 set -euo pipefail
 
 NAMESPACE="${SMOKE_TEST_NAMESPACE:-platform-services-dev}"
@@ -36,8 +54,15 @@ ALL_KNATIVE_SERVICES=(
 )
 
 # Plain `apps/v1.Deployment` worker workloads (fixed replica count; no KEDA
-# in developer mode). All run at min-scale=max-scale=1, so available < 1
-# always indicates a crash or bad config — treat it as preflight failure.
+# in developer mode). Every worker Deployment under knative/services/base
+# declares `replicas: 1`, so available < 1 always indicates a crash or bad
+# config — treat it as preflight failure.
+#
+# INCOMPLETE vs the manifests: knative/services/base declares 11 worker
+# Deployments; the list below covers 8. connector-runtime-http,
+# connector-runtime-invoke and tracking-ingester-worker are NOT checked, so
+# this gate can pass while they are down. Fixing that is a behavior change,
+# tracked as E27 in cowork/DOCS-TRUTH-LEDGER.md.
 ALL_PLAIN_DEPLOYMENTS=(
   workflow-worker
   connector-runtime

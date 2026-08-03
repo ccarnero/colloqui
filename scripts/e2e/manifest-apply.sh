@@ -28,12 +28,18 @@ fi
 # (all-noop) -> re-apply (no-op) -> teardown, driven directly against the
 # deployed provisioning-service.
 #
-# No api-gateway route exists yet (that lands in T07), so this script talks
-# to the Knative ingress hostnames of the services directly — the SAME
-# transport pattern every other e2e script uses (see http-workflow.sh:
-# dev.local base URLs + Host header + --resolve for macOS mDNS). Knative
-# ksvc Services are activator/ingress-routed, so `kubectl port-forward`
-# does NOT work on them — hence direct ingress URLs, never port-forward.
+# This script talks to the Knative ingress hostnames of the services
+# DIRECTLY — the SAME transport pattern every other e2e script uses (see
+# http-workflow.sh: dev.local base URLs + Host header + --resolve for macOS
+# mDNS). Knative ksvc Services are activator/ingress-routed, so
+# `kubectl port-forward` does NOT work on them — hence direct ingress URLs,
+# never port-forward. NOTE: the api-gateway proxy routes this script
+# predates now EXIST (api-gateway's ProvisioningController: POST
+# manifests/validate, PUT/GET manifests/:name, POST manifests/:name/plan,
+# POST manifests/:name/apply, PUT secrets/:name, GET secrets) and
+# http-workflow.sh drives provisioning through them; this script still
+# targets provisioning-service's own ingress, so it exercises the service
+# without the gateway in the path.
 #
 #   1. PUT a minimal manifest (one inbound `http` channel + one `jsFunction`
 #      workflow — the smallest shape satisfying the T01 structural rules:

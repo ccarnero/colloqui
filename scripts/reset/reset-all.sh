@@ -8,11 +8,18 @@
 #
 # See scripts/reset/README.md for what each stage clears and preserves.
 #
-# Flags:
-#   --dry-run   (default) pass --dry-run down to every child script;
-#                 nothing is mutated
-#   --apply     pass --apply down to every child script
-#   --yes / -y  pass --yes down to every child script (skip confirmations)
+# Flags (the child scripts do NOT share one flag vocabulary — this script
+# translates per stage; see the per-stage notes further down):
+#   --dry-run   (default) nothing is mutated. reset-dev.ts gets NO flag at
+#                 all (it is dry-run by default); purge-temporal.sh and
+#                 purge-circuit-breakers.sh get `purge --dry-run`;
+#                 reset-tenant.sh gets `--dry-run`.
+#   --apply     reset-dev.ts and reset-tenant.sh get `--apply`;
+#                 purge-temporal.sh / purge-circuit-breakers.sh have no
+#                 `--apply` flag — they get the bare `purge` subcommand,
+#                 which IS their mutating mode.
+#   --yes / -y  passed down to every stage that has it (skip confirmations);
+#                 for reset-dev.ts only alongside --apply.
 #
 # Exit codes:
 #   0  every stage succeeded
