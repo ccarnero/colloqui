@@ -64,25 +64,32 @@ See [DOCS/guides/dev-mode.md](DOCS/guides/dev-mode.md) for full documentation.
 ### Smoke test
 
 ```bash
-ADMIN_EMAIL=admin@yoizen.test ADMIN_PASSWORD=admin bash scripts/smoke-test.sh
-# or with client credentials:
-E2E_CLIENT_ID=... E2E_CLIENT_SECRET=... bash scripts/smoke-test.sh
+bash scripts/smoke-test.sh
+# non-default namespace:
+SMOKE_TEST_NAMESPACE=platform-services-dev bash scripts/smoke-test.sh
 ```
 
 Runs a Kubernetes readiness preflight against the dev cluster: every configured
-Knative Service and plain worker Deployment must be Ready. It does **not** run
-the workflow/browser e2e suites. Use `scripts/e2e/http-workflow.sh` for the
-HTTP workflow smoke path, and the Playwright specs under `e2e/` for browser
-flows.
+Knative Service and plain worker Deployment must be Ready. It sends no traffic
+and needs no credentials — `SMOKE_TEST_NAMESPACE` (default
+`platform-services-dev`) is the only environment variable it reads. It does
+**not** run the workflow/browser e2e suites. Use `scripts/e2e/http-workflow.sh`
+for the HTTP workflow smoke path, and the Playwright specs under `e2e/` for
+browser flows.
 
 ### Verify a fresh cluster (recommended order)
 
 ```bash
-./scripts/smoke-test.sh                          # 1. all 25 workloads Ready
+./scripts/smoke-test.sh                          # 1. 26 workloads Ready (18 ksvc + 8 worker Deployments)
 E2E_API_URL=http://localhost:8080 \
   ./scripts/e2e/http-workflow.sh                 # 2. HTTP → workflow → jsFunction chain
-cd sdk && SDK_E2E=1 npm run test:e2e             # 3. full API contract (57 assertions via @yoizen/platform-sdk)
+cd sdk && SDK_E2E=1 npm run test:e2e             # 3. full API contract (62 cases across 9 files, via @yoizen/platform-sdk)
 ```
+
+The preflight covers `ALL_KNATIVE_SERVICES` (18/18 of the ksvc manifests) and
+`ALL_PLAIN_DEPLOYMENTS` — 8 of the 11 worker Deployments declared under
+`knative/services/base`. `connector-runtime-http`, `connector-runtime-invoke`
+and `tracking-ingester-worker` are **not** checked; see that script's header.
 
 Steps 2–3 require the tenant seed (above) and the port-forward on `localhost:8080`.
 The SDK e2e suite is gated behind `SDK_E2E=1` (plain `npm test` stays offline-safe)
@@ -138,7 +145,9 @@ STORAGE_ENGINE=mongo BUILD_PARALLELISM=2 ./bootstrap-minikube-linux.sh   # mongo
 
 Builds images into minikube's own daemon (`minikube docker-env`) and applies
 `infrastructure/overlays/local` (relies on minikube's default `standard`
-StorageClass). `BUILD_PARALLELISM=2` paces the 18-image build on smaller machines.
+StorageClass). `BUILD_PARALLELISM=2` paces the 20-image build on smaller
+machines — the build set is `YZ_SERVICES` in `services.conf`, one image per
+directory under `services/`.
 
 ### Access (ingress)
 
@@ -217,8 +226,8 @@ and clear that residue without touching topology, schemas, or credentials:
 
 | Script | Clears | Notes |
 |---|---|---|
-| `scripts/reset/purge-circuit-breakers.sh` | Redis `cb:*` breaker state (connector-runtime HTTP/agent, channel-service egress) | A tripped breaker's cooldown (~100s) otherwise fails every subsequent call with `Circuit breaker open ... (cooldown)` until it expires on its own. `--dry-run` / `count` subcommand available. |
-| `scripts/reset/purge-temporal.sh` | Temporal workflow/history/task-queue tables (`postgres-temporal`, `postgres-temporal-visibility`) | Full DB recreate takes ~2-4min; this truncates in ~5-10s. Scales Temporal to 0 first to avoid lock contention. `--dry-run` / `counts` subcommand available. |
+| `scripts/reset/purge-circuit-breakers.sh` | Redis breaker state under the three `DEFAULT_PREFIXES`: `cb:workflow:http`, `cb:workflow:agent`, `cb:channel:egress` (connector-runtime and workflow-service HTTP/agent calls, channel-service egress) | A tripped breaker's cooldown (~100s) otherwise fails every subsequent call with `Circuit breaker open ... (cooldown)` until it expires on its own. `--dry-run` / `count` subcommand available. |
+| `scripts/reset/purge-temporal.sh` | Temporal workflow/history/task-queue tables on `postgres-temporal`, plus `executions_visibility` wherever `resolve_visibility_target` finds it | Full DB recreate takes ~2-4min; this truncates in ~5-10s. Scales the Temporal Deployments it detects to 0 first (`ensure_deployments_exist`: the 4-role HA set, or the single `temporal` auto-setup Deployment this cluster runs) to avoid lock contention. `--dry-run` / `counts` subcommand available. |
 | `scripts/reset/reset-dev.ts` | JetStream stream contents + claim-check payloads, per-tenant Postgres/Mongo message & event tables, Redis caches/counters | See `scripts/reset/INVENTORY.md` for the full DATA-vs-CONFIG classification this script implements. Dry-run by default; `--apply` (+ confirmation) actually deletes. Requires `pnpm install` at the repo root once. |
 | `scripts/reset/reset-tenant.sh` | Tenant resource *definitions* (workflows, agents, channel accounts, etc.) + `tracking.tracked_events` | Manifest-from-zero wipe; preserves `tenant_users`/`tenant_roles`/`credentials`. `--dry-run` by default. |
 | `scripts/reset/reset-all.sh` | Orchestrates all four scripts above in order | One-shot full dev-environment wipe. `--dry-run` by default. |

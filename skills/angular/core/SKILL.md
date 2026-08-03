@@ -8,13 +8,35 @@ metadata:
   version: "1.0"
 ---
 
+> **Applies to `services/admin-console`** (`@angular/core: ^21.2.0`), the only
+> Angular app in this repo. Standalone components, signals, `input()`/`output()`
+> and `OnPush` are exactly what `AGENTS.md` → "Binding styles per surface"
+> requires, so this page is aligned. For admin-console's own conventions
+> (tokens, shell, sub-nav) read the `yz-ui` skill.
+>
+> One caveat, checked 2026-08-03: the **Zoneless** section below is setup advice
+> for an app being migrated. admin-console needs none of it — it has no `zone.js`
+> dependency, no `polyfills` entry in `angular.json` and no
+> `provideZonelessChangeDetection()` call; on Angular 21 that is already the
+> default. Nothing to uninstall, nothing to add.
+
 ## Standalone Components (REQUIRED)
 
-Components are standalone by default. Do NOT set `standalone: true`.
+Components are standalone by default, so `standalone: true` is redundant on
+Angular 21.
+
+**But write it anyway in `admin-console`** — that is the house convention and
+`AGENTS.md` binds you to "follow the file you are editing, not personal taste".
+Checked 2026-08-03: `standalone: true` appears **103** times across **137**
+`@Component(` declarations under `services/admin-console/src`, and the repo's
+own component skeleton (`skills/yz-ui/assets/component-template.angular.ts`)
+sets it. Do not strip it from existing components as drive-by cleanup, and do
+not omit it in a file whose siblings have it.
 
 ```typescript
 @Component({
   selector: 'app-user',
+  standalone: true,          // redundant on v21, but the house convention here
   imports: [CommonModule],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `...`

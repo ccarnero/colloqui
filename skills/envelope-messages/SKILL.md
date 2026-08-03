@@ -34,14 +34,20 @@ Apply this skill when creating, consuming or auditing messages on the NATS event
 - Every message MUST follow the canonical `EventEnvelope` contract defined in `packages/shared/src/interfaces.ts`.
 - Envelope IDs are generated with `crypto.randomUUID()`. Do not use ULIDs or any other scheme.
 - Format of the `type` field for messaging: `io.yoizen.messaging.<channel>.<provider>.<kind>.v1`. For other domains the second token varies (e.g. `io.yoizen.ai-agent-gateway.automation...`).
-- Real bus producers: `api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway`. Channel constant: `CHANNEL_PRODUCER = "channel-service"`.
-- `source` follows the format `//channel-service/accounts/<accountId>` or `//api-gateway/webhooks`. Do not invent new formats.
+- Real bus producers: **eleven** — six named by a shared constant (`CHANNEL_PRODUCER`, `REGISTRY_PRODUCER`, `AGENT_ADMIN_PRODUCER`, `AGENT_MEMORY_PRODUCER`, `AGENT_SCHEDULER_PRODUCER`, `AI_AGENT_GATEWAY_PRODUCER` — all in `packages/shared/src/constants.ts` except `CHANNEL_PRODUCER`, which is in `channel.constants.ts`) and five spelled as literals in the publishing service: `"api-gateway"`, `"agent-ai-service"`, `"connector-runtime"`, `"workflow-service"` and `"provisioning-service"` (the last via a file-local `const PRODUCER`). Channel constant: `CHANNEL_PRODUCER = "channel-service"`. Matches `DOCS/messaging/envelope.md` §2.1. Reproduce the census with:
+  ```bash
+  rg -o --no-filename 'producer: [A-Z_]+PRODUCER' -g '*.ts' -g '!*.spec.ts' -g '!**/test/**' services packages | sort -u   # 6
+  rg -o --no-filename 'producer: "[a-z-]+"'      -g '*.ts' -g '!*.spec.ts' -g '!**/test/**' services packages | sort -u   # 5, one of which
+                                                                                                                          # duplicates AGENT_ADMIN_PRODUCER
+  rg -n 'const PRODUCER' services/provisioning-service/src --glob '*.ts'                                                  # + provisioning-service
+  ```
+- `source` follows the format `//channel-service/accounts/<accountId>` or `//api-gateway/webhooks`. Do not invent new formats. **Contract clause, not a description**: `DOCS/messaging/envelope.md` §2.1/§11 says the same thing, and the code has never fully honored it — `agent-admin-service` emits `//agent-admin-service/admin/agents/publish` and `agent-ai-service` emits a bare `"agent-ai-service"`. Kept verbatim on purpose (docs-truth-audit T02 flagged the same clause in `envelope.md` for the T09 decision round); follow it in new code, do not "fix" it against the outliers.
 - `correlation_id` defaults to the envelope's own `id` when it is not propagated explicitly (`createChannelEnvelope`). Careful: `buildEventEnvelope` in `@yoizen/shared` uses `randomUUID()` as its fallback — pass an explicit `correlationId` on that path. It is copied unchanged by `deriveEnvelope`.
 - The `idempotencykey` is `sha256(canonicalJson(payload))` — use `computeIdempotencyKey` from `@yoizen/shared`. Map it to the NATS `Nats-Msg-Id` header when publishing.
 - The ingress flow is a two-stage bridge: `api-gateway` publishes a `WebhookIngressEnvelope` (kind `webhook_received`, no `accountid`), then `channel-service` consumes it, verifies the signature, and emits the canonical `ChannelEnvelope` with the real `accountid`.
 - Never duplicate subject or envelope logic. Always use the functions from `@yoizen/shared` (`buildChannelSubject`, `buildWebhookIngressSubject`, `computeIdempotencyKey`, `deriveEnvelope`, `isCompliantEnvelope`, etc.).
 - Claim check kicks in when `JSON.stringify(envelope).byteLength > CLAIM_CHECK_THRESHOLD_BYTES` (256 KB). Bucket: `PAYLOAD-<tenant>` (TTL 7 days, max 512 MB). URI: `nats://objstore/PAYLOAD-<tenant>/<envelope.id>-payload`. Invariant: `sha256(storedBytes) === computePayloadChecksum(payload)`.
-- Canonical per-tenant stream: `INGRESS-<TENANT>` (subjects `evt.<tenant>.>`). Do not use the legacy `EVENTS` or `RESULTS` streams.
+- Canonical per-tenant stream: `INGRESS-<TENANT>` (subjects `evt.<tenant>.>`). The legacy flat `EVENTS`/`RESULTS` streams are **gone**, not merely deprecated — `rg '"EVENTS"|events\.>' packages/shared` returns nothing. Never reintroduce them.
 
 ## Decision Gates
 
@@ -115,7 +121,7 @@ Example of an envelope produced by `channel-service` (stage 2 of the ingress):
 | `causation_id` | string \| null | ID of the causing event. `null` when it is a root |
 | `correlation_id` | string | Business flow ID; propagated unchanged. `createChannelEnvelope` and `api-gateway` self-correlate with their own `id`; `buildEventEnvelope` mints a NEW `randomUUID()` when `correlationId` is not passed (`envelope.utils.ts:332`) |
 | `tenant` | string | Tenant ID |
-| `producer` | string | Publishing service. Real ones: `api-gateway`, `channel-service`, `registry-service`, `agent-admin-service`, `ai-agent-gateway` |
+| `producer` | string | Publishing service. Eleven real ones — see Hard Rules for the full list and the census commands |
 | `domain` | string | `messaging`, `automation`, `platform` |
 | `channel` | string | `whatsapp`, `telegram`, `instagram`, `http`, `platform`. The `Channel` type (`channel.interfaces.ts:3`) is `whatsapp \| instagram \| telegram \| http`; `EventEnvelope.channel` is a free `string` (`interfaces.ts:42`) because internal producers use `platform` |
 | `provider` | string | `meta`, `telegram`, `http`, `internal`, `webhook`. `ChannelProvider` (`channel.interfaces.ts:4`) is `meta \| telegram \| http` |
@@ -171,9 +177,9 @@ Constants in `channel.constants.ts`:
 | `GATEWAY_AUDIT` | JetStream stream | `audit.gateway.>` | Cross-tenant gateway audit trail |
 | `PLATFORM_TENANTS` | JetStream stream | `platform.tenant.>` | Tenant lifecycle |
 
-The legacy `EVENTS` and `RESULTS` streams are deprecated — do not use them in new code.
+The legacy flat `EVENTS` and `RESULTS` streams no longer exist anywhere in `packages/shared` — do not reintroduce them.
 
-Canonical helpers (all in `@yoizen/shared`): `getTenantStreamName(tenant)` → `INGRESS-<TENANT>` (upper-cased, `tenant-stream.constants.ts:58-59`), `buildClaimCheckBucket(tenant)` → `PAYLOAD-<tenant>`, `buildDlqStreamName(tenant)` → `DLQ-<tenant>` (both verbatim). Mind the case asymmetry: only the ingress stream upper-cases. A second, verbatim ingress builder was removed on 2026-07-31 (envelope-drift T07) — `getTenantStreamName` is the only one.
+Canonical helpers (all in `@yoizen/shared`): `getTenantStreamName(tenant)` → `INGRESS-<TENANT>` (upper-cased; `packages/shared/src/tenant-stream.constants.ts`), `buildClaimCheckBucket(tenant)` → `PAYLOAD-<tenant>`, `buildDlqStreamName(tenant)` → `DLQ-<tenant>` (both verbatim). Mind the case asymmetry: only the ingress stream upper-cases. A second, verbatim ingress builder was removed on 2026-07-31 (envelope-drift T07) — `getTenantStreamName` is the only one. (The `:58-59` line cite this sentence used to carry had rotted onto the `enterprise` tier-limits block; named symbols only from here on.)
 
 ### 4. Event Kinds
 
@@ -258,7 +264,7 @@ The `data` field (type `EventData` in `packages/shared/src/interfaces.ts`):
 
 ### 8. Headers Allowlist (Webhook)
 
-`WEBHOOK_FORWARDED_HEADERS` constant in `packages/shared/src/channel.constants.ts:55-63` — 7 entries:
+`WEBHOOK_FORWARDED_HEADERS` constant in `packages/shared/src/channel.constants.ts` — 7 entries:
 
 ```
 content-type

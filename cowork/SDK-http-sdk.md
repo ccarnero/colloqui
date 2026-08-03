@@ -1,5 +1,37 @@
 # `@yoizen/platform-sdk` — Documentation
 
+> ## ⚠️ SUPERSEDED SNAPSHOT (2026-06-20) — DO NOT IMPLEMENT AGAINST THIS FILE
+>
+> Everything below describes the SDK as it was on 2026-06-20 and is preserved as
+> a record of that state. It is no longer a description of the code. Verified
+> 2026-08-03 (docs-truth-audit T08):
+>
+> - **The SDK is TypeScript, not JavaScript.** `fd -e js . sdk/src` returns **0**
+>   files; `fd -e ts . sdk/src` returns **120**. Every path in §2's tree
+>   (`sdk/src/index.js`, `domain/*.js`, `application/*.js`,
+>   `infrastructure/*.js`) is gone.
+> - **The layer map is incomplete.** `sdk/src` now has seven top-level
+>   directories — `application/`, `cli/`, `core/`, `domain/`,
+>   `infrastructure/`, `lib/`, `resources/` — and `resources/` holds the
+>   21 resource namespaces the SDK actually exposes. §1's "one primitive —
+>   `send`" and §8's "one capability (outbound ingress only) … no reading of
+>   results/events, no SSE stream, no workflow/registry/cache/audit surface"
+>   are all false: `runtime.stream()`, workflows, registry, agents, channels
+>   and the rest ship today.
+> - **The test story moved.** §7's "9 files across `test/{domain,application,
+>   infrastructure}`" and `cd sdk && node --test` are superseded by seven
+>   `sdk/test/` subdirectories including a 9-file live-cluster `e2e/` suite.
+> - **There is a CLI.** `sdk/package.json` declares `bin.yoizen`
+>   (`./bin/yoizen.ts`) — the `yoizen manifests validate|plan|apply` command the
+>   samples are provisioned with. §8's "not published / not in the workspace"
+>   half still holds (`private: true`, `version 0.1.0`).
+> - **§8's "repo conventions (CLAUDE.md)" reference is dead.** `CLAUDE.md` is now
+>   a five-line pointer to `AGENTS.md`, which is the normative document.
+>
+> **Read `sdk/README.md` instead** (verified in T05 of this same audit). This
+> file is proposed for DELETION in the T09 decision round; it survives until then
+> only so the decision is Christian's.
+
 > Plain-Node ESM SDK for **sending (ingesting) messages into the platform** via the http channel.
 > Location: repo-root `sdk/` (a standalone module — **not** a pnpm workspace member; imported by path / `file:` link).
 > Version `0.1.0`, `private`, zero runtime dependencies, ESM only, **Node ≥ 18** (native `fetch`).

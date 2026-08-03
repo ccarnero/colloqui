@@ -47,7 +47,7 @@ suite, or debugging a flaky admin-console E2E flow.
 - **Config comes from `E2E_*` env vars with dev defaults**, never hardcoded
   inline (`spec:16-19`): `E2E_BASE_URL` (`http://localhost:4200`), `E2E_EMAIL`
   (`yclawd@demo.io`), `E2E_PASSWORD` (`admin123`), `E2E_TENANT` (`acme`). Those
-  defaults are exactly what `./setup-tenant.sh` seeds (`README.md:26-31`).
+  defaults are exactly what `./setup-tenant.sh` seeds (`README.md`, "Seed the tenant").
 - **Use the Material helpers, not raw CSS.** Angular Material renders the native
   `<input>` inside `<mat-form-field>` and puts overlays at the body level, so
   label-based selectors need the helpers in the reference spec (see §3).
@@ -63,7 +63,7 @@ suite, or debugging a flaky admin-console E2E flow.
 | Run the whole suite | `npx playwright test` (`playwright.config.ts:7`) |
 | Run one suite | `npx playwright test e2e/sales-agent-setup` (`:8`) |
 | Watch it in a browser | `npx playwright test --headed` (`:9`) |
-| Point at the in-cluster console instead of `ng serve` | `E2E_BASE_URL=http://admin-console.platform-services-dev.dev.local npx playwright test` (`README.md:40`) |
+| Point at the in-cluster console instead of `ng serve` | `E2E_BASE_URL=http://admin-console.platform-services-dev.dev.local npx playwright test` (`README.md`, "Access") |
 | Fill a `matInput` by label | `fillMatInput(page, label, value)` (`spec:28-40`) |
 | Pick a `mat-select` option | `selectMatOption(page, label, optionText)` (`spec:47-61`) |
 | Add tags to a chip input | `fillChips(page, label, tags)` (`spec:66-73`) |
@@ -109,17 +109,17 @@ The suite drives a real console against a real cluster. Before running:
    Chromium only — it is the single configured project
    (`playwright.config.ts:28-33`).
 1. **Cluster up and seeded.** `./setup-tenant.sh` is idempotent and creates
-   tenant `acme` + admin `yclawd@demo.io` (`README.md:26-31`) — the same values
+   tenant `acme` + admin `yclawd@demo.io` (`README.md`, "Seed the tenant") — the same values
    the spec defaults to. A cluster reset wipes the PVCs, so re-seed after one.
 2. **A console to point at**, either:
    - `cd services/admin-console && pnpm start` (`ng serve`,
      `services/admin-console/package.json:6`) → `http://localhost:4200`, the
      config default; or
    - the in-cluster console at
-     `http://admin-console.platform-services-dev.dev.local` (`README.md:40`),
+     `http://admin-console.platform-services-dev.dev.local` (`README.md`, "Access"),
      via `E2E_BASE_URL`.
 
-`README.md:74-76` places these browser specs alongside the other e2e paths:
+`README.md`'s "Smoke test" section places these browser specs alongside the other e2e paths:
 `scripts/e2e/http-workflow.sh` for the HTTP workflow smoke, the Playwright specs
 under `e2e/` for browser flows.
 
@@ -208,7 +208,6 @@ annotation and `return` instead of creating it again.
 - `playwright.config.ts` — config (testDir, workers, baseURL, chromium project)
 - `e2e/sales-agent-setup.spec.ts` — reference implementation: helpers `:28-105`,
   login `:109-130`, idempotent test pattern `:147-157`
-- `README.md` — tenant seed `:26-31`, console URLs `:40`, e2e suite inventory
-  `:74-76`
+- `README.md` — sections "Seed the tenant", "Access", "Smoke test"
 - `services/admin-console/package.json` — `start` = `ng serve` (`:6`)
 - `skills/yz-ui/SKILL.md` — the UI patterns these specs drive

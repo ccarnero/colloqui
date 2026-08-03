@@ -8,6 +8,14 @@ metadata:
   version: "1.0"
 ---
 
+> **In `services/admin-console`, use Reactive Forms.** Checked 2026-08-03
+> (docs-truth-audit T08): 12 files import `ReactiveFormsModule` and **zero**
+> import `@angular/forms/signals`. The Signal Forms section below documents an
+> experimental API this app has not adopted — do not introduce it into an
+> existing form without human approval (`AGENTS.md`: no new libraries or
+> patterns in admin-console without sign-off). The "Production apps → Reactive
+> Forms" row of the table below is the one that applies here.
+
 ## When to Use What
 
 | Use Case | Recommendation |

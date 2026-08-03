@@ -237,21 +237,35 @@ Upgraded to latest stable versions of:
 
 ## Commit Message Validation
 
-The project uses a git hook to enforce commit message format.
+> **Corrected 2026-08-03 (docs-truth-audit T08).** This section used to open
+> "The project uses a git hook to enforce commit message format" and printed the
+> error text that hook would emit. **No such hook exists** — there is no
+> `commit-msg` hook, no lefthook, no commitlint and no `core.hooksPath`
+> (see [GIT-HOOKS.md](GIT-HOOKS.md) for the four commands that prove it). The
+> pattern below is the convention a **reviewer** applies; nothing rejects a
+> malformed message automatically, and the message text below is illustrative,
+> not something you will ever see printed.
 
-### Validation Rule
+### Validation Rule (applied by review)
 
 ```bash
 Pattern: ^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert|merge)(\(.+\))?: .{1,}
 ```
 
-### Error Message
+Check your own history against it before pushing:
 
-If commit message is invalid:
+```bash
+git log origin/main..HEAD --pretty=%s \
+  | rg -v '^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert|merge)(\(.+\))?: .' \
+  || echo "all subjects conform"
+```
+
+### Reference: the accepted types
+
+Nothing prints this — it is the type list the pattern above accepts, kept here
+so a reviewer and an author read the same set:
 
 ```
-❌ ERROR: Commit message doesn't follow Conventional Commits format
-
 Expected format: type(scope): description
 
 Valid types:
@@ -296,13 +310,15 @@ git log -10 --pretty=format:"%h %s%n%b%n---"
 # Search for specific types
 git log --grep="feat:" --oneline
 git log --grep="fix:" --oneline
-
-# View commit message validation rules
-cat lefthook.yml
 ```
+
+There is no `lefthook.yml` to read: the rules on this page are enforced by
+review, not by a hook. See [GIT-HOOKS.md](GIT-HOOKS.md).
 
 ## Related Skills
 
-- **`biome`** - Pre-commit hooks with Biome
-- **`testing`** - Test-related commits
-- **`git-commit`** - Git hooks and branching
+- **`git-commit`** - the parent skill: repo conventions and the real hook surface
+- **`judgment-day`** - the adversarial review that actually enforces these rules
+
+(There is no `biome` or `testing` skill in this repo — run `npx biome check .`
+directly, and each package's own `test` script for tests.)

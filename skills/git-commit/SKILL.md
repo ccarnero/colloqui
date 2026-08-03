@@ -1,24 +1,14 @@
 ---
 name: git-commit
-description: Git commit standards, conventions, and commit message formatting
-
+description: >
+  Git commit standards for THIS repo (platform-cluster): conventional commits,
+  no AI attribution, one commit per green manual-loop task, and the repo's real
+  (very small) hook surface.
+  Trigger: When creating commits, preparing a release, or wiring git hooks.
+license: Apache-2.0
 metadata:
   author: Yoizen
-  version: "1.0"
-  scope: [root]
-  auto_invoke:
-    - "skill operations"
-    - "workflow"
-    - "sdd"
-  author: Yoizen
-  version: "1.0"
-  scope: [root]
-  auto_invoke:
-    - "skill operations"
-    - "workflow"
-    - "sdd"
-  author: Yoizen
-  version: "1.0"
+  version: "2.0"
   scope: [root]
   auto_invoke:
     - "commit"
@@ -29,22 +19,42 @@ metadata:
 allowed-tools: []
 ---
 
+> **Normative source**: `AGENTS.md` → "Universal rules" 5 — "All artifacts in
+> English: code, comments, UI strings, docs, commit messages. Conventional
+> commits, no AI attribution." Where this skill and AGENTS.md disagree,
+> **AGENTS.md wins** and this file is the one that gets fixed.
+>
+> **Corrected 2026-08-03 (docs-truth-audit T08).** v1 of this skill described a
+> lefthook + commitlint + `develop`-branch + GitHub-issues setup that this repo
+> has never had, and its frontmatter carried the `metadata:` block three times
+> over (two of the copies auto-invoking on the retired `sdd` keyword). Every
+> claim below is now checked against the repo.
+
 ## When to Use It
 
-- When creating commits in the repository
-- When preparing a new version or release (SemVer)
-- When updating the project `CHANGELOG.md`
+- When creating commits in this repository
+- When bumping `sdk/`'s version or its `CHANGELOG.md` (the only changelog here)
 
 ## Critical Patterns
 
 - **ALWAYS** follow the **Conventional Commits** format: `type(scope): subject`
+- **ALWAYS** write commit messages in English (`AGENTS.md` universal rule 5)
+- **NEVER** add `Co-Authored-By` or any AI attribution. `AGENTS.md` rule 5 says
+  "no AI attribution" and the loop engine `.claude/commands/manual-loop.md`
+  step 6 says "No Co-Authored-By" outright. A human co-author trailer is still
+  allowed for real pair programming, but never for a tool.
 - **NEVER** write subjects in past tense ("fixed", "added"); use imperative mood ("fix", "add")
 - **ALWAYS** keep the title at **50 characters** or fewer
 - **ALWAYS** add a `BREAKING CHANGE:` footer for backward-incompatible changes
 - **NEVER** bundle multiple logical changes into one commit; keep them atomic and focused
-- **ALWAYS** reference GitHub issues in the body via `Fixes #123`
+- **Scope a manual-loop commit to its task**, e.g.
+  `feat(workflow-service): T03 block disabled executions`, and include the SPEC
+  file in the same commit (`.claude/commands/manual-loop.md` step 6).
+- **`Fixes #123` issue trailers do nothing here.** This repo has no GitHub issue
+  workflow: `.github/` contains zero tracked files
+  (`git ls-files .github | wc -l` → 0). Use them only if that changes.
 
-## Convenciones de Commit (Commit Conventions)
+## Commit Conventions
 
 ### Conventional Commits
 
@@ -90,20 +100,16 @@ feat(agents): add agent versioning support
 - Implement agent version tracking
 - Add version comparison endpoint
 - Add version restoration functionality
-
-Co-authored-by: John Doe <john@example.com>
 ```
 
 ### Bug Fix Commit
 
 ```bash
-fix(webapi): resolve NaN flowId in metrics
+fix(api-gateway): resolve NaN flowId in metrics
 
 - Validate flowId before processing
 - Add error logging for invalid IDs
 - Fix metrics aggregation
-
-Fixes #123
 ```
 
 ### Refactor Commit
@@ -151,49 +157,46 @@ docs: update agent skill documentation
 
 ## Git Hooks
 
-### Pre-commit Hook
+**There is no commit-message enforcement in this repo.** Nothing validates the
+conventional-commit format, the 50-character subject, or the imperative mood —
+the rules above are enforced by review, not by a hook. Verified:
 
-Configured in `lefthook.yml`:
-
-```yaml
-pre-commit:
-  commands:
-    lint:
-      run: npm run lint:fix
-    typecheck:
-      run: npm run typecheck
-    test:
-      run: npm run test:unit
+```bash
+fd -H -g 'lefthook*' .        # nothing
+fd -H -g 'commitlint*' .      # nothing
+fd -H -g '.husky' .           # nothing
+git config core.hooksPath     # empty → plain .git/hooks
 ```
 
-### Commit Message Hook
+v1 of this skill printed a `lefthook.yml` `pre-commit`/`commit-msg`/`pre-push`
+configuration and told you to `cat lefthook.yml`. No such file has ever existed
+here, and the `npm run lint:fix` / `npm run typecheck` / `npm run test:unit`
+commands it wrapped do not exist either — the root `package.json` declares
+**no `scripts` key at all** (`rg -n '"scripts"' package.json` → no matches; its
+only keys are `name`, `private` and `devDependencies`). See
+`references/GIT-HOOKS.md` for the real surface.
 
-Configured in `lefthook.yml`:
+The three hooks that DO exist:
 
-```yaml
-commit-msg:
-  commands:
-    validate:
-      run: |
-        PATTERN="^(feat|fix|docs|style|refactor|perf|test|chore|ci)(\(.+\))?: "
-        if ! grep -qE "$PATTERN" {1}; then
-          echo "Commit message must follow conventional format"
-          exit 1
-        fi
-        
-        # Check subject length
-        subject=$(head -n1 {1} | cut -d':' -f2 | sed 's/^\s*//')
-        if [ ${#subject} -gt 50 ]; then
-          echo "Commit subject must be 50 characters or less"
-          exit 1
-        fi
-```
+| Hook | Where | What it does |
+|---|---|---|
+| `post-merge`, `post-checkout` | `.git/hooks/` (untracked — a fresh clone has neither) | Fire `scripts/cbm-reindex.sh` under `nohup`, log to `.git/cbm-reindex.log`, always `exit 0`. Setup: `cowork/codebase-memory-mcp-setup.md`. |
+| `PostToolUse` (Claude Code, not git) | `.claude/settings.json`, matcher `Edit\|Write\|MultiEdit` | Runs `scripts/claude-hook-lint-test.sh` on the edited file — biome check plus a `vitest related` step that is inert outside `admin-console` (that script's own header says so). Always exits 0. |
 
 ## Versioning
 
+> **Scope check.** Nothing in `services/` or `packages/` is versioned or
+> released: they are built as `dev.local/<service>:local` images by
+> `rebuild-redeploy.sh`, never published. The SemVer / release-branch / changelog
+> material below applies to **`sdk/` only**, the one package with a
+> `CHANGELOG.md` (`fd -H -g 'CHANGELOG.md' .` → `sdk/CHANGELOG.md`) — and even
+> that is `private: true` at `0.1.0`, so no tag has ever been cut. Treat this
+> section as the convention to follow *when* something here starts being
+> released, not as a description of today.
+
 ### Semantic Versioning
 
-This project uses **Semantic Versioning** (SemVer):
+Use **Semantic Versioning** (SemVer):
 
 **Format**: `MAJOR.MINOR.PATCH`
 
@@ -274,16 +277,19 @@ Based on conventional commits, maintain `CHANGELOG.md`:
 ### Search Git Configuration
 
 ```bash
-# Find lefthook configuration
-find . -name "lefthook.yml"
-cat lefthook.yml
+# Confirm there is still no commit-message enforcement (all four return nothing)
+fd -H -g 'lefthook*' .
+fd -H -g 'commitlint*' .
+fd -H -g '.husky' .
+git config core.hooksPath
 
-# Find commitlint configuration
-find . -name "commitlint*"
-grep -r "commitlint" package.json
+# The hooks that do exist
+ls -la .git/hooks | rg -v sample
+rg -n PostToolUse -A6 .claude/settings.json
 
-# Find version configuration
-grep -r "version" package.json
+# The only changelog / the only versioned package
+fd -H -g 'CHANGELOG.md' .
+rg -n '"version"' sdk/package.json
 ```
 
 ### Search Commit Patterns
@@ -385,26 +391,26 @@ git push origin main --tags
 
 ## Troubleshooting
 
-### Commit Hook Failed
+> No git hook can fail your commit in this repo — there is no `commit-msg` and
+> no `pre-commit` hook (see `references/GIT-HOOKS.md`). The two entries this
+> section used to carry ("Commit Hook Failed", "Pre-commit Hook Failed") were
+> describing a lefthook setup that does not exist. What can actually reject your
+> work is a **reviewer**, so the checklist is the same one they apply.
 
-**Error**: Commit message doesn't follow format
+### A reviewer rejected the commit message
 
-**Solution**:
 1. Use conventional format: `type(scope): subject`
-2. Keep subject under 50 characters
-3. Use valid types: feat, fix, docs, style, refactor, perf, test, chore, ci
-4. Don't end subject with period
+2. Keep subject under 50 characters, imperative mood, no trailing period
+3. Use a valid type: feat, fix, docs, style, refactor, perf, test, chore, ci
+4. Write it in English and strip any `Co-Authored-By` / AI attribution
+   (`AGENTS.md` universal rule 5)
 
-### Pre-commit Hook Failed
+### Lint or tests failed
 
-**Error**: Linting or tests failed
-
-**Solution**:
-1. Run `npm run lint:fix` to auto-fix issues
-2. Run `npm run typecheck` to check types
-3. Run `npm run test` to verify tests pass
-4. Fix remaining issues manually
-5. Commit again
+1. `npx biome check --write .` to auto-fix formatting and lint
+2. Run the suite of the package you touched (there is no root `npm test`)
+3. `./scripts/checks/doc-code-guards.sh` if you touched docs or scripts
+4. Fix remaining issues manually, then commit again
 
 ### Merge Conflicts
 
@@ -447,10 +453,20 @@ git commit -m "chore: resolve merge conflicts with feature/branch"
 
 ### Test Before Commit
 
-- Run unit tests: `npm run test:unit`
-- Run integration tests: `npm run test:integration`
-- Run linting: `npm run lint`
-- Run type checking: `npm run typecheck`
+There is no root test runner — the root `package.json` declares **no `scripts`
+key at all** (`rg -n '"scripts"' package.json` → no matches), so
+`npm run test:unit` / `npm run lint` / `npm run typecheck` do not exist. Run the
+suite of the thing you touched:
+
+- A service or package: its own `test` script (`bun test` or `tsx --test`,
+  per that directory's `package.json`)
+- `sdk/`: `cd sdk && bun run build && bun test`
+- Lint/format: `npx biome check .` (`biome.json` at the repo root)
+- Browser e2e: `npx playwright test` (see the `playwright` skill)
+- Doc/code drift: `./scripts/checks/doc-code-guards.sh`
+
+Under the manual-loop system the binding list is the SPEC's own **Gates**
+section, run verbatim — not this list.
 
 ### Atomic Changes
 
@@ -458,11 +474,12 @@ git commit -m "chore: resolve merge conflicts with feature/branch"
 - Never commit broken code
 - Use branches for work-in-progress
 
-## Referencias (References)
+## References
 - [BRANCHING.md](references/BRANCHING.md)
 - [COMMIT-MESSAGE-FORMAT.md](references/COMMIT-MESSAGE-FORMAT.md)
 - [GIT-HOOKS.md](references/GIT-HOOKS.md)
 
-## Assets
-- `assets/scripts/commit.sh` - Commit automation script
-- `assets/scripts/release.sh` - Release automation script
+This skill ships **no `assets/`**. v1 advertised
+`assets/scripts/commit.sh` and `assets/scripts/release.sh`; neither has ever
+existed (`fd -H . skills/git-commit` lists only this file and the three
+references above).

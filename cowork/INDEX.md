@@ -2,6 +2,14 @@
 
 Map of everything produced and where each piece lives. Start here.
 
+> **Class note (docs-truth-audit T08, 2026-08-03).** This file is a hybrid: the
+> per-change entries below are RECORDS and are never rewritten (they describe
+> their date), but the Prerequisites / Tooling / Documents / Artifacts tables in
+> this header are a present-tense index. Only that header was corrected in this
+> pass, and only where it named an artifact that does not exist. The full
+> per-document verdicts live in `cowork/DOCS-TRUTH-LEDGER.md`, section T08 —
+> read that, not this table, for whether a `cowork/` doc is still true.
+
 ## Prerequisites
 
 What you need to run the stack and work with these docs:
@@ -13,7 +21,7 @@ What you need to run the stack and work with these docs:
 | **kubectl** | Talk to the cluster. |
 | **kustomize ≥ 5.7.0** (standalone) | The kubectl-bundled version is too old; install the standalone binary. |
 | **codebase-memory-mcp** on `PATH` | Code knowledge-graph MCP used by Claude Code (see "Tooling: codebase-memory-mcp" below). Optional but recommended. |
-| **Claude Code** (this repo's config) | SDD subagents + `cheap`/`premium` model profiles + lint/test hooks live under `.claude/`. |
+| **Claude Code** (this repo's config) | Under `.claude/`: the manual-loop engine (`commands/manual-loop.md`), the `implementer`/`reviewer` agents, the lint/test hook wired in `settings.json`, and a `skills` symlink to `skills/`. The SDD subagents and `/sdd:*` commands this row used to name are **retired** (AGENTS.md, "Retired 2026-07-29") and gone from `.claude/`; only `.claude/sdd-profiles.json` and `scripts/sdd-profile.mjs` survive. |
 | **sudo** (Linux) | The minikube orchestrator needs it up-front for the Kourier port-forward. |
 
 One-command startup once the prereqs are in place: `scripts/orbstack/startup.sh` (macOS) or `scripts/minikube/startup.sh` (Linux). See `CHECKPOINT.md` for the full runbook.
@@ -26,7 +34,7 @@ A local code knowledge-graph MCP server (tree-sitter based) used by Claude Code 
 |---|---|
 | `.mcp.json` | Registers `codebase-memory-mcp` for Claude Code at the repo level (binary resolved from `PATH`). |
 | `scripts/cbm-reindex.sh` | Idempotent re-index script (respects `.cbmignore`). |
-| `.cbmignore` | Excludes `node_modules/`, `dist/`, lockfiles, caches from the graph. |
+| `.cbmignore` | Excludes `dist/`, `build/`, `coverage/`, lockfiles and the local agent caches. (`node_modules/` and `.git/` are not listed — the tool skips those on its own, per the file's own header.) |
 | `.git/hooks/post-merge`, `.git/hooks/post-checkout` | Non-blocking auto-reindex on pull/branch switch (always `exit 0`). |
 
 Full setup, install, and verification steps: `codebase-memory-mcp-setup.md`.
@@ -38,8 +46,8 @@ Full setup, install, and verification steps: `codebase-memory-mcp-setup.md`.
 | `INDEX.md` | This index. |
 | `CHECKPOINT.md` | Compact resume state: what's done, run-from-scratch runbook, next steps. |
 | `ARCHITECTURE-ANALYSIS.md` | Full platform architecture (18 services, NATS, Temporal, multi-tenancy), verified against the code + evaluation of `codebase-memory-mcp`. |
-| `DOC-VS-CODE-AUDIT.md` | Doc-vs-code audit of `DOCS/`: what matches and 3 discrepancies (200→400, stream tiers, durable name). |
-| `SDK-http-sdk.md` | Documentation of the nascent `@yoizen/platform-sdk` (the TS `@yoizen/sdk` was removed). |
+| `DOC-VS-CODE-AUDIT.md` | The 2026-07-07 doc-vs-code audit of `DOCS/`: 7 High / 8 Medium / 7 Low drift rows, the 5 still-open SKB wiring defects, and the K1–K10 lock proposals that became `scripts/checks/doc-code-guards.sh`. (This row previously said "3 discrepancies (200→400, stream tiers, durable name)" — that described the superseded 2026-07-01 audit, not this file.) |
+| `SDK-http-sdk.md` | **Superseded.** Describes the 2026-06-20 JS-only ingest-only SDK; the SDK is now TypeScript with 21 resource namespaces. Read `sdk/README.md` instead. Proposed for deletion in the T09 round. |
 | `CACHE-architecture.md` | The 3 cache layers (cache-service L1/L2, per-service Redis, in-memory) + deep dive on the AdapterClient SWR + the L1 gotcha. |
 | `TRACEABILITY-audit.md` | End-to-end, hop-by-hop traceability audit (OTel vs correlation) — **historical**: its P0 findings are already shipped/committed (see the banner at the top of that doc). |
 | `CHANGES-for-dev.md` | **Handoff for the other dev**: what each change shipped, decisions, gaps, and how to close it out. ← start here to communicate. |
@@ -53,8 +61,8 @@ Full setup, install, and verification steps: `codebase-memory-mcp-setup.md`.
 | `.sdd/changes/traceability-audit-persist-ids/` | SDD record of change 2. |
 | `.sdd/changes/traceability-channel-ingress-causal/`, `.sdd/changes/traceability-channel-chain-endpoint/` | SDD records of the ingress fix + the channel-events chain endpoint. |
 | `services/audit-service/`, `services/api-gateway/`, `packages/shared/` | Code for the changes — **committed** on `main` (incl. `6292520`). |
-| `DOCS/messaging/envelope.md` §8 · `services/audit-service/CLAUDE.md` | Official docs updated by the changes. |
-| `.claude/agents/sdd-*.md`, `.claude/commands/sdd/*.md`, `.claude/settings.json`, `.claude/sdd-profiles.json` | Claude Code config (SDD subagents + profiles + commands + hooks). |
+| `DOCS/messaging/envelope.md` §8 · `services/audit-service/README.md` | Official docs updated by the changes. (The per-service `CLAUDE.md` this row used to name was absorbed into that README; guard K6g in `scripts/checks/doc-code-guards.sh` now fails if a per-component agent file reappears.) |
+| `.claude/settings.json`, `.claude/sdd-profiles.json` | Claude Code config still present. The `.claude/agents/sdd-*.md` and `.claude/commands/sdd/*.md` this row used to name are gone — retired 2026-07-29, do not resurrect. |
 | `scripts/orbstack/startup.sh` | Full startup orchestrator for OrbStack (macOS): sudo, precheck, rebuild, bootstrap, readiness gate, setup-tenant, e2e. |
 | `scripts/minikube/startup.sh` | Equivalent orchestrator for minikube (Linux/CI): uses `BUILD_PARALLELISM=2`, Kourier port-forward to localhost:8080, `READY_WAIT=300`. |
 | `scripts/sdd-profile.mjs`, `scripts/claude-hook-lint-test.sh` | SDD profile switch + lint/test hook. |

@@ -145,7 +145,7 @@ final per-file dispositions.
 - [x] T05 — Audit: packages + sdk docs
 - [x] T06 — Audit: integrations, demos, examples
 - [x] T07 — Audit: scripts (docs AND behavior contracts)
-- [ ] T08 — Audit: root docs, cowork notes, skills
+- [x] T08 — Audit: root docs, cowork notes, skills
 - [ ] T09 — Structure proposal + purge list ⟶ HUMAN DECISION ROUND
 - [ ] T10 — Execute the approved structure + purge
 
@@ -395,3 +395,55 @@ the same shape as the `usage()`-heredoc duplication behind E33/E35.
 Gates: G0 green every attempt; `bash -n` clean; **G6b
 `./scripts/e2e/http-workflow.sh` run against the LIVE cluster four times,
 green every time** (all 17 stages + cleanup).
+
+### T08 — 2026-08-03
+
+46/46 verdicts with evidence: 24 FIXED, 22 TRUE (3 of them
+`TRUE (flag-only, NOT edited)` — AGENTS.md, TAXONOMY.md, SCHEMAS.md, per
+ground rule 5). **9 DELETE proposals + 1 ARCHIVE**, each with a reason and
+a named replacement verified to exist on disk — this is T09's purge list.
+RECORD discipline held: `DRIFT.md` was extended ONLY through its own
+declared append-only Code-fix log (60 insertions, 0 deletions, no dated
+finding text altered), `INDEX.md` edits confined to the pre-`## Change:`
+header tables, every dated entry untouched.
+Biggest drifts: `skills/git-commit/**` legislated for a stack this repo
+has never had — a `lefthook.yml` with three stanzas, `commitlint`,
+`core.hooksPath`, a `develop` integration branch, and `npm run
+lint:fix|typecheck|test:unit` against a root `package.json` that has NO
+`scripts` key — with frontmatter carrying the `metadata:` block THREE
+times (two copies auto-invoking on the retired `sdd` keyword) and a
+worked example shipping a `Co-authored-by:` trailer that AGENTS.md rule 5
+forbids; `README.md`'s smoke-test invocation was fabricated (the script
+reads only `SMOKE_TEST_NAMESPACE`); `skills/envelope-messages/SKILL.md`
+still carried the 5-producer census T02 had replaced with 11 — the skill
+that teaches the envelope contradicting the canonical doc for it.
+Escalation **E36**: `cache-service` is deployed with `min-scale: "1"` and
+has NO `@Controller("cache")` anywhere in api-gateway and no caller in
+admin-console — a service running permanently that nothing can reach.
+Three attempts, two rejection rounds, both about the same thing:
+**numbers and commands that do not reproduce.** R1 (2× REJECTED): six
+sites asserted the root `package.json` "declares an empty `scripts`
+object" backed by a python one-liner stated to print `{}` — it prints
+`None`, there is no `scripts` key at all; the Angular architecture skill
+said "the **eleven** feature folders are" and then listed **ten** (`fd
+-td -d1` confirms ten); and E36's own evidence named
+`gateway-health.service.ts` as carrying `CACHE_SERVICE_URL` (it carries
+the derived `gatewayConfig.services.cache`) and listed one env overlay
+where there are two. Reviewer B added three more: the fix had made
+`skill-resolver.md` MISQUOTE the contract it exists to quote verbatim, a
+`post-checkout` hook recipe that re-indexes on every file-only checkout,
+and a DRIFT.md summary whose arithmetic did not match its own table.
+R2 (A APPROVED / B REJECTED): the frontmatter revert left the
+`angular/forms` ledger row claiming "plus the frontmatter repair" — an
+edit the diff did not contain, contradicting its own sibling row. Fixed,
+then a machine-checked sweep of all 46 rows against the diff (zero
+mismatches both ways, including the inverse check for TRUE rows claiming
+edits). Final 2× APPROVED.
+T09 sequencing blockers recorded: `INDEX.md`'s "see CHECKPOINT.md for the
+full runbook" pointer must be repointed in the same commit that deletes
+it; `METERING-FOUNDATION.md` cannot move until E6's six source-comment
+paths are fixed; and `DOC-VS-CODE-AUDIT.md`'s K1–K10 collide by number
+with the shipped K6a–K11.
+Gates: G0 green every attempt; skill claim-guard
+`packages/shared/test/unit/envelope-schema.spec.ts` 21/21 and full
+package 373/373 green before and after.

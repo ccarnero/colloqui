@@ -3,6 +3,17 @@
 > Destilado de la construcción del message-tracking system (julio 2026).
 > Este documento es la "receta" para armar y mantener loops en este repo,
 > y el protocolo de preservación de conocimiento a años vista.
+>
+> **Punteros actualizados 2026-08-03** (docs-truth-audit T08). La destilación
+> —las 4 piezas, las fronteras humanas, los anillos de verificación, las 7
+> reglas de oro— se mantiene verbatim; lo único corregido son los artefactos
+> concretos que nombraba y que ya no existen. El motor vigente es
+> `.claude/commands/manual-loop.md` y la norma vigente es `AGENTS.md`; donde
+> este playbook y AGENTS.md discrepen, **gana AGENTS.md**.
+>
+> Este archivo está en castellano y AGENTS.md regla 5 exige inglés para todo
+> artefacto del repo — queda marcado para la ronda T09 (traducir, o declarar la
+> excepción explícitamente).
 
 ---
 
@@ -16,10 +27,10 @@ persistir → tomar la siguiente** — y que pare solo en las fronteras humanas.
 
 | # | Pieza | Qué es | En este repo |
 |---|-------|--------|--------------|
-| 1 | **La cola** | Tareas chicas, ordenadas, cada una con criterio de aceptación ejecutable. Generada por máquina o descompuesta de un SPEC. | `SPEC.md`, `.sdd/changes/*/tasks.md` |
-| 2 | **El juez** | Señal determinista que dice sí/no sin preguntar: tests, compilador, golden set. **Se construye ANTES que el producto.** | tests por servicio, `golden/labeled.tsv` (≥90%), `lab/expected.tsv` (100%), schema Zod |
-| 3 | **Las reglas** | Prohibiciones y obligaciones en archivos que el agente siempre lee. Lo crítico se enforcea en código/permisos, no en prosa. | `CLAUDE.md`, `AGENTS.md` (root + por servicio), `TAXONOMY.md`, frontmatter `tools:` de los agentes |
-| 4 | **El ciclo escrito** | El loop como slash command: pop → implement → verify → review → commit o revert. | `.claude/commands/build-console.md`, `.claude/agents/{implementer,reviewer}.md` |
+| 1 | **La cola** | Tareas chicas, ordenadas, cada una con criterio de aceptación ejecutable. Generada por máquina o descompuesta de un SPEC. | `manual-loops/<area>/<nombre>.md` (autorados desde `manual-loops-templates/`); históricamente también `.sdd/changes/*/tasks.md`. No hay ningún `SPEC.md` en la raíz. |
+| 2 | **El juez** | Señal determinista que dice sí/no sin preguntar: tests, compilador, golden set. **Se construye ANTES que el producto.** | tests por servicio, `golden/labeled.tsv` (≥90%), los gates de cada SPEC (`G0` = `scripts/checks/doc-code-guards.sh`). El `lab/expected.tsv` sintético que se usó en el message-tracking system ya no está en el repo. |
+| 3 | **Las reglas** | Prohibiciones y obligaciones en archivos que el agente siempre lee. Lo crítico se enforcea en código/permisos, no en prosa. | **`AGENTS.md` es la constitución** (único normativo, solo en la raíz — el guard K6g de `doc-code-guards.sh` prohíbe archivos de agente por componente); `TAXONOMY.md`; `CLAUDE.md` quedó reducido a un puntero de 5 líneas hacia AGENTS.md y además está gitignoreado |
+| 4 | **El ciclo escrito** | El loop como slash command: pop → implement → verify → review → commit o revert. | `.claude/commands/manual-loop.md` (el motor genérico vigente; `build-console.md` es el predecesor específico de consola y sigue en el repo), `.claude/agents/{implementer,reviewer}.md` |
 
 ## 3. El ciclo estándar (secuencial, sin worktrees)
 
@@ -47,8 +58,10 @@ Por tarea:
 serializar lo que escribe (un solo implementer). Como un RWLock.
 
 **Modelos por rol**: inteligencia cara donde hay juicio (orquestación
-y review = Fable), throughput barato donde hay volumen (implementación
-= Opus). Misma filosofía que `.ywai/sdd-profiles.json`.
+y review), throughput barato donde hay volumen (implementación). Los nombres
+de modelo concretos de julio 2026 envejecen en semanas y se omiten a propósito.
+El `.ywai/sdd-profiles.json` que se citaba como referencia ya no existe: `.ywai/`
+está retirado y prohibido de resucitar (AGENTS.md, "Retired 2026-07-29").
 
 ## 4. Las fronteras humanas (el loop DEBE parar acá)
 
@@ -65,10 +78,14 @@ mal armado. Si el loop resuelve solo algo de esta lista → peor.
 ## 5. Anillos de verificación (del más estricto al más tolerante)
 
 ```
-lab/expected.tsv (sintético, correcto por construcción)  → exige 100%
+set sintético (correcto por construcción)                 → exige 100%
 golden/labeled.tsv (tráfico real auditado por humano)     → exige ≥90%
 unknown en runtime (la alarma)                            → descubre lo nuevo
 ```
+
+(El set sintético del message-tracking system vivía en `lab/expected.tsv`; ese
+directorio ya no está en el repo. El anillo del medio sí: `golden/` conserva
+`labeled.tsv`, `raw/`, `README.md` y `REVIEW.md`.)
 
 `unknown` es la alarma, nunca el cajón: legacy tiene su bucket, lo no
 implementado NO se pre-aprovisiona (cae en unknown cuando exista y ahí
@@ -88,7 +105,10 @@ se agrega la regla contra el subject real).
 
 Cada decisión queda registrada con: **(1)** la regla (TAXONOMY.md §tabla),
 **(2)** el porqué (decision note en §7), **(3)** la evidencia (cita de
-código archivo:línea), **(4)** el topic engram. Con ese cuádruple,
+código **por nombre**: constante, función o archivo — NO `archivo:línea`;
+la auditoría de docs de agosto 2026 encontró decenas de cites `:NNN` podridos
+en días, así que la forma vinculante es el nombre del símbolo),
+**(4)** el topic engram. Con ese cuádruple,
 cualquier persona (o Claude) dentro de dos años reconstruye el contexto
 en minutos. Sin él, la arqueología cuesta días.
 

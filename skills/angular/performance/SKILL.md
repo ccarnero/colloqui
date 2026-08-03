@@ -8,6 +8,16 @@ metadata:
   version: "1.0"
 ---
 
+> **Scope check for `services/admin-console`**, done 2026-08-03
+> (docs-truth-audit T08). Of the four techniques this page covers, only lazy
+> loading is in use — `AGENTS.md` binds admin-console to "lazy `loadComponent`
+> routes", and `app.routes.ts` follows it. The other three are **not** adopted:
+> `NgOptimizedImage` has zero usages (the app is SVG-and-token based — AGENTS.md
+> says "inline SVG (no chart libs)"), `@defer` has zero usages, and there is no
+> SSR (the app is a client-side SPA). Treat those three as upstream reference,
+> not as this repo's practice; introducing one is a pattern change that needs
+> human sign-off.
+
 ## NgOptimizedImage (REQUIRED for images)
 
 ```typescript

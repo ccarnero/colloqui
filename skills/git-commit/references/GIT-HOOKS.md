@@ -1,338 +1,97 @@
 # Git Hooks
 
-Guide for Git hooks using lefthook.
+The hook surface of **this** repository (platform-cluster).
 
-## Overview
+> **Rewritten 2026-08-03 (docs-truth-audit T08).** The previous version of this
+> file described a `lefthook.yml` with `pre-commit` / `commit-msg` / `pre-push`
+> stanzas, a `core.hooksPath` of `.lefthook`, and `lefthook install`
+> troubleshooting. None of that has ever existed here. It was also textually
+> corrupted — several fenced blocks were spliced mid-word (`cat
+> lefthook.ymlxisting Hook`, `eyaml`, `# On Linux/lefthook is installed`), so
+> parts of it were not even readable as instructions. It has been replaced with
+> the checked reality.
 
-This project uses **lefthook** to manage Git hooks for:
-- Validating commit messages
-- Running code quality checks before commits
-- Ensuring code formatting
-- Preventing broken code from being committed
+## There is no commit-time enforcement
 
-## Hook Location
+Nothing in this repo validates a commit message, blocks a commit on lint, or
+blocks a push on tests. The commit conventions in
+[COMMIT-MESSAGE-FORMAT.md](COMMIT-MESSAGE-FORMAT.md) are enforced by **review**
+(the manual-loop's dual adversarial review), not by a hook.
 
-Git hooks are configured in `lefthook.yml` file at the project root:
-
-```yaml
-# lefthook.yml
-pre-commit:
-  commands:
-    lint:
-      glob: "*.{ts,tsx,js,jsx}"
-      run: npx biome check --write {staged_files}
-    
-commit-msg:
-  commands:
-    validate:
-      run: |
-        PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert|merge)(\(.+\))?: .{1,}"
-        if ! grep -qE "$PATTERN" {1}; then
-          echo "❌ Invalid commit message format"
-          exit 1
-        fi
-
-pre-push:
-  commands:
-    test:
-      run: npm test
-```
-
-## Commit Message Hook (`commit-msg`)
-
-### Purpose
-
-Validates that commit messages follow Conventional Commits format.
-
-### Location
-
-Configured in `lefthook.yml` under `commit-msg` section
-
-### Validation Pattern
+Verify — all four produce nothing:
 
 ```bash
-PATTERN="^(feat|fix|docs|style|refactor|test|chore|perf|ci|build|revert|merge)(\(.+\))?: .{1,}"
+fd -H -g 'lefthook*' .        # no lefthook config
+fd -H -g 'commitlint*' .      # no commitlint config
+fd -H -g '.husky' .           # no husky
+git config core.hooksPath     # empty → git uses the default .git/hooks
 ```
 
-### Accepted Commit Types
+There is no `pre-commit`, `commit-msg`, `pre-push`, or `prepare-commit-msg`
+hook. `ls -la .git/hooks | rg -v sample` lists exactly two files, both described
+below.
 
-| Type | Description |
-|------|-------------|
-| `feat` | New feature |
-| `fix` | Bug fix |
-| `docs` | Documentation changes |
-| `style` | Code style changes (formatting, etc.) |
-| `refactor` | Code refactoring |
-| `test` | Adding or updating tests |
-| `chore` | Maintenance tasks |
-| `perf` | Performance improvements |
-| `ci` | CI/CD changes |
-| `build` | Build system changes |
-| `revert` | Revert previous commit |
-| `merge` | Merge branches |
+## The two real git hooks: `post-merge` and `post-checkout`
 
-### Hook Behavior
+Both exist only to keep the `codebase-memory-mcp` code graph fresh. Both are
+short `/bin/sh` scripts that background `scripts/cbm-reindex.sh` and get out of
+the way:
+
+| Hook | Fires | Body |
+|---|---|---|
+| `post-merge` | after every `git pull` / `git merge` | `nohup "$REPO/scripts/cbm-reindex.sh" >"$REPO/.git/cbm-reindex.log" 2>&1 &` then `exit 0` |
+| `post-checkout` | after a **branch** checkout only — guarded by `[ "${3:-0}" = "1" ] \|\| exit 0`, so file-only checkouts are skipped | same body |
+
+Properties that matter:
+
+- **They can never block you.** Both end in `exit 0`, and `scripts/cbm-reindex.sh`
+  itself uses `set -uo pipefail` **without** `-e` and exits 0 on every path
+  (missing binary, missing repo dir, failed index) — that script's header states
+  this as a contract.
+- **They are not versioned.** `.git/hooks/` lives inside the git directory, so
+  nothing there can be tracked, and this repo sets no `core.hooksPath` and ships
+  no template directory. `git ls-files | rg hook` matches only
+  `scripts/claude-hook-lint-test.sh`, which is not a git hook at all. **A fresh
+  clone has neither hook** — install them by hand; the recipe is in
+  `cowork/codebase-memory-mcp-setup.md`, "First-time setup on a new machine".
+- Output goes to `.git/cbm-reindex.log`.
+
+## The Claude Code hook (not a git hook)
+
+`.claude/settings.json` registers one `PostToolUse` entry with matcher
+`Edit|Write|MultiEdit`, running `scripts/claude-hook-lint-test.sh` on the file
+just edited. It fires on **tool use**, not on a git operation.
 
 ```bash
-# When you commit:
-git commit -m "invalid message"
-
-# If invalid, hook shows:
-❌ ERROR: Commit message doesn't follow Conventional Commits format
-
-Expected format: type(scope): description
-
-Valid types:
-  feat:     New feature
-  fix:      Bug fix
-  docs:     Documentation changes
-  ...
-
-Your message: invalid message
-
-# And exits with code 1 (commit blocked)
+rg -n PostToolUse -A6 .claude/settings.json
 ```
 
-### Valid Commit Examples
+What it does, per that script's own header:
 
-```
-feat: add user authentication
-fix(api): resolve null pointer exception
-docs: update README with setup instructions
-refactor: simplify agent execution flow
-test: add unit tests for UserService
-```
+1. **biome** — the real check. `biome.json` sits at the repo root.
+2. **`vitest related`** — largely inert. `vitest` is a devDependency of
+   `services/admin-console` **only**; every other package runs `bun test` or
+   `tsx --test`, so for almost any edited `.ts` this step resolves no vitest
+   project and its "FAILURES … not blocking" line means nothing. The script's
+   header carries this caveat explicitly.
+3. It **always exits 0** (four early `exit 0` paths plus the final one;
+   `set -uo pipefail` without `-e`), so it can never block an edit.
 
-## Pre-commit Hook (`pre-commit`)
+## Running the checks yourself
 
-### Purpose
-
-Runs code quality checks before allowing commit.
-
-### Checks Performed
-
-1. **Biome Lint & Format**: Runs `biome check --write` on staged files
-2. **File Type Filter**: Only checks `.ts` files in `src/` directories
-3. **Auto-fix**: Automatically applies Biome fixes
-4. **Restage Files**: Re-stages files modified by Biome
-
-### Supported Projects
-
-The hook runs Biome on configured file patterns (typically `.ts`, `.tsx`, `.js`, `.jsx` files)
-
-### Hook Behavior
+Since no hook runs them for you, run them before committing:
 
 ```bash
-# When you commit:
-git add src/services/user.service.ts
-git commit -m "feat: add user service"
-
-# Hook runs:
-🔍 Running Biome check on WebApi...
-
-# If errors found, Biome auto-fixes and re-stages:
-✅ Formatted 1 file
-
-# Then commit continues
-[main abc1234] feat: add user service
+npx biome check .                        # lint + format, whole repo
+./scripts/checks/doc-code-guards.sh      # doc/code drift (G0 in every SPEC)
 ```
 
-### If Biome Fails
-
-```bash
-# If Biome finds unfixable errors:
-❌ Lint errors found
-
-Fix errors and commit again.
-
-# Commit is blocked
-```
-
-## Pre-push Hook (`pre-push`)
-
-### Purpose
-
-Runs tests before pushing to remote repository.
-
-### Checks Performed
-
-1. **Run Tests**: Executes test suite
-2. **Build Verification**: Ensures project builds successfully
-3. **Coverage Check**: Verifies test coverage meets requirements
-
-### Hook Behavior
-
-```bash
-# When you push:
-git push origin feature/new-feature
-
-# Hook runs:
-🧪 Running tests...
-
-# If tests fail:
-❌ Tests failed
-Fix failing tests before pushing.
-
-# Push is blocked
-```
-
-## Installing Hooks
-
-### Initial Setup (Automatic)
-
-```bash
-# Hooks are installed via npm
-npm install
-
-# lefthook installs hooks automatically
-```
-Install lefthook
-npm install lefthook --save-dev
-
-# Or with Go
-go install github.com/evilmartians/lefthook@latest
-
-# Install hooks
-npx lefthook install
-```
-
-### Manual Installation
-
-```bash
-# If hooks aren't installed:
-lefthook install
-
-# Verify hooks configuration:
-cat lefthook.ymlxisting Hook
-
-```bash
-Edit the `lefthook.yml` file:
-
-```yaml
-pre-commit:
-  commands:
-    custom-check:
-      run: ./scripts/custom-check.sh
-```
-
-### Add New Hook
-
-```yaml
-# Add to lefthook.yml
-pre-push:
-  commands:
-    security-scan:
-      run: npm audit
-
-## Common Hook Tasks
-
-### Running Linting
-
-```bash
-#!/bin/bash
-# Run Biome on staged files
-FILES=$(git diff --cached --name-only --diff-filter=ACM | grep '\.ts$')
-
-if [ -n "$FILES" ]; then
-  npx biome check --write $FILES
-  git add $FILES
-fi
-```yaml
-# In lefthook.yml
-pre-commit:
-  commands:
-    lint:
-      glob: "*.{ts,tsx}"
-      run: npx biome check --write {staged_files}
-if [ $? -ne 0 ]; then
-  eyaml
-# In lefthook.yml
-pre-commit:
-  commands:
-    test:
-      run: npm test
-      fail_text: "❌ Tests failed. Commit blocked."/bin/bash
-# Enforce branch naming convention
-BRANCH_NAME=$(git symbolic-ref --short HEAD)
-PATTERN="^(feature|bugfix|hotfix)\/.+$"
-
-if ! [[ $BRANCH_NAME =~ $PATTERN ]]; then
-  echo "❌ Invalid branch name: $BRANCH_NAME"
-  eyaml
-# In lefthook.yml
-pre-commit:
-  commands:
-    branch-name:
-      run: |
-        BRANCH=$(git symbolic-ref --short HEAD)
-        if ! [[ $BRANCH =~ ^(feature|bugfix|hotfix)/ ]]; then
-          echo "❌ Invalid branch name: $BRANCH"
-          exit 1
-        # Skip commit-msg validation
-git commit --no-verify -m "your message"
-
-# Skip pre-commit checks
-git commit --no-verify
-
-# Skip pre-push checks
-git push --no-verify
-```
-
-⚠️ **Warning**: Use `--no-verify` only in emergencies. It bypasses all quality checks.
-
-## Troubleshooting
-
-### Hooks Not Running
-
-```bash
-# Check if lefthook is installed
-git config core.hooksPath
-
-# Should show: .lefthook
-
-# If not, reinstall:
-npx lefthook install
-```
-
-### Hook Not Executable
-
-```bash
-# On Linux/lefthook is installed
-lefthook version
-
-# Reinstall hooks
-lefthook install
-
-# Run hooks manually to test
-lefthook run pre-commit
-### Biome Errors in Pre-commit
-
-```bash
-# Run Biome manually to see details
-npx biome check --write ./src
-
-# Check Biome configuration
-cat biome.json
-```
-
-## Finding Hooks
-
-```bash
-# View lefthook configuration
-cat lefthook.yml
-
-# List all configured hooks
-lefthook dump
-
-# Check lefthook version
-lefthook version
-
-# Run specific hook manually
-lefthook run pre-commit
-```
+Then the suite of whatever you touched — a service's or package's own `test`
+script, or `cd sdk && bun run build && bun test` for the SDK. The root
+`package.json` declares **no `scripts` key at all** (`rg -n '"scripts"'
+package.json` → no matches), so there is no repo-wide `npm test`.
 
 ## Related Skills
 
-- **`biome`** - Biome configuration and commands
-- **`git-commit`** - Commit message format and branching
-- **`testing`** - Test execution in hooks
+- **`git-commit`** — commit message format and the branching reality
+- **`playwright`** — the browser E2E suite and how to run it

@@ -82,10 +82,13 @@ yoizen manifests apply    -f integrations/http/hosted-services-api/manifest.yaml
 # (see its README.md "Configure").
 cd integrations/http/hosted-services-api && ./run.sh && cd ../../..
 
-# 12) HTTP bridge sample - long-running, keep terminal open
-# No .env required.
+# 12) HTTP bridge sample (sdk/examples tier — NOT one of the 12 declarative
+#     integrations above: this one still ships setup.sh + src/setup.ts).
+# No .env required: run.sh defaults tenant/user/gateway and loads ./.env only
+# if present. Both steps are one-shot and exit — nothing stays running.
 cd sdk/examples/reference-pattern
-./run.sh
+./setup.sh    # once — provisions the workflow + its dedicated HTTP instance
+./run.sh      # driver: login -> list workflows -> resolve appSecret -> ingest
 ```
 
 The remaining six samples (`ai-agent-triage`, `ai-call-center-supervisor`,

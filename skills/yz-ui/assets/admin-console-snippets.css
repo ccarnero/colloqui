@@ -4,6 +4,21 @@
  * The admin-console doesn't use Tailwind. These are the patterns we
  * actually shipped — copy + adapt inside a component's `styles:` block,
  * always referencing CSS variables instead of hex literals.
+ *
+ * LAYER WARNING (docs-truth-audit T08, 2026-08-03). Everything below uses the
+ * LEGACY token layer (`--green`, `--red`, `--yellow`, `--bg3`, `--text2`,
+ * `--primary`). All of those are real and still defined in
+ * `services/admin-console/src/styles.scss`, so these snippets work — but
+ * `skills/yz-ui/SKILL.md` documents TWO independent layers and says new or
+ * restyled work uses the `--rd-*` redesign layer instead. Read the component
+ * you are editing and follow ITS layer; reach for `--rd-bg` / `--rd-panel` /
+ * `--rd-line` / `--rd-text-1..3` / `--rd-accent` / `--rd-green|red|yellow|purple`
+ * on redesigned screens.
+ *
+ * Also: the `var(--token, #hex)` fallbacks below are dead weight — every token
+ * they guard is defined — and a literal hex in a component is a reviewer
+ * rejection under AGENTS.md ("tokens-only colors, no hard-coded hex"). Drop the
+ * fallback when you copy a rule.
  */
 
 /* ============================================================

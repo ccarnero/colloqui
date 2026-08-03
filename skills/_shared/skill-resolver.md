@@ -8,7 +8,7 @@ judgment-day, and ANY future skill or workflow that launches sub-agents.
 
 The registry is an **index, not a summary**. The delegator selects skills and
 passes their exact `SKILL.md` paths; the sub-agent reads those files itself.
-This is the registry's own contract, verbatim (`.atl/skill-registry.md:24-26`):
+This is the registry's own contract, verbatim — its `## Contract` section:
 
 > **Delegator use only.** This registry is an index, not a summary. Any agent
 > that launches subagents reads it to select relevant skills, then passes exact
@@ -21,6 +21,12 @@ This is the registry's own contract, verbatim (`.atl/skill-registry.md:24-26`):
 Human decision, 2026-07-31 (SPEC `manual-loops/architecture/skills-cleanup.md`,
 T03): paths win. Generated summaries drift from the `SKILL.md` they summarize
 and strip author intent; a path always resolves to the current text.
+
+**Never cite `.atl/skill-registry.md` by line number.** That file is regenerated
+per machine by an external CLI and its `## Skills` table grows or shrinks with
+whatever skills that machine has installed, so every offset below the table
+moves. Cite its section headings instead — as this file now does throughout.
+(All `:NNN` cites into it were removed on 2026-08-03, docs-truth-audit T08.)
 
 ## Why This Exists
 
@@ -44,10 +50,12 @@ Resolution order:
 2. `mem_search(query: "skill-registry", project: "{project}")` →
    `mem_get_observation(id)` for full content
 3. Fallback: read `.atl/skill-registry.md` in the project root — the real
-   artifact. Its own header names the command that produces it,
-   `gentle-ai skill-registry refresh --force` (`.atl/skill-registry.md:3`). The
-   file is gitignored (`.gitignore:96`), so it may be absent in a fresh clone;
-   run that command to create it.
+   artifact. Its own top-of-file HTML comment names the command that produces
+   it, `gentle-ai skill-registry refresh --force`. The file is gitignored
+   (`.atl/` is listed in `.gitignore`), so it may be absent in a fresh clone;
+   run that command to create it. It also lists the directories it scanned
+   under `## Sources scanned`, which is the first thing to check when a skill
+   you expected is missing.
 4. No registry found? → proceed without skills, and warn the user: "No skill
    registry found — sub-agents will work without project-specific standards.
    Run `gentle-ai skill-registry refresh --force` to fix this."
@@ -55,9 +63,8 @@ Resolution order:
 ### Step 2: Match Relevant Skills
 
 The registry's `## Skills` table has four columns —
-`Skill | Trigger / description | Scope | Path` (`.atl/skill-registry.md:30-31`).
-Match on TWO dimensions, always deferring to the `Trigger / description` column
-as the source of truth:
+`Skill | Trigger / description | Scope | Path`. Match on TWO dimensions, always
+deferring to the `Trigger / description` column as the source of truth:
 
 **A. Code Context** — what files will the sub-agent touch or review?
 
@@ -79,7 +86,7 @@ as the source of truth:
 
 Add a block to the sub-agent's prompt listing the selected `Path` values
 verbatim from the registry table, and instruct it to read them first — this is
-the registry's own loading protocol (`.atl/skill-registry.md:67-69`):
+the registry's own `## Loading protocol` section, steps 2–3:
 
 ```
 ## Skills to load before work
@@ -97,8 +104,8 @@ reads the full `SKILL.md`, which is the source of truth.
 
 ### Step 4: Include Project Conventions
 
-The repo's normative document is `AGENTS.md`; it indexes the rest
-(`AGENTS.md:96-106`). When the sub-agent will work on the project's code, add:
+The repo's normative document is `AGENTS.md`; its "Where the rest lives" section
+indexes everything else. When the sub-agent will work on the project's code, add:
 
 ```
 ## Project Conventions

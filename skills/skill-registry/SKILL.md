@@ -34,7 +34,7 @@ This is the foundation of the **Skill Resolver Protocol**
 ## The contract: index, not summary
 
 The registry does **not** contain digests, summaries, or "compact rules". Its
-own contract says so, verbatim (`.atl/skill-registry.md:24-26`):
+own contract says so, verbatim (its `## Contract` section):
 
 > **Delegator use only.** This registry is an index, not a summary. Any agent
 > that launches subagents reads it to select relevant skills, then passes exact
@@ -56,9 +56,15 @@ The registry is produced by a CLI, and running it is the normal way to refresh:
 gentle-ai skill-registry refresh --force
 ```
 
-The output file names this command in its own header
-(`.atl/skill-registry.md:3`). Everything below documents the protocol so a
-human or an LLM can rebuild the file by hand when the CLI is unavailable.
+The output file names this command in the HTML comment at the top of the file.
+Everything below documents the protocol so a human or an LLM can rebuild the
+file by hand when the CLI is unavailable.
+
+> **Never cite `.atl/skill-registry.md` by line number.** It is regenerated per
+> machine and its `## Skills` table grows or shrinks with whatever skills that
+> machine has installed, so every offset below the table moves. Cite its section
+> headings. (All `:NNN` cites into it were removed on 2026-08-03,
+> docs-truth-audit T08.)
 
 ## When to Run
 
@@ -81,8 +87,8 @@ just the first match.
 `{project-root}/.claude/skills/`, `{project-root}/.agents/skills/`,
 `{project-root}/.github/skills/`.
 
-Note: in this repo `.claude/skills` is a symlink to `skills/`
-(`AGENTS.md:101`), so the same skills resolve through both paths —
+Note: in this repo `.claude/skills` is a symlink to `skills/` (`AGENTS.md`,
+"Where the rest lives"), so the same skills resolve through both paths —
 deduplicate by skill name.
 
 **SKIP** the following directories:
@@ -148,12 +154,12 @@ Create `.atl/` in the project root if it does not exist, then write:
 .atl/skill-registry.md
 ```
 
-`.atl/` is already gitignored in this repo (`.gitignore:96`) — the registry is
+`.atl/` is already gitignored in this repo (`.gitignore` lists `.atl/`) — the registry is
 a local artifact, regenerated per machine. Add `.atl/` to `.gitignore` when
 working in a project where it is missing.
 
 > Do NOT write `.ywai/`. That directory is retired for this repo and must not
-> be resurrected (`AGENTS.md:110-112`).
+> be resurrected (`AGENTS.md`, "Retired 2026-07-29 (do not resurrect)").
 
 #### B. If engram is available, also persist cross-session
 
@@ -191,12 +197,12 @@ removing skills.
 
 ## Rules
 
-- ALWAYS write `.atl/skill-registry.md`; never `.ywai/` (`AGENTS.md:110-112`).
+- ALWAYS write `.atl/skill-registry.md`; never `.ywai/` (`AGENTS.md`, "Retired 2026-07-29 (do not resurrect)").
 - ALWAYS save to engram when `mem_save` is available — fall back silently when not.
 - SKIP `sdd-*`, `_shared`, and `skill-registry` directories when scanning.
 - Read ONLY frontmatter — the registry indexes skills, it does not digest them.
 - NEVER generate compact rules, digests, or summaries of a skill's body
-  (`.atl/skill-registry.md:24-26`).
+  (its `## Contract` section).
 - Paths in the table MUST be absolute so a sub-agent can read them from any cwd.
 - If no skills are found, write an empty registry (with the Contract and
   Loading protocol sections intact) so delegators do not waste time searching.

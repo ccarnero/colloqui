@@ -8,14 +8,48 @@ metadata:
   version: "1.0"
 ---
 
+> **This is upstream Angular guidance, not this repo's layout.** Checked
+> 2026-08-03 (docs-truth-audit T08) against `services/admin-console`, the only
+> Angular app here (`fd -t d -d 1 . services | rg -i 'console|ui'`). Where the
+> generic advice below and the app disagree, **the app wins** — and for
+> admin-console specifics (design tokens, layout shell, sub-nav, landings) read
+> the `yz-ui` skill, which is written from this repo's code. The binding style
+> rule is `AGENTS.md` → "Binding styles per surface" → `admin-console`.
+>
+> Three concrete deviations to know before you apply anything below:
+>
+> - **There is no `features/shared/`.** Cross-feature UI lives in the
+>   `@yoizen/angular-shared` package and in `src/app/core/` (`guards/`,
+>   `interceptors/`, `models/`, `services/`); `src/app/layout/` holds the shell.
+>   The **ten** feature folders are `auth`, `automation`, `channels`,
+>   `connections`, `data-integrations`, `identity`, `overview`, `processes`,
+>   `settings-hub`, `tenant-management`
+>   (`fd -td -d1 . services/admin-console/src/app/features/ | wc -l` → 10).
+> - **Components keep the type suffix; helpers do not.** Counted under
+>   `services/admin-console/src/app/features` (297 `.ts` files): **101** end in
+>   `.component.ts` and **120** in `.spec.ts`, while **57** carry no dotted type
+>   suffix at all — but those are pure-function helper modules
+>   (`node-type-color.ts`, `ai-monaco-hover.ts`), not components. So a component
+>   is `foo.component.ts`, never the bare `shopping-cart.ts` form the examples
+>   below show. Follow the file you are editing.
+>
+>   ```bash
+>   R=services/admin-console/src/app/features
+>   fd -e ts . "$R" | wc -l                        # 297
+>   fd -e ts . "$R" | rg -c '\.component\.ts$'     # 101
+>   fd -e ts . "$R" | rg -v '\.[a-z-]+\.ts$' | wc -l  # 57
+>   ```
+> - **`ng new` / `ng generate` are not part of this workflow.** The app already
+>   exists; new files are written by hand next to their siblings.
+
 ## The Scope Rule (REQUIRED)
 
 **"Scope determines structure"** - Where a component lives depends on its usage.
 
-| Usage | Placement |
-|-------|-----------|
-| Used by 1 feature | `features/[feature]/components/` |
-| Used by 2+ features | `features/shared/components/` |
+| Usage | Placement (upstream) | Placement in `admin-console` |
+|-------|-----------|-----------|
+| Used by 1 feature | `features/[feature]/components/` | same |
+| Used by 2+ features | `features/shared/components/` | **`@yoizen/angular-shared`** or `src/app/core/` — `features/shared/` does not exist here (see the banner above) |
 
 ### Example
 

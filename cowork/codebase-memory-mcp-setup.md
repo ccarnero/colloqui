@@ -34,7 +34,14 @@ which codebase-memory-mcp
 
 ### 2. Auto-reindex via git hooks
 
-Two hooks in `.git/hooks/` call `scripts/cbm-reindex.sh` non-blockingly (always `exit 0`):
+Two hooks in `.git/hooks/` call `scripts/cbm-reindex.sh` non-blockingly (always `exit 0`).
+
+> **These hooks are NOT versioned.** `.git/hooks/` is inside the git directory,
+> so nothing in it can be tracked, and this repo sets no `core.hooksPath`
+> (`git config core.hooksPath` returns empty) and ships no hook template dir —
+> `git ls-files | rg hook` matches only `scripts/claude-hook-lint-test.sh`, an
+> unrelated Claude Code hook. A fresh clone therefore has **no** cbm hooks; see
+> "First-time setup on a new machine" below.
 
 | Hook | When it fires |
 |---|---|
@@ -78,14 +85,36 @@ brew install deusdata/tap/codebase-memory-mcp
 # 2. Verify it's on PATH
 which codebase-memory-mcp
 
-# 3. Install the git hooks (they're already committed; just make them executable)
-chmod +x .git/hooks/post-merge .git/hooks/post-checkout
+# 3. Write the git hooks — they are NOT committed and a fresh clone has none.
+#    The two bodies are NOT identical: post-checkout carries a branch-checkout
+#    guard as its first statement so file-only checkouts do not re-index.
+#    Copy-paste both blocks as-is.
+
+printf '%s\n' '#!/bin/sh' \
+  'REPO="$(git rev-parse --show-toplevel 2>/dev/null)"' \
+  '[ -n "$REPO" ] && [ -x "$REPO/scripts/cbm-reindex.sh" ] && \' \
+  '  nohup "$REPO/scripts/cbm-reindex.sh" >"$REPO/.git/cbm-reindex.log" 2>&1 &' \
+  'exit 0' > .git/hooks/post-merge
+chmod +x .git/hooks/post-merge
+
+printf '%s\n' '#!/bin/sh' \
+  '# Only re-index on a branch checkout; ignore plain file checkouts.' \
+  '[ "${3:-0}" = "1" ] || exit 0' \
+  'REPO="$(git rev-parse --show-toplevel 2>/dev/null)"' \
+  '[ -n "$REPO" ] && [ -x "$REPO/scripts/cbm-reindex.sh" ] && \' \
+  '  nohup "$REPO/scripts/cbm-reindex.sh" >"$REPO/.git/cbm-reindex.log" 2>&1 &' \
+  'exit 0' > .git/hooks/post-checkout
+chmod +x .git/hooks/post-checkout
 
 # 4. Pre-build the graph so the first query is instant
 ./scripts/cbm-reindex.sh
 ```
 
-The `.cbmignore` at the repo root already excludes `node_modules/`, `dist/`, lockfiles, and caches.
+The `.cbmignore` at the repo root excludes `dist/`, `build/`, `coverage/`,
+lockfiles (`pnpm-lock.yaml`, `bun.lock`, `*.lock`) and the local agent caches
+(`.turbo/`, `.codegraph/`, `.atl/`, `.claude/worktrees/`, `.opencode/`).
+`node_modules/` and `.git/` are **not** listed — its own header records that the
+tool ignores those two automatically.
 
 ---
 
@@ -112,4 +141,4 @@ picked up automatically by Claude Code when you open the repo.
 
 ---
 
-*Sources: `.mcp.json`, `scripts/cbm-reindex.sh`, `.git/hooks/post-merge`, `.git/hooks/post-checkout`, `.cbmignore`.*
+*Sources: `.mcp.json`, `scripts/cbm-reindex.sh`, `.git/hooks/post-merge`, `.git/hooks/post-checkout`, `.cbmignore`. Re-verified 2026-08-03 (docs-truth-audit T08): `.mcp.json` is byte-identical to the block quoted above; both hooks exist, both invoke `scripts/cbm-reindex.sh` via `nohup`, both log to `.git/cbm-reindex.log`, both end in `exit 0`; `scripts/cbm-reindex.sh`'s four env knobs and their defaults match the table. The two corrections above are the hook-installation step and the `.cbmignore` contents. The "~15k+ nodes / ~44k+ edges" figure is a dated 2026-06-20 observation of a per-machine cache and is left as such.*

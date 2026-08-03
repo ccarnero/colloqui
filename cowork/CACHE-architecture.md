@@ -7,14 +7,14 @@
 
 There are **three layers**, and the most visible one (`cache-service`) is **not** the one sustaining the hot-path:
 
-1. **`cache-service`** — an HTTP key-value store with L1 (memory) + L2 (Redis). Designed for **admin-console / tenants** via gateway. Backend services barely use it.
+1. **`cache-service`** — an HTTP key-value store with L1 (memory) + L2 (Redis). Designed for **admin-console / tenants** via gateway, but **nothing calls it today and the gateway ships no `cache` route** (corrected 2026-08-03 — see Layer 1).
 2. **Direct Redis within each service** — the "real" runtime caching (SWR for connectors, rate-limit, public-routes, cost-tracker, circuit breakers, execution states…).
 3. **In-memory per pod** — the L1 of `cache-service`, the gateway's route cache (~15s), provisioning maps, SDK token.
 
 ```
                  ┌─────────────────────────────────────────────────────────┐
-   admin-console │  HTTP  ──►  api-gateway  ──►  cache-service               │  LAYER 1
-   / tenants     │                              L1 (Map, FIFO 1000) + L2 Redis│
+   (no caller)   │  cache-service — deployed, healthy, UNCONSUMED            │  LAYER 1
+                 │  L1 (Map, FIFO 1000) + L2 Redis; no gateway route exists  │
                  └─────────────────────────────────────────────────────────┘
 
    ┌──────────────────────────── backend services ──────────────────────────┐
@@ -45,9 +45,48 @@ There are **three layers**, and the most visible one (`cache-service`) is **not*
   - `scan(pattern, count)` → iterated Redis `SCAN`.
   - `batchGet(keys)` → pipeline in a single round-trip.
 - **Tenant-scoping** (`cache.controller.ts`, `@Controller("cache")`): the key is built with `tenantKey(tenantId, key)` using the `x-yoizen-tenant` header. Routes: `GET /cache` (scan), `GET /cache/:key`, `PUT /cache/:key`, `DELETE /cache/:key`, `POST /cache/batch`.
-- **Scale to zero** (Knative, min-scale 0): can go dormant and cold-starts on the first request.
+- **Scaling** (Knative): `knative/services/base/cache-service.yaml` pins
+  `min-scale: "1"` / `max-scale: "5"` with `metric: concurrency`, `target: "100"`,
+  so it does **not** scale to zero and does not cold-start on the first request.
+  (Corrected 2026-08-03: the 2026-06-20 pass recorded "min-scale 0"; the manifest
+  says otherwise, and in developer mode the dev overlay pins every ksvc to
+  min = max = 1 on top of that. The L1 gotcha below is therefore *worse* than
+  originally scoped — a pod that never scales away keeps a TTL-less L1 entry
+  alive until FIFO eviction, instead of losing it on the next scale-to-zero.)
 
-**Where it's used:** according to the call-graph (`get_architecture`) and imports, the real consumer is **`admin-console`** (≈204 calls across boundaries); among backends, only `api-gateway` references `CACHE_SERVICE_URL` (for health/config). In other words, `cache-service` functions as a **KV for admin/tenants**, not as an internal cache for services.
+**Where it's used: nowhere, today.** (Corrected 2026-08-03. The 2026-06-20 pass
+read a `get_architecture` call-graph and concluded "the real consumer is
+`admin-console` (≈204 calls across boundaries)". That number is not reproducible
+and the conclusion does not survive a direct check — the same class of unreliable
+cross-boundary edge `ARCHITECTURE-ANALYSIS.md` §12 warns about.)
+
+What the code actually shows:
+
+- **`admin-console` never calls it.** No source under
+  `services/admin-console/src` requests a `/cache` path.
+- **The gateway does not proxy it.** There is no `@Controller("cache")` anywhere
+  in `services/api-gateway/src`, so the `@Controller("cache")` routes below are
+  not reachable through the platform's single HTTP entry point at all.
+- **The only thing that consumes its URL is a health probe.** The
+  `CACHE_SERVICE_URL` literal appears in exactly one source file,
+  `services/api-gateway/src/config/gateway.config.ts`, where it feeds
+  `gatewayConfig.services.cache` with a `platformServiceUrl("cache-service", env)`
+  fallback (so the URL resolves even when the variable is unset). The only
+  consumer of that value is `gateway-health.service.ts`'s `SERVICE_URLS` map,
+  which lists `["cache-service", gatewayConfig.services.cache]` alongside the
+  other platform services — a liveness probe, not a call. The variable is also
+  set in **both** dev overlays
+  (`knative/services/overlays/local/{postgres-dev,mongo-dev}/env-patches.yaml`)
+  and documented in `services/api-gateway/README.md`'s env table. Nothing else
+  in the repo references it. Reproduce — exactly four hits, none of them a call:
+  `rg -n "CACHE_SERVICE_URL" -g '!node_modules' -g '!cowork/*' .`
+  (the `cowork/*` exclusion drops this file and `DOCS-TRUTH-LEDGER.md`, which
+  mention the name only because they audit it).
+
+This matches the service's own README, which opens: "Standalone HTTP service: no
+NATS client and no calls to other platform services." So `cache-service` is a
+**deployed, healthy, unconsumed** KV — Layer 1 is a design that exists but carries
+no traffic. Layers 2 and 3 below are the ones that actually sustain the runtime.
 
 ### ⚠️ Gotcha: L1 does not honor Redis TTL on reads
 
@@ -108,7 +147,13 @@ In `get`, the L1 backfill calls `setL1(key, value, 0)`, and `get` treats `expiry
 
 ## Observations
 
-1. **`cache-service` is underused by the backends.** It is essentially an admin/tenant-facing KV; the caching that sustains the runtime is direct Redis. If the intention was for it to be the central internal cache, it is not today.
+1. **`cache-service` has no consumer at all** (corrected 2026-08-03 — the original
+   wording was "underused by the backends … essentially an admin/tenant-facing
+   KV"). Nothing calls it, and the gateway exposes no `cache` route, so even a
+   tenant could not reach it. The caching that sustains the runtime is direct
+   Redis. If the intention was for it to be the central internal cache, it is not
+   today — and if the intention was a tenant-facing KV, the gateway route is
+   missing. Worth a keep-or-delete decision.
 2. **L1 gotcha** (TTL not honored on backfill) — the only latent bug found in this layer.
 3. **The `AdapterClient` SWR is the most mature and well-thought-out pattern** (double TTL, stale-on-error, negative cache, best-effort, cluster-aware, interplay with circuit breaker). A good model to replicate if unified caching across other services is desired.
 

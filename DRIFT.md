@@ -172,3 +172,63 @@ closed, in the file's own append-only style.
    Regression pins: `services/channel-service/test/unit/envelope.factory.spec.ts`
    ("webhook header allowlist placement").
 
+## Code-fix log (docs-truth-audit T08, 2026-08-03)
+
+Same append-only rule: no finding text above is altered. This pass re-checked
+every item against today's code and records which ones the code side has since
+closed. Of the ten findings in the Discrepancies table — the original nine plus
+item 10, added 2026-07-10 — item 2 was closed in the 2026-07-31 log above; this
+pass closes **1, 3, 4, 6, 7 and 9**; items **5, 8 and 10** still reproduce.
+Seven closed, three open.
+
+1. **Stage-1 `type` field format — FIXED in code (envelope-drift T05).**
+   `webhook-ingress-publisher.service.ts` no longer hardcodes a literal: it
+   calls `buildWebhookIngressType(channel)`
+   (`services/api-gateway/src/modules/channels/webhook-ingress-type.ts`), which
+   emits the per-channel `io.yoizen.messaging.<channel>.webhook.webhook_received.v1`
+   the docs prescribed. Pinned by
+   `services/api-gateway/test/unit/webhook-ingress-type.spec.ts`. Readers must
+   still accept the pre-migration channel-less value on stored rows, and both
+   forms are documented in `envelope-schema.json`'s `type` description.
+
+3, 4, 6, 7. **All four `envelope-schema.json` items — FIXED in the asset
+   (envelope-drift T04).** The Handling note above says "the underlying
+   `envelope-schema.json` drift itself remains **OPEN**: the schema is still
+   wrong" — that was true on 2026-07-10 and is no longer true. `Channel`'s enum
+   now carries `http`; `correlation_id`'s description documents the real
+   `randomUUID()` fallback instead of self-correlation;
+   `WebhookIngressEnvelope` + `IWebhookIngressData` are modelled as their own
+   definitions; and `accountid` is `required` on `EventEnvelope` only, never on
+   the stage-1 shape. All four are pinned, on both the schema side and the
+   interface side, by
+   `packages/shared/test/unit/envelope-schema.spec.ts` (21 tests, run with
+   `cd packages/shared && bun test test/unit/envelope-schema.spec.ts`).
+
+9. **agent-memory subject constants + subject/envelope `domain` mismatch —
+   FIXED in code.** Both halves are closed and the root cause named in the
+   2026-07-09 block is gone: `PLATFORM_PRODUCER` no longer exists anywhere in
+   `packages/shared/src/constants.ts`. The four subject constants and their
+   prefix are now centralized there (`AGENT_MEMORY_SUBJECT_PREFIX`,
+   `AGENT_MEMORY_{PROPOSED,PUBLISHED,REJECTED,EXPIRED}`), built from
+   `AGENT_MEMORY_PRODUCER = "agent-memory-service"` and
+   `AGENT_MEMORY_DOMAIN = "agent-memory"`; `nats.provider.ts` publishes with
+   `producer: AGENT_MEMORY_PRODUCER` and `domain: AGENT_MEMORY_DOMAIN`, so the
+   subject and the envelope body are projected from the same two constants and
+   can no longer disagree. Pinned by
+   `packages/shared/src/__tests__/agent-memory.constants.test.ts`.
+
+**Still reproducing (checked, unchanged):**
+
+- **Item 5 — `online.v1` heartbeat `idempotencykey`.**
+  `services/agent-ai-service/src/modules/heartbeat/heartbeat.service.ts` still
+  sets `idempotencykey: crypto.randomUUID()` (no `sha256:` prefix) and still
+  publishes the non-canonical `transport: { name: "nats", version: "1.0" }`.
+- **Item 8 — stage-1 `resource` format.** Still
+  `tenant/<t>/channel/<ch>/provider/webhook` with no `account/` segment, and
+  `envelope.md` still documents no stage-1 `resource` example, so the docs
+  coverage gap persists.
+- **Item 10 — heartbeat producer token.** The subject is still built inline in
+  `heartbeat.service.ts` as
+  `evt.${tenantId}.ai-agent-gateway.automation.platform.internal.online.v1`
+  while the publishing service is `agent-ai-service`.
+

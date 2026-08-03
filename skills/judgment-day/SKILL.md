@@ -34,11 +34,11 @@ allowed-tools: [Read, Edit, Write, Glob, Grep, Bash, Task]
 
 ### Pattern 0: Skill Resolution (BEFORE launching judges)
 
-Follow the **Skill Resolver Protocol** (`skills/_shared/skill-resolver.md`) before launching ANY sub-agent. The registry is an index of paths, not a summary (`.atl/skill-registry.md:24-26`) — you pass paths, the judges read the `SKILL.md` files themselves:
+Follow the **Skill Resolver Protocol** (`skills/_shared/skill-resolver.md`) before launching ANY sub-agent. The registry is an index of paths, not a summary (its `## Contract` section) — you pass paths, the judges read the `SKILL.md` files themselves. Never cite that file by line number: it is regenerated per machine and every offset below its `## Skills` table moves with the installed skill set.
 
 1. Obtain the skill registry: search engram (`mem_search(query: "skill-registry", project: "{project}")`) → fallback to reading `.atl/skill-registry.md` in the project root → skip if none
 2. Identify the target files/scope — what code will the judges review?
-3. Match relevant skills against the registry's `Trigger / description` column (`.atl/skill-registry.md:30-31`) by:
+3. Match relevant skills against the `Trigger / description` column of the registry's `## Skills` table by:
    - **Code context**: file extensions/paths of the target (e.g. `services/admin-console/**` → `yz-ui`, `angular-*`; tenancy code → `multi-tenant`)
    - **Task context**: "review code" → framework/domain skills; "write a commit" → `git-commit`
 4. Build a `## Skills to load before work` block listing the matching `Path` values verbatim
