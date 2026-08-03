@@ -447,3 +447,257 @@ with the shipped K6a–K11.
 Gates: G0 green every attempt; skill claim-guard
 `packages/shared/test/unit/envelope-schema.spec.ts` 21/21 and full
 package 373/373 green before and after.
+
+### T09 — proposal (awaiting ruling)
+
+> **NOTHING IS EXECUTED.** This section is a decision document. No file was
+> moved, merged, deleted or renamed; no guard was edited. The only file this
+> task wrote is this SPEC. Christian rules D1–D34 (`yes` / `no` / `modify`),
+> the rulings get recorded verbatim under "### T09 — ruling", and **T10**
+> executes exactly what is approved and nothing else.
+> Every count below was produced by the command shown, run at the repo root on
+> **2026-08-03** on `feature/fix-docs-codigo-manda` @ `fbd15311`, tree clean.
+> G0 (`./scripts/checks/doc-code-guards.sh`) green before and after writing
+> this section.
+
+#### (a) The target tree
+
+**CURRENT shape** — `fd -H -e md --type f | wc -l` → **273** markdown files in
+**18** top-level doc roots (`… | python3 -c "…split('/')[0]"` → 18 keys), plus
+28 script headers and 5 claim-bearing skill assets = the ledger's 306 rows.
+Per-root, `fd -H -e md --type f . <dir> | wc -l`:
+
+| Root | md | What lives there today | Problem |
+| --- | --- | --- | --- |
+| `.sdd/` | 54 | RECORD (per-change adr/design/tasks/archive) | hidden; a **second** record system AGENTS.md never mentions (F1) |
+| `DOCS/` | 48 | descriptive + prescriptive + RECORD (`adr/`, `runbooks/archive/`, `decision-log.md`) + future (`v_next/`) | four classes, no banner, no guard — the reader cannot tell which is which |
+| `manual-loops/` | 40 | RECORD (loop specs + Progress) | correct, and the model |
+| `integrations/` | 27 | descriptive (13 samples × EN + ES twins + index) | 13 `.es.md` twins hand-synced (O1) |
+| `services/` | 25 | 20 READMEs + 3 in-tree docs + 2 `.sdd/` | co-location is right (K6g already guards it) |
+| `cowork/` | 18 (+1 `.html`) | RECORD, dead working notes, 2 prescriptive, 1 register | **8 of 17 notes are dead**; no class, no convention, no guard |
+| `skills/` | 16 | skill | fine, but not the only skills root |
+| `.agents/` | 8 | skill (adr-skill) | a **second** skills root (F, T01) |
+| `sdk/` | 8 | descriptive + RECORD | fine |
+| `(repo root)` | 7 | prescriptive ×4, RECORD ×1, future ×1, descriptive ×1 | `backlog.md` is a dead future doc |
+| `packages/` | 5 | descriptive | fine |
+| `.claude/` | 4 | prescriptive (the loop engine) | 1 of the 4 has a stale duplicate in `cowork/staging/` |
+| `demos/` | 3 | descriptive + prescriptive | fine |
+| `manual-loops-templates/` | 3 | prescriptive | named by AGENTS.md → cannot move without a rule-5 ruling |
+| `scripts/` | 3 | prescriptive/descriptive | fine |
+| `golden/` | 2 | RECORD | named by AGENTS.md → same |
+| `fixtures/` | 1 | descriptive | orphan (section U) |
+| `knative/` | 1 | descriptive | orphan (section U) |
+
+Sum reconciles: `48+18+40+3+16+8+4+54+2+27+3+8+5+3+25+1+1+7 = 273`.
+
+**The diagnosis behind "tanto documento es confuso"** is not raw volume — it is
+that the repo runs **five parallel record systems** (`manual-loops/`, `cowork/`,
+`.sdd/`, `golden/`, `DOCS/adr/` + `decision-log.md`), **two skills roots**
+(`skills/`, `.agents/skills/`), **two copies of the loop command**, and **zero
+markers of doc class** anywhere. A reader has no way to tell an as-built
+description from a 2026-06 handoff.
+
+**PROPOSED shape** — same rules, four classes, and every class has exactly one
+home:
+
+```
+DOCS/                  descriptive + prescriptive, cross-cutting.  Class banner MANDATORY (K12).
+  architecture/ messaging/ channels/ agents/ workflows/ skb/ guides/ runbooks/
+  adr/                 RECORD (decision records, dated, never rewritten)
+  v_next/              future (the ONLY future-class dir; promotion rule already documented)
+  archive/             RECORD — retired working notes, banner-guarded (K6f extended)
+    audits/            the surviving cowork audits
+    runbooks/          (already exists as DOCS/runbooks/archive/ — folded in or left, D3b)
+<component>/README.md  descriptive, co-located, ONE per component (K6g already enforces)
+manual-loops/          RECORD — loop specs + Progress (unchanged; the model)
+manual-loops-templates/, golden/   unchanged (AGENTS.md names them — moving needs D31)
+.claude/, skills/      prescriptive/skill — ONE loop-command copy, ONE skills root
+.sdd/                  RECORD — blessed in AGENTS.md (D4) or folded into DOCS/archive/sdd/
+```
+
+Net arithmetic if D1–D22 are approved as recommended:
+`273 − 11 deleted + 2 from splits = 264` md files; doc roots `18 → 16`
+(`cowork/` dissolved, `.agents/` folded); and for the first time every file
+declares its class and a guard checks it.
+
+#### (b) Decisions — structure (D1–D6)
+
+| ID | Decision | Why | Impact if approved | Default |
+| --- | --- | --- | --- | --- |
+| **D1** | Make the four classes explicit: every file under `DOCS/**` and every service/package README declares `Class: descriptive\|prescriptive\|future\|RECORD` in its first 10 lines; new guard **K12** fails otherwise | the SPEC's Goal clause; today nothing marks class and T01 had to reclass 4 files by hand | **73** files get a 1-line banner in T10 (48 `DOCS/**` + 20 service + 5 package READMEs); K12 added. The 27 sample READMEs under `integrations/`/`demos/` are excluded unless this is modified | **YES** |
+| **D2** | RECORDS live in exactly two homes: `manual-loops/**` (loop records) and `DOCS/archive/**` (everything else dated). Extend the *existing* `DOCS/runbooks/archive/` + K6f banner convention rather than inventing one | reuse before rewrite — K6f already enforces "Status: historical" in the first 10 lines of `DOCS/runbooks/archive/*.md` | new dir `DOCS/archive/`; K6f glob widened | **YES** |
+| **D3** | Dissolve `cowork/` after the purge. Survivors route: (a) audits `ASYNC-RESILIENCE-AUDIT`, `DOC-VS-CODE-AUDIT`, `TRACEABILITY-audit`, `METERING-FOUNDATION`, `CACHE-architecture` → `DOCS/archive/audits/`; (b) prescriptive `LOOP-PLAYBOOK`, `codebase-memory-mcp-setup` → `DOCS/guides/`; (c) `INDEX.md` → `DOCS/archive/INDEX.md`, still append-only; (d) `DOCS-TRUTH-LEDGER.md` (this audit's instrument) → `DOCS/archive/audits/` when T10 closes it | `cowork/` is the only root with no class, no convention and no guard, and 8 of its 17 notes are dead | 9 git mv + link fixes; `cowork/` gone. **Blocked for METERING-FOUNDATION until E6 is fixed (SB2)** | **YES**, except METERING-FOUNDATION → sequence |
+| **D4** | `.sdd/` (54 + 2 docs) is **blessed** as a RECORD system and named in AGENTS.md, not deleted | it is the *named replacement* for 2 of the 9 deletes (`CHANGES-for-dev` → `.sdd/changes/traceability-*/archive.md`; `DESIGN-http-channel-instances` → `.sdd/changes/http-channel-instances/adr.md`). Deleting it breaks the purge's own justification | AGENTS.md gains 1 line (needs D30); `.sdd/` gains a README banner | **YES (bless)** |
+| **D5** | One skills root: fold `.agents/skills/adr-skill/**` (8 docs) into `skills/adr/` | AGENTS.md names `skills/` and `.claude/skills` is a symlink to it; a second root prescribing ADR conventions that `DOCS/adr/` obeys is invisible to every reader | 8 files moved, `skills/` 16 → 24, `.agents/` gone | **YES** |
+| **D6** | Section-U orphans (`fixtures/bus-events/README.md`, `knative/services/overlays/_components/README.md`) stay co-located as component docs and get added to K10's corpus | they describe the artifacts beside them; moving them would break co-location | 2 rows classed `descriptive`, K10 corpus +2 | **YES** |
+
+#### (c) Decisions — merges & splits (D7–D12)
+
+| ID | Merge / split | Source | Impact | Default |
+| --- | --- | --- | --- | --- |
+| **D7** | `DOCS/channels/meta-provider-pattern.md` → merged into `DOCS/channels/instagram.md` | T03 disposition | −1 file; `DOCS/channels/` 4 → 3 | **YES** |
+| **D8** | Split `DOCS/skb/architecture.md`: as-built (§3, §4.2, §8, §10, §11) stays `descriptive`; the design body becomes `future`/RECORD | T03 disposition — one file currently carries two classes | +1 file, both class-clean | **YES** |
+| **D9** | Split `DOCS/guides/doc-code-validation-tests.md`: the "Implemented" half is `descriptive`, the test-proposal half is `future` | T03 disposition — same two-class problem | +1 file | **YES** |
+| **D10** | `DOCS/reference/ai-sdk.md` (**1365 lines**, `wc -l`) DELETED in favour of an upstream link + the ~2 repo-facing paragraphs folded into `DOCS/agents/`. `DOCS/reference/` then holds 0 files and the dir goes | T03 disposition — it is a vendor manual, not platform truth; T03 had to add a scope banner precisely so nobody reads it as as-built | −1 file, −1 dir | **YES** |
+| **D11** | Hybrid class names: `DOCS/architecture/decision-log.md` (T02), `SCHEMAS.md` (T08) and `cowork/INDEX.md` (T08) are all `prescriptive`-labelled dated registers. Introduce the class `register` (dated rows amended in place) rather than forcing them into `RECORD` | three tasks raised the identical problem independently | class vocabulary gains 1 term; K12 accepts it. **SCHEMAS.md is read-only → needs D30** | **YES (add `register`)** |
+| **D12** | The `:NNN` line-cite sweep parked by T04, T05 and T08: do **not** mass-convert existing in-range cites; ban them where they rot hardest — inside `services/`/`packages/` source (K13, D24) — and convert on touch | 3 tasks parked the same call; a mass conversion is a 100+ file diff with no test | policy line in AGENTS.md/ledger; no bulk diff | **YES (targeted)** |
+
+#### (d) The DELETE list — 11 files + 1 archive-move (D13–D23)
+
+Nine DELETE + one ARCHIVE come verbatim from the ledger's
+`### T08 DELETE / ARCHIVE proposals` table (10 rows, each with a named
+replacement verified on disk); D10 above adds `ai-sdk.md` and D7 adds
+`meta-provider-pattern.md` → **11 deletions total**.
+
+| ID | File | Why it is dead | What replaces it | Default |
+| --- | --- | --- | --- | --- |
+| **D13** | `backlog.md` | 8 undated, unowned Spanish one-liners, no code counterpart; one ("WF el habilitado/desabilitado se persiste?") is already answered (`WORKFLOW_STATUS.ENABLED` shipped). Violates AGENTS.md rule 5 | Nothing, deliberately — the work queue is `manual-loops/*.md` + Engram | **YES** |
+| **D14** | `cowork/CHECKPOINT.md` | session resume point whose session ended; cites `scripts/e2e-http-workflow.sh` (never existed) and `/sdd:*` (retired) | `README.md` + `bootstrap-from-scratch.md` | **YES** — **SB1**: `INDEX.md`'s "see CHECKPOINT.md for the full runbook" must be repointed in the SAME commit |
+| **D15** | `cowork/SESSION-HANDOFF.md` | documents `setup.sh` files under `integrations/` that no longer exist | trace feature README + 2 sample READMEs + `.sdd/changes/processes-message-trace/` | **YES** — **SB4**: verify its "Known gaps" list is present in the trace README first |
+| **D16** | `cowork/CHANGES-for-dev.md` | handoff to a developer who read it; work shipped. Points at `services/audit-service/CLAUDE.md`, which K6g now forbids recreating | the four `.sdd/changes/traceability-*/archive.md` + `TRACEABILITY-audit.md` | **YES** (depends on D4) |
+| **D17** | `cowork/DEBUG-fanout-telegram.md` | deadest file in `cowork/`: drives `setup.sh` scripts that no longer exist, cites `sdk/src/**/*.js` where 0 `.js` remain, machine-specific UUIDs, Spanish | `integrations/channels/http-fanout-telegram/README.md` | **YES** |
+| **D18** | `cowork/SDK-http-sdk.md` | describes a JS ingest-only SDK; 0 `.js` in `sdk/src`, SDK ships 21 namespaces + a CLI. Already banner-marked SUPERSEDED | `sdk/README.md`, `sdk/examples/README.md` | **YES** |
+| **D19** | `cowork/DESIGN-http-channel-instances.md` | Option B shipped; its three "Decisiones abiertas" are answered by the code. Cites `.js` SDK paths + a deleted `setup.sh`. Spanish | `.sdd/changes/http-channel-instances/adr.md`, `DOCS/messaging/ingress.md` | **YES** (depends on D4) |
+| **D20** | `cowork/staging/manual-loop.command.md` | unmaintained second copy of the loop engine that had already drifted on the reviewer-context rule | `.claude/commands/manual-loop.md`, versioned on purpose | **YES** — decide together with its section-U twin row |
+| **D21** | `cowork/ARCHITECTURE-ANALYSIS.md` | self-declared stale snapshot; architecture half superseded on every axis | `DOCS/architecture/overview.md` + `runtime-streaming.md` + `mcp-connections.md` | **YES** — **SB5**: §11–§12 (the `codebase-memory-mcp` fit assessment) must be carved out into `codebase-memory-mcp-setup.md` first |
+| **D22** | `DOCS/reference/ai-sdk.md` (= D10) | 1365-line vendor manual | upstream link + repo-facing notes in `DOCS/agents/` | **YES** |
+| **D23** | **ARCHIVE, do NOT delete**: `cowork/DESIGN-run-view.md` + `cowork/DESIGN-run-view.html` → `DOCS/archive/` | fulfilled BINDING visual contract for a shipped feature; nothing replaces it, `manual-loops/run-view.md` cites rather than contains it | Nothing — it IS the record | **YES (archive)** — **SB6**: both files move together or neither does |
+
+Explicitly **KEEP** (audited, still load-bearing, re-homed by D3, not deleted):
+`ASYNC-RESILIENCE-AUDIT.md` (origin of K7), `DOC-VS-CODE-AUDIT.md` (origin of
+the K-family), `METERING-FOUNDATION.md` (SB2), `TRACEABILITY-audit.md` (model
+RECORD), `CACHE-architecture.md`, `codebase-memory-mcp-setup.md`,
+`LOOP-PLAYBOOK.md`, `INDEX.md`.
+
+**Considered and rejected on evidence** (recorded so it is not re-proposed):
+`integrations/http/http-connectors/connectors/*.json` — five files nothing in
+that sample reads, which read as dead weight, but `scripts/e2e/README.md` uses
+them as ready-made `POST /api/connectors` bodies (`curl … -d @…/pokeapi.json`).
+They stay; their real status is now written down (T06).
+
+#### (e) Decisions — guards (D24–D29)
+
+| ID | Guard | Closes | Cost | Default |
+| --- | --- | --- | --- | --- |
+| **D24** | **K12 — class banner**: every `DOCS/**/*.md` and every component README declares its class in the first 10 lines | D1; the whole "which kind of doc is this?" confusion | modelled byte-for-byte on the shipped `k6f_archive_banner` | **YES** |
+| **D25** | **K13 — doc references inside source resolve**: fail when a `DOCS/**`- or `cowork/**`-shaped path inside `services/`, `packages/`, `sdk/`, `scripts/` does not exist on disk, and fail on any `DOCS/**.md:NNN` line cite | **E6** (6 files cite `DOCS/cowork/METERING-FOUNDATION.md`, a path that has never existed) and **E4** (7 files pin `envelope.md:77`/`:402`). Nothing catches either today — K10 scans links in docs, not doc paths in source | one new guard function; unblocks SB2 | **YES** |
+| **D26** | **K10 widened**: add `DOCS/archive/**` to the corpus, and fail on lowercase `docs/…` path refs anywhere in it | the case-sensitivity bug: `git ls-files \| rg -c '^DOCS/'` → **48**, `'^docs/'` → **0**, yet `rg -o 'docs/[a-z]+/[A-Za-z0-9._-]+\.md' TAXONOMY.md SCHEMAS.md DRIFT.md \| wc -l` → **31** refs (TAXONOMY 25, SCHEMAS 4, DRIFT 2) that are dead on Linux/minikube. **Ledger correction: T08 recorded 28; the reproducible count is 31** — T08 counted matching *lines*, and three lines carry two refs each | corpus +1 dir, 1 new check | **YES** |
+| **D27** | **K6f extended** from `DOCS/runbooks/archive/*.md` to `DOCS/archive/**/*.md` | D2's archive convention has to be enforced or it rots like `cowork/` did | 1-line glob change | **YES** |
+| **D28** | **K-number collision resolved before any new guard lands**: `cowork/DOC-VS-CODE-AUDIT.md` proposes K1–K10; `doc-code-guards.sh` ships K6a–K6g, K7, K8, K9, K9b, K10, K11 (13 guards in `main()`). "K9" and "K10" each name two different things | T08 sequencing blocker SB3 — adding K12/K13 on top of a collision makes it permanent | rename the *proposal* family (it is a RECORD → add a crosswalk table instead of rewriting rows) | **YES (crosswalk, don't rewrite the RECORD)** |
+| **D29** | **K14 — fixture/manifest byte parity** (optional): assert the sample fixtures equal the manifest's inline copy | T06 found `acme-telco-policy.md` had drifted 3420 vs 3450 bytes; `support-faq.md` is byte-identical today (781 bytes) but hand-synced | 1 guard, 2 file pairs | **MODIFY — nice-to-have, defer to a follow-up loop** |
+
+#### (f) Decisions — repo-state / policy (D30–D34)
+
+| ID | Question | Ledger evidence | Default |
+| --- | --- | --- | --- |
+| **D30** | **AGENTS.md may be edited by T10** (ground rule 5 requires an escalated ruling — this round is it) to: name `.sdd/` (F1), name the four classes + `register`, and name `DOCS/archive/` | AGENTS.md today implies "all SDD is gone" (its retirement list) while 56 `.sdd/` docs live, and `scripts/sdd-profile.mjs` + `.claude/sdd-profiles.json` survive | **YES, minimal edits only** |
+| **D31** | `manual-loops-templates/` (3) and `golden/` (2) stay where they are | AGENTS.md names `manual-loops-templates/README.md` and `golden/labeled.tsv` by path; moving them is a bigger rule-5 edit for no reader benefit | **YES (leave)** |
+| **D32** | **F2 — the unenforced hex clause**: `rg -c '#[0-9a-fA-F]{6}' -g '*.ts' services/admin-console/src/app/features \| wc -l` → **58** files break AGENTS.md's "no hard-coded hex — reviewer rejection" | a clause the code has never honoured (rule 4). Three options: guard it (fails today, 58 files), soften the clause to "new code", or leave it aspirational | **MODIFY → soften to new code + add the guard scoped to `git diff`** |
+| **D33** | **F3 — Spanish artifacts vs rule 5**: `cowork/LOOP-PLAYBOOK.md`, `cowork/DESIGN-http-channel-instances.md` (D19 deletes it), `cowork/DEBUG-fanout-telegram.md` (D17 deletes it), `backlog.md` (D13 deletes it), + the Spanish-*named* `skills/envelope-messages/references/diseno-mensajes.md` | the purge already kills 3 of the 5. Remaining: translate `LOOP-PLAYBOOK.md` (155 lines) or name the exception | **MODIFY — translate LOOP-PLAYBOOK, grant the filename exception (its header already explains it)** |
+| **D34** | **E23 — dot-less templates**: `integrations/mcp/{mcp-connections,mcp-repo-support-bot}/env.example` are the only 2 of the 13 sample templates without a leading dot; the stated reason was disproved by E17 | rename both to `.env.example` + the `cp env.example .env` lines in 4 READMEs | **YES (rename)** |
+
+#### (g) Escalations E1–E36 — grouped for one ruling each
+
+36 escalations, no gaps: E1–E23 (`### Escalations`), E24–E35 (T07), E36 (T08).
+
+**SECURITY — fix first, own loop, this week (1)**
+
+| ID | Finding |
+| --- | --- |
+| **E9** | **GENUINE SQL INJECTION.** `SKBRowsRepository.executeQuery` interpolates `containerId` (a bare `@Param("id")` — **no `ParseUUIDPipe`, no format check anywhere on the path**) and `categories` (typed only `@IsArray()`, no `@IsString({each:true})`) into `sql.unsafe()`. Demonstrated: `POST /api/admin/structured-kb/containers/x' OR '1'='1/query` → `WHERE container_id = 'x' OR '1'='1' AND tenant_id = …` → every row of every container in the tenant, and the same hole accepts arbitrary trailing SQL. The ONE bound is `getSql(tenantId)` (per-tenant connection), so observed blast radius is cross-container within one tenant — but the injection point itself is unbounded (simple query protocol, no keyword filtering). Fix: parameterise (`sql.unsafe(text, params)` is already used elsewhere **in the same file**) *and* validate `containerId` as a UUID + constrain `categories` element-wise. |
+
+**GROUP B — genuine bugs, each needs a fix ticket (13)**
+
+| ID | One-line finding | Recommend |
+| --- | --- | --- |
+| **E36** | `cache-service` deployed with `min-scale: "1"` (a pod runs permanently) with **no `@Controller("cache")` proxy in api-gateway** and no caller in admin-console. `rg -n "CACHE_SERVICE_URL"` → exactly 4 hits: 1 source (`gateway.config.ts`), 1 README row, 2 overlays — none a call. Its own README agrees it calls nothing and is called by nothing | **DELETE the service**, or wire the gateway proxy. Doing neither is the only option that costs resources for no behaviour |
+| **E11** | connector-admin accepts `authType: "oauth2-client"` but both header injectors switch on `"oauth2"` → such connectors get **NO `Authorization` header**, silently | fix ticket |
+| **E13** | agent-scheduler-service **cannot schedule anything as deployed**: no tenant discovery/seeding, no `LEADER_ELECTION_POSTGRES_URL`/`REDIS_URL` in the manifest, health still reports `ok` | fix ticket, or admit it as unshipped |
+| **E18** | `ai-system-variables` — the sample's **headline step** looks up camelCase names while the manifest declares slugs, so it always prints `(missing!)` | fix ticket (sample source) |
+| **E10** | `proxy-service` + `tenant-service` `package.json` `test` scripts are defined in terms of `pnpm test` — **infinite recursion, no test ever runs** | fix ticket |
+| **E15** | `sdk`'s `"test": "tsx --test 'test/**/*.test.ts'"` never runs the **14 co-located `src/cli/**/*.test.ts`** specs — the whole `yoizen` CLI (incl. `--secrets-from-env`) is untested by its documented command (`bun test` finds them: 471 vs 343) | widen the glob + re-baseline the count |
+| **E27** | `scripts/smoke-test.sh` gates on **8 of 11** worker Deployments (omits `connector-runtime-http`, `connector-runtime-invoke`, `tracking-ingester-worker`), and BOTH startup orchestrators use it as their readiness gate → bring-up can be "ready" with three workloads crash-looping | fix ticket |
+| **E29** | `dev-mode.sh` + `dev-mode-minikube.sh` map `connector-runtime` to 1 Deployment; the manifests declare 3 and `rebuild-redeploy.sh` rolls all 3 | fix ticket (with E34's table) |
+| **E33** | `rebuild-redeploy.sh` chases a **phantom `connector-runtime` ksvc** (warns on every rebuild); its `usage()` also understates the deploy phase and advertises `qa/staging/production` overlays that do not exist | fix ticket (a) + string fixes (b)(c) |
+| **E24** | `purge-circuit-breakers.sh` can **never** report a failed sweep — `any_error` is declared and never assigned; every per-master op runs under `|| true` | fix ticket |
+| **E25** | `mapfile` in the Redis-cluster branch breaks the repo's own bash-3.2 rule (latent only because dev Redis is standalone) | fix ticket |
+| **E28** | the Claude PostToolUse hook runs `vitest related`, but `vitest` exists in **one** manifest repo-wide (`admin-console`) → the test half is inert for nearly every edit | pick the real runner |
+| **E12** | `SkillFileService.parseFrontmatter` splits YAML on `indexOf(":")` → `description: >` becomes the literal `">"` | parse real YAML, or guard/lint the frontmatter |
+
+**GROUP C — dead or lying data/config, delete-or-wire (4)**
+
+| ID | Finding | Recommend |
+| --- | --- | --- |
+| **E5** | 2 Prometheus alerts (`alerts.yaml`, group `nats-consumer-lag`) filter on durables `webhook-dispatcher` / `event-processor` that appear in no `DURABLE_NAME` under `services/` | delete the two filters (infra ticket) |
+| **E7** | `services/agent-admin-service/data/jobs.yaml` — the reference seed — is wrong on **three** axes: `interval:3600` means 3600 **minutes** (60 h) not hourly, `enabled:` where `IJob` declares `is_active`, and `payload.action` where `JobExecutorService` reads `payload.action_type` (falls to `default` → `execution_failed`) | correct the fixture (a new dev copies it) |
+| **E8** | `validateSelectOnly()` + `enforceLimit()` in `skb-sql-safety.ts` are **exported, tested and never called** — yet `security.md` presented them as Layers 2 and 5 of a 5-layer defence | wire them (natural companion to the E9 fix) |
+| **E23** | 2 dot-less `env.example` templates (see D34) | rename |
+
+**GROUP D — documentation-of-record defects inside code/config files (10).**
+Fix = comment/manifest text only, no behaviour change. This loop could not touch
+them (source is outside every task's allowed set).
+
+`E4` (7 source files pin `DOCS/messaging/envelope.md:77`/`:402`) · `E6` (6 files
+cite the nonexistent `DOCS/cowork/METERING-FOUNDATION.md` — **blocks D3/SB2**) ·
+`E14` (`ensureDurableConsumer`'s JSDoc calls `backoff` immutable while
+`reconcileDurableConsumer` diffs and updates it) · `E16` (5 `sdk/src` resource
+headers still say "404s / pending deploy" against e2e files that assert the
+opposite; `config-files/types.ts` contradicts itself in consecutive sentences) ·
+`E19` (`ai-agent-triage` prints a `🎧 Triage` example no branch can emit) ·
+`E20` (`hosted-services-api/manifest.yaml` header asserts a lifted restriction) ·
+`E21` (`reference-pattern/src/setup.ts` names a `resolve-env.sh` that does not
+exist in its tier) · `E22` (`registry-services-writer.ts`'s "COMPARABLE
+LIMITATION" block describes the superseded comparator — **it already
+manufactured drift once**: a reviewer caught T06 importing it into a README) ·
+`E26` (`reset-dev.ts` header lists Mongo vars as required; `REQUIRED_ENV` holds
+ten names and none is a Mongo var) · `E34` (`DOCS/guides/dev-mode.md`'s table
+omits `tracking-ingester-service` + `provisioning-service`, both implemented in
+`get_targets`) — **recommend: one comment-reconciliation ticket, and D25's K13
+makes E4/E6 unrepeatable.**
+
+**GROUP E — string fixes inside executable lines (4).** T07 was allowed
+comment-only edits; these live in `log`/`fail` arguments, `usage()` heredocs and
+`sed` ranges, so it had to escalate: `E30` (three `usage()` helpers print past
+the end of their header — `kustomize-safe-apply.sh` 8 printed / 6 live shell,
+`rebuild-changed.sh` 5 / 3, `scripts/orbstack/startup.sh` 4 / 2) · `E31`
+(`purge-temporal.sh` prints two dead doc paths at runtime) · `E32`
+(`doc-code-guards.sh` K6c tells the operator to edit `ROW_FILES`; the symbol is
+`row_files_for`) · `E35` (`purge-temporal.sh`'s `usage()` heredoc still asserts
+the reverted HA topology in three places). **Recommend: one small PR, no logic
+touched.**
+
+**GROUP P — policy calls, nothing is broken (4)**
+
+| ID | Question | Recommend |
+| --- | --- | --- |
+| **E1** | `envelope.md` §2.1 prescribes `type = io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`; only the channel/webhook path obeys it — every internal producer emits `io.yoizen.platform.<area>.<kind>.v1` | **narrow the clause to the channel domain** and document the platform form as the second sanctioned shape |
+| **E2** | same for `source`: real values include `//agent-admin-service/admin/agents/publish` and a bare `"agent-ai-service"` (not a URI) | **document `//service/path` + name the bare-string exception**, or ticket the producers |
+| **E3** | `ExecutionHandler.publishStatus` publishes to `…ai-agent-gateway.automation…` while the envelope says `producer: "agent-ai-service"` | doc-only today (`runtime-streaming.md` already calls it a pre-existing inconsistency); **ticket the subject fix or bless it explicitly** |
+| **E17** | CLOSED, no action — recorded because it was a *false* escalation: "the sandbox cannot write `.env.*`" was a TOOL refusal, not a filesystem fact, disproved by fixing one through the shell. Kept as a process note | no ruling needed |
+
+#### (h) Sequencing blockers T10 must honour
+
+| # | Blocker |
+| --- | --- |
+| **SB1** | `cowork/INDEX.md`'s "see CHECKPOINT.md for the full runbook" pointer must be repointed at `README.md` in the SAME commit that deletes `CHECKPOINT.md` (D14) |
+| **SB2** | `METERING-FOUNDATION.md` **cannot move** (D3) until E6's six source-comment paths are fixed — moving it first makes six wrong pointers *doubly* wrong |
+| **SB3** | Resolve the K-number collision (D28) BEFORE K12/K13 land |
+| **SB4** | Verify `SESSION-HANDOFF.md`'s "Known gaps" list exists in the trace README before D15 deletes it |
+| **SB5** | Carve `ARCHITECTURE-ANALYSIS.md` §11–§12 into `codebase-memory-mcp-setup.md` before D21 deletes it |
+| **SB6** | `DESIGN-run-view.md` and `DESIGN-run-view.html` move together or neither moves (D23) |
+| **SB7** | `.sdd/` cannot be deleted or archived away while it is the named replacement for D16 and D19 |
+| **SB8** | T10's link check must cover the moved/deleted set repo-wide, not just K10's corpus — K10 excludes `cowork/` and `manual-loops/` today, which is exactly why SB1 was invisible |
+
+#### (i) OPEN questions — the ledger never framed these
+
+| # | Question | Why it is open |
+| --- | --- | --- |
+| **O1** | The **13 `.es.md` sample twins** (`fd -H -e md \| rg '\.es\.md$' \| wc -l` → 13) + `GUION-DEMO.md` vs AGENTS.md rule 5 "all artifacts in English". F3 lists only 4 Spanish artifacts and never framed the twins | T06 audited and FIXED both halves of every pair and never proposed a merge — but it also proved the hazard: `telegram-transform-reply/README.es.md` contradicted its EN twin **twice**, false half each time, and `mcp-repo-support-bot/README.es.md` had no `manifests apply` step at all. Keep both languages (customer-facing) or English-only? |
+| **O2** | Does `cowork/INDEX.md` (the append-only change register) survive D3's move as `DOCS/archive/INDEX.md`, or is it retired in favour of `manual-loops/` Progress logs? | it is the only cross-loop register, but nothing enforces it and it drifted (its CHECKPOINT pointer, SB1) |
+| **O3** | `CLAUDE.md` is **gitignored** (`.gitignore` lines 1, 83, 128) → a fresh clone has NO pointer to AGENTS.md | if that pointer is load-bearing it belongs in a tracked file; if not, several docs still treat `CLAUDE.md` as a rules file |
+| **O4** | Do the `DOCS/adr/` records (6) and `DOCS/architecture/decision-log.md` merge into ONE decision register, or stay two? | T03 confirmed all 6 ADRs as RECORD and T02 found `decision-log.md` is a *live* register ("rows are amended in place"), not history — but no task was asked whether the repo needs both |
+| **O5** | `DOCS/adr/agent-architecture-improvements.md` is `status: proposed`, dated 2026-06-11, **nothing shipped** (verified absent: no `context/` module dir, no `USE_CONTEXT_PIPELINE`, no `ContextPipeline`) and its problem statement is still literally true | accept it, reject it, or move it to `DOCS/v_next/`? The SPEC's T03 line asked for this ruling; the ledger recorded the evidence but not a recommendation |
+
+#### T09 — ruling
+
+_(to be filled verbatim with Christian's decisions before T10 starts)_
