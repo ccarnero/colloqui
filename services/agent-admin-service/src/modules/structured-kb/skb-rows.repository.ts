@@ -16,6 +16,13 @@ export class SKBRowsRepository extends TenantScopedPostgresRepository {
 
   /**
    * Executes a dynamic query against skb_rows for the NL→SQL pipeline.
+   *
+   * `whereClause`/`orderBy` are spliced in as raw SQL text on purpose — they
+   * are LLM-generated fragments already allowlist-validated by
+   * `isSafe`/`validateWhereClause` (skb-sql-safety.ts) in the only current
+   * caller, SKBQueryService.query, before they ever reach this method.
+   * `containerId`, `tenantId` and `categories` are caller-controlled VALUES,
+   * not SQL syntax, so they are bound as parameters instead.
    */
   async executeQuery(
     tenantId: string,
@@ -30,19 +37,19 @@ export class SKBRowsRepository extends TenantScopedPostgresRepository {
   ): Promise<{ results: Record<string, unknown>[]; totalCount: number }> {
     const sql = await this.getSql(tenantId);
 
-    const whereParts: string[] = [
-      `container_id = '${containerId}'`,
-      `tenant_id = '${tenantId}'`,
-    ];
+    const whereParts: string[] = ["container_id = $1", "tenant_id = $2"];
+    const whereParams: unknown[] = [containerId, tenantId];
 
     if (options.whereClause.trim()) {
       whereParts.push(`(${options.whereClause})`);
     }
 
     if (options.categories.length > 0) {
-      whereParts.push(
-        `categories @> '${JSON.stringify(options.categories)}'::jsonb`
-      );
+      // Raw array, NOT pre-stringified — same reasoning as insertRows: the
+      // ::jsonb cast has the driver serialize it, stringifying here would
+      // double-encode.
+      whereParams.push(options.categories);
+      whereParts.push(`categories @> $${whereParams.length}::jsonb`);
     }
 
     const where = whereParts.join(" AND ");
@@ -50,12 +57,13 @@ export class SKBRowsRepository extends TenantScopedPostgresRepository {
       ? `ORDER BY ${options.orderBy}`
       : "ORDER BY created_at DESC";
 
-    const dataQuery = `SELECT data FROM skb_rows WHERE ${where} ${orderClause} LIMIT ${options.limit} OFFSET ${options.offset}`;
+    const dataParams = [...whereParams, options.limit, options.offset];
+    const dataQuery = `SELECT data FROM skb_rows WHERE ${where} ${orderClause} LIMIT $${whereParams.length + 1} OFFSET $${whereParams.length + 2}`;
     const countQuery = `SELECT COUNT(*)::bigint AS count FROM skb_rows WHERE ${where}`;
 
     const [dataResult, countResult] = await Promise.all([
-      sql.unsafe(dataQuery),
-      sql.unsafe(countQuery),
+      sql.unsafe(dataQuery, dataParams as any),
+      sql.unsafe(countQuery, whereParams as any),
     ]);
 
     const results = (

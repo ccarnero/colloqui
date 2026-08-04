@@ -1,9 +1,17 @@
-import { Controller, Post, Param, Body, BadRequestException, UseGuards } from "@nestjs/common";
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Param,
+  ParseUUIDPipe,
+  Post,
+  UseGuards,
+} from "@nestjs/common";
 import { TenantGuard } from "../../guards/tenant.guard";
 import { TenantId } from "../../providers/tenant.decorator";
-import { SKBQueryService } from "./skb-query.service";
 import { SKBContainersService } from "./containers.service";
 import { QuerySKBDto } from "./dto/query-skb.dto";
+import { SKBQueryService } from "./skb-query.service";
 import { SKBRateLimitGuard } from "./skb-rate-limit.guard";
 
 @Controller("admin/structured-kb")
@@ -11,15 +19,15 @@ import { SKBRateLimitGuard } from "./skb-rate-limit.guard";
 export class StructuredKBController {
   constructor(
     private readonly containersService: SKBContainersService,
-    private readonly queryService: SKBQueryService,
+    private readonly queryService: SKBQueryService
   ) {}
 
   @Post("containers/:id/query")
   @UseGuards(SKBRateLimitGuard)
   async query(
     @TenantId() tenantId: string,
-    @Param("id") id: string,
-    @Body() body: QuerySKBDto,
+    @Param("id", ParseUUIDPipe) id: string,
+    @Body() body: QuerySKBDto
   ) {
     // Validate query is not empty
     if (!body.query || body.query.trim().length === 0) {

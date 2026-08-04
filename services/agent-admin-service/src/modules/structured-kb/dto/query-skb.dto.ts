@@ -1,4 +1,12 @@
-import { IsString, IsNotEmpty, IsOptional, IsNumber, Min, Max, IsArray } from "class-validator";
+import {
+  IsArray,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from "class-validator";
 
 export class QuerySKBDto {
   @IsString()
@@ -6,6 +14,7 @@ export class QuerySKBDto {
   query!: string;
 
   @IsArray()
+  @IsString({ each: true })
   @IsOptional()
   categories?: string[];
 

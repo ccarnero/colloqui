@@ -297,6 +297,110 @@ describe("SKBRowsRepository", () => {
     });
   });
 
+  describe("executeQuery", () => {
+    function createRepositoryWithSql(sql: any): SKBRowsRepository {
+      const connectionManager = {
+        ensureSchema: vi.fn().mockResolvedValue(sql),
+      };
+      return new SKBRowsRepository(connectionManager as any);
+    }
+
+    it("should parameterize containerId and tenantId instead of interpolating them", async () => {
+      mockSql.unsafe.mockResolvedValue([]);
+      const repo = createRepositoryWithSql(mockSql);
+
+      await repo.executeQuery(TENANT_ID, CONTAINER_ID, {
+        whereClause: "",
+        categories: [],
+        limit: 10,
+        offset: 0,
+      });
+
+      const [dataSql, dataParams] = mockSql.unsafe.mock.calls[0];
+      expect(dataSql).not.toContain(CONTAINER_ID);
+      expect(dataSql).not.toContain(TENANT_ID);
+      expect(dataSql).toContain("container_id = $1");
+      expect(dataSql).toContain("tenant_id = $2");
+      expect(dataParams).toContain(CONTAINER_ID);
+      expect(dataParams).toContain(TENANT_ID);
+    });
+
+    it("should neutralize a SQL-injection payload in containerId as a literal parameter value", async () => {
+      mockSql.unsafe.mockResolvedValue([]);
+      const repo = createRepositoryWithSql(mockSql);
+      const malicious = "x' OR '1'='1";
+
+      await repo.executeQuery(TENANT_ID, malicious, {
+        whereClause: "",
+        categories: [],
+        limit: 10,
+        offset: 0,
+      });
+
+      const [dataSql, dataParams] = mockSql.unsafe.mock.calls[0];
+      // The query text must stay structurally fixed — the payload never
+      // becomes part of the SQL grammar, only a bound value.
+      expect(dataSql).toContain("container_id = $1");
+      expect(dataSql).not.toContain("OR '1'='1");
+      expect(dataParams[0]).toBe(malicious);
+    });
+
+    it("should parameterize categories instead of interpolating a JSON literal", async () => {
+      mockSql.unsafe.mockResolvedValue([]);
+      const repo = createRepositoryWithSql(mockSql);
+      const categories = ["a' OR '1'='1", "sales"];
+
+      await repo.executeQuery(TENANT_ID, CONTAINER_ID, {
+        whereClause: "",
+        categories,
+        limit: 10,
+        offset: 0,
+      });
+
+      const [dataSql, dataParams] = mockSql.unsafe.mock.calls[0];
+      expect(dataSql).not.toContain("OR '1'='1");
+      expect(dataSql).toContain("categories @>");
+      const categoriesParam = (dataParams as unknown[]).find((p) =>
+        Array.isArray(p)
+      );
+      expect(categoriesParam).toEqual(categories);
+    });
+
+    it("should still splice the pre-validated whereClause/orderBy as raw SQL text", async () => {
+      mockSql.unsafe.mockResolvedValue([]);
+      const repo = createRepositoryWithSql(mockSql);
+
+      await repo.executeQuery(TENANT_ID, CONTAINER_ID, {
+        whereClause: "(data->>'status') = 'active'",
+        orderBy: "(data->>'created_at') DESC",
+        categories: [],
+        limit: 10,
+        offset: 0,
+      });
+
+      const [dataSql] = mockSql.unsafe.mock.calls[0];
+      expect(dataSql).toContain("(data->>'status') = 'active'");
+      expect(dataSql).toContain("ORDER BY (data->>'created_at') DESC");
+    });
+
+    it("should return mapped results and total count", async () => {
+      const repo = createRepositoryWithSql(mockSql);
+      mockSql.unsafe
+        .mockResolvedValueOnce([{ data: { name: "Alice" } }])
+        .mockResolvedValueOnce([{ count: "1" }]);
+
+      const result = await repo.executeQuery(TENANT_ID, CONTAINER_ID, {
+        whereClause: "",
+        categories: [],
+        limit: 10,
+        offset: 0,
+      });
+
+      expect(result.results).toEqual([{ name: "Alice" }]);
+      expect(result.totalCount).toBe(1);
+    });
+  });
+
   describe("death check", () => {
     it("should throw if container was deleted mid-insert", async () => {
       mockSql.unsafe.mockRejectedValue(
