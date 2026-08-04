@@ -701,3 +701,95 @@ touched.**
 #### T09 — ruling
 
 _(to be filled verbatim with Christian's decisions before T10 starts)_
+
+| ID | Ruling |
+| --- | --- |
+| **D1** | **MODIFY — approved.** Banner is two lines, not one: `Class:` followed by a `Summary:` line with a one-sentence description of what the file does. Applies to all 73 files (48 `DOCS/**` + 20 service READMEs + 5 package READMEs); the 27 sample READMEs under `integrations/`/`demos/` stay excluded per the original default. Format:<br>`Class: descriptive`<br>`Summary: <one-line, what this file does>`<br>K12 must check for both lines, not just `Class:`. |
+| **D2** | **YES — approved as proposed.** RECORDS live in `manual-loops/**` and `DOCS/archive/**` only; ~~K6f~~ **G6f**'s glob widens from `DOCS/runbooks/archive/*.md` to `DOCS/archive/**/*.md`. (Guard renamed to `G`-prefix per D28.) |
+| **D3** | **YES — approved as proposed.** Dissolve `cowork/`: audits → `DOCS/archive/audits/`, prescriptive guides → `DOCS/guides/`, `INDEX.md` → `DOCS/archive/INDEX.md`, `DOCS-TRUTH-LEDGER.md` → `DOCS/archive/audits/` at T10 close. `METERING-FOUNDATION.md` stays put until **SB2** (E6 fix) clears. |
+| **D4** | **YES — approved as proposed.** `.sdd/` is blessed as a named RECORD system in AGENTS.md (contingent on D30 approving the AGENTS.md edit), README banner added. |
+| **D5** | **YES — approved as proposed.** Fold `.agents/skills/adr-skill/**` (8 docs) into `skills/adr/`; `.agents/` root removed. |
+| **D6** | **MODIFY — split ruling.** `fixtures/bus-events/README.md`: **YES**, keep co-located, add to ~~K10~~ **G10** corpus as proposed — verified valid (11 fixtures on disk, actively used by `tracking-ingester-service` and `workflow-service` tests). `knative/services/overlays/_components/README.md`: **DELETE instead of keep** — verified the `_components/` composition pattern has zero consumers (no `kustomization.yaml` in the repo uses `components:` or references `_components/`), and the file falsely claims `scale-to-zero-non-prod/`/`scale-to-zero-staging/` "remain on disk" when they do not (removed by `2c77968b` "back to dev mode for k8s"). Delete the file; T10 to confirm the `_components/` dir is otherwise empty before removing it too. |
+| **D7** | **YES — approved as proposed**, for now. Verified Instagram is live, wired code (not premature) before ruling — `InstagramProvider` registered in `webhooks.module.ts` + `provider-registry.ts` + `Channel` union. Christian separately flagged the whole Instagram channel as stale and wants it removed in a **future, separate effort** — tracked as Engram memory #1239, out of scope for T09/T10. `meta-provider-pattern.md` → merged into `instagram.md` proceeds now regardless, since both would be deleted together later anyway. |
+| **D8** | **YES — approved as proposed.** Split `DOCS/skb/architecture.md`: as-built sections (§3, §4.2, §8, §10, §11) stay `descriptive`; design body becomes `future`/RECORD in its own file. |
+| **D9** | **YES — approved as proposed.** Split `DOCS/guides/doc-code-validation-tests.md`: "Implemented" half stays `descriptive`, test-proposal half becomes `future`, in its own file. |
+| **D10 / D22** | **YES — approved as proposed.** Delete `DOCS/reference/ai-sdk.md` (1365 lines, vendor manual); replace with an upstream link + the ~2 repo-facing paragraphs folded into `DOCS/agents/`. `DOCS/reference/` dir removed (0 files left). |
+| **D11** | **YES — approved as proposed.** New class `register` added (dated rows amended in place); K12 accepts it. Applies to `DOCS/architecture/decision-log.md`, `SCHEMAS.md` (contingent on D30 for edit rights), `cowork/INDEX.md` (moves to `DOCS/archive/INDEX.md` per D3, stays `register`). |
+| **D12** | **MODIFY — approved with an added mass cleanup.** Policy as proposed: ban new `:NNN` cites inside `services/`/`packages/` source (K13, D25), convert existing ones on touch, no blanket sweep. **Additionally**: a mass conversion of existing `:NNN` cites runs now, scoped to LIVING docs only — `skills/multi-tenant/SKILL.md` (~40 cites), `skills/yz-ui/SKILL.md`, and the 7 source files pinning `envelope.md:77`/`:402` (E4). Explicitly EXCLUDED: `cowork/DOCS-TRUTH-LEDGER.md`, `cowork/INDEX.md`, `DOC-VS-CODE-AUDIT.md` — these are RECORD (D2: "dated, never rewritten") and their `:NNN` mentions are evidentiary prose describing audit findings, not live navigation pointers; rewriting them would corrupt the historical record, not fix rot. Verified before ruling: raw `\.md:[0-9]+` grep across `**/*.md` returns 111 hits, the large majority inside the three excluded RECORD files. |
+
+#### (d) DELETE list — rulings
+
+| ID | Ruling |
+| --- | --- |
+| **D13** | **YES — approved as proposed.** Delete `backlog.md`, no replacement. |
+| **D14** | **YES — approved as proposed.** Delete `cowork/CHECKPOINT.md`; replaced by `README.md` + `bootstrap-from-scratch.md`. **SB1 applies**: `INDEX.md`'s "see CHECKPOINT.md" pointer must be repointed in the SAME commit. |
+| **D15** | **YES — approved as proposed.** Delete `cowork/SESSION-HANDOFF.md`; replaced by the trace feature README + 2 sample READMEs + `.sdd/changes/processes-message-trace/`. **SB4 applies**: verify its "Known gaps" list is present in the trace README BEFORE deleting. |
+| **D16** | **YES — approved as proposed.** Delete `cowork/CHANGES-for-dev.md`; replaced by the four `.sdd/changes/traceability-*/archive.md` + `TRACEABILITY-audit.md`. Depends on D4 (approved), no blocker. |
+| **D17** | **YES — approved as proposed.** Delete `cowork/DEBUG-fanout-telegram.md`; replaced by `integrations/channels/http-fanout-telegram/README.md`. |
+| **D18** | **YES — approved as proposed.** Delete `cowork/SDK-http-sdk.md` (already banner-marked SUPERSEDED); replaced by `sdk/README.md`, `sdk/examples/README.md`. |
+| **D19** | **YES — approved as proposed.** Delete `cowork/DESIGN-http-channel-instances.md`; replaced by `.sdd/changes/http-channel-instances/adr.md`, `DOCS/messaging/ingress.md`. Depends on D4 (approved), no blocker. |
+| **D20** | **YES — approved as proposed.** Delete `cowork/staging/manual-loop.command.md` (unmaintained duplicate, previously drifted on the reviewer-context rule, synced by T07 but still redundant). Twin row closed together: `.claude/commands/manual-loop.md` is confirmed as the sole canonical copy, versioned on purpose (`.gitignore:132` exception). |
+| **D21** | **YES — approved as proposed.** Delete `cowork/ARCHITECTURE-ANALYSIS.md` (self-declared stale); replaced by `DOCS/architecture/overview.md` + `runtime-streaming.md` + `mcp-connections.md`. **SB5 applies**: carve out §11-§12 (the `codebase-memory-mcp` fit assessment) into `codebase-memory-mcp-setup.md` BEFORE deleting — it exists nowhere else. |
+| **D23** | **YES — approved as proposed (ARCHIVE, not delete).** `cowork/DESIGN-run-view.md` + `cowork/DESIGN-run-view.html` → `DOCS/archive/`. **SB6 applies**: both files move together in the same commit, or neither moves — they are coupled as one binding visual contract record. |
+
+#### (e) Guards — rulings
+
+| ID | Ruling |
+| --- | --- |
+| **D24** | **YES — approved as proposed.** New guard, named `G12` directly (not `K12` — see D28), enforces D1's banner (`Class:` + `Summary:` per Christian's D1 modification), modelled on the shipped `k6f_archive_banner` (itself renamed `g6f_archive_banner` per D28). |
+| **D25** | **YES — approved as proposed.** New guard `G13`: fails when a `DOCS/**`/`cowork/**`-shaped path inside `services/`, `packages/`, `sdk/`, `scripts/` doesn't exist on disk, and fails any `DOCS/**.md:NNN` line cite. Closes E6 + E4. Unblocks SB2. |
+| **D26** | **YES — approved as proposed.** ~~K10~~ **G10** widened to cover `DOCS/archive/**` and fails on lowercase `docs/…` refs (case-sensitivity bug — dead on Linux/minikube, silent on Mac). Ledger correction stands: reproducible count is 31 refs, not T08's 28 (T08 counted lines, not refs; 3 lines carry 2 refs each). |
+| **D27** | **YES — approved as proposed.** ~~K6f~~ **G6f** extended from `DOCS/runbooks/archive/*.md` to `DOCS/archive/**/*.md` (1-line glob change), enforcing D2's archive convention. |
+| **D28** | **MODIFY — approved, upgraded from crosswalk to full rename.** The entire implemented guard family in `doc-code-guards.sh` is renamed from `K`-prefix to **`G`-prefix** (G = guard), same numbers: `K6a-K6g→G6a-G6g`, `K7→G7`, `K8→G8`, `K9→G9`, `K9b→G9b`, `K10→G10`, `K11→G11`. The three guards born in this ruling round (D24-D25-D26 above, D29 below) are named `G12`/`G13`/`G14` directly — they never carry a `K`-number. The RECORD `cowork/DOC-VS-CODE-AUDIT.md` (its original K1-K10 proposal, §"Locks") is **NOT rewritten** (D2: RECORD is never rewritten) — a crosswalk table is added there instead, mapping each of its K-numbers to the real `G`-guard it maps to (if any survived) or marking it "never implemented." Function names, `main()` registration, and every doc that references a `K`-guard by name (this SPEC's own D2/D6/D24-D27 rows above included) are updated to `G`. |
+| **D29** | **MODIFY — approved, upgraded from optional guard to sync script.** Instead of the optional `G14` byte-parity guard, a script makes the `.md` fixture the single hand-edited source of truth: `acme-telco-policy.md`/`support-faq.md` are edited directly, and their manifest's inline `content:` block (`manifest.yaml`) is regenerated FROM the `.md` — drift becomes structurally impossible instead of merely detected. Investigated first: the manifest schema (`packages/shared/src/provisioning/manifest.schema.ts`) only supports `type: "inline"` for KB document sources today, no file-reference alternative — a real `type: "file"` schema addition was considered and parked as a separate TODO (Engram #1249) since it's a product/schema change affecting `ai-skill-support-agent`, `ai-knowledge-base-agent`, and `demos/crm-support-telegram` alike, out of scope for this docs loop. |
+
+#### (f) Repo-state / policy — rulings
+
+| ID | Ruling |
+| --- | --- |
+| **D30** | **YES — approved as proposed, minimal edits only.** T10 may edit AGENTS.md to: name `.sdd/` (F1, per D4), name the four classes + `register` (D1, D11), and name `DOCS/archive/`. Confirmed: F1/F2/F3 are the complete set of false claims found in AGENTS.md across all 8 audit tasks — D30 (F1) + D32 (F2) + D33 (F3) together close all of it, nothing left over. |
+| **D31** | **YES — approved as proposed.** `manual-loops-templates/` and `golden/` stay where they are — AGENTS.md names them by exact path; moving is a bigger rule-5 edit for no reader benefit. |
+| **D32** | **MODIFY — approved with the proposed default.** F2 (58 files under `services/admin-console/src/app/features` break the "no hardcoded hex" clause). AGENTS.md's clause softens to "no NEW hex literals" (ratchet); new guard scoped to `git diff` — fails only on hex introduced in added lines, existing 58 files grandfathered as known debt, not re-checked until touched. |
+| **D33** | **MODIFY — approved with the proposed default.** F3 (Spanish artifacts vs rule 5). 3 of 5 already gone via the purge (D13, D17, D19). `cowork/LOOP-PLAYBOOK.md` (155 lines, survives the purge) gets translated to English. `skills/envelope-messages/references/diseno-mensajes.md` keeps its Spanish filename as an explicit, named exception (its own header already justifies it). |
+| **D34** | **YES — approved as proposed.** E23: `integrations/mcp/mcp-connections/env.example` and `integrations/mcp/mcp-repo-support-bot/env.example` renamed to `.env.example` (their original no-dot rationale was disproved by E17); the 4 READMEs' `cp env.example .env` lines corrected to match. |
+
+#### Escalations E1-E36 — rulings
+
+| Group | Ruling |
+| --- | --- |
+| **SECURITY (E9)** | **CONFIRMED — separate, prioritized security loop, this week, NOT part of T10.** T10 (this SPEC) is docs-only reorganization; E9 is a genuine exploitable SQL injection in `SKBRowsRepository.executeQuery` and gets its own loop ahead of everything else in this SPEC. |
+| **GROUP B (13 bugs)** | **CONFIRMED — each becomes an independent fix ticket, out of scope for T10.** E36, E11, E13, E18, E10, E15, E27, E29, E33, E24, E25, E28, E12 — no code changes happen inside the docs-truth-audit SPEC. |
+| **GROUP C (4)** | **CONFIRMED, out of scope for T10, each its own ticket.** E5: delete the 2 dead Prometheus alert filters (infra ticket). E7: correct `jobs.yaml` fixture (interval unit, `enabled`→`is_active`, `action`→`action_type`). E8: wire `validateSelectOnly()`/`enforceLimit()` into the actual call path (natural companion to the E9 security fix). E23 already closed via D34. |
+| **GROUP D (10)** | **CONFIRMED — one comment-reconciliation ticket, out of scope for T10.** E4, E6, E14, E16, E19, E20, E21, E22, E26, E34 — comment/JSDoc/header text fixes only, no behaviour change, bundled into a single ticket. D25 (guard G13) makes E4/E6's class of drift (dead doc paths cited from source) unrepeatable going forward. |
+| **GROUP E (4)** | **CONFIRMED — one small commit on this branch (`feature/fix-docs-codigo-manda`), no logic touched.** E30 (3 `usage()` helpers printing more steps than the script has), E31 (`purge-temporal.sh` prints two dead doc paths at runtime), E32 (`doc-code-guards.sh` — now `G6c` post-D28 — tells the operator to edit `ROW_FILES`; real symbol is `row_files_for`), E35 (`purge-temporal.sh`'s `usage()` heredoc still asserts the reverted HA topology). String-only fixes, not a GitHub PR — no PR-to-main workflow exists for this repo (Engram: PR-to-main abandoned, this branch is where work lands). |
+| **GROUP P — E1** | **CONFIRMED — doc-only, part of T10.** `envelope.md` §2.1 documents BOTH forms of `type` that already exist in code: the 5-segment `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1` for channel/webhook producers, and the shorter `io.yoizen.<domain>.<kind>.v1` for internal producers (workflow, runtime, provisioning) that have no channel/provider. No code changes — the two forms reflect a real semantic distinction. |
+| **GROUP P — E2** | **DONE (2026-08-04).** `source` no longer a URI. `envelope.md` §2.1/§10/§11 + `skills/envelope-messages/SKILL.md` + its `references/diseno-mensajes.md` + `assets/envelope-builder.ts` updated to the plain `service/path` form (no `//`). All 33 real production call sites fixed across `channel-service`, `api-gateway`, `agent-memory-service`, `workflow-service`, `agent-scheduler-service`, `agent-admin-service`, `connector-runtime`, `provisioning-service`, `registry-service` (constant `REGISTRY_EVENT_SOURCE`) — plus the 7 `agent-ai-service` sites that previously published a bare `"agent-ai-service"` string now carry context mirroring their sibling `resource` field (e.g. `agent-ai-service/execution/<id>`, `agent-ai-service/heartbeat`, `agent-ai-service/tools/request`). Matching test fixtures updated across `packages/shared`, `packages/database`, and affected services' unit/e2e specs. `cowork/DOCS-TRUTH-LEDGER.md` and this SPEC's own escalation-evidence text left untouched (RECORD, D2 — historical quotes of what the audit found, not live pointers). Full test suites green + typecheck clean on every touched service/package. |
+| **GROUP P — E3** | **CONFIRMED — fix ticket, out of scope for T10.** `ExecutionHandler.publishStatus` publishes to a subject naming `ai-agent-gateway` while the envelope's `producer` field says `agent-ai-service`. Ticket to correct the subject (likely should read `agent-ai-service`, matching the producer) — not blessed as-is. |
+| **GROUP P — E17** | Closed, no action — false escalation (a sandbox tool refusal misread as a filesystem fact), kept as a process note only. |
+
+#### OPEN questions O1-O5 — rulings
+
+| ID | Ruling |
+| --- | --- |
+| **O1** | **English-only. Delete all 13 `.es.md` twins + `GUION-DEMO.md`.** No content loss — T06 already audited and fixed both halves of every pair before this ruling, so the English half is complete and accurate on its own. Does NOT affect D33's `diseno-mensajes.md` exception — verified that file's CONTENT is already English (translated in the envelope-drift loop, 2026-07-31); only its filename stays Spanish because `SKILL.md` references it by that exact path. Two different things: O1 is full-document Spanish twins, D33 is a legacy filename on an English file. |
+| **O2** | **CONFIRMED — already closed by D3 + D11, no new decision needed.** `cowork/INDEX.md` survives as `DOCS/archive/INDEX.md`, stays append-only, classed `register`. |
+| **O3** | **YES — approved.** `README.md` (versioned) gains a line pointing to `AGENTS.md` as the normative document, so a fresh clone has a tracked pointer to the rules even without `CLAUDE.md` (gitignored, lines 1/83/128). |
+| **O4** | **Stay two — resolved by the class system already built this round.** `DOCS/adr/` (6 ADRs, confirmed RECORD by T03 — frozen, dated, never rewritten per D2) and `DOCS/architecture/decision-log.md` (confirmed a LIVE register by T02, rows amended in place, classed `register` per D11) are structurally different classes. Merging them would undo the exact class separation D1-D11 just established. No new decision needed beyond applying D2/D11. |
+| **O5** | **Move to `DOCS/v_next/`.** `DOCS/adr/agent-architecture-improvements.md` is `status: proposed`, dated 2026-06-11, verified nothing shipped (no `context/` module, no `USE_CONTEXT_PIPELINE`, no `ContextPipeline`), and its problem statement is still literally true today. `v_next/` is exactly the class D1's target tree reserves for this: not-yet-implemented but still relevant. Reclassed from RECORD-shaped ADR to `future`. |
+
+#### T09 ruling round — CLOSED
+
+All of D1-D34, E1-E36 (grouped), and O1-O5 ruled above. SB1-SB8 cross-checked against the rulings: SB1 (D14), SB2 (D3+D25), SB3 (superseded by D28's full rename), SB4 (D15), SB5 (D21), SB6 (D23), SB7 (D4) are each honoured by the ruling that names them. **SB8** (T10's own link check must cover the full moved/deleted set repo-wide, not just G10's corpus — the gap that made SB1 invisible in the first place) is a T10 execution instruction, not a decision point; T10 must implement it, not rule on it.
+
+**What T10 executes** (docs-only, this branch, one loop): D1-D34 in full (banners, merges, splits, 11 deletes + 1 archive, `register` class, G-prefix guard rename G6a-G14, AGENTS.md minimal edits, hex-clause softening, LOOP-PLAYBOOK translation, `.env.example` renames) + O1 (delete 13 `.es.md` twins + `GUION-DEMO.md`) + O3 (README.md → AGENTS.md pointer) + O4/O5 (no-op / ADR reclass) — honouring SB1-SB8.
+
+**What is explicitly OUT of T10, tracked separately:**
+1. E9 — SQL injection, own security loop, priority, this week
+2. E2 — envelope `source` drops URI shape, separate loop (Engram #1253)
+3. E3 — `ExecutionHandler` subject fix ticket
+4. Group B — 13 independent bug tickets (E36, E11, E13, E18, E10, E15, E27, E29, E33, E24, E25, E28, E12)
+5. Group C — 3 tickets (E5, E7, E8)
+6. Group D — 1 comment-reconciliation ticket (E4, E6, E14, E16, E19, E20, E21, E22, E26, E34)
+7. Group E — 1 small commit, string-only (E30, E31, E32, E35)
+8. TODO: Instagram/Meta channel removal (Engram #1239)
+9. TODO: manifest schema `file`-type source (Engram #1249)
