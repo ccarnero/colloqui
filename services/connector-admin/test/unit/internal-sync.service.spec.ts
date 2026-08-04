@@ -189,7 +189,7 @@ function buildEnvelope(
   return {
     specversion: "1.0",
     id: `id-${tenantId}-${type}`,
-    source: "//registry-service/services",
+    source: "registry-service/services",
     type,
     resource: `tenant/${tenantId}/service/${(payload as { serviceId?: string }).serviceId ?? "svc"}`,
     time: new Date().toISOString(),

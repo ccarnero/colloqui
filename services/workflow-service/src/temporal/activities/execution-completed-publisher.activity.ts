@@ -152,7 +152,7 @@ export async function publishExecutionCompletedEvent(
   const envelope: EventEnvelope = {
     specversion: "1.0",
     id: eventId,
-    source: "//workflow-service/execution-status",
+    source: "workflow-service/execution-status",
     type: "io.yoizen.workflow.execution.completed.v1",
     resource: `tenant/${args.tenantId}/workflow-execution/${args.executionId}`,
     time: now,
@@ -287,7 +287,7 @@ export async function publishExecutionStartedEvent(
   const envelope: EventEnvelope = {
     specversion: "1.0",
     id: eventId,
-    source: "//workflow-service/execution-status",
+    source: "workflow-service/execution-status",
     type: "io.yoizen.workflow.execution.started.v1",
     resource: `tenant/${args.tenantId}/workflow-execution/${args.executionId}`,
     time: now,
@@ -457,7 +457,7 @@ async function publishActionEvent(
   const envelope: EventEnvelope = {
     specversion: "1.0",
     id: eventId,
-    source: "//workflow-service/execution-status",
+    source: "workflow-service/execution-status",
     type: `io.yoizen.workflow.action.${kind}.v1`,
     resource: `tenant/${args.tenantId}/workflow-execution/${args.executionId}`,
     time: now,
@@ -622,7 +622,7 @@ export async function publishConditionEvaluatedEvent(
   const envelope: EventEnvelope = {
     specversion: "1.0",
     id: eventId,
-    source: "//workflow-service/execution-status",
+    source: "workflow-service/execution-status",
     type: "io.yoizen.workflow.condition.evaluated.v1",
     resource: `tenant/${args.tenantId}/workflow-execution/${args.executionId}`,
     time: now,

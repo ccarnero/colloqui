@@ -42,7 +42,7 @@ const PRODUCER = "provisioning-service";
 const DOMAIN = "provisioning";
 const CHANNEL = "platform";
 const PROVIDER = "internal";
-const SOURCE = "//provisioning-service/manifests";
+const SOURCE = "provisioning-service/manifests";
 
 /** Depth of every sibling event (constant) — one hop off the run root. */
 const SIBLING_DEPTH = 1;

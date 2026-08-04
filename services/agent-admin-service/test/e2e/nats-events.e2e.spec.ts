@@ -122,7 +122,7 @@ describe("NATS Events E2E Tests", () => {
       expect(event!.tenant).toBe(tenant.id);
       expect(event!.producer).toBe("agent-admin-service");
       expect(event!.source).toBe(
-        "//agent-admin-service/admin/agents/publish",
+        "agent-admin-service/admin/agents/publish",
       );
       expect(event!.data.payload_inline).toBe(true);
       expect(event!.data.payload_ref).toBeNull();
@@ -133,7 +133,7 @@ describe("NATS Events E2E Tests", () => {
       expect(event!.data.payload?.agentId).toBe(agent.id);
       expect(event!.metadata.tenantId).toBe(tenant.id);
       expect(event!.metadata.source).toBe(
-        "//agent-admin-service/admin/agents/publish",
+        "agent-admin-service/admin/agents/publish",
       );
       expect(typeof event!.metadata.timestamp).toBe("number");
     });

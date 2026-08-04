@@ -1,6 +1,11 @@
-import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import type { JetStreamClient } from "nats";
+import {
+  Inject,
+  Injectable,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
+import type { JetStreamClient } from "nats";
 import { JETSTREAM } from "../../providers/nats.provider";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -17,10 +22,10 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
   onModuleInit(): void {
     this.intervalId = setInterval(
       () => this.publishHeartbeats(),
-      HEARTBEAT_INTERVAL_MS,
+      HEARTBEAT_INTERVAL_MS
     );
     this.logger.log(
-      `[heartbeat] Started with interval ${HEARTBEAT_INTERVAL_MS}ms`,
+      `[heartbeat] Started with interval ${HEARTBEAT_INTERVAL_MS}ms`
     );
   }
 
@@ -61,7 +66,7 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
     const envelope = {
       specversion: "1.0",
       id: crypto.randomUUID(),
-      source: "agent-ai-service",
+      source: "agent-ai-service/heartbeat",
       type: "io.yoizen.platform.runtime.online.v1",
       resource: "agent-ai-service/heartbeat",
       time: timestamp,
@@ -93,13 +98,13 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
         this.js.publish(subject, JSON.stringify(msg));
       } catch (error) {
         this.logger.warn(
-          `[heartbeat] Failed to publish for tenant '${tenantId}': ${error}`,
+          `[heartbeat] Failed to publish for tenant '${tenantId}': ${error}`
         );
       }
     }
 
     this.logger.debug(
-      `[heartbeat] Published online status for ${tenants.length} tenant(s)`,
+      `[heartbeat] Published online status for ${tenants.length} tenant(s)`
     );
   }
 }

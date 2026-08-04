@@ -351,7 +351,7 @@ cell is about which path exists today, not about which categories it can enforce
 {
   "specversion": "1.0",
   "id": "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
-  "source": "//api-gateway/webhooks",
+  "source": "api-gateway/webhooks",
   "type": "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1",
   "resource": "tenant/acme/channel/whatsapp/provider/webhook",
   "time": "2026-06-11T12:00:00.000Z",
@@ -394,7 +394,7 @@ Note: `accountid` is absent — typed as `Omit<EventEnvelope, "accountid">`.
 {
   "specversion": "1.0",
   "id": "b7d9e2f4-1a3c-5e7f-9b1d-2c3e4f5a6b7c",
-  "source": "//channel-service/accounts/69bea8cd868e860918359cc7",
+  "source": "channel-service/accounts/69bea8cd868e860918359cc7",
   "type": "io.yoizen.messaging.whatsapp.meta.received.v1",
   "resource": "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta",
   "time": "2026-06-11T12:00:01.000Z",

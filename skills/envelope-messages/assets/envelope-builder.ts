@@ -15,7 +15,7 @@
  * Key facts verified against the real code (envelope.factory.ts):
  *   - id: crypto.randomUUID()  (NOT ULID)
  *   - type: `io.yoizen.messaging.${channel}.${provider}.${kind}.v1`
- *   - source: `//channel-service/accounts/${accountId}`
+ *   - source: `channel-service/accounts/${accountId}`
  *   - producer: CHANNEL_PRODUCER ("channel-service")
  *   - correlation_id: defaults to envelope id if not propagated
  *   - idempotencykey: computeIdempotencyKey(rawPayload) = sha256(canonicalJson(rawPayload))
@@ -26,7 +26,7 @@
  *   services/api-gateway/src/modules/channels/webhook-ingress-publisher.service.ts
  *     - producer: "api-gateway"
  *     - type: `io.yoizen.messaging.${channel}.webhook.webhook_received.v1`
- *     - source: "//api-gateway/webhooks"
+ *     - source: "api-gateway/webhooks"
  *     - accountid: OMITTED (unknown at this stage — resolved in stage 2)
  *     - data includes raw_body_b64 and filtered headers (WEBHOOK_FORWARDED_HEADERS — 7 entries;
  *       stage 2 additionally strips the WEBHOOK_SECRET_HEADERS subset post-verification)

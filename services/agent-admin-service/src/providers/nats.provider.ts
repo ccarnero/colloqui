@@ -400,7 +400,7 @@ export class NatsPublisher implements OnModuleDestroy {
         }),
       },
       resource: `tenant/${tenantId}/agents/${agentId}`,
-      source: "//agent-admin-service/admin/agents/publish",
+      source: "agent-admin-service/admin/agents/publish",
     });
 
     return this.publishEvent(tenantId, AGENT_ADMIN_AGENT_PUBLISHED, event);
@@ -426,7 +426,7 @@ export class NatsPublisher implements OnModuleDestroy {
         unpublishedAt,
       },
       resource: `tenant/${tenantId}/agents/${agentId}`,
-      source: "//agent-admin-service/admin/agents/unpublish",
+      source: "agent-admin-service/admin/agents/unpublish",
     });
 
     return this.publishEvent(tenantId, AGENT_ADMIN_AGENT_UNPUBLISHED, event);
@@ -452,7 +452,7 @@ export class NatsPublisher implements OnModuleDestroy {
         syncedAt,
       },
       resource: `tenant/${tenantId}/runtime/config`,
-      source: "//agent-admin-service/admin/config-files/deploy",
+      source: "agent-admin-service/admin/config-files/deploy",
     });
 
     return this.publishEvent(tenantId, AGENT_ADMIN_CONFIG_SYNC, event);
@@ -482,7 +482,7 @@ export class NatsPublisher implements OnModuleDestroy {
         triggered_at: triggeredAt,
       },
       resource: `tenant/${tenantId}/jobs/${jobId}/executions/${executionId}`,
-      source: "//agent-admin-service/admin/jobs/trigger",
+      source: "agent-admin-service/admin/jobs/trigger",
     });
 
     return this.publishEvent(tenantId, AGENT_ADMIN_JOB_TRIGGER, event);
@@ -512,8 +512,7 @@ export class NatsPublisher implements OnModuleDestroy {
         ...(payload.fileBase64 ? { fileBase64: payload.fileBase64 } : {}),
       },
       resource: `tenant/${tenantId}/knowledge-bases/${kbId}/documents/${payload.documentId}`,
-      source:
-        "//agent-admin-service/admin/knowledge-bases/documents/upload-file",
+      source: "agent-admin-service/admin/knowledge-bases/documents/upload-file",
     });
 
     return this.publishEvent(tenantId, AGENT_ADMIN_DOCUMENT_INGESTION, event);
@@ -550,8 +549,7 @@ export class NatsPublisher implements OnModuleDestroy {
         sheetName: payload.sheetName ?? null,
       },
       resource: `tenant/${tenantId}/structured-kb/containers/${payload.containerId}/files/${payload.fileId}`,
-      source:
-        "//agent-admin-service/admin/structured-kb/containers/files/upload",
+      source: "agent-admin-service/admin/structured-kb/containers/files/upload",
     });
 
     return this.publishEvent(tenantId, AGENT_ADMIN_SKB_FILE_INGESTION, event);
@@ -578,7 +576,7 @@ export class NatsPublisher implements OnModuleDestroy {
         ...(skill ? { skill } : {}),
       },
       resource: `tenant/${tenantId}/skills/${skillId}`,
-      source: "//agent-admin-service/admin/skills",
+      source: "agent-admin-service/admin/skills",
     });
 
     return this.publishEvent(tenantId, AGENT_ADMIN_SKILL_CHANGED, event);

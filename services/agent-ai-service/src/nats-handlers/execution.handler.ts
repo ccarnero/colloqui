@@ -364,7 +364,7 @@ export class ExecutionHandler implements OnModuleInit {
       };
       const event = buildEventEnvelope({
         type: RUNTIME_TOKEN_EVENT_TYPE,
-        source: "agent-ai-service",
+        source: `agent-ai-service/execution/${executionId}`,
         resource: `execution/${executionId}`,
         tenant: tenantId,
         producer: "agent-ai-service",
@@ -396,13 +396,13 @@ export class ExecutionHandler implements OnModuleInit {
         ? deriveEnvelope(incoming, {
             id: crypto.randomUUID(),
             type: `io.yoizen.platform.runtime.${kind}.v1`,
-            source: "agent-ai-service",
+            source: `agent-ai-service/execution/${data.executionId ?? "unknown"}`,
             resource: `execution/${data.executionId ?? "unknown"}`,
             payload: data,
           })
         : buildEventEnvelope({
             type: `io.yoizen.platform.runtime.${kind}.v1`,
-            source: "agent-ai-service",
+            source: `agent-ai-service/execution/${data.executionId ?? "unknown"}`,
             resource: `execution/${data.executionId ?? "unknown"}`,
             tenant: tenantId,
             producer: "agent-ai-service",

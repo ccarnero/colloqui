@@ -147,7 +147,7 @@ export class NatsSchedulerPublisher implements OnModuleDestroy {
     const envelope: EventEnvelope = {
       specversion: "1.0",
       id: eventId,
-      source: "//agent-scheduler-service/scheduler/job-trigger",
+      source: "agent-scheduler-service/scheduler/job-trigger",
       type: EVENT_TYPE_JOB_TRIGGER,
       resource: `tenant/${tenantId}/jobs/${jobId}/executions/${executionId}`,
       time: triggeredAt,

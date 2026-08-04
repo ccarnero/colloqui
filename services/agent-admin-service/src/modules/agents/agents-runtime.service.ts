@@ -239,7 +239,7 @@ export class AgentsRuntimeService {
     return {
       specversion: "1.0",
       id: this.generateEventId(),
-      source: "//agent-admin-service/admin/agents/chat",
+      source: "agent-admin-service/admin/agents/chat",
       type: "io.yoizen.platform.chat.request.v1",
       resource: `tenant/${tenantId}/agents/${agentId}`,
       time: now,

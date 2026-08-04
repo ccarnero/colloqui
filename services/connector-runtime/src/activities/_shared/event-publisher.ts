@@ -128,7 +128,7 @@ async function emit(evt: IEndpointCallEventPayload): Promise<void> {
 
   const baseOptions = {
     type: "connector.endpoint_call.completed.v1",
-    source: "//connector-runtime/endpoint-call",
+    source: "connector-runtime/endpoint-call",
     resource,
     tenant: evt.tenantId,
     producer: "connector-runtime",
@@ -251,7 +251,7 @@ async function emitMcpCall(evt: IMcpCallEventPayload): Promise<void> {
 
   const baseOptions = {
     type: "connector.mcp_call.completed.v1",
-    source: "//connector-runtime/mcp-call",
+    source: "connector-runtime/mcp-call",
     resource: `mcp/${evt.mcpServerId}`,
     tenant: evt.tenantId,
     producer: "connector-runtime",

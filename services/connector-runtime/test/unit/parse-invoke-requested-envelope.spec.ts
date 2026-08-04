@@ -9,7 +9,7 @@ function buildEnvelope(overrides: Partial<EventEnvelope> = {}): EventEnvelope {
   return {
     specversion: "1.0",
     id: "evt-1",
-    source: "//connector-runtime/endpoint-invoke",
+    source: "connector-runtime/endpoint-invoke",
     type: "connector.endpoint.invoke_requested.v1",
     resource: "invocation/inv-1",
     time: "2026-07-14T00:00:00.000Z",

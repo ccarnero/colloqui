@@ -39,7 +39,7 @@ describe("SendCommandConsumerService", () => {
     id: "cmd-1",
     specversion: "1.0",
     type: "io.yoizen.messaging.whatsapp.meta.send.v1",
-    source: "//workflow-service/channel-send",
+    source: "workflow-service/channel-send",
     time: new Date().toISOString(),
     datacontenttype: "application/json",
     subject: CANONICAL_SEND_SUBJECT,

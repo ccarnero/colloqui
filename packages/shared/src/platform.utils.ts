@@ -1,6 +1,6 @@
 import {
-  REGISTRY_DOMAIN,
   PLATFORM_NON_CHANNEL_TOKEN,
+  REGISTRY_DOMAIN,
   REGISTRY_PRODUCER,
 } from "./constants";
 
@@ -20,7 +20,7 @@ export function buildRegistryPlatformSubject(
   tenant: string,
   resource: string,
   kind: string,
-  version = "v1",
+  version = "v1"
 ): string {
   return `evt.${tenant}.${REGISTRY_PRODUCER}.${REGISTRY_DOMAIN}.${resource}.${PLATFORM_NON_CHANNEL_TOKEN}.${kind}.${version}`;
 }
@@ -69,4 +69,4 @@ export const SERVICE_DELETED_EVENT_TYPE =
   "io.yoizen.registry.service.deleted.v1" as const;
 
 /** CloudEvents `source` for registry-originated events. */
-export const REGISTRY_EVENT_SOURCE = "//registry-service/services" as const;
+export const REGISTRY_EVENT_SOURCE = "registry-service/services" as const;

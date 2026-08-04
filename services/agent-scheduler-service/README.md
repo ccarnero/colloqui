@@ -68,7 +68,7 @@ agent-scheduler-service (single process)
 - **Platform-level, not per-tenant**: a single instance serves every tenant it has a pool for, unlike the tenant-scoped services
 - **Leader election**: `pg_try_advisory_lock(32767)` on `LEADER_ELECTION_POSTGRES_URL` prevents duplicate triggers when multiple replicas run. `reconcileAllTenants()` returns immediately unless `isCurrentlyLeader()`, and `tryAcquireLeadership(undefined)` returns `false` — **no URL means no scheduling at all**, not "single-replica mode"
 - **Defensive reconciliation**: every `RECONCILE_INTERVAL_MS`, diffs active schedules against DB state (add/remove/update)
-- **CloudEvents envelope**: `NatsSchedulerPublisher` builds the same envelope shape as agent-admin-service — and reuses its identity: `producer: AGENT_ADMIN_PRODUCER` (`"agent-admin-service"`) and `type: "io.yoizen.agent-admin-service.job.triggered.v1"`, while `source` is `//agent-scheduler-service/scheduler/job-trigger`. Consumers keying off `producer` see agent-admin-service, not this service (see Known gaps)
+- **CloudEvents envelope**: `NatsSchedulerPublisher` builds the same envelope shape as agent-admin-service — and reuses its identity: `producer: AGENT_ADMIN_PRODUCER` (`"agent-admin-service"`) and `type: "io.yoizen.agent-admin-service.job.triggered.v1"`, while `source` is `agent-scheduler-service/scheduler/job-trigger`. Consumers keying off `producer` see agent-admin-service, not this service (see Known gaps)
 
 ## Tech Stack
 

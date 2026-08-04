@@ -19,7 +19,7 @@ function makeIncomingEnvelope(
   return {
     specversion: "1.0",
     id,
-    source: "//api-gateway/events",
+    source: "api-gateway/events",
     type: "demo.event.v1",
     resource: "tenant/t1/demo/1",
     time: "2026-04-17T00:00:00.000Z",

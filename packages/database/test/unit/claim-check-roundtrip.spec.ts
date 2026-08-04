@@ -55,7 +55,7 @@ function produceClaimCheckEnvelope(payload: Record<string, unknown>): {
   const envelope: EventEnvelope = {
     specversion: "1.0",
     id: "01JQXXXX",
-    source: "//channel-service/accounts/acc-1",
+    source: "channel-service/accounts/acc-1",
     type: "io.yoizen.messaging.whatsapp.meta.received.v1",
     resource: "tenant/tenant-a/account/acc-1/channel/whatsapp/provider/meta",
     time: new Date().toISOString(),

@@ -35,7 +35,7 @@ const PRODUCER = "provisioning-service";
 const DOMAIN = "provisioning";
 const CHANNEL = "platform";
 const PROVIDER = "internal";
-const SOURCE = "//provisioning-service/secrets";
+const SOURCE = "provisioning-service/secrets";
 
 const SIBLING_DEPTH = 1;
 

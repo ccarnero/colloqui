@@ -205,7 +205,7 @@ export const publishInvokeRequestEvent: PublishInvokeRequest = async (
 
   const baseOptions = {
     type: "connector.endpoint.invoke_requested.v1",
-    source: "//connector-runtime/endpoint-invoke",
+    source: "connector-runtime/endpoint-invoke",
     resource: `invocation/${args.invocationId}`,
     tenant: args.tenantId,
     producer: "connector-runtime",
@@ -294,7 +294,7 @@ export const publishInvokeCompletedEvent: PublishInvokeCompleted = async (
 
   const envelope = buildEventEnvelope({
     type: "connector.endpoint.invoke_completed.v1",
-    source: "//connector-runtime/endpoint-invoke",
+    source: "connector-runtime/endpoint-invoke",
     resource: `invocation/${args.invocationId}`,
     tenant: args.tenantId,
     producer: "connector-runtime",

@@ -1,15 +1,14 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { NatsConnection } from "nats";
 import { PinoLoggerService } from "@yoizen/observability";
-import { NATS_CONNECTION } from "../../providers/nats.provider";
+import type { NatsConnection } from "nats";
 import { agentAiServiceConfig } from "../../config";
+import { NATS_CONNECTION } from "../../providers/nats.provider";
 
 /**
  * NATS subject for tool execution requests.
  * Follows subject convention (DOCS/messaging/service-bus.md): evt.{tenant}.platform.tool.request.v1
  */
-const TOOL_REQUEST_SUBJECT_TEMPLATE =
-  "evt.{tenant}.platform.tool.request.v1";
+const TOOL_REQUEST_SUBJECT_TEMPLATE = "evt.{tenant}.platform.tool.request.v1";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 
@@ -28,8 +27,7 @@ export class BackendClientService {
   private isToolPath(path: string): boolean {
     const normalized = path.trim();
     return (
-      normalized.startsWith("/tools/") ||
-      normalized.startsWith("/api/tools/")
+      normalized.startsWith("/tools/") || normalized.startsWith("/api/tools/")
     );
   }
 
@@ -44,7 +42,7 @@ export class BackendClientService {
     data?: Record<string, unknown>,
     params?: Record<string, unknown>,
     headers?: Record<string, string>,
-    tenantId?: string,
+    tenantId?: string
   ): Promise<unknown> {
     const subject = tenantId
       ? TOOL_REQUEST_SUBJECT_TEMPLATE.replace("{tenant}", tenantId)
@@ -53,7 +51,7 @@ export class BackendClientService {
     const command = {
       id: crypto.randomUUID(),
       kind: "command",
-      source: "agent-ai-service",
+      source: "agent-ai-service/tools/request",
       type: "tool.request",
       data: {
         method,
@@ -65,14 +63,12 @@ export class BackendClientService {
       timestamp: new Date().toISOString(),
     };
 
-    this.logger.log(
-      `NATS tool request: ${method} ${path} → ${subject}`,
-    );
+    this.logger.log(`NATS tool request: ${method} ${path} → ${subject}`);
 
     const response = await this.nats.request(
       subject,
       new TextEncoder().encode(JSON.stringify(command)),
-      { timeout: DEFAULT_TIMEOUT_MS },
+      { timeout: DEFAULT_TIMEOUT_MS }
     );
 
     const rawResponse = new TextDecoder().decode(response.data).trim();
@@ -86,9 +82,7 @@ export class BackendClientService {
       if (reply.success && reply.data !== undefined && reply.data !== null) {
         return reply.data;
       }
-      const errorInfo = reply.error as
-        | Record<string, unknown>
-        | undefined;
+      const errorInfo = reply.error as Record<string, unknown> | undefined;
       const errorMessage =
         (errorInfo?.message as string) ?? "Tool request failed";
       throw new Error(errorMessage);
@@ -105,7 +99,7 @@ export class BackendClientService {
     path: string,
     params?: Record<string, unknown>,
     headers?: Record<string, string>,
-    tenantId?: string,
+    tenantId?: string
   ): Promise<unknown> {
     if (this.isToolPath(path)) {
       return this.requestToolViaNats(
@@ -114,7 +108,7 @@ export class BackendClientService {
         undefined,
         params,
         headers,
-        tenantId,
+        tenantId
       );
     }
 
@@ -129,7 +123,7 @@ export class BackendClientService {
     path: string,
     data: Record<string, unknown>,
     headers?: Record<string, string>,
-    tenantId?: string,
+    tenantId?: string
   ): Promise<unknown> {
     if (this.isToolPath(path)) {
       return this.requestToolViaNats(
@@ -138,7 +132,7 @@ export class BackendClientService {
         data,
         undefined,
         headers,
-        tenantId,
+        tenantId
       );
     }
 
@@ -153,7 +147,7 @@ export class BackendClientService {
     path: string,
     data: Record<string, unknown>,
     headers?: Record<string, string>,
-    tenantId?: string,
+    tenantId?: string
   ): Promise<unknown> {
     if (this.isToolPath(path)) {
       return this.requestToolViaNats(
@@ -162,7 +156,7 @@ export class BackendClientService {
         data,
         undefined,
         headers,
-        tenantId,
+        tenantId
       );
     }
 
@@ -171,9 +165,7 @@ export class BackendClientService {
 
   // ── HTTP helpers ──────────────────────────────────────────────────────
 
-  private buildHeaders(
-    extra?: Record<string, string>,
-  ): Record<string, string> {
+  private buildHeaders(extra?: Record<string, string>): Record<string, string> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -186,7 +178,7 @@ export class BackendClientService {
   private async httpGet(
     path: string,
     params?: Record<string, unknown>,
-    headers?: Record<string, string>,
+    headers?: Record<string, string>
   ): Promise<unknown> {
     const baseUrl = agentAiServiceConfig.connectorAdminUrl;
     const url = new URL(path, baseUrl);
@@ -206,9 +198,7 @@ export class BackendClientService {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `HTTP GET ${url} failed with status ${response.status}`,
-      );
+      throw new Error(`HTTP GET ${url} failed with status ${response.status}`);
     }
 
     return response.json();
@@ -217,7 +207,7 @@ export class BackendClientService {
   private async httpPost(
     path: string,
     data: Record<string, unknown>,
-    headers?: Record<string, string>,
+    headers?: Record<string, string>
   ): Promise<unknown> {
     const baseUrl = agentAiServiceConfig.connectorAdminUrl;
     const url = new URL(path, baseUrl);
@@ -230,9 +220,7 @@ export class BackendClientService {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `HTTP POST ${url} failed with status ${response.status}`,
-      );
+      throw new Error(`HTTP POST ${url} failed with status ${response.status}`);
     }
 
     return response.json();
@@ -241,7 +229,7 @@ export class BackendClientService {
   private async httpPut(
     path: string,
     data: Record<string, unknown>,
-    headers?: Record<string, string>,
+    headers?: Record<string, string>
   ): Promise<unknown> {
     const baseUrl = agentAiServiceConfig.connectorAdminUrl;
     const url = new URL(path, baseUrl);
@@ -254,9 +242,7 @@ export class BackendClientService {
     });
 
     if (!response.ok) {
-      throw new Error(
-        `HTTP PUT ${url} failed with status ${response.status}`,
-      );
+      throw new Error(`HTTP PUT ${url} failed with status ${response.status}`);
     }
 
     return response.json();

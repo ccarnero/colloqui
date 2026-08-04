@@ -85,7 +85,7 @@ export class LlmCallEventPublisherService {
     };
 
     const type = "ai.llm_call.completed.v1";
-    const source = "//agent-ai-service/llm-call";
+    const source = "agent-ai-service/llm-call";
     const resource = `execution/${evt.executionId}`;
     const producer = "agent-ai-service";
     const domain = "platform";

@@ -37,7 +37,7 @@ Every message published to the bus **must** be serialized as the following envel
 {
   "specversion": "1.0",
   "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
-  "source": "//channel-service/accounts/69bea8cd",
+  "source": "channel-service/accounts/69bea8cd",
   "type": "io.yoizen.messaging.whatsapp.meta.received.v1",
   "resource": "tenant/acme/account/69bea8cd/channel/whatsapp/provider/meta",
   "time": "2026-04-17T15:40:11.382Z",
@@ -73,7 +73,7 @@ Every message published to the bus **must** be serialized as the following envel
 |-------|------|-----------|
 | `specversion` | string | Always `"1.0"` |
 | `id` | string | UUID v4 (`crypto.randomUUID()`). Uniqueness of the event — not the deduplication key. |
-| `source` | string | URI of the service that produced the event. Format: `//channel-service/accounts/{id}` or `//api-gateway/webhooks`. Do not invent new formats. |
+| `source` | string | Plain identifier of the service that produced the event, plus context. Format: `channel-service/accounts/{id}` or `api-gateway/webhooks` — no `//` prefix, not a URI. Do not invent new formats. |
 | `type` | string | Logical type in dot-notation. Format: `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`. |
 | `resource` | string | Resource path of the affected resource. |
 | `time` | string | ISO 8601 UTC timestamp — when the producer created the envelope. |
@@ -376,7 +376,7 @@ Receives the provider's HTTP POST and immediately publishes a `WebhookIngressEnv
 
 ```
 type:     io.yoizen.messaging.<channel>.webhook.webhook_received.v1
-source:   //api-gateway/webhooks
+source:   api-gateway/webhooks
 subject:  evt.<tenant>.api-gateway.messaging.<channel>.webhook.webhook_received.v1
 ```
 
@@ -388,7 +388,7 @@ Consumes the `webhook_received`, verifies the provider signature, resolves the a
 
 ```
 type:     io.yoizen.messaging.<channel>.<provider>.<kind>.v1
-source:   //channel-service/accounts/<accountId>
+source:   channel-service/accounts/<accountId>
 subject:  evt.<tenant>.channel-service.messaging.<channel>.<provider>.<kind>.v1
 ```
 
@@ -403,7 +403,7 @@ This envelope includes `accountid`, carries `causation_id` from the stage-1 webh
 ```json
 {
   "type": "io.yoizen.messaging.telegram.webhook.webhook_received.v1",
-  "source": "//api-gateway/webhooks",
+  "source": "api-gateway/webhooks",
   "producer": "api-gateway",
   "domain": "messaging",
   "channel": "telegram",
@@ -429,7 +429,7 @@ Note: `accountid` is absent — `WebhookIngressEnvelope` is typed as `Omit<Event
 ```json
 {
   "type": "io.yoizen.messaging.telegram.telegram.received.v1",
-  "source": "//channel-service/accounts/69bea8cd868e860918359cc7",
+  "source": "channel-service/accounts/69bea8cd868e860918359cc7",
   "producer": "channel-service",
   "domain": "messaging",
   "channel": "telegram",
@@ -482,7 +482,7 @@ Subject: `evt.acme.channel-service.messaging.telegram.telegram.received.v1`
 ```json
 {
   "type": "io.yoizen.platform.admin.agent.published.v1",
-  "source": "//agent-admin-service/admin/agents/publish",
+  "source": "agent-admin-service/admin/agents/publish",
   "producer": "agent-admin-service",
   "domain": "automation",
   "channel": "platform",
@@ -552,7 +552,7 @@ Before publishing any message to the bus:
 - [ ] Publish sets `Nats-Msg-Id` with `idempotencykey`.
 - [ ] Publish injects `traceparent` via `injectTraceContext(headers)`.
 - [ ] If the canonical channel envelope serializes above 256 KB: payload stored in Object Store and `payload_inline = false`; stage-1 webhook envelopes stay inline.
-- [ ] `source` follows format `//channel-service/accounts/<id>` or `//api-gateway/webhooks` — do not invent new formats.
+- [ ] `source` follows format `channel-service/accounts/<id>` or `api-gateway/webhooks` — no `//` prefix, not a URI — do not invent new formats.
 - [ ] `accountid` is set for all events except the initial `WebhookIngressEnvelope`.
 - [ ] Any new extension field was reviewed and added to `packages/shared/src/interfaces.ts` and this document.
 

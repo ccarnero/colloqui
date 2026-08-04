@@ -94,7 +94,7 @@ export function createChannelEnvelope(
   return {
     specversion: "1.0",
     id,
-    source: `//channel-service/accounts/${accountId}`,
+    source: `channel-service/accounts/${accountId}`,
     type: `io.yoizen.messaging.${channel}.${provider}.${kind}.v1`,
     resource,
     time: now,

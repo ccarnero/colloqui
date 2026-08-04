@@ -177,7 +177,7 @@ export class EgressService {
         provider: channelProvider,
         accountId,
         kind: "sent",
-        source: `//channel-service/accounts/${accountId}`,
+        source: `channel-service/accounts/${accountId}`,
         type: `io.yoizen.messaging.${channel}.${channelProvider}.sent.v1`,
         payload,
         ...(causal?.correlationId && { correlationId: causal.correlationId }),

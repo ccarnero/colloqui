@@ -92,7 +92,7 @@ depend on broker availability
 - CloudEvents `type`: `io.yoizen.registry.service.upserted.v1` /
   `io.yoizen.registry.service.deleted.v1`
   (`packages/shared/src/platform.utils.ts:66-69`).
-- CloudEvents `source`: `//registry-service/services`
+- CloudEvents `source`: `registry-service/services`
   (`platform.utils.ts:72`).
 - `msgID` is the envelope's deterministic CloudEvents `id`
   (`service-events.publisher.ts:261`), so JetStream de-duplicates retries even

@@ -354,7 +354,7 @@ export function createMockNatsPublisher(context: TestContext) {
           correlationId: `agent:${agentId}`,
           occurredAt: publishedAt,
           resource: `tenant/${tenantId}/agents/${agentId}`,
-          source: "//agent-admin-service/admin/agents/publish",
+          source: "agent-admin-service/admin/agents/publish",
         },
       );
       context.natsEvents.push(event);
@@ -380,7 +380,7 @@ export function createMockNatsPublisher(context: TestContext) {
           correlationId: `agent:${agentId}`,
           occurredAt: unpublishedAt,
           resource: `tenant/${tenantId}/agents/${agentId}`,
-          source: "//agent-admin-service/admin/agents/unpublish",
+          source: "agent-admin-service/admin/agents/unpublish",
         },
       );
       context.natsEvents.push(event);
@@ -405,7 +405,7 @@ export function createMockNatsPublisher(context: TestContext) {
           correlationId: `runtime:${tenantId}:config`,
           occurredAt: syncedAt,
           resource: `tenant/${tenantId}/runtime/config`,
-          source: "//agent-admin-service/admin/config-files/deploy",
+          source: "agent-admin-service/admin/config-files/deploy",
         },
       );
       context.natsEvents.push(event);
@@ -432,7 +432,7 @@ export function createMockNatsPublisher(context: TestContext) {
           correlationId: `job:${jobId}:execution:${executionId}`,
           occurredAt: triggeredAt,
           resource: `tenant/${tenantId}/jobs/${jobId}/executions/${executionId}`,
-          source: "//agent-admin-service/admin/jobs/trigger",
+          source: "agent-admin-service/admin/jobs/trigger",
         },
       );
       context.natsEvents.push(event);

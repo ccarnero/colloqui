@@ -53,7 +53,7 @@ services/channel-service/src/domain/envelope.factory.ts
   → createChannelEnvelope — canonical producer
     id: crypto.randomUUID()
     type: io.yoizen.messaging.${channel}.${provider}.${kind}.v1
-    source: //channel-service/accounts/${accountId}
+    source: channel-service/accounts/${accountId}
     idempotencykey: computeIdempotencyKey(rawPayload)
 
 services/channel-service/src/modules/ingress/ingress.service.ts

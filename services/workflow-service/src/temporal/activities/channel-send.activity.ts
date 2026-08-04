@@ -128,7 +128,7 @@ export async function executeChannelSend(
   const envelope: ChannelEnvelope = {
     specversion: "1.0",
     id,
-    source: "//workflow-service/channel-send",
+    source: "workflow-service/channel-send",
     type: `io.yoizen.messaging.${channel}.${provider}.send.v1`,
     resource,
     time: now,

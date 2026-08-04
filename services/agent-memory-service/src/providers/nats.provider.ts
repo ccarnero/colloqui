@@ -382,7 +382,7 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
         status: memory.status,
       },
       resource: `tenant/${tenantId}/memories/${memory.id}`,
-      source: "//agent-memory-service/memory/propose",
+      source: "agent-memory-service/memory/propose",
     });
 
     await this.publishEvent(tenantId, AGENT_MEMORY_PROPOSED, event);
@@ -411,7 +411,7 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
         status: memory.status,
       },
       resource: `tenant/${tenantId}/memories/${memory.id}`,
-      source: "//agent-memory-service/memory/publish",
+      source: "agent-memory-service/memory/publish",
     });
 
     await this.publishEvent(tenantId, AGENT_MEMORY_PUBLISHED, event);
@@ -436,7 +436,7 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
         status: memory.status,
       },
       resource: `tenant/${tenantId}/memories/${memory.id}`,
-      source: "//agent-memory-service/memory/reject",
+      source: "agent-memory-service/memory/reject",
     });
 
     await this.publishEvent(tenantId, AGENT_MEMORY_REJECTED, event);
@@ -460,7 +460,7 @@ export class NatsPublisher implements INatsPublisher, OnModuleDestroy {
         status: "expired",
       },
       resource: `tenant/${tenantId}/memories/${memoryId}`,
-      source: "//agent-memory-service/memory/expire",
+      source: "agent-memory-service/memory/expire",
     });
 
     return this.publishEvent(tenantId, AGENT_MEMORY_EXPIRED, event);

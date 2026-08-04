@@ -102,7 +102,7 @@ describe("trace-visualization E2E (T8) — dev stack", () => {
         envelope: {
           specversion: "1.0",
           id: requireDefined(ids[index], `ids[${index}] is out of range`),
-          source: `//${producer}/e2e`,
+          source: `${producer}/e2e`,
           type: "io.yoizen.e2e.v1",
           resource: `tenant/${tenant}/e2e/${runId}`,
           time: new Date(t0 + opts.offsetMs).toISOString(),

@@ -444,7 +444,7 @@ Missing `containerId`/`fileId`/`tenantId` → `PermanentError` → term + per-te
 > `AgentAdminNatsPublisher.publishSkbFileIngestion`, called from
 > `SKBContainersController.uploadFile`, with
 > `correlationId: "skb-file:<fileId>"` and
-> `source: "//agent-admin-service/admin/structured-kb/containers/files/upload"`.
+> `source: "agent-admin-service/admin/structured-kb/containers/files/upload"`.
 > The publish step is live, not aspirational.
 
 ### 4.3 Death Checks + Cleanup

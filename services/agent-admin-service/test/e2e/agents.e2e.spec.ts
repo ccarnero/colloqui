@@ -259,7 +259,7 @@ describe("Agents E2E Tests", () => {
       expect(event!.payload.name).toBe("Agent to Publish");
       expect(event!.metadata.tenantId).toBe(tenant.id);
       expect(event!.metadata.source).toBe(
-        "//agent-admin-service/admin/agents/publish",
+        "agent-admin-service/admin/agents/publish",
       );
     });
 

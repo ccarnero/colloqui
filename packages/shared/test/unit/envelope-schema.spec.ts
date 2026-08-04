@@ -209,7 +209,7 @@ function definition(name: string): ISchema {
 const STAGE_1_SAMPLE: WebhookIngressEnvelope = {
   specversion: "1.0",
   id: "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
-  source: "//api-gateway/webhooks",
+  source: "api-gateway/webhooks",
   // envelope-drift T05: per-channel stage-1 type (webhook-ingress-type.ts).
   type: "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1",
   resource: "tenant/acme/channel/whatsapp/provider/webhook",
@@ -259,7 +259,7 @@ const STAGE_1_HTTP_SAMPLE: WebhookIngressEnvelope = {
 const STAGE_2_SAMPLE: ChannelEnvelope = {
   specversion: "1.0",
   id: "c5e0f3d4-6d7a-9b1c-d4e5-f6a7b8c9d0e1",
-  source: "//channel-service/accounts/69bea8cd868e860918359cc7",
+  source: "channel-service/accounts/69bea8cd868e860918359cc7",
   type: "io.yoizen.messaging.whatsapp.meta.received.v1",
   resource:
     "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta",

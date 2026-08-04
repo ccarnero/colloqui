@@ -19,7 +19,7 @@ describe("WebhookIngressConsumerService", () => {
     return {
       specversion: "1.0",
       id: "evt-1",
-      source: "//api-gateway/webhooks",
+      source: "api-gateway/webhooks",
       type: "io.yoizen.messaging.webhook.received.v1",
       resource: `tenant/${tenant}/channel/whatsapp/provider/webhook`,
       time: new Date().toISOString(),

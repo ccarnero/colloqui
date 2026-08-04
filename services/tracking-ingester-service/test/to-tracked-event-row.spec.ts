@@ -218,7 +218,7 @@ describe("toTrackedEventRow — T4 click-through detail columns", () => {
     return {
       specversion: "1.0",
       id: "evt-detail-1",
-      source: "//test/detail",
+      source: "test/detail",
       type: "io.yoizen.test.v1",
       resource: "tenant/acme/x",
       time: "2026-07-10T00:00:00.000Z",
@@ -368,7 +368,7 @@ describe("toTrackedEventRow — T01 payload_status assignment", () => {
     return {
       specversion: "1.0",
       id: "evt-payload-1",
-      source: "//test/payload",
+      source: "test/payload",
       type: "io.yoizen.messaging.whatsapp.meta.received.v1",
       resource: "tenant/tenant-a/x",
       time: "2026-07-11T00:00:00.000Z",
@@ -456,7 +456,7 @@ describe("toTrackedEventRow — T05 new kinds classify and get payload_status 'i
     return {
       specversion: "1.0",
       id: "evt-t05-1",
-      source: "//test/t05",
+      source: "test/t05",
       resource: "test/resource",
       time: "2026-07-28T00:00:00.000Z",
       traceid: "33333333-3333-3333-3333-333333333333",

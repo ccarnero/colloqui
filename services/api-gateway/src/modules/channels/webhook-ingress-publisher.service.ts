@@ -114,7 +114,7 @@ export class WebhookIngressPublisherService {
     const envelope: WebhookIngressEnvelope = {
       specversion: "1.0",
       id,
-      source: "//api-gateway/webhooks",
+      source: "api-gateway/webhooks",
       type: buildWebhookIngressType(channel),
       resource: `tenant/${tenantId}/channel/${channel}/provider/webhook`,
       time: now,

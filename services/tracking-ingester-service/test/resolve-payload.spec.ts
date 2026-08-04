@@ -12,7 +12,7 @@ function slimEnvelope(
   return {
     specversion: "1.0",
     id: "evt-claim-1",
-    source: "//test/claim-check",
+    source: "test/claim-check",
     type: "io.yoizen.messaging.whatsapp.meta.received.v1",
     resource: "tenant/tenant-a/x",
     time: "2026-07-11T00:00:00.000Z",

@@ -41,7 +41,7 @@ Apply this skill when creating, consuming or auditing messages on the NATS event
                                                                                                                           # duplicates AGENT_ADMIN_PRODUCER
   rg -n 'const PRODUCER' services/provisioning-service/src --glob '*.ts'                                                  # + provisioning-service
   ```
-- `source` follows the format `//channel-service/accounts/<accountId>` or `//api-gateway/webhooks`. Do not invent new formats. **Contract clause, not a description**: `DOCS/messaging/envelope.md` §2.1/§11 says the same thing, and the code has never fully honored it — `agent-admin-service` emits `//agent-admin-service/admin/agents/publish` and `agent-ai-service` emits a bare `"agent-ai-service"`. Kept verbatim on purpose (docs-truth-audit T02 flagged the same clause in `envelope.md` for the T09 decision round); follow it in new code, do not "fix" it against the outliers.
+- `source` is a plain identifier plus context, NOT a URI — `channel-service/accounts/<accountId>` or `api-gateway/webhooks`, no `//` prefix. Do not invent new formats. This is the docs-truth-audit T09 E2 ruling (2026-08-04): the prior "CloudEvents-inspired URI" contract (`//service/path`) was dropped in favor of the plain form, since nothing in the codebase ever parsed `source` as a URI and `agent-ai-service` already deviated toward a bare string. `envelope.md` §2.1/§11 was updated to match; all producers (`agent-admin-service`, `agent-ai-service` included) now emit the plain form.
 - `correlation_id` defaults to the envelope's own `id` when it is not propagated explicitly (`createChannelEnvelope`). Careful: `buildEventEnvelope` in `@yoizen/shared` uses `randomUUID()` as its fallback — pass an explicit `correlationId` on that path. It is copied unchanged by `deriveEnvelope`.
 - The `idempotencykey` is `sha256(canonicalJson(payload))` — use `computeIdempotencyKey` from `@yoizen/shared`. Map it to the NATS `Nats-Msg-Id` header when publishing.
 - The ingress flow is a two-stage bridge: `api-gateway` publishes a `WebhookIngressEnvelope` (kind `webhook_received`, no `accountid`), then `channel-service` consumes it, verifies the signature, and emits the canonical `ChannelEnvelope` with the real `accountid`.
@@ -81,7 +81,7 @@ Example of an envelope produced by `channel-service` (stage 2 of the ingress):
 {
   "specversion": "1.0",
   "id": "550e8400-e29b-41d4-a716-446655440000",
-  "source": "//channel-service/accounts/69bea8cd868e860918359cc7",
+  "source": "channel-service/accounts/69bea8cd868e860918359cc7",
   "type": "io.yoizen.messaging.whatsapp.meta.received.v1",
   "resource": "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta",
   "time": "2026-03-21T15:40:11.382Z",
@@ -113,7 +113,7 @@ Example of an envelope produced by `channel-service` (stage 2 of the ingress):
 |---|---|---|
 | `specversion` | string | Always `"1.0"` |
 | `id` | string | UUID v4 (`crypto.randomUUID()`) |
-| `source` | string | Service URI. E.g. `//channel-service/accounts/<id>` or `//api-gateway/webhooks` |
+| `source` | string | Plain service identifier + context, no `//` prefix. E.g. `channel-service/accounts/<id>` or `api-gateway/webhooks` |
 | `type` | string | `io.yoizen.messaging.<channel>.<provider>.<kind>.v1` for messaging |
 | `resource` | string | Resource path of the affected resource |
 | `time` | string | ISO 8601 UTC |
@@ -223,7 +223,7 @@ channel-service (WebhookIngressConsumerService)
       ▼
   createChannelEnvelope() → IngressService.publish() ──► INGRESS-<tenant>
     producer: "channel-service"                           subject: evt.<t>.channel-service.messaging.<ch>.<prov>.received.v1
-    source: "//channel-service/accounts/<accountId>"      (ChannelEnvelope — with the real accountid)
+    source: "channel-service/accounts/<accountId>"      (ChannelEnvelope — with the real accountid)
     causation_id: <webhook envelope id>
     correlation_id: <propagated from the webhook envelope>
     transport.depth: 1

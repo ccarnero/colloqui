@@ -64,7 +64,7 @@ function makeEnvelope(
   return {
     specversion: "1.0",
     id: "env-test",
-    source: "//channel-service/accounts/acc-1",
+    source: "channel-service/accounts/acc-1",
     type: "io.yoizen.messaging.whatsapp.meta.received.v1",
     resource: "tenant/t1/account/acc-1/channel/whatsapp/provider/meta",
     time: new Date().toISOString(),

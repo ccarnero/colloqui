@@ -1,4 +1,4 @@
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { JetStreamClient } from "nats";
 
 // ── Module Mocks ──────────────────────────────────────────────────────────
@@ -74,7 +74,7 @@ describe("HeartbeatService", () => {
       service.markTenantActive("gamma");
       expect(service.getActiveTenants()).toHaveLength(3);
       expect(service.getActiveTenants()).toEqual(
-        expect.arrayContaining(["alpha", "beta", "gamma"]),
+        expect.arrayContaining(["alpha", "beta", "gamma"])
       );
     });
 
@@ -122,7 +122,9 @@ describe("HeartbeatService", () => {
 
     it("should handle a large number of active tenants", () => {
       const ids = Array.from({ length: 100 }, (_, i) => `massive-${i}`);
-      for (const id of ids) service.markTenantActive(id);
+      for (const id of ids) {
+        service.markTenantActive(id);
+      }
       expect(service.getActiveTenants()).toHaveLength(100);
     });
 
@@ -180,7 +182,7 @@ describe("HeartbeatService", () => {
       await (service as any).publishHeartbeats();
       const [subject] = mockJs.publish.mock.calls[0];
       expect(subject).toBe(
-        "evt.my-tenant.ai-agent-gateway.automation.platform.internal.online.v1",
+        "evt.my-tenant.ai-agent-gateway.automation.platform.internal.online.v1"
       );
     });
 
@@ -192,7 +194,7 @@ describe("HeartbeatService", () => {
 
       expect(env.specversion).toBe("1.0");
       expect(env.type).toBe("io.yoizen.platform.runtime.online.v1");
-      expect(env.source).toBe("agent-ai-service");
+      expect(env.source).toBe("agent-ai-service/heartbeat");
       expect(env.resource).toBe("agent-ai-service/heartbeat");
       expect(env.producer).toBe("agent-ai-service");
       expect(env.domain).toBe("automation");
@@ -226,8 +228,8 @@ describe("HeartbeatService", () => {
       expect(subjects[0]).toContain("alpha");
       expect(subjects[1]).toContain("beta");
 
-      const payloads = mockJs.publish.mock.calls.map(
-        (c: any[]) => JSON.parse(c[1] as string),
+      const payloads = mockJs.publish.mock.calls.map((c: any[]) =>
+        JSON.parse(c[1] as string)
       );
       expect(payloads[0].tenant).toBe("alpha");
       expect(payloads[1].tenant).toBe("beta");
@@ -239,7 +241,7 @@ describe("HeartbeatService", () => {
       await (service as any).publishHeartbeats();
 
       const ids = mockJs.publish.mock.calls.map(
-        (c: any[]) => JSON.parse(c[1] as string).id,
+        (c: any[]) => JSON.parse(c[1] as string).id
       );
       expect(ids[0]).not.toBe(ids[1]);
     });

@@ -143,7 +143,7 @@ Built by `WebhookIngressPublisherService.publishWebhook`; `type` comes from
 {
   "specversion": "1.0",
   "id": "uuid-v4",
-  "source": "//api-gateway/webhooks",
+  "source": "api-gateway/webhooks",
   "type": "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1",
   "resource": "tenant/acme/channel/whatsapp/provider/webhook",
   "time": "2026-08-02T10:00:00.000Z",
@@ -187,7 +187,7 @@ One message in, one envelope out — a webhook carrying N messages produces N en
 {
   "specversion": "1.0",
   "id": "uuid-v4",
-  "source": "//channel-service/accounts/69bea8cd868e860918359cc7",
+  "source": "channel-service/accounts/69bea8cd868e860918359cc7",
   "type": "io.yoizen.messaging.whatsapp.meta.received.v1",
   "resource": "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta",
   "time": "2026-08-02T10:00:00.000Z",
@@ -229,7 +229,7 @@ deliberately excluded from `data.payload` (it feeds `idempotencykey` computation
 Consumers that need the untouched provider body must read the stage-1
 `WebhookIngressEnvelope`.
 
-`source` is the full `//channel-service/accounts/<accountId>` — the `accountid` value,
+`source` is the full `channel-service/accounts/<accountId>` — the `accountid` value,
 not a truncated prefix.
 
 See [../messaging/envelope.md](../messaging/envelope.md) for the full field reference.
