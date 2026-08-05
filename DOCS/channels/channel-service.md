@@ -24,8 +24,21 @@ A `ChannelAccount` carries two discriminator fields — `channel` (`"whatsapp" |
 | Instagram | meta | inbound + outbound | Implemented |
 | Telegram | telegram | inbound + outbound | Implemented |
 | HTTP | http | **inbound only** — `HttpProvider.sendMessage` always returns `{ success: false, error: "outbound not supported for http channel" }` | Implemented |
+| e2e-tests | e2e-tests | **outbound only** — a SINK: `E2eTestsProvider.sendMessage` always returns `{ success: true }` and discards the message; `parseWebhook` returns `[]` and `verifySignature` always denies | Implemented |
 
 The `http` channel is a generic JSON-in webhook: it accepts `{ from, text?, messageId?, timestamp?, type?, raw? }`, derives a deterministic `messageId` (sha1 of the top-level-sorted body, 16 hex chars) when the caller omits one, and authenticates with a shared token in `x-http-channel-token` compared via `timingSafeEqual`.
+
+The `e2e-tests` channel is the mirror image of `http`, and exists for one
+reason: to make the egress path testable. `EgressService` publishes `sent.v1`
+only inside its `if (result.success)` branch, so before this channel no
+provider could reach that branch under test — `http` fails by design and the
+three real channels need live third-party credentials, which is why
+`tracking.tracked_events` held zero `sent` rows. Its provider accepts the
+message, returns success and discards it; everything downstream of the
+provider is the same code WhatsApp and Telegram run, so the suite exercises
+the real egress path rather than a stand-in. It proves publication, **not**
+third-party delivery. Its only consumer is
+`scripts/e2e/http-workflow.sh`'s `channelSend` stage.
 
 ## Provider directory
 
@@ -375,7 +388,7 @@ Defined in `packages/shared/src/channel.interfaces.ts`. `AutoReplyController` is
 
 - **Zero coupling with api-gateway**: `AutoReplyService` only consumes from the bus and calls `EgressService`.
 - **Durable consumer**: if the service restarts, NATS redelivers pending messages from the last ack position.
-- **`sent.v1` is channel-agnostic**: the same `EgressService` handles WhatsApp, Instagram, and Telegram (the `http` channel is inbound-only and always fails the send).
+- **`sent.v1` is channel-agnostic**: the same `EgressService` handles WhatsApp, Instagram, Telegram and the `e2e-tests` sink (the `http` channel is inbound-only and always fails the send, so it never reaches the publish).
 - **No loop**: the consumer filters on `received.v1`; the `sent.v1` event published by `EgressService` does not match the filter.
 - **Circuit breaker**: `EgressService` uses a `DistributedCircuitBreaker` keyed by `computeBreakerKey({ tenantId, kind: "egress", target: "<channel>:<provider>" })` — **per tenant + channel/provider pair, not per account**. When the breaker denies, the send throws `PermanentError("egress.circuit_breaker")`; on the NATS `send-command` consumer path that TERMs the message straight to `DLQ-<tenant>`, and on the direct HTTP path the caller gets the error.
 
@@ -580,7 +593,9 @@ See [instagram.md](./instagram.md) Part 3 for the full checklist (it absorbed th
    `MetaChannelProviderBase` for Meta channels).
 4. Implement `parseWebhook(rawBody) → InboundMessage[]`.
 5. Implement `sendMessage(account, message) → Promise<SendMessageResult>` — or return a
-   failure result if the channel is inbound-only, as `HttpProvider` does.
+   failure result if the channel is inbound-only, as `HttpProvider` does. A
+   channel with no inbound surface does the converse: return `[]` from
+   `parseWebhook` and deny in `verifySignature`, as `E2eTestsProvider` does.
 6. Add the tokens to the `Channel` and (if new) `ChannelProvider` unions in
    `packages/shared/src/channel.interfaces.ts`.
 7. If a signature-verified tie needs a payload hint, add the extractor to

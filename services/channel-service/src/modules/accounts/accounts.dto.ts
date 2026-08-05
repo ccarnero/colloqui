@@ -1,12 +1,14 @@
-import { IsString, IsIn, IsOptional, IsBoolean } from "class-validator";
+import { IsBoolean, IsIn, IsOptional, IsString } from "class-validator";
 
 export class CreateAccountDto {
-  @IsIn(["whatsapp", "instagram", "telegram", "http"])
-  channel!: "whatsapp" | "instagram" | "telegram" | "http";
+  // `e2e-tests` is the outbound-only sink channel the automated suite sends
+  // through — see the `Channel` union in @yoizen/shared for why it exists.
+  @IsIn(["whatsapp", "instagram", "telegram", "http", "e2e-tests"])
+  channel!: "whatsapp" | "instagram" | "telegram" | "http" | "e2e-tests";
 
   @IsOptional()
-  @IsIn(["meta", "telegram", "http"])
-  provider?: "meta" | "telegram" | "http";
+  @IsIn(["meta", "telegram", "http", "e2e-tests"])
+  provider?: "meta" | "telegram" | "http" | "e2e-tests";
 
   @IsString()
   name!: string;
@@ -86,6 +88,6 @@ export class RefreshTokenResponseDto {
 /** Query params for `GET /channels/accounts`. */
 export class ListAccountsQueryDto {
   @IsOptional()
-  @IsIn(["whatsapp", "instagram", "telegram", "http"])
-  channel?: "whatsapp" | "instagram" | "telegram" | "http";
+  @IsIn(["whatsapp", "instagram", "telegram", "http", "e2e-tests"])
+  channel?: "whatsapp" | "instagram" | "telegram" | "http" | "e2e-tests";
 }

@@ -1,7 +1,23 @@
 import type { EventData, EventEnvelope } from "./interfaces";
 
-export type Channel = "whatsapp" | "instagram" | "telegram" | "http";
-export type ChannelProvider = "meta" | "telegram" | "http";
+// `e2e-tests` is an OUTBOUND-ONLY sink channel that exists so the egress path
+// can be exercised by the automated suite. Before it, egress was structurally
+// untestable: `http` is inbound-only BY DESIGN (its `sendMessage` always
+// returns `success: false`) and the three real channels need live third-party
+// credentials, so `EgressService`'s `if (result.success)` branch — the one that
+// calls `shadowPublish` and emits `sent.v1` — never ran under test. Its
+// provider accepts the message, returns success and discards it; everything
+// downstream of the provider is the SAME code WhatsApp and Telegram run, so
+// what the suite covers is the real egress path, not a stand-in for it.
+// See DOCS/channels/channel-service.md's channel table and
+// scripts/e2e/http-workflow.sh's `channelSend` stage.
+export type Channel =
+  | "whatsapp"
+  | "instagram"
+  | "telegram"
+  | "http"
+  | "e2e-tests";
+export type ChannelProvider = "meta" | "telegram" | "http" | "e2e-tests";
 export type MessageKind =
   | "received"
   | "sent"

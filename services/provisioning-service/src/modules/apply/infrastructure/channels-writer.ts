@@ -91,12 +91,20 @@ async function resolveChannelSecret(
   };
 }
 
-/** Manifest channel `type` values `CreateAccountDto` accepts today. */
+/**
+ * Manifest channel `type` values `CreateAccountDto` accepts today. Must stay
+ * in step with the `@IsIn` on channel-service's `CreateAccountDto.channel` —
+ * this set exists to fail the apply with a named `unsupported_kind_shape`
+ * instead of a bare 400 from downstream, so a type missing here is rejected
+ * even when channel-service would have accepted it.
+ */
 const SUPPORTED_CHANNEL_TYPES = new Set([
   "whatsapp",
   "instagram",
   "telegram",
   "http",
+  // Outbound-only sink used by the e2e suite to cover the egress publish path.
+  "e2e-tests",
 ]);
 
 function providerFor(channelType: string): string {

@@ -1,15 +1,15 @@
-import {
-  IsString,
-  IsIn,
-  IsOptional,
-  IsBoolean,
-  IsArray,
-  IsISO8601,
-  IsInt,
-  Min,
-  Max,
-} from "class-validator";
 import { Type } from "class-transformer";
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from "class-validator";
 
 export class ListChannelAccountsQueryDto {
   @IsOptional()
@@ -37,12 +37,12 @@ export class ListAutoReplyRulesQueryDto {
 
 /** Mirrors channel-service `CreateAccountDto` for gateway validation. */
 export class CreateChannelAccountBodyDto {
-  @IsIn(["whatsapp", "instagram", "telegram", "http"])
-  channel!: "whatsapp" | "instagram" | "telegram" | "http";
+  @IsIn(["whatsapp", "instagram", "telegram", "http", "e2e-tests"])
+  channel!: "whatsapp" | "instagram" | "telegram" | "http" | "e2e-tests";
 
   @IsOptional()
-  @IsIn(["meta", "telegram", "http"])
-  provider?: "meta" | "telegram" | "http";
+  @IsIn(["meta", "telegram", "http", "e2e-tests"])
+  provider?: "meta" | "telegram" | "http" | "e2e-tests";
 
   @IsString()
   name!: string;
@@ -185,10 +185,7 @@ export class UsageTotalsQueryGatewayDto {
   channel?: string;
 }
 
-export const STREAM_INSPECTION_MODES = [
-  "last-per-subject",
-  "tail",
-] as const;
+export const STREAM_INSPECTION_MODES = ["last-per-subject", "tail"] as const;
 export type StreamInspectionMode = (typeof STREAM_INSPECTION_MODES)[number];
 
 export class StreamMessagesQueryGatewayDto {

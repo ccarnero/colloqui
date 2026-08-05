@@ -10,7 +10,7 @@
 export const CHANNEL_ACCOUNTS_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS channel_accounts (
   id                 TEXT        PRIMARY KEY,
-  channel            TEXT        NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'telegram', 'http')),
+  channel            TEXT        NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'telegram', 'http', 'e2e-tests')),
   provider           TEXT        NOT NULL DEFAULT 'meta',
   name               TEXT        NOT NULL,
   external_id        TEXT        NOT NULL,
@@ -36,13 +36,17 @@ CREATE INDEX IF NOT EXISTS idx_channel_accounts_external
 ALTER TABLE channel_accounts
   ADD COLUMN IF NOT EXISTS telegram_bot_token TEXT;
 
+-- Re-applied on every schema init so tenants provisioned before a channel was
+-- added pick the new value up: the CREATE TABLE above only governs tenants
+-- created from here on. Keep this list identical to it — and to the \`Channel\`
+-- union and \`CreateAccountDto\`'s \`@IsIn\`.
 DO $$
 BEGIN
   ALTER TABLE channel_accounts
     DROP CONSTRAINT IF EXISTS channel_accounts_channel_check;
   ALTER TABLE channel_accounts
     ADD CONSTRAINT channel_accounts_channel_check
-    CHECK (channel IN ('whatsapp', 'instagram', 'telegram', 'http'));
+    CHECK (channel IN ('whatsapp', 'instagram', 'telegram', 'http', 'e2e-tests'));
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 `;

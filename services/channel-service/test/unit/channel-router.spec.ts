@@ -1,12 +1,13 @@
-import { describe, it, expect, beforeEach } from "bun:test";
-import { Test } from "@nestjs/testing";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { NotFoundException } from "@nestjs/common";
+import { Test } from "@nestjs/testing";
 import { ChannelRouter } from "../../src/providers/channel-router";
+import { E2eTestsProvider } from "../../src/providers/e2e-tests/e2e-tests.provider";
+import { HttpProvider } from "../../src/providers/http/http.provider";
+import { InstagramProvider } from "../../src/providers/meta/instagram/instagram.provider";
 import { ProviderRegistry } from "../../src/providers/meta/provider-registry";
 import { WhatsAppProvider } from "../../src/providers/meta/whatsapp/whatsapp.provider";
-import { InstagramProvider } from "../../src/providers/meta/instagram/instagram.provider";
 import { TelegramProvider } from "../../src/providers/telegram/telegram.provider";
-import { HttpProvider } from "../../src/providers/http/http.provider";
 
 describe("ChannelRouter", () => {
   let router: ChannelRouter;
@@ -20,6 +21,7 @@ describe("ChannelRouter", () => {
         InstagramProvider,
         TelegramProvider,
         HttpProvider,
+        E2eTestsProvider,
       ],
     }).compile();
     router = moduleRef.get(ChannelRouter);
@@ -35,7 +37,13 @@ describe("ChannelRouter", () => {
     expect(router.get("http")).toBeDefined();
   });
 
+  it("resolves the e2e-tests sink provider", () => {
+    expect(router.get("e2e-tests")).toBeDefined();
+  });
+
   it("getOrThrow throws for unknown channel", () => {
-    expect(() => router.getOrThrow("slack" as never)).toThrow(NotFoundException);
+    expect(() => router.getOrThrow("slack" as never)).toThrow(
+      NotFoundException
+    );
   });
 });

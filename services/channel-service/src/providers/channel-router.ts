@@ -1,8 +1,9 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
-import type { IChannelProvider, Channel } from "@yoizen/shared";
+import type { Channel, IChannelProvider } from "@yoizen/shared";
+import { E2eTestsProvider } from "./e2e-tests/e2e-tests.provider";
+import { HttpProvider } from "./http/http.provider";
 import { ProviderRegistry } from "./meta/provider-registry";
 import { TelegramProvider } from "./telegram/telegram.provider";
-import { HttpProvider } from "./http/http.provider";
 
 /**
  * Top-level channel router that aggregates all provider registries
@@ -19,6 +20,7 @@ export class ChannelRouter {
     metaRegistry: ProviderRegistry,
     telegram: TelegramProvider,
     http: HttpProvider,
+    e2eTests: E2eTestsProvider
   ) {
     this.providers = new Map<Channel, IChannelProvider>();
 
@@ -31,6 +33,7 @@ export class ChannelRouter {
 
     this.providers.set(telegram.channel, telegram);
     this.providers.set(http.channel, http);
+    this.providers.set(e2eTests.channel, e2eTests);
   }
 
   get(channel: Channel): IChannelProvider | undefined {
@@ -41,7 +44,7 @@ export class ChannelRouter {
     const provider = this.providers.get(channel);
     if (!provider) {
       throw new NotFoundException(
-        `No provider registered for channel: ${channel}`,
+        `No provider registered for channel: ${channel}`
       );
     }
     return provider;
