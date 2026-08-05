@@ -1,16 +1,16 @@
-import {
-  connect,
-  headers as natsHeaders,
-  type JetStreamClient,
-  type NatsConnection,
-} from "nats";
+import { injectTraceContext, PinoLoggerService } from "@yoizen/observability";
 import type { EventCausalContext, ServiceBusCallArgs } from "@yoizen/shared";
 import {
-  TENANT_HEADER,
   computeIdempotencyKey,
   generateId,
+  TENANT_HEADER,
 } from "@yoizen/shared";
-import { injectTraceContext, PinoLoggerService } from "@yoizen/observability";
+import {
+  connect,
+  type JetStreamClient,
+  type NatsConnection,
+  headers as natsHeaders,
+} from "nats";
 import { workflowServiceConfig } from "../../config";
 
 let nc: NatsConnection | null = null;
@@ -19,7 +19,9 @@ const encoder = new TextEncoder();
 const logger = new PinoLoggerService("service-bus.activity");
 
 async function getConnection(): Promise<NatsConnection> {
-  if (nc && !nc.isClosed()) return nc;
+  if (nc && !nc.isClosed()) {
+    return nc;
+  }
   const url = workflowServiceConfig.natsUrl;
   nc = await connect({ servers: url, name: "workflow-service" });
   js = null;
@@ -27,26 +29,53 @@ async function getConnection(): Promise<NatsConnection> {
 }
 
 async function getJetStream(): Promise<JetStreamClient> {
-  if (js) return js;
+  if (js) {
+    return js;
+  }
   const conn = await getConnection();
   js = conn.jetstream();
   return js;
 }
 
 /**
- * Detects the JetStream "subject has no bound stream" error so the
- * activity can transparently fall back to a core-NATS publish when
- * a workflow targets a non-streamed subject (e.g. ad-hoc fan-out).
- * Matching by message text rather than error code keeps the check
- * resilient across nats.js minor versions.
+ * Decides whether a failed JetStream publish means "no stream is bound to
+ * this subject" — the one case where falling back to a core-NATS publish is
+ * correct (the documented ad-hoc fan-out path).
+ *
+ * This CANNOT be decided from the publish error alone. `js.publish()` fails
+ * with a bare `503` when nothing answers, and in nats.js `503` is both
+ * `NoResponders` (no stream bound — fall back) and `JetStreamNotEnabled`
+ * (JetStream itself is down — falling back would silently drop the dedup
+ * guarantee and mask an outage). `ErrorCode` maps both to the same "503"
+ * string, so they are indistinguishable at the publish site.
+ *
+ * So we ASK JetStream. `streams.find(subject)` queries `$JS.API.STREAM.NAMES`:
+ *   - it throws "no stream matches subject" -> JetStream answered, and there
+ *     genuinely is no stream for this subject -> fall back;
+ *   - it fails any other way (503/timeout, i.e. the API itself has no
+ *     responder) -> JetStream is unreachable -> do NOT fall back, let the
+ *     original publish error propagate so the outage stays visible.
+ * The probe costs one request and runs ONLY on the error path.
+ *
+ * Historical note: this function used to match the publish error's message
+ * text for "no stream matches" / "no responders available". The first of
+ * those is exactly what `findStream()` throws — the check was calibrated for
+ * this probe's error but applied to the publish's, which carries neither
+ * phrase. The fallback therefore never fired and every ad-hoc publish failed.
  */
-function isNoStreamForSubject(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const msg = err.message.toLowerCase();
-  return (
-    msg.includes("no stream matches") ||
-    msg.includes("no responders available")
-  );
+async function isNoStreamForSubject(subject: string): Promise<boolean> {
+  try {
+    const conn = await getConnection();
+    await conn.jetstreamManager().then((jsm) => jsm.streams.find(subject));
+    // A stream DOES match: the publish failure was something else entirely,
+    // so a core-NATS fallback would paper over it.
+    return false;
+  } catch (probeErr) {
+    return (
+      probeErr instanceof Error &&
+      probeErr.message.toLowerCase().includes("no stream matches")
+    );
+  }
 }
 
 /**
@@ -60,7 +89,9 @@ function isNoStreamForSubject(err: unknown): boolean {
  * `post-mortem/POST-MORTEM.md` §P1.3 fix 1.
  */
 function deriveDedupKey(args: ServiceBusCallArgs): string {
-  if (args.dedupKey && args.dedupKey.length > 0) return args.dedupKey;
+  if (args.dedupKey && args.dedupKey.length > 0) {
+    return args.dedupKey;
+  }
   return computeIdempotencyKey({
     subject: args.subject,
     payload: args.payload ?? null,
@@ -72,7 +103,7 @@ export async function executeServiceBusCall(
   args: ServiceBusCallArgs,
   tenantId: string,
   causal?: EventCausalContext,
-  executionId?: string,
+  executionId?: string
 ): Promise<{ published: true; subject: string }> {
   if (executionId) {
     logger.log(`serviceBusCall executionId=${executionId} tenant=${tenantId}`);
@@ -86,7 +117,9 @@ export async function executeServiceBusCall(
   const correlationId = causal?.correlation_id ?? generateId();
   const causationId = causal?.causation_id ?? null;
   hdrs.set("X-Correlation-Id", correlationId);
-  if (causationId) hdrs.set("X-Causation-Id", causationId);
+  if (causationId) {
+    hdrs.set("X-Causation-Id", causationId);
+  }
 
   if (args.headers) {
     const entries = Object.entries(args.headers);
@@ -120,7 +153,12 @@ export async function executeServiceBusCall(
       msgID: dedupKey,
     });
   } catch (err) {
-    if (!isNoStreamForSubject(err)) throw err;
+    if (!(await isNoStreamForSubject(args.subject))) {
+      throw err;
+    }
+    logger.log(
+      `serviceBusCall falling back to core NATS: no stream bound to '${args.subject}' (no server-side dedup on this path)`
+    );
     conn.publish(args.subject, payload, { headers: hdrs });
     await conn.flush();
   }
