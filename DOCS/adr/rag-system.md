@@ -1,5 +1,8 @@
 # ADR: Knowledge Base & RAG System for Agent Platform
 
+Class: RECORD
+Summary: ADR (2026-06-07, partially implemented): the knowledge-base + RAG design for the agent platform, with a status header naming exactly which phases shipped and which tools were never built.
+
 **Status**: Partially implemented — Phase 1 (KB CRUD + document ingestion in `services/agent-admin-service/src/modules/knowledge-bases/`) and Phase 2 (KB RAG middleware, `knowledgeBaseIds` on agent config) are implemented. `createKnowledgeBaseRagMiddleware` in `services/agent-ai-service/src/modules/llm/rag-middleware.ts` performs pgvector cosine search against `document_chunks_embedding` via `KnowledgeBaseSearchService` and is wired into `llm-executor.service.ts`; the same file also keeps the older memory-service-backed `createRagMiddleware`. The async ingestion pipeline (NATS-based `ingestion-worker.service.ts`, job tracking, watchdog, PDF support) exists inline in `agent-admin-service` — the proposed dedicated `ingestion-service` microservice does not exist. The `getInformation` and `addResource` tools are NOT implemented — neither tool metadata nor handlers exist anywhere in the codebase (`src/modules/tools/builtin-tools/` contains only `communicate`, `load-skill`, and `memory` tools).
 **Author**: Architect  
 **Date**: 2026-06-07

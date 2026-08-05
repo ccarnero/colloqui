@@ -1,5 +1,8 @@
 # SKB Operational Runbook
 
+Class: prescriptive
+Summary: Operational procedures for SKB: driving ingestion, diagnosing stuck files, checking query health, and responding to the common incidents.
+
 *SKB is a module inside `agent-admin-service` (`src/modules/structured-kb/`, `SERVICE_MODE=api|worker`) — there is no standalone SKB service.*
 
 > Operational procedures for the Structured Knowledge Base service —

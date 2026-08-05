@@ -1,5 +1,8 @@
 # Runtime Execution Token Streaming — Design
 
+Class: descriptive
+Summary: Token streaming from agent-ai-service to the SDK: the per-tenant `rt.` NATS subjects, the ai-agent-gateway SSE relay, the api-gateway passthrough and `runtime.stream()`.
+
 Status: Implemented (commit 4d77d0a; SDK e2e 61/61 passing, including
 mid-flight abort). Decision: **Option A** — `agent-ai-service`
 publishes model output tokens to a per-tenant NATS subject; `ai-agent-gateway`

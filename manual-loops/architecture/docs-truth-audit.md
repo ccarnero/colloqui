@@ -146,8 +146,8 @@ final per-file dispositions.
 - [x] T06 — Audit: integrations, demos, examples
 - [x] T07 — Audit: scripts (docs AND behavior contracts)
 - [x] T08 — Audit: root docs, cowork notes, skills
-- [ ] T09 — Structure proposal + purge list ⟶ HUMAN DECISION ROUND
-- [ ] T10 — Execute the approved structure + purge
+- [x] T09 — Structure proposal + purge list ⟶ HUMAN DECISION ROUND
+- [x] T10 — Execute the approved structure + purge
 
 (per-task entries appended below)
 
@@ -793,3 +793,155 @@ All of D1-D34, E1-E36 (grouped), and O1-O5 ruled above. SB1-SB8 cross-checked ag
 7. Group E — 1 small commit, string-only (E30, E31, E32, E35)
 8. TODO: Instagram/Meta channel removal (Engram #1239)
 9. TODO: manifest schema `file`-type source (Engram #1249)
+
+### T10 — 2026-08-04
+
+The T09 ruling executed. **273 → 249 markdown files, 18 → 15 doc roots**, and
+for the first time every cross-cutting doc declares its class under a guard.
+Both counts by section (a)'s own methodology — one key per first path segment,
+repo-root files as a single `(repo root)` key: `git ls-tree -r --name-only HEAD
+| rg '\.md$' | … split('/')[0]` → 18 keys / 273 files, `git ls-files --cached |
+rg '\.md$' | …` → 15 keys / 249 files. Three roots went: `cowork/` (D3),
+`.agents/` (D5) and `knative/`, whose single markdown file was deleted under D6.
+`DOCS/reference/` and `DOCS/runbooks/archive/` also went but are sub-directories
+of `DOCS/`, never separate roots in the 18, so they do not change this number.
+These supersede the conditional forecast in T09's proposal above (`264` files,
+`18 → 16` roots), which was scoped to "if D1–D22 are approved as recommended";
+the ruling approved more than D1–D22 — O1's 14 deletes and D6's `knative/`
+delete are the difference. That paragraph is a frozen record of what was
+proposed and is deliberately left as written.
+
+**Purge (26 files).** `backlog.md` (D13); seven `cowork/` notes — `CHECKPOINT`,
+`SESSION-HANDOFF`, `CHANGES-for-dev`, `DEBUG-fanout-telegram`, `SDK-http-sdk`,
+`DESIGN-http-channel-instances`, `ARCHITECTURE-ANALYSIS` (D14-D21) — plus
+`staging/manual-loop.command.md` (D20); `DOCS/reference/ai-sdk.md` (1365 lines,
+D10/D22) and `DOCS/channels/meta-provider-pattern.md` (D7), both folded into a
+survivor first; `knative/services/overlays/_components/README.md` (D6 as
+MODIFIED — verified zero consumers of the `components:` pattern and a false
+"remain on disk" claim; the emptied dir went too); and the 13 `.es.md` twins +
+`GUION-DEMO.md` (O1). `DOCS/reference/` and `DOCS/runbooks/archive/` no longer
+exist. Arithmetic: `1 + 7 + 1 + 1 + 1 + 1 + 13 + 1 = 26`, matching the ledger's
+"DELETED (26 files in 14 rulings)" table row for row. `git diff --cached -M
+--diff-filter=D --name-only | wc -l` reports **28**, two more, because
+`cowork/LOOP-PLAYBOOK.md` and `cowork/codebase-memory-mcp-setup.md` were edited
+past git's rename-similarity threshold while moving to `DOCS/guides/` (D33
+translation, SB5 carve) and so show as delete + add. They are moves with a live
+destination, not purges, and are counted under Structure below.
+
+**Structure.** `cowork/` dissolved (D3): 5 audits + the closed ledger →
+`DOCS/archive/audits/`, `INDEX.md` → `DOCS/archive/INDEX.md` (`register`,
+`Status: append-only`), `LOOP-PLAYBOOK` + `codebase-memory-mcp-setup` →
+`DOCS/guides/`, `DESIGN-run-view.md`+`.html` → `DOCS/archive/` together (D23,
+SB6). `.agents/skills/adr-skill/**` → `skills/adr/**`, `.agents/` gone (D5).
+`DOCS/runbooks/archive/**` → `DOCS/archive/runbooks/**`, because D2 says
+records live in `DOCS/archive/**` *only* and D27 widens G6f to exactly that
+glob. `DOCS/adr/agent-architecture-improvements.md` → `DOCS/v_next/` (O5).
+Splits: `skb/architecture.md` §7+§9 → `skb/design-decisions.md` (D8 — §9's
+SQL-injection "defence" is design intent the query path never calls, which is
+precisely why it cannot sit in a descriptive doc);
+`guides/doc-code-validation-tests.md` → `guides/doc-code-guards.md`
+(descriptive) + `v_next/doc-code-validation-tests.md` (future) (D9). Every move
+is a `git mv`. `git diff --cached -M --diff-filter=R --name-status | wc -l` →
+**27** detected renames, of which **12** are `R100`, i.e. 0 insertions and 0
+deletions (`… --numstat --diff-filter=R | awk '$1!=0 || $2!=0'` lists the other
+15). Those 15 changed because the same commit also edited them: the class
+banner on each archived audit and runbook, the register's repointed
+`CHECKPOINT` link (SB1), the K→G crosswalk appended to `DOC-VS-CODE-AUDIT.md`
+(D28), the D9 split's removed descriptive half, this ledger's own closing
+sections, and D34's documented env vars. Two further moves —
+`LOOP-PLAYBOOK` and `codebase-memory-mcp-setup` — fell below the similarity
+threshold and appear in the delete list instead, which is why the removal count
+there is 28 and the purge count is 26.
+
+**Class system.** 83 files carry D1's two-line banner — `Class:` plus a
+per-file `Summary:` written from reading the file, not a template — and **G12**
+fails on a missing or invalid one. D28's rename landed in full: the whole
+implemented family is `G`-prefixed (`k6a_…`→`g6a_…`, IDs and messages
+included), the RECORD `DOC-VS-CODE-AUDIT.md` keeps its K1-K10 and gained a
+crosswalk appendix instead — which is where the collision becomes visible:
+its K9/K10 (tenant precedence, MCP enums) were **never implemented**, and the
+script's `G9`/`G10` are different checks that had reused the numbers. New:
+**G13** (doc paths cited from source resolve; no `:NNN` doc cites) and **G14**
+(D32's hex ratchet over `git diff`, so 58 grandfathered files stay debt instead
+of a permanently red guard). Widened: **G6f** (all of `DOCS/archive/**`, with
+`Status: append-only` as the one named, checked exception for the register)
+and **G10** (archive + `fixtures/bus-events/` in the corpus, plus the
+lowercase-`docs/` check — 31 refs across TAXONOMY/SCHEMAS/DRIFT that are dead
+on Linux and silently fine on macOS, all corrected).
+
+**Also shipped:** AGENTS.md's minimal D30/D32/D33 edits (`.sdd/` blessed, the
+five classes named, `DOCS/archive/` named, the hex clause softened to a
+ratchet, the `diseno-mensajes.md` filename exception written down);
+`LOOP-PLAYBOOK.md` translated to English (D33); E1 closed —
+`envelope.md` §2.1 now documents BOTH `type` shapes with verified code
+examples and forbids a third; D12's scoped cite conversion (7 E4 source files,
+`multi-tenant/SKILL.md` 56 cites, `yz-ui/SKILL.md` 18, the three excluded
+RECORDs untouched); D34's `.env.example` renames; O3's README→AGENTS.md
+pointer; and D29's `scripts/sync-kb-fixtures.mjs`, which regenerates each
+manifest's inline KB block FROM the `.md` (round-trip tested: perturb → `--check`
+exits 1 naming the byte delta → sync → byte-identical restore).
+
+**Deviations, all recorded in the ledger's closing section.** (1) E6's six
+source-comment paths were fixed here although Group D bundles E6 elsewhere —
+SB2 makes it the precondition for D3's move and D25's G13 fails on exactly
+those paths, and a guard must be green when it lands. (2) One `log` string in
+`purge-temporal.sh` printing a nonexistent `DOCS/RUNBOOK-TEMPORAL.md`, same
+reason, overlapping E31. (3) **O1's premise is false for `GUION-DEMO.md`** — it
+has no English twin, so "the English half is complete" does not hold; its
+unique content (seeded state + re-seed recipe, the live-verified 2026-07-25
+responses, the 60 s cache warning, housekeeping) was folded into the sample
+README before the delete. (4) `demos/crm-support-telegram/README.md` is still
+fully Spanish — an open rule-5 violation no D/O item covers; flagged, not
+silently rewritten. (5) `manual-loops/**` was not rewritten, so 134 `cowork/…`
+mentions survive there by design (76 of them `cowork/INDEX.md`, the rest the
+purged and archived notes those closed loops cite — including the
+`DESIGN-run-view` pair named by `run-view.md` and `workflow-step-events.md`);
+**Correction (round 3 review):** the two `cowork/TRACEABILITY-audit.md` cites
+in `.sdd/changes/processes-message-trace/{design.md,tasks.md}` were
+mis-classed here as exempt "dated change records" under ground rule 2 — that
+change has no `archive.md` and its `tasks.md` is still mostly unchecked, so
+it is a LIVE planning artifact, not a frozen RECORD. Both cites were repointed
+to `DOCS/archive/audits/TRACEABILITY-audit.md` (round 3), and
+`DOCS-TRUTH-LEDGER.md`'s "Gate results at close" was updated in the same
+round to record G6b's actual pass (see the entry above). Every live surface
+is now repointed and `DOCS/archive/INDEX.md` carries a forwarding table.
+
+Gates: **G0 green, all 16 guards.** Full-repo link sweep — 236 relative `.md`
+links over 249 files (corrected 2026-08-05 — an earlier "330" figure in this
+paragraph was stale from before this round's fixes and never reconciled with
+the ledger's count; independently re-verified at 234-236 depending on regex
+strictness), plus a string sweep over non-markdown files for every path this
+task moved (SB8). **Three dangling refs were introduced by this
+task's own moves, and are fixed in this same change**: `.gitignore`'s `.claude`
+comment still pointed at `cowork/LOOP-PLAYBOOK.md` (now
+`DOCS/guides/LOOP-PLAYBOOK.md`), and the archived `DESIGN-run-view.md` /
+`.html` pair each still cited its own sibling under the pre-move `cowork/`
+path (now `DOCS/archive/DESIGN-run-view.{md,html}`). None of the three is a
+markdown relative link — one is a shell comment, one is HTML body text, one is
+a backticked path — which is why G10 could not see them and only the string
+sweep caught them. Seven further hits are pre-existing at HEAD and left
+untouched: six are false positives (the `@Matches` regex in
+`tenant-service/README.md`, the `{NNNN-title.md}` placeholders and the
+`0003-…` example cross-links inside the ADR skill), and one is a genuinely
+dangling pre-existing link — `../../design.md`, cited by
+`.sdd/changes/traceability-channel-ingress-causal/archive.md`.
+Affected suites green (api-gateway 13, agent-memory 33, audit 5,
+`packages/shared` 373, `sdk` 471); `bash -n` clean on five scripts.
+**G6b NOT RUN — the dev cluster is down** (`connection refused` on
+127.0.0.1:26443, inside and outside the sandbox). T10's Accept asks for the
+cluster e2e as the final integration proof; it remains genuinely unsatisfied
+and must be run before this work is called closed.
+
+**G6b — closed 2026-08-05.** Christian reset the cluster from scratch and
+re-ran `scripts/e2e/http-workflow.sh` against it. Two environment fixtures
+were stale from the fresh reset (unrelated to T10/E9/E2's own diffs, verified
+before touching anything): (a) the pokeapi connector adapter id — re-seeded
+via `POST /api/connectors` with `integrations/http/http-connectors/connectors/
+pokeapi.json`; (b) the `sample-echo` hosted service the `probeService` action
+targets — provisioned declaratively via a minimal `LibraryManifest`
+(`services:` only, `ealen/echo-server:latest`, port 8080, matching
+`integrations/http/hosted-services-api/manifest.yaml`'s already-audited
+values) applied with `yoizen manifests apply`, not an imperative API call.
+Both `E2E_ENDPOINT_ADAPTER_ID` and `E2E_SERVICE_CALL_SERVICE_ID` updated
+accordingly. Full 17-stage suite green, exit 0, reproduced twice. **T10's
+Accept is now fully satisfied — G0, G1, G6b all green.**

@@ -13,7 +13,7 @@ import { buildEventTypeFromSubject } from "../../src/providers/agent-memory-even
 /**
  * envelope-drift post-loop item 1 — the `type` field obeys the grammar.
  *
- * `DOCS/messaging/envelope.md:77` prescribes
+ * `DOCS/messaging/envelope.md §2.1` prescribes
  * `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`. agent-memory emitted
  * `io.yoizen.agent-memory.memory.proposed.v1`: six dot-segments instead of
  * seven (counting `io.yoizen` as a two-segment prefix), no channel or provider
@@ -77,7 +77,7 @@ describe("buildEventTypeFromSubject", () => {
     });
   }
 
-  it("emits 7 dot-separated segments, matching envelope.md:77", () => {
+  it("emits 7 dot-separated segments, matching envelope.md §2.1", () => {
     for (const [, subjectTemplate] of CASES) {
       const segments = buildEventTypeFromSubject(subjectTemplate).split(".");
       expect(segments.length).toBe(7);

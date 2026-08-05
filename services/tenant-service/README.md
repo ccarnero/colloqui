@@ -1,5 +1,8 @@
 # Tenant Service
 
+Class: descriptive
+Summary: Tenant provisioning through the Kubernetes API: namespaces, per-tenant database infrastructure, the environment scoping rule and the provisioning consumer.
+
 Provisions and manages tenant namespaces and per-tenant database infrastructure
 through the Kubernetes API. Every instance is environment-scoped by
 `PLATFORM_ENVIRONMENT`, so creating a tenant through the dev gateway creates

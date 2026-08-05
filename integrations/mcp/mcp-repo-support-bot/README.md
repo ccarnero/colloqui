@@ -96,7 +96,7 @@ action).
 
 Binding NAMEs are hyphenated (manifest v1 has no naming transform — decision
 7); a sourced `.env` cannot hold hyphenated identifiers directly, so
-`env.example` documents plain-name inputs (`OPENAI_API_KEY`,
+`.env.example` documents plain-name inputs (`OPENAI_API_KEY`,
 `TELEGRAM_BOT_TOKEN`) and the apply command below remaps them to the exact
 binding names via `env "<binding-name>=$VALUE"`.
 
@@ -133,7 +133,7 @@ A second `apply` is a no-op once converged.
 
 ```bash
 cd integrations/mcp/mcp-repo-support-bot
-cp env.example .env      # NOTE: env.example has NO leading dot (see below); set OPENAI_API_KEY
+cp .env.example .env     # set OPENAI_API_KEY
 ./run.sh
 ```
 
@@ -169,18 +169,17 @@ Telegram webhook itself (so a real inbound message reaches the platform) is
 outside this sample's declarative scope; see `telegram-transform-reply`'s own
 webhook-registration notes if you need a public HTTPS tunnel.
 
-### `env.example` has no leading dot
+### The env template is `.env.example` (renamed 2026-08-04)
 
-The shipped template is named `env.example`, not `.env.example` like eleven of
-the repo's thirteen sample templates (this sample and `../mcp-connections` are
-the two exceptions). There is **no technical reason** for the difference: the
-dot was dropped under the belief that `.env.*` files could not be written in
-the authoring environment, and the 2026-08-03 docs audit disproved that (it
-edited eight dotted templates in place the same day). Renaming sample files is
-a structural change, so it is deferred to that audit's T10 —
-`cowork/DOCS-TRUTH-LEDGER.md`, escalation **E23**. Nothing depends on the name:
-copy it to `.env` (`cp env.example .env`) and `../../lib/resolve-env.sh`, which
-`run.sh` sources, loads `.env` from this directory.
+Until 2026-08-04 this sample and `../mcp-connections` shipped their template as
+`env.example`, without the leading dot that the other eleven sample templates
+carry. There was **no technical reason** for it: the dot had been dropped under
+the belief that `.env.*` files could not be written in the authoring
+environment, and the 2026-08-03 docs audit disproved that (it edited eight
+dotted templates in place the same day). The docs-truth-audit T10 renamed both
+(ruling D34), so all thirteen sample templates are now `.env.example`. Copy it
+to `.env` (`cp .env.example .env`); `../../lib/resolve-env.sh`, which `run.sh`
+sources, loads `.env` from this directory.
 
 ## Trigger is pinned to this sample's own channel
 

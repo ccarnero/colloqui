@@ -60,7 +60,7 @@ describe("WebhookIngressPublisherService", () => {
     const envelope = JSON.parse(new TextDecoder().decode(bytes));
     expect(envelope.tenant).toBe("tenant-a");
     expect(envelope.kind).toBe("webhook_received");
-    // envelope-drift T05: `type` follows envelope.md:77 and carries the
+    // envelope-drift T05: `type` follows envelope.md §2.1 and carries the
     // channel, instead of the old channel-less
     // `io.yoizen.messaging.webhook.received.v1`.
     expect(envelope.type).toBe(

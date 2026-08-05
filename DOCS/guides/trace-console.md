@@ -1,5 +1,8 @@
 # Trace console — entry points for message tracing
 
+Class: prescriptive
+Summary: Which entry point to use to trace a message — the admin-console trace page versus the Grafana/Tempo/Temporal dashboards — and what to paste into each.
+
 Single entry-point guide for tracing a message through the platform: which URL to open,
 what to paste, and where each view is for. Companion to
 `.sdd/changes/trace-visualization/design.md` (the complementarity note explaining WHEN

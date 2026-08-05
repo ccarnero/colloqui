@@ -50,7 +50,7 @@ Legend: `[ ]` pending · `[x]` done · `[~]` deferred to a later slice/change.
 ### T7 — Docs — REQUIRED
 - [ ] Extend `DOCS/guides/ui-flows.md` "Workflow Builder / Processes" section with the Message
   trace view (entry points, gating, the two trace keys, link hand-offs).
-- [ ] Note in `cowork/TRACEABILITY-audit.md` that the business trace now has a UI surface.
+- [ ] Note in `DOCS/archive/audits/TRACEABILITY-audit.md` that the business trace now has a UI surface.
 
 ## Slice 1.5 — Correlation-scoped gateway read (small backend follow-up)
 - [~] The gateway audit proxy rejects `?correlation_id=` (not whitelisted) and doesn't expose

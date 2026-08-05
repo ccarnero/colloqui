@@ -1,5 +1,8 @@
 # Telegram Ingest Flow
 
+Class: descriptive
+Summary: The workflow-based path an inbound Telegram message takes, split into the hosted-service path and the AI-agent path after the workflow starts.
+
 This document explains the workflow-based path for an inbound Telegram message.
 
 It is split into two execution paths after the workflow starts:

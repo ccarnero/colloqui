@@ -4,7 +4,7 @@ import { createTransport } from "../../src/core/transport.js";
 import { resolveConfig } from "../../src/infrastructure/config.js";
 
 /**
- * Lock K3 (see cowork/DOC-VS-CODE-AUDIT.md): API versioning contract.
+ * Lock K3 (see DOCS/archive/audits/DOC-VS-CODE-AUDIT.md): API versioning contract.
  *
  * Evidence: src/infrastructure/config.ts:24-30,104 (default `apiVersion` is
  * `"v1"`) and src/core/transport.ts:17-31,123-124 (`versionPrefix()` maps

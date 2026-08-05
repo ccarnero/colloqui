@@ -24,7 +24,7 @@ metadata:
     - "workflow detail"
 ---
 
-> **Normative sources**: `AGENTS.md:55` (admin-console binding style — "Angular
+> **Normative sources**: `AGENTS.md` (admin-console binding style — "Angular
 > standalone components, signals, OnPush, lazy `loadComponent` routes, inline SVG
 > (no chart libs), tokens-only colors (no hard-coded hex — reviewer rejection),
 > no new libraries without human approval") and the visual contract
@@ -34,7 +34,7 @@ metadata:
 ## When to Use
 
 Use this skill when:
-- Creating or editing pages in **admin-console** (Angular 21 — `services/admin-console/package.json:24` pins `@angular/core: ^21.2.0`)
+- Creating or editing pages in **admin-console** (Angular 21 — `services/admin-console/package.json` pins `@angular/core: ^21.2.0`)
 - Building a section landing (KPI strip + panel split)
 - Working with the sub-nav, its indicators, or its collapse/hide modes
 - Building a detail mini-app (sub-tabs above a `<router-outlet/>`)
@@ -59,8 +59,8 @@ Restyled screens use `--rd-*`; unmigrated screens still use the legacy layer.
 ### Layer 1 — `--rd-*` (redesign; use this for new/restyled work)
 
 Transcribed from the visual contract; the header comment says so
-(`styles.scss:153-158`). Dark values at `styles.scss:159-268`, light overrides
-under `[data-theme="light"], .light-theme` at `styles.scss:325-355`
+(`styles.scss`). Dark values at `styles.scss`, light overrides
+under `[data-theme="light"], .light-theme` at `styles.scss`
 (the attribute is set by `src/app/core/services/theme.service.ts`).
 
 | Token | Dark | Light | Purpose |
@@ -75,17 +75,17 @@ under `[data-theme="light"], .light-theme` at `styles.scss:325-355`
 | `--rd-green` / `--rd-red` / `--rd-yellow` / `--rd-purple` | `#50e3a4` / `#f5455c` / `#f5a623` / `#bf7af0` | `#0c9f5f` / `#e5484d` / `#b26b00` / `#8e4ec6` | Status colors |
 
 Scales, all enumerated from the design file:
-`--rd-text-size-3xs…7xl` (9px→28px, `styles.scss:217-230`),
+`--rd-text-size-3xs…7xl` (9px→28px, `styles.scss`),
 `--rd-space-1…12` (2px→28px, `:233-244`),
 `--rd-radius-1…11` + `--rd-radius-full: 999px` (`:257-268`).
 Fonts: `--rd-font-sans: "Geist", system-ui` / `--rd-font-mono: "Geist Mono"`
-(`:213-214`; loaded via the `@import` at `styles.scss:13`).
+(`:213-214`; loaded via the `@import` at `styles.scss`).
 Topbar geometry: `--rd-topbar-crumbs-h: 52px` + `--rd-topbar-tabs-h: 21px`,
-summed into `--rd-topbar-h` (`styles.scss:250-254`).
+summed into `--rd-topbar-h` (`styles.scss`).
 
 ### Layer 2 — legacy Yoizen brand tokens (unmigrated screens only)
 
-`styles.scss:69-125` (dark) with light overrides at `:127-151`.
+`styles.scss` (dark) with light overrides at `:127-151`.
 
 | Token | Value | Note |
 |---|---|---|
@@ -103,7 +103,7 @@ Both layers are live: `rg -l 'var\(--rd-' src/app` returns 43 files and
 `rg -l 'var\(--(bg-surface|text2|primary)\b' src/app` returns 52 (run from
 `services/admin-console/`, excluding specs).
 
-Brand gradient — `--brand-gradient` (`styles.scss:91`); the avatar variant is
+Brand gradient — `--brand-gradient` (`styles.scss`); the avatar variant is
 `--rd-avatar-gradient` (`:204`).
 
 `color-mix` is the convention for tinted surfaces:
@@ -113,7 +113,7 @@ background: color-mix(in srgb, var(--green) 15%, transparent);
 
 **No Tailwind.** The admin-console composes inline `styles:` blocks in
 components and references CSS variables. The only occurrence of the word in the
-app is a comment (`styles.scss:838`, "Webkit / Tailwind-like utilities"):
+app is a comment (`styles.scss`, "Webkit / Tailwind-like utilities"):
 ```bash
 rg -n -i tailwind services/admin-console/src --glob '!node_modules'
 ```
@@ -165,8 +165,8 @@ active), `landingPath` (where the tab navigates), `pages[]` (sub-nav entries).
 
 | Flag | Effect | Who sets it |
 |---|---|---|
-| `subNavCollapsed: true` | Rail becomes the 56px icon strip | AI agent editor routes — `app.routes.ts:165` (`agents/new`) and `:188` (`agents/:id/configure`) |
-| `subNavHidden: true` | Rail removed entirely, `<main>` goes `full-bleed` | Workflow builder — `app.routes.ts:323` (`workflows/new`) and `:357` (`:id/builder`) |
+| `subNavCollapsed: true` | Rail becomes the 56px icon strip | AI agent editor routes — `app.routes.ts` (`agents/new`) and `:188` (`agents/:id/configure`) |
+| `subNavHidden: true` | Rail removed entirely, `<main>` goes `full-bleed` | Workflow builder — `app.routes.ts` (`workflows/new`) and `:357` (`:id/builder`) |
 
 - `mobileNavOpen` signal drives a hamburger overlay (`:144`, `:53-70`).
 
@@ -174,7 +174,7 @@ active), `landingPath` (where the tab navigates), `pages[]` (sub-nav entries).
 
 ## Sub-nav indicators
 
-Declare on a nav page (real entry, `nav.config.ts:113-116`):
+Declare on a nav page (real entry, `nav.config.ts`):
 
 ```ts
 {
@@ -185,7 +185,7 @@ Declare on a nav page (real entry, `nav.config.ts:113-116`):
 ```
 
 `source` is a string key resolved by `NavIndicatorRegistry`
-(`src/app/core/services/metrics/nav-indicator-registry.service.ts:78-95`), which
+(`src/app/core/services/metrics/nav-indicator-registry.service.ts`), which
 routes by prefix to a per-section metrics service:
 
 | Prefix | Service | Registry line |
@@ -202,10 +202,10 @@ All six live in `src/app/core/services/metrics/` and each exposes a
 (`rg -l 'resolve\(' src/app/core/services/metrics/` → 7 files: the six services
 plus the registry itself). The registry fans out
 `loadCounts()` to five of them — overview is not in that fan-out
-(`nav-indicator-registry.service.ts:70-74`).
+(`nav-indicator-registry.service.ts`).
 
 **Indicator kinds** — `NavIndicatorKind = "count" | "count-warn" | "count-danger" | "dot"`
-(`nav.config.ts:8`, documented at `:3-6`):
+(`nav.config.ts`, documented at `:3-6`):
 
 | Kind | Visual | Use when |
 |---|---|---|
@@ -244,7 +244,7 @@ set (regenerate with `fd -t d -d 1 . src/app/shared/components`):
 
 `SectionLandingShellComponent` exposes four content slots — `actions`, `kpis`,
 `primary`, `secondary` — and `hasSecondary()` drives the 2-column split
-(`src/app/shared/components/section-landing-shell/section-landing-shell.component.ts:12-39`).
+(`src/app/shared/components/section-landing-shell/section-landing-shell.component.ts`).
 The shell deliberately imposes no card grid on `slot=kpis`; the page chooses
 3 or 4 (`:17`).
 
@@ -275,7 +275,7 @@ The shell deliberately imposes no card grid on `slot=kpis`; the page chooses
 
 The other three do **not**: Overview is `features/overview/dashboard/dashboard.component.ts`,
 Connections composes `app-page-header` directly
-(`features/connections/connections-landing.component.ts:28-34`), Settings uses
+(`features/connections/connections-landing.component.ts`), Settings uses
 the hub pattern below.
 
 ### 2. Settings hub
@@ -306,7 +306,7 @@ Pattern from the workflows detail page
 
 The shell renders breadcrumbs + title row (status pill + actions) +
 `<app-sub-tabs>` + `<router-outlet/>`. Children walk up to read `:id` — verbatim
-from `detail/workflow-overview.component.ts:270-276`:
+from `detail/workflow-overview.component.ts`:
 
 ```ts
   private readonly parentParams = toSignal(
@@ -332,7 +332,7 @@ table, then a pager footer. Server-side pagination (`page` + `pageSize` +
 ## Status pills and row status
 
 Inline pill next to a title. Verbatim from
-`detail/workflow-run-detail.component.ts:175-197`:
+`detail/workflow-run-detail.component.ts`:
 
 ```css
     .status-pill {
@@ -361,7 +361,7 @@ Inline pill next to a title. Verbatim from
 ```
 
 For passive list-row status (no pill background), a colored leading dot only —
-`rs-*` are colors alone (`detail/workflow-executions.component.ts:169-172`):
+`rs-*` are colors alone (`detail/workflow-executions.component.ts`):
 
 ```css
     .rs-ok { color: var(--green, #16a34a); }
@@ -375,7 +375,7 @@ For passive list-row status (no pill background), a colored leading dot only —
 ```
 
 Detail shells may name the modifier after the domain state instead
-(`.status-active` / `.status-draft`, `detail/workflow-detail.component.ts:142-149`)
+(`.status-active` / `.status-draft`, `detail/workflow-detail.component.ts`)
 — the `.status-pill` base is identical.
 
 ---
@@ -400,7 +400,7 @@ Detail shells may name the modifier after the domain state instead
 ## Best practices
 
 ### DO
-- Reference CSS variables — never raw hex (`AGENTS.md:55`: hard-coded hex is a reviewer rejection).
+- Reference CSS variables — never raw hex (`AGENTS.md`: hard-coded hex is a reviewer rejection).
 - Match the token layer of the file you are editing: `--rd-*` for restyled screens, legacy tokens for unmigrated ones.
 - Apply `ChangeDetectionStrategy.OnPush` on every component.
 - Use signals + `computed()` for derived state; `toSignal(...)` to bridge observables.
@@ -408,16 +408,16 @@ Detail shells may name the modifier after the domain state instead
 - `routerLinkActive` for nav active state, not manual class toggles.
 - Reuse the existing primitives — don't roll your own KPI card.
 - Use the section-landing slots (`actions` / `kpis` / `primary` / `secondary`) for a new landing.
-- Lazy `loadComponent` routes and inline SVG, no chart libs (`AGENTS.md:55`).
+- Lazy `loadComponent` routes and inline SVG, no chart libs (`AGENTS.md`).
 - Empty values render as `—`, not `null` or `0`.
 
 ### DON'T
 - Hardcode hex colors anywhere.
-- Add a new library without human approval (`AGENTS.md:55`).
+- Add a new library without human approval (`AGENTS.md`).
 - Deviate from `manual-loops/admin-console/design/Rediseño Terminal.dc.html` without human sign-off.
 - Use Material Dialog for in-flow editing — prefer docked panels.
 - Render `0` in count indicators — hide them.
-- Use `100vh` / `100vw` inside a page — `shell.component.ts:82-91` already owns the viewport height.
+- Use `100vh` / `100vw` inside a page — `shell.component.ts` already owns the viewport height.
 - Reach into private properties of services (`service["http"]`) — add a public method.
 - Add a top-nav section without updating `matchPaths` AND `landingPath` AND a metrics service.
 

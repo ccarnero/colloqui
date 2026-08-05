@@ -1,5 +1,8 @@
 # Common Patterns & Recipes
 
+Class: descriptive
+Summary: Worked recipes for the nine WorkflowAction kinds, with the field names and template variables the engine actually resolves.
+
 Practical pseudocode examples for common use cases with `connector-runtime` and `workflow-service`.
 
 > **Field name note**: The real `WorkflowAction` schema uses `activity` (not `type`) to identify the action kind. The recipes below use pseudo-JSON; in actual API payloads write `"activity": "endpointCall"` etc. See `packages/shared/src/workflow.interfaces.ts` for the canonical type definitions.

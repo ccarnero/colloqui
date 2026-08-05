@@ -2,6 +2,13 @@
 
 Serverless event-driven architecture on Kubernetes (Minikube / OrbStack) with Knative Serving, NATS JetStream, Redis, PostgreSQL, and Temporal.
 
+> **Read [`AGENTS.md`](AGENTS.md) first.** It is the single normative document
+> for this repository — binding rules, platform contracts, per-service styles and
+> review standards. Anything that contradicts it elsewhere (including this file)
+> is the thing that gets fixed. `CLAUDE.md` is gitignored, so `AGENTS.md` is the
+> only pointer a fresh clone has. The documentation map lives in
+> [`DOCS/README.md`](DOCS/README.md).
+
 ## Developer mode — quickstart
 
 Single-node, single-environment (`dev`) setup. No env argument, no KEDA, single-pod infra.

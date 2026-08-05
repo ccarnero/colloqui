@@ -73,7 +73,7 @@ export interface InboundMessage {
   media?: MessageMedia;
   raw: Record<string, unknown>;
   /**
-   * Foundation for metering/attribution (DOCS/cowork/METERING-FOUNDATION.md G3):
+   * Foundation for metering/attribution (DOCS/archive/audits/METERING-FOUNDATION.md G3):
    * conversation identifier, when the producer already has one available at
    * publish time (e.g. an upstream chat session id). Optional — most channel
    * providers key messages by from/to, not by conversation, so this is left

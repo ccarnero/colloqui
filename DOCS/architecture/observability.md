@@ -1,5 +1,8 @@
 # Observability
 
+Class: descriptive
+Summary: The as-built observability stack: OTel tracing, the metric names each service emits, dashboards, and the implemented Prometheus alerts.
+
 **Status:** Operational reference — system implemented
 **Audience:** Infra + Dev
 **Last updated:** 2026-06-11

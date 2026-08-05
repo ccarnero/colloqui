@@ -180,7 +180,7 @@ The three hooks that DO exist:
 
 | Hook | Where | What it does |
 |---|---|---|
-| `post-merge`, `post-checkout` | `.git/hooks/` (untracked — a fresh clone has neither) | Fire `scripts/cbm-reindex.sh` under `nohup`, log to `.git/cbm-reindex.log`, always `exit 0`. Setup: `cowork/codebase-memory-mcp-setup.md`. |
+| `post-merge`, `post-checkout` | `.git/hooks/` (untracked — a fresh clone has neither) | Fire `scripts/cbm-reindex.sh` under `nohup`, log to `.git/cbm-reindex.log`, always `exit 0`. Setup: `DOCS/guides/codebase-memory-mcp-setup.md`. |
 | `PostToolUse` (Claude Code, not git) | `.claude/settings.json`, matcher `Edit\|Write\|MultiEdit` | Runs `scripts/claude-hook-lint-test.sh` on the edited file — biome check plus a `vitest related` step that is inert outside `admin-console` (that script's own header says so). Always exits 0. |
 
 ## Versioning

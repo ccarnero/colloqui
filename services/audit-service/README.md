@@ -1,5 +1,8 @@
 # Audit Service
 
+Class: descriptive
+Summary: The four audit trails written into each tenant database, the durable consumers that feed them, and the read API including causal-chain reconstruction.
+
 Writes four independent audit trails into each tenant's own database and exposes
 a read API over them, including causal-chain reconstruction. It is a consumer of
 the bus, not a producer.

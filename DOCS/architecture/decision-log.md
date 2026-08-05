@@ -1,5 +1,8 @@
 # Architecture Decision Log
 
+Class: register
+Summary: Live register of cross-cutting closed decisions, open points, milestones and the messaging-bus migration record; rows are amended in place, unlike the frozen ADRs in DOCS/adr/.
+
 > This file captures cross-cutting closed decisions, open points, milestones, and
 > the historical migration record for the messaging bus.
 > Granular, single-topic decision records live in [`../adr/`](../adr/).
@@ -31,7 +34,7 @@ an ADR file does not consume a `D` number. Most ADRs have no corresponding
 | [`../adr/connector-runtime-separation.md`](../adr/connector-runtime-separation.md) | none |
 | [`../adr/tenant-postgres-model.md`](../adr/tenant-postgres-model.md) | none — closest context is the [Historical migration](#historical-single-tenant--multi-tenant-migration) data-isolation row |
 | [`../adr/temporal-and-nats.md`](../adr/temporal-and-nats.md) | **D2** (adjacent, narrower — see below), topology governed by **D5** |
-| [`../adr/agent-architecture-improvements.md`](../adr/agent-architecture-improvements.md) | none |
+| [`../v_next/agent-architecture-improvements.md`](../v_next/agent-architecture-improvements.md) | none — moved out of `adr/` to `v_next/` by the docs-truth-audit T10 (ruling O5): `status: proposed`, nothing shipped, so it is a future design rather than a decision record |
 | [`../adr/rag-system.md`](../adr/rag-system.md) | none |
 | [`../adr/variable-system.md`](../adr/variable-system.md) | none |
 

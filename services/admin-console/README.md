@@ -1,5 +1,8 @@
 # Admin Console
 
+Class: descriptive
+Summary: The Angular 21 tenant administration console: feature areas, routing and nav, auth/permission model, environment configuration and how to run and rebuild it.
+
 Tenant-scoped administration dashboard for the Yoizen platform. Built with Angular 21, standalone components, signals, Angular Material, and the Yoizen UI shell. Each authenticated user sees data for the tenant encoded in their JWT.
 
 ## Quick Start
@@ -731,7 +734,7 @@ panel composition, or affordance placement. The loop's audit harness
 before/after screenshots live under
 `manual-loops/admin-console/audit/{before,after}/`; the full findings list,
 resolved-vs-deferred breakdown, and NEW-CAPABILITY backlog are catalogued
-in `cowork/INDEX.md`, "Change: console redesign polish". Per-area changes:
+in `DOCS/archive/INDEX.md`, "Change: console redesign polish". Per-area changes:
 
 - **Builder full-bleed + floating dock (T02/T03).** The workflow-detail
   wrapper (breadcrumb, title/Active badge, Run now/Pause/Edit, sub-tabs
@@ -796,7 +799,7 @@ palette rail) — the mock itself is left→right with a bottom dock; per the
 binding contract, PRESERVE wins on orientation/placement and the mock wins on
 everything else (card anatomy, typography, spacing, chrome). Before/after
 screenshots live under `manual-loops/admin-console/audit/builder-v2/{before,after}/`;
-the full findings list and INDEX pointers are in `cowork/INDEX.md`, "Change:
+the full findings list and INDEX pointers are in `DOCS/archive/INDEX.md`, "Change:
 console redesign builder v2".
 
 - **New node card component (T03).** A fresh component ported from
@@ -881,5 +884,5 @@ console redesign builder v2".
   Knative-exposed HTTP surface at all, only the pre-existing
   `tracking-ingester-worker` NATS consumer), so `GET /tracking/node-stats`
   404s and every node card's stats row renders hidden — the correct
-  degraded state per T07's spec, not a bug. See `cowork/INDEX.md`, "Change:
+  degraded state per T07's spec, not a bug. See `DOCS/archive/INDEX.md`, "Change:
   console redesign builder v2" for the deploy follow-up.

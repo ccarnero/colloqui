@@ -1,5 +1,8 @@
 # Long-Running Agent Executions
 
+Class: descriptive
+Summary: The end-to-end contract that lets an agent run for minutes — submit/handle/poll, heartbeats, ack windows and the timeouts that bound each hop.
+
 **Your agent may take minutes. This is the contract that protects you.**
 
 A tool chain that calls three slow APIs, a reasoning model that thinks for

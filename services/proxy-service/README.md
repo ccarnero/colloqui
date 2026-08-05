@@ -1,5 +1,8 @@
 # Proxy Service
 
+Class: descriptive
+Summary: The pass-through HTTP forwarder and its three handlers, which differ only in how the upstream base URL is resolved.
+
 Forwards incoming HTTP requests to external servers, preserving method, path,
 query string, body and headers. Three handlers differ ONLY in how the upstream
 base URL is resolved:

@@ -1,5 +1,8 @@
 # Connector Admin
 
+Class: descriptive
+Summary: Multi-tenant connector configuration: connector and endpoint CRUD, auth types, cache and retry settings, and the internal sync consumer.
+
 Multi-tenant connector configuration service. It manages connector definitions (base URL, auth type, custom headers, timeouts, retries) and their endpoints per tenant. Internally some modules still use legacy `adapter` names, but the public HTTP surface is `/connectors`.
 
 ## Quick Start

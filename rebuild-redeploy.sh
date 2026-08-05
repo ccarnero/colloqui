@@ -128,7 +128,7 @@ build_image() {
 # "connector-runtime" as a ksvc and rollout_ksvc logs a harmless "not found —
 # skipping" warning on every connector-runtime rebuild. Same footgun the
 # tracking-ingester-service case exists to avoid; see E33 in
-# cowork/DOCS-TRUTH-LEDGER.md (adding the case is a behavior change).
+# DOCS/archive/audits/DOCS-TRUTH-LEDGER.md (adding the case is a behavior change).
 get_ksvc_names() {
   local svc="$1"
   case "$svc" in

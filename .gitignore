@@ -127,7 +127,7 @@ GEMINI.md
 CURSOR.md
 CLAUDE.md
 # .claude: local state stays ignored, but the written loop (commands + agents)
-# governs the project and MUST be versioned (see cowork/LOOP-PLAYBOOK.md §6).
+# governs the project and MUST be versioned (see DOCS/guides/LOOP-PLAYBOOK.md §6).
 .claude/*
 !.claude/commands/
 !.claude/agents/

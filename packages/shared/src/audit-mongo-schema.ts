@@ -165,7 +165,7 @@ export const EXECUTION_AUDIT_MONGO_NAMESPACE = "execution_audit";
 
 /**
  * Subset for durable execution-lifecycle audit ingestion
- * (DOCS/cowork/METERING-FOUNDATION.md G1/G2). One row per
+ * (DOCS/archive/audits/METERING-FOUNDATION.md G1/G2). One row per
  * `execution_started/completed/failed` event, keyed by envelope id for
  * idempotent redelivery.
  */

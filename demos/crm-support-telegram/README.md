@@ -1,8 +1,8 @@
 # crm-support-telegram
 
 > Documentación del demo. Explica qué hace, cómo funciona por dentro y qué esperar al
-> presentarlo. El guion paso a paso para el día de la demo, con las respuestas reales
-> verificadas del sistema, vive en [GUION-DEMO.md](./GUION-DEMO.md). (La versión original en
+> presentarlo, incluido el guion paso a paso para el día de la demo con las respuestas reales
+> verificadas del sistema (sección "Guion para el día de la demo"). (La versión original en
 > inglés de este documento quedó en el historial de git como `README.md` previo a 2026-07-25.)
 
 ## ¿Qué hace este demo?
@@ -214,12 +214,28 @@ endpoint `/webhooks/invoke` del scorer. Dos detalles importan operativamente:
 
 ## Guion para el día de la demo
 
-> **El guion vigente, con los mensajes exactos y las respuestas REALES verificadas en vivo
-> (2026-07-25), está en [GUION-DEMO.md](./GUION-DEMO.md)** — incluye el estado sembrado, la
-> preparación y el housekeeping post-demo. Lo de abajo es la narrativa general; ante cualquier
-> diferencia, manda GUION-DEMO.md.
+> Guion verificado en vivo el 2026-07-25 contra el clúster de dev: cada respuesta "esperada"
+> de abajo es la respuesta REAL que devolvió el sistema en esa fecha (ejecuciones 15:37 y 15:40
+> UTC), no un ejemplo inventado. Duración estimada: ~5 minutos. (Este guion vivía en un
+> `GUION-DEMO.md` aparte hasta 2026-08-04; la docs-truth-audit T10 lo absorbió acá al eliminar
+> ese archivo — ruling O1.)
 
-**Advertencias críticas** (el detalle completo está en GUION-DEMO.md):
+### Estado que la demo necesita sembrado
+
+| Qué | Valor de referencia (siembra 2026-07-25) |
+| --- | --- |
+| Contacto HubSpot con `telegram_user_id` del presentador | `237594495271` ("Christian Demo VIP") |
+| Deals abiertos asociados (>= 3 dispara VIP) | `63140996230`, `63142088072`, `63148403872` |
+| Bot de Telegram | `@yzndev_bot` |
+| Túnel público (webhook) | `https://api.devmachina.net` (cloudflared, origen puerto 80 + Host header del gateway) |
+
+Los ids cambian con cada re-siembra; lo estable es la forma: un contacto cuyo `telegram_user_id`
+es el chat id del presentador, con 3+ deals abiertos asociados. Para re-sembrar: crear el contacto
+(`POST /crm/v3/objects/contacts` con la propiedad `telegram_user_id`), crear 3 deals
+(`POST /crm/v3/objects/deals`, solo `dealname` — el pipeline default los deja abiertos) y
+asociarlos (`PUT /crm/v4/objects/deals/{dealId}/associations/default/contacts/{contactId}`).
+
+**Advertencias críticas** (aprendidas a golpes):
 
 - **NO correr `run.sh` antes ni durante una demo en vivo**: su siembra reutiliza el contacto de
   la demo (create-or-reuse por `telegram_user_id`) y su limpieza LO BORRA con sus deals — el
@@ -227,7 +243,10 @@ endpoint `/webhooks/invoke` del scorer. Dos detalles importan operativamente:
 - **Cada turno VIP crea un ticket nuevo** (el `idempotencyKey` es por ejecución) y repite el
   banner de escalación — guion corto o narrarlo como re-verificación en vivo.
 - **Mensajes autocontenidos**: cada mensaje es una ejecución nueva con memoria limitada entre
-  turnos; dar los datos en cuotas hace que el agente vuelva a pedir contexto.
+  turnos; dar los datos en cuotas hace que el agente vuelva a pedir contexto. Los mensajes del
+  guion de abajo incluyen todo el contexto en un solo turno.
+- **Cache de lectura de 60 s** en el conector HubSpot (`list-deals-by-contact`): si se acaban de
+  tocar los deals del contacto, esperar un minuto antes del primer mensaje VIP.
 
 **Antes de entrar a la sala**: confirmar que `bootstrap.sh` y `manifests apply` corrieron
 limpiamente contra el clúster objetivo (una imagen desactualizada o un manifest sin aplicar es el
@@ -236,7 +255,43 @@ Telegram una vez desde el teléfono/cuenta de la demo para que `TELEGRAM_TEST_CH
 resoluble, y tener la cuenta de demo de HubSpot y el admin-console abiertos en pestañas separadas
 de antemano.
 
-**Qué mostrar, qué decir**:
+**Preparación (antes de la sala)**:
+
+- cloudflared arriba y `getWebhookInfo` apuntando al túnel, sin `last_error_message`.
+- Admin-console abierto en **Processes** (para la run-view) y HubSpot abierto en **Tickets →
+  Support Pipeline**.
+- `yoizen manifests plan -f manifest.yaml` como sanity check: todo `noop` = clúster convergido.
+
+**Los tres actos, con las respuestas reales verificadas**:
+
+- **Acto 1 — cliente común** (desde OTRA cuenta de Telegram, no la sembrada). Enviar
+  `Hola, tengo una consulta sobre mi pedido`. Esperado: respuesta cortés estándar, SIN banner de
+  escalación y SIN ticket. En la run-view: `searchContact` no encuentra contacto → `scoreContact`
+  → `tier=standard` → rama default → `replyStandard`.
+- **Acto 2 — cliente VIP** (la cuenta sembrada; el momento clave). Enviar en UN solo mensaje:
+  `Hola, tengo un problema con mi ultimo pedido, el 1122: las frutillas llegaron en mal estado.`
+  Respuesta real verificada (2026-07-25 15:37 UTC): banner
+  **"⚠️ VIP escalation — a specialist will follow up shortly."** seguido de *"Hola, Christian.
+  Lamento mucho saber que las frutillas llegaron en mal estado… ¿te gustaría que gestionáramos un
+  reembolso o un reemplazo de las frutillas?…"*. Backstage en la run-view: `tier=vip`, `score=85`,
+  `reasons=["open-deals-vip-threshold-met:3","open-deals:3","unresolved-tickets:0"]`, nodo
+  `createTicket` disparado en modo async. En HubSpot: ticket nuevo en Support Pipeline → New,
+  subject "VIP escalation via Telegram support bot", prioridad HIGH.
+- **Acto 3 — system variables en vivo** (opcional pero efectivo). Enviar
+  `Y cuanto tardan en darme una respuesta?`. Respuesta real verificada (2026-07-25 15:40 UTC):
+  *"…nuestro SLA es de 24 horas para las respuestas. Sin embargo, dada la naturaleza urgente de su
+  caso…"*. El **24** sale de la system variable `crm-support-sla-hours` resuelta en runtime — se
+  puede cambiar en el admin-console y el bot cita el valor nuevo sin tocar código ni re-desplegar.
+  La advertencia del ticket por turno aplica: este turno también genera banner + segundo ticket.
+
+**Housekeeping post-demo**:
+
+- Borrar el contacto sembrado y sus 3 deals (`DELETE /crm/v3/objects/contacts/{id}` y
+  `/crm/v3/objects/deals/{id}`).
+- Borrar los tickets "VIP escalation via Telegram support bot" acumulados durante la demo y los
+  ensayos (uno por turno VIP).
+
+**Qué mostrar, qué decir** (la narrativa larga, misma secuencia que los tres actos):
 
 1. Abrir el chat de Telegram con el bot en pantalla. Enviar una pregunta de soporte normal (por
    ejemplo, "¿dónde está mi pedido?"). Narrar: *"este mensaje llega a nuestro canal, un workflow

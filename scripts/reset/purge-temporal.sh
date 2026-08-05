@@ -12,7 +12,7 @@
 #
 # Topology note — BOTH the 2026-05-22 visibility split and the 2026-05 HA
 # split were later REVERTED, and both runbooks now live under
-# `DOCS/runbooks/archive/` (`temporal-visibility-split.md`,
+# `DOCS/archive/runbooks/` (`temporal-visibility-split.md`,
 # `temporal-ha-migration.md`); the live runbook is
 # `DOCS/runbooks/temporal.md`. Nothing here is hardcoded to one topology:
 #   - Deployments are auto-detected (`ensure_deployments_exist`): the 4-role
@@ -145,7 +145,7 @@ SINGLE_DEPLOYMENT="temporal"
 DEFAULT_PG_POD="postgres-temporal-1"
 DEFAULT_PG_USER="postgres"
 # Visibility moved to its own CNPG cluster on 2026-05-22 and moved back
-# later (see DOCS/runbooks/archive/temporal-visibility-split.md). Default
+# later (see DOCS/archive/runbooks/temporal-visibility-split.md). Default
 # still targets the dedicated primary; collapsed-cluster setups are handled
 # automatically by resolve_visibility_target, or can be pinned with
 # `--vis-pg-pod=postgres-temporal-1`.
@@ -344,7 +344,7 @@ ensure_deployments_exist() {
   if "${KCTL[@]}" -n "$NAMESPACE" get deploy "$SINGLE_DEPLOYMENT" >/dev/null 2>&1; then
     TEMPORAL_DEPLOYMENTS=("$SINGLE_DEPLOYMENT")
     log "Detected single auto-setup Deployment topology: ${SINGLE_DEPLOYMENT}"
-    log "  (HA topology reverted 2026-06-11 — see DOCS/RUNBOOK-TEMPORAL.md)"
+    log "  (HA topology reverted 2026-06-11 — see DOCS/runbooks/temporal.md)"
     return 0
   fi
 
@@ -373,7 +373,7 @@ ensure_vis_pg_pod_exists() {
     # If the operator did NOT override the flag, fall back to the
     # workflow-state pod: the 2026-05-22 visibility split was reverted
     # and single-cluster setups host temporal_visibility on the same
-    # CNPG primary (see DOCS/runbooks/archive/temporal-visibility-split.md,
+    # CNPG primary (see DOCS/archive/runbooks/temporal-visibility-split.md,
     # archived because the split was reverted).
     if [[ "$VIS_PG_POD" == "$DEFAULT_VIS_PG_POD" ]]; then
       warn "Visibility pod ${VIS_PG_POD} not found — falling back to ${PG_POD}"

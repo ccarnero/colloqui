@@ -53,7 +53,7 @@ Properties that matter:
   no template directory. `git ls-files | rg hook` matches only
   `scripts/claude-hook-lint-test.sh`, which is not a git hook at all. **A fresh
   clone has neither hook** — install them by hand; the recipe is in
-  `cowork/codebase-memory-mcp-setup.md`, "First-time setup on a new machine".
+  `DOCS/guides/codebase-memory-mcp-setup.md`, "First-time setup on a new machine".
 - Output goes to `.git/cbm-reindex.log`.
 
 ## The Claude Code hook (not a git hook)

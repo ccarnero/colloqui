@@ -1,5 +1,8 @@
 # Platform Cluster
 
+Class: descriptive
+Summary: The documentation index and developer quickstart: how to bring the cluster up, where every doc class lives, and what the 16 static guards in doc-code-guards.sh pin.
+
 Serverless event-driven architecture running on Kubernetes (OrbStack) with Knative Serving, NATS JetStream, Redis, PostgreSQL, and Temporal. Single-node developer configuration with stable `dev.local` hostnames, no KEDA autoscaling, and one-command bring-up.
 
 ## Developer mode — quickstart
@@ -129,21 +132,28 @@ A resurrected one now fails the build.
 
 ### Enforcement (G0)
 
-`scripts/checks/doc-code-guards.sh` runs 13 static guards, reports EVERY failure,
+`scripts/checks/doc-code-guards.sh` runs 16 static guards, reports EVERY failure,
 and exits non-zero if any guard failed — it is deliberately report-all, not
 fail-fast, so one run surfaces the whole drift set (`fail()` accumulates into
-`FAILURES`; `main()` exits on the total). Beyond the original K6/K7/K8/K9 set it
-now enforces:
+`FAILURES`; `main()` exits on the total). Every guard carries a `G` (guard)
+prefix — the docs-truth-audit T10 ruling D28 renamed the family from `K` because
+those numbers collided with the K1-K10 *proposal* in
+[`archive/audits/DOC-VS-CODE-AUDIT.md`](./archive/audits/DOC-VS-CODE-AUDIT.md)
+(that RECORD keeps its K-numbers and carries the crosswalk). Beyond the original
+G6/G7/G8/G9 set it now enforces:
 
 | Guard | Pins |
 |---|---|
-| **K6g** | No `services/*/AGENTS.md` or `packages/*/AGENTS.md` exists — the per-component agent file cannot come back. The root `AGENTS.md` is anchored out of both globs |
-| **K9b** | Numeric claims in docs match generated reality (today: the golden row count stated in the tracking-ingester README and its spec vs the actual data rows of `golden/labeled.tsv`) |
-| **K10** | Every relative `.md` link in `README.md`, `DOCS/**`, `services/*/README.md` and `packages/*/README.md` resolves. Fenced blocks and inline code spans are skipped; anchors resolve to the file part |
-| **K11** | Every service whose source calls `resolveStorageEngine()` documents `DB_ENGINE`/`STORAGE_ENGINE` in its README. The service set is discovered from the code, not hardcoded |
+| **G6g** | No `services/*/AGENTS.md` or `packages/*/AGENTS.md` exists — the per-component agent file cannot come back. The root `AGENTS.md` is anchored out of both globs |
+| **G9b** | Numeric claims in docs match generated reality (today: the golden row count stated in the tracking-ingester README and its spec vs the actual data rows of `golden/labeled.tsv`) |
+| **G10** | Every relative `.md` link in `README.md`, `DOCS/**` (archive included), `services/*/README.md`, `packages/*/README.md` and `fixtures/bus-events/README.md` resolves. Fenced blocks and inline code spans are skipped; anchors resolve to the file part. It also fails on lowercase `docs/…` path refs, which are dead on Linux and silently fine on macOS |
+| **G11** | Every service whose source calls `resolveStorageEngine()` documents `DB_ENGINE`/`STORAGE_ENGINE` in its README. The service set is discovered from the code, not hardcoded |
+| **G12** | Every `DOCS/**/*.md` and every `services/*/README.md` / `packages/*/README.md` declares `Class:` (`descriptive\|prescriptive\|future\|RECORD\|register`) AND a non-empty `Summary:` in its first 10 lines |
+| **G13** | Every `DOCS/…`-shaped doc path written inside `services/`, `packages/`, `sdk/` or `scripts/` source exists on disk, and no source file pins a doc by line number (`envelope.md:77`-style cites rot) |
+| **G14** | No NEW hard-coded hex colour literal is added under `services/admin-console` — a ratchet over `git diff`, so the 58 grandfathered files are untouched debt rather than a permanently red guard |
 
-`K6a`–`K6f`, `K7`, `K8` and `K9` (type-only DI imports) are described in
-[doc-code validation tests](./guides/doc-code-validation-tests.md).
+`G6a`–`G6f`, `G7`, `G8` and `G9` (type-only DI imports) are described in
+[the doc/code guard script](./guides/doc-code-guards.md).
 
 ```bash
 scripts/checks/doc-code-guards.sh       # quiet: failures only
@@ -173,10 +183,11 @@ scripts/checks/doc-code-guards.sh -v    # verbose: also prints PASS lines
 
 | Folder | Contents |
 |--------|----------|
-| [`skb/`](./skb/) | Structured Knowledge Base subsystem — [architecture](./skb/architecture.md), [API](./skb/api.md), [runbook](./skb/runbook.md), [security](./skb/security.md) |
-| [`runbooks/`](./runbooks/) | Operations — [Temporal](./runbooks/temporal.md), [storage engines](./runbooks/storage-engines.md); historical migration runbooks archived at [`runbooks/archive/`](./runbooks/archive/) |
-| [`adr/`](./adr/) | Architecture decision records — [RAG system](./adr/rag-system.md), [variable system](./adr/variable-system.md), [agent improvements](./adr/agent-architecture-improvements.md), [connector-runtime separation](./adr/connector-runtime-separation.md), [tenant Postgres model](./adr/tenant-postgres-model.md), [Temporal + NATS](./adr/temporal-and-nats.md). The `D<n>` ↔ ADR relationship is explained in [decision-log.md](./architecture/decision-log.md) |
-| [`reference/`](./reference/) | Technical references — [AI SDK](./reference/ai-sdk.md) |
+| [`skb/`](./skb/) | Structured Knowledge Base subsystem — [architecture](./skb/architecture.md), [API](./skb/api.md), [runbook](./skb/runbook.md), [security](./skb/security.md), [design decisions](./skb/design-decisions.md) (RECORD) |
+| [`runbooks/`](./runbooks/) | Operations — [Temporal](./runbooks/temporal.md), [storage engines](./runbooks/storage-engines.md); historical migration runbooks archived at [`archive/runbooks/`](./archive/runbooks/) |
+| [`adr/`](./adr/) | Architecture decision records (RECORD — dated, never rewritten) — [RAG system](./adr/rag-system.md), [variable system](./adr/variable-system.md), [connector-runtime separation](./adr/connector-runtime-separation.md), [tenant Postgres model](./adr/tenant-postgres-model.md), [Temporal + NATS](./adr/temporal-and-nats.md). The `D<n>` ↔ ADR relationship is explained in [decision-log.md](./architecture/decision-log.md) |
+| [`v_next/`](./v_next/) | Future designs — nothing here describes today's behaviour: [agent architecture improvements](./v_next/agent-architecture-improvements.md) (moved out of `adr/` by T10, nothing shipped), [doc/code validation test plan](./v_next/doc-code-validation-tests.md) |
+| [`archive/`](./archive/) | RECORD — the retired `cowork/` [audits](./archive/audits/), the append-only change register [INDEX.md](./archive/INDEX.md), the [run-view visual contract](./archive/DESIGN-run-view.md) and the [archived runbooks](./archive/runbooks/). Everything here declares `Status: historical` (or `Status: append-only` for the one register) |
 
 ### New Documentation Folders
 

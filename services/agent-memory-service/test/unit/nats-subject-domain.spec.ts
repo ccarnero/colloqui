@@ -162,7 +162,7 @@ describe("NatsPublisher subject/envelope agreement", () => {
       const subjectSegments = subject.split(".");
       const typeSegments = String(envelope["type"]).split(".");
 
-      // envelope.md:77 — io.yoizen.<domain>.<channel>.<provider>.<kind>.v1
+      // envelope.md §2.1 — io.yoizen.<domain>.<channel>.<provider>.<kind>.v1
       expect(typeSegments.length).toBe(7);
       expect(typeSegments.slice(0, 2)).toEqual(["io", "yoizen"]);
       expect(typeSegments[2]).toBe(subjectSegments[3]); // domain

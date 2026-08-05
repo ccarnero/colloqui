@@ -3,7 +3,7 @@
 **Phase 0 of the message-tracking-system effort — READ-ONLY analysis.**
 Generated: 2026-07-09. Method: codegraph MCP tools (`codegraph_search`, `codegraph_explore`,
 `codegraph_callers`, `codegraph_node`) as primary exploration, with `Read` used only for
-non-code reference material (`docs/messaging/envelope.md`, the informational JSON Schema
+non-code reference material (`DOCS/messaging/envelope.md`, the informational JSON Schema
 asset). No schema was created, copied, or modified as part of producing this document.
 
 ---
@@ -96,7 +96,7 @@ asset). No schema was created, copied, or modified as part of producing this doc
 |---|---|---|---|---|
 | `envelope-schema.json` | `skills/envelope-messages/assets/envelope-schema.json` | Draft-07 JSON Schema mirroring `EventEnvelope`/`EventTransport`/`EventData`. File's own `$comment` states: *"canonical source is packages/shared/src/interfaces.ts... Do not use as validation authority."* | IDE tooling / documentation only — **no code loads or validates against this file** (confirmed: no references found via codegraph) | JSON Schema (informational only, not wired into any runtime path) |
 | `envelope-builder.ts` | `skills/envelope-messages/assets/envelope-builder.ts` | Not a builder — a pointer/comment-only module (`export {}`) documenting where the real factories live (`envelope.factory.ts`, `envelope.utils.ts`) | None (no runtime exports) | Documentation stub |
-| `docs/messaging/envelope.md` | `docs/messaging/envelope.md` | Prose spec of the envelope contract, subject format, transport, causal chain, idempotency, and two-stage ingress — explicitly states the canonical source of truth is `packages/shared/src/interfaces.ts` | N/A (reference doc) | Documentation |
+| `DOCS/messaging/envelope.md` | `DOCS/messaging/envelope.md` | Prose spec of the envelope contract, subject format, transport, causal chain, idempotency, and two-stage ingress — explicitly states the canonical source of truth is `packages/shared/src/interfaces.ts` | N/A (reference doc) | Documentation |
 
 ## 11. Message-tracking store (`tracking.tracked_events`)
 
@@ -260,7 +260,7 @@ distinct from rule 6's `agent-execution`).
 
 ## Coverage map
 
-Per the envelope structure defined in `docs/messaging/envelope.md`:
+Per the envelope structure defined in `DOCS/messaging/envelope.md`:
 
 | Envelope area (envelope.md §) | Compile-time type | Runtime validator | Notes |
 |---|---|---|---|

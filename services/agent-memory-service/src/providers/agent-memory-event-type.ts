@@ -2,7 +2,7 @@
  * Builds the envelope `type` for an agent-memory lifecycle event FROM the
  * subject constant that the same event is published on.
  *
- * Format (`DOCS/messaging/envelope.md:77`):
+ * Format (`DOCS/messaging/envelope.md §2.1`):
  *   `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`
  *
  * The canonical 8-token subject already carries those tokens, in that order:

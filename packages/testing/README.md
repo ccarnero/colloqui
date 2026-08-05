@@ -1,5 +1,8 @@
 # `@yoizen/testing`
 
+Class: descriptive
+Summary: Shared test doubles for the data layer — Mongo collection/client fakes and postgres.js tagged-template mocks — so unit tests stop hand-rolling their own.
+
 Shared **test doubles** for the platform's data layer: Mongo collections and
 clients, and postgres.js `Sql` tagged-template mocks. It exists so unit tests
 across services stop hand-rolling slightly different fakes of the same two

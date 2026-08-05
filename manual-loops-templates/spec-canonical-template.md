@@ -122,13 +122,13 @@ cd services/<svc> && bun test && bunx tsc -p tsconfig.json --noEmit
 
 - Update `services/<svc>/README.md` with the new contract/behavior.
 - <Update `DOCS/<area>/<doc>.md`, `SCHEMAS.md`, `TAXONOMY.md` if applicable.>
-- Add an entry to `cowork/INDEX.md`.
+- Add an entry to `DOCS/archive/INDEX.md`.
 - Log the decision (rule, why, evidence, engram topic) tying back to
   "User decisions" and the preamble's Engram topic.
 
 **Accept**
 ```
-grep -n "<expected string>" services/<svc>/README.md cowork/INDEX.md
+grep -n "<expected string>" services/<svc>/README.md DOCS/archive/INDEX.md
 ```
 
 ---

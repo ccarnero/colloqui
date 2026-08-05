@@ -6,6 +6,9 @@ consulted: ""
 informed: ""
 ---
 
+Class: RECORD
+Summary: ADR (accepted 2026-06-12): the one-database-per-tenant isolation model — the database is the tenancy boundary, not a tenant_id column.
+
 # ADR: Tenant Postgres Model
 
 > Extracted verbatim from `DOCS/guides/onboarding.md` on 2026-07-30

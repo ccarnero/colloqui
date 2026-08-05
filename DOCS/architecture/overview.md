@@ -1,5 +1,8 @@
 # Platform Architecture
 
+Class: descriptive
+Summary: The high-level map of the platform — the three-layer model, the Service Roles table, and the Knative autoscaling settings each service runs with.
+
 This document is the high-level map of the platform. It focuses on ownership boundaries and service placement, not detailed message-by-message flows.
 
 The platform runs as an event-driven, multi-tenant system on Kubernetes. It uses support infrastructure shared by each environment (`support-services-{env}`), platform application services (`platform-services-{env}`), and per-tenant runtime/data boundaries represented inside the platform tier.

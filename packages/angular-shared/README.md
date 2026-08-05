@@ -1,5 +1,8 @@
 # `@yoizen/angular-shared`
 
+Class: descriptive
+Summary: The shared Angular auth layer for the consoles: JWT session state, HTTP interceptors, the route guard and the one-call bootstrap provider.
+
 The shared auth layer for Yoizen's Angular consoles: JWT session state, HTTP
 interceptors, a route guard, and a one-call bootstrap provider. A console app
 supplies its own storage keys and API origin; everything else — token decoding,

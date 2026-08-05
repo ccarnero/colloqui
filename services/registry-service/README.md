@@ -1,5 +1,8 @@
 # Registry Service
 
+Class: descriptive
+Summary: The Knative-based registry for tenant workloads: service registration, route tracking for api-gateway, traffic splitting, and its shared-database tenancy exception.
+
 Knative-based service registry for tenant workloads. Tenants register their own
 services; this service creates and manages the corresponding Knative Service
 through the Kubernetes CustomObjects API, tracks routes for api-gateway's

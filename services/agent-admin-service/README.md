@@ -1,5 +1,8 @@
 # Agent Admin Service
 
+Class: descriptive
+Summary: The configuration backend for agents — agent definitions and versions, jobs, config files, skills, MCP servers, system variables, knowledge bases and SKB — with its routes, NATS contracts and env vars.
+
 The configuration backend for the platform's conversational agents. Owns agent
 definitions and versions, scheduled jobs, config files, skills, MCP servers,
 system variables, knowledge bases (RAG) and structured knowledge bases (SKB),

@@ -102,10 +102,11 @@ The reply should mention the FAQ's verification phrase, `CONDOR-KB-READY`.
 
 - Editing the FAQ content, chunking config, or embedding model requires editing `manifest.yaml`
   and re-applying.
-- **`docs/support-faq.md` is a mirror, not the source.** What gets ingested is the `type: inline`
-  copy inside `manifest.yaml`; the checked-in file is kept byte-identical (781 bytes, verified) so
-  the FAQ stays readable/diffable on its own. Editing only the file changes nothing — edit the
-  manifest (and keep the mirror in sync).
+- **`docs/support-faq.md` is the source; the manifest's inline copy is generated.** What gets
+  ingested is still the `type: inline` copy inside `manifest.yaml`, but since 2026-08-04 you edit
+  the `.md` (781 bytes) and run `node scripts/sync-kb-fixtures.mjs` to regenerate the block, then
+  commit both (docs-truth-audit T10, ruling D29). `scripts/sync-kb-fixtures.mjs --check` fails if
+  the two have drifted. Editing only the manifest works but will be overwritten by the next sync.
 - The agent declares a single builtin tool, `loadSkill`, purely to exercise the **tool-capable**
   runtime path — it enables no skill of its own (the skill catalog is `../ai-skill-support-agent`'s
   subject).

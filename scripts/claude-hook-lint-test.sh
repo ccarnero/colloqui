@@ -14,7 +14,7 @@
 # with `bun test` or `tsx --test`. So for almost every edited file this step finds no
 # vitest project and reports nothing useful; treat the biome half as the real check.
 # Swapping the runner is a behavior change, tracked as E28 in
-# cowork/DOCS-TRUTH-LEDGER.md.
+# DOCS/archive/audits/DOCS-TRUTH-LEDGER.md.
 
 set -uo pipefail
 

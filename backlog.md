@@ -1,8 +1,0 @@
-- Agentes habilidar desabilitar
-- WF el habilitado/desabilitado se persiste?
-- sdk , revision completa de ejemplos
-- sdk, facilidad para armar conexiones de http q son los entry point
-- consola, quitar todo el detalle de metricas, solo dejar la lista de ultimas invicaciones
-- trace: poder habilitar que se loguee el payload
-- consola/producto: como decimos que se logueen absolutamente todos los payloads? como los guardamos? por cuanto tiempo?
-- errores de plataforma y de ejecucion de WF: como nos enteramos "antes que el cliente" ?

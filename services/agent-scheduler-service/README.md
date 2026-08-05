@@ -1,5 +1,8 @@
 # agent-scheduler-service
 
+Class: descriptive
+Summary: The multi-tenant job scheduler that polls tenant `jobs` tables and publishes job_trigger events — including its 'Known gaps (as-built)' section on what does not work as deployed.
+
 Platform-level multi-tenant job scheduling service that reads scheduled jobs from tenant databases and publishes `job_trigger` events via NATS JetStream.
 
 > **Read "Known gaps (as-built)" before trusting this page operationally.**

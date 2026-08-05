@@ -1,5 +1,8 @@
 # SKB API Reference
 
+Class: descriptive
+Summary: The SKB HTTP surface as implemented inside agent-admin-service: container, file and query endpoints with their DTOs and responses.
+
 *SKB is a module inside `agent-admin-service` (`src/modules/structured-kb/`, `SERVICE_MODE=api|worker`) — there is no standalone SKB service.*
 
 > Complete API reference for the Structured Knowledge Base (SKB) service.

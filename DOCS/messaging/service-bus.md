@@ -1,5 +1,8 @@
 # NATS and JetStream
 
+Class: descriptive
+Summary: The canonical operational reference for NATS/JetStream here: cluster topology, stream inventory, subject taxonomy, server configuration and the producer/consumer census.
+
 **Status:** Operational reference — as-built system
 **Audience:** Dev + Infra
 

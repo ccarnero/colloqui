@@ -10,7 +10,7 @@ message, end to end, and why?" without hand-crafting `curl` calls or grepping po
 
 ## The two traces
 
-The platform records traceability on two threads (see `cowork/TRACEABILITY-audit.md`):
+The platform records traceability on two threads (see `DOCS/archive/audits/TRACEABILITY-audit.md`):
 
 | Thread | Keys | Where | Lifetime | In this view |
 | --- | --- | --- | --- | --- |
@@ -142,6 +142,13 @@ Access: authenticated shell route (`authGuard`) plus component-level `diagnostic
   hint for failures.
 - **Reverse by internal event id only.** Reversing from a raw provider message id (e.g. a Telegram
   `message_id`) needs an extra lookup — not yet wired.
+- **`stream` and `persisted in` are derived, not stored.** Neither value travels on the event.
+  `stream()` recomputes `INGRESS-<TENANT uppercased>` from the signed-in tenant (mirroring
+  `getTenantStreamName` in `@yoizen/shared`) and `persistedIn()` maps `kind`/`source` to a fixed
+  table+service triple (`workflow_executions`/`channel_events`/`events`) — both in
+  `message-trace.component.ts`. They are accurate for today's topology and would silently lie if
+  it changed. The storage **engine** behind those tables (Postgres vs Mongo, `DB_ENGINE`) is not
+  shown at all: the frontend does not know the deployment config.
 
 ## Manual fallback (when you can't use the UI)
 

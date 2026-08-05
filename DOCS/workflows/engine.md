@@ -1,5 +1,8 @@
 # Workflow Engine
 
+Class: descriptive
+Summary: How workflow orchestration works: the two-process split (NestJS API plus Temporal worker), trigger-to-execution flow, action dispatch and scaling.
+
 This document explains how workflow orchestration works in the platform: process boundaries, trigger-to-execution flow, action dispatch model, and scaling.
 
 ## Two-Process Architecture

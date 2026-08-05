@@ -52,9 +52,12 @@ manifest declares both from the same values, so a normal edit + re-apply keeps t
 ## Document source (inline, not file/bundle)
 
 The Acme Telco policy handbook is embedded VERBATIM in `manifest.yaml` via `type: inline` (3450
-bytes, well under the 64 KiB cap). The checked-in `policy/acme-telco-policy.md` is a **mirror** of
-that inline copy, kept byte-identical so the handbook stays readable and diffable on its own —
-editing only the file changes nothing, the manifest is what gets ingested. `type: file` (path +
+bytes, well under the 64 KiB cap). Since 2026-08-04 the direction is inverted: the checked-in
+`policy/acme-telco-policy.md` is the **hand-edited source of truth**, and the manifest's inline
+block is REGENERATED from it by `scripts/sync-kb-fixtures.mjs` (docs-truth-audit T10, ruling D29).
+Edit the `.md`, run `node scripts/sync-kb-fixtures.mjs`, commit both — `--check` fails if they have
+drifted, which they had (3420 vs 3450 bytes) when they were hand-synced. What gets ingested is
+still the manifest's inline copy; the script is what keeps that copy honest. `type: file` (path +
 sha256, resolved through an uploaded tar bundle) was considered and rejected: the `yoizen` CLI's
 `manifests apply`/`plan`/`validate` commands have no `--bundle` flag today — only the SDK's
 `client.manifests.apply(..., { bundle })` accepts one directly — so `type: file` would be

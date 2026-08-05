@@ -1,5 +1,8 @@
 # Envelope Design
 
+Class: prescriptive
+Summary: The canonical bus envelope contract — mandatory fields, subject grammar, causal chain, idempotency, traceability — that every producer on the platform must obey.
+
 **Status:** Reference for the implemented system
 **Audience:** Dev
 **Last updated:** 2026-06-11
@@ -74,7 +77,7 @@ Every message published to the bus **must** be serialized as the following envel
 | `specversion` | string | Always `"1.0"` |
 | `id` | string | UUID v4 (`crypto.randomUUID()`). Uniqueness of the event — not the deduplication key. |
 | `source` | string | Plain identifier of the service that produced the event, plus context. Format: `channel-service/accounts/{id}` or `api-gateway/webhooks` — no `//` prefix, not a URI. Do not invent new formats. |
-| `type` | string | Logical type in dot-notation. Format: `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`. |
+| `type` | string | Logical type in dot-notation. **Two sanctioned shapes** — see the note below the table. Channel/webhook producers emit the 5-segment `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`; internal producers with no channel and no provider emit the shorter `io.yoizen.<domain>.<area>.<kind>.v1`. |
 | `resource` | string | Resource path of the affected resource. |
 | `time` | string | ISO 8601 UTC timestamp — when the producer created the envelope. |
 | `traceid` | string | OpenTelemetry trace ID (32 hex chars). Extracted from the active span via `activeOrRandomTraceId()` from `@yoizen/observability`. See D9 caveat in §8. |
@@ -89,6 +92,25 @@ Every message published to the bus **must** be serialized as the following envel
 | `idempotencykey` | string | `sha256:` + hex(sha256(canonical_json(rawPayload))). Must be deterministic. |
 | `transport` | object | See §4. |
 | `data` | object | See §5. |
+
+#### The two `type` shapes (E1, ruled 2026-08-04)
+
+Until this ruling §2.1 prescribed the 5-segment form for every producer, and
+only the channel/webhook path obeyed it. The code has always carried two shapes,
+and both are now sanctioned because they reflect a real semantic distinction:
+an event that came through a messaging channel HAS a channel and a provider, and
+an internal platform event does not.
+
+| Shape | Who emits it | Verified examples in code |
+|---|---|---|
+| `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1` | anything carrying a real channel + provider: the api-gateway webhook receipt, `channel-service` ingress/egress, `workflow-service`'s `channelSend`, `agent-memory-service` | `io.yoizen.messaging.telegram.webhook.webhook_received.v1` (`webhook-ingress-type.ts`), `` `io.yoizen.messaging.${channel}.${provider}.${kind}.v1` `` (`envelope.factory.ts`), `io.yoizen.agent-memory.platform.internal.memory_proposed.v1` (`agent-memory-event-type.ts` — internal, but it fills `platform`/`internal` to keep the 5-segment shape) |
+| `io.yoizen.<domain>.<area>.<kind>.v1` | internal producers with no channel/provider: runtime streaming, workflow, registry, provisioning, agent-admin, scheduler | `io.yoizen.platform.runtime.token.v1` / `.tool_call.v1` / `.tool_result.v1` / `.cancel.v1` (`RUNTIME_*_EVENT_TYPE` in `packages/shared/src/constants.ts`), `io.yoizen.workflow.execution.completed.v1` (`execution-completed-publisher.activity.ts`), `io.yoizen.registry.service.upserted.v1` (`platform.utils.ts`), `` `io.yoizen.provisioning.${kind}.v1` `` (`secret-audit.publisher.ts`), `io.yoizen.platform.admin.skill_changed.v1` (`agent-admin-service/src/providers/nats.provider.ts`), `io.yoizen.platform.scheduler.heartbeat.v1` (`SCHEDULER_HEARTBEAT_TYPE`) |
+
+Neither form is deprecated and no producer was asked to change: **the `type`
+field is a label, the subject is the routing key** (§3), and consumers that
+filter by `type` do it verbatim on the value the producer wrote. What IS
+forbidden is a third shape — if a new producer has a channel and a provider it
+uses the first form, otherwise the second.
 
 ### 2.2 Allowed internal extensions
 

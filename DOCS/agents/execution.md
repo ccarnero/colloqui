@@ -1,5 +1,8 @@
 # Agent Execution Flow
 
+Class: descriptive
+Summary: The asynchronous path a workflow `agentCall` takes to agent-ai-service and back — subjects, Redis execution state, timeouts, failure modes, and the Vercel AI SDK version/migration status.
+
 This document describes how a workflow `agentCall` reaches agent-ai-service and how results come back to the workflow.
 
 The path is asynchronous over JetStream and uses Redis as execution state storage. The activity runs on the `workflow-orchestrator` task queue (not a separate one) with a 15-minute start-to-close timeout and 30-second heartbeat timeout.
@@ -113,6 +116,31 @@ to adapter/builtin tools in the agent tool-resolution path.
 - **Circuit breaker open:** `executeAgentCall` fails non-retryably with `CIRCUIT_OPEN` when the `DistributedCircuitBreaker` (Redis-backed) denies calls for a `<tenant>:<agentId>` key. Breaker config: 10 failures / 120 s window, 60 s cooldown, 3 probe successes to close.
 - **Redis unavailable:** `executeAgentCall` fails non-retryably with `REDIS_UNAVAILABLE` after ioredis exhausts `maxRetriesPerRequest: 3`, surfacing the configuration error to the operator instead of burning activity retries.
 - **Cold-start config gap:** until `agent-ai-service` has loaded agent config for the tenant, an execution may not complete in time and manifests as a timeout upstream.
+
+## Vercel AI SDK — version and migration status
+
+The LLM layer is the upstream **Vercel AI SDK v6**. This section records only the
+parts that are claims about THIS repo; for the SDK's own API read the upstream
+docs at <https://ai-sdk.dev/docs> (the repo used to carry a 1365-line vendor
+manual at `DOCS/reference/ai-sdk.md`; it was deleted by the docs-truth-audit T10
+because it described the vendor, not the platform).
+
+Pinned versions (`services/agent-ai-service/package.json`,
+`services/agent-admin-service/package.json`): `ai ^6.0.197`,
+`@ai-sdk/openai ^3.0.68`, `@ai-sdk/anthropic ^3.0.81`,
+`@ai-sdk/google ^3.0.80`, `@ai-sdk/mcp ^1.0.46`. `agent-admin-service` pulls only
+`openai` + `mcp`; `agent-ai-service` pulls all four.
+
+v5 → v6 migration status, verified against the source:
+
+| v6 API | Status in this repo |
+|---|---|
+| `generateText({ output: Output.object() })` replacing `generateObject` | **Not migrated.** `llm-executor.service.ts` still calls `generateObject`, and `agent-admin-service`'s SKB calls it (behind `as any`) in `skb-query.service.ts` and `skb-schema-analyzer.service.ts` |
+| `streamText({ output: … })` replacing `streamObject` | **Not migrated.** `llm-executor.service.ts` `streamStructuredOutput` still calls `streamObject` |
+| `stopWhen: stepCountIs(n)` replacing `maxSteps` | **Partly migrated.** `llm-executor.service.ts` uses `stopWhen: [stepCountIs(maxSteps), stopWhenToolLimit]`; `chat/session-chat.service.ts` still passes `maxSteps: 5` in two places |
+| `tool({ inputSchema })` replacing `{ parameters }` | Migrated — every tool definition under `modules/tools/` and `modules/skills/` uses `inputSchema` |
+| `maxOutputTokens` replacing `maxTokens` | Migrated in `llm-executor.service.ts` (the service's own `params.maxTokens` is an internal name mapped onto it) |
+| Gateway model strings (`"anthropic/claude-sonnet-4.5"`) | Not used. Providers are built with `createOpenAI` / `createAnthropic` / `createGoogleGenerativeAI` factories in `provider-registry.service.ts` |
 
 ## References
 

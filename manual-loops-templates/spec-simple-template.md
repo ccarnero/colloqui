@@ -79,11 +79,11 @@ cd services/<svc> && bun test && bunx tsc -p tsconfig.json --noEmit
 ### T0N — Docs + index
 
 - Update `services/<svc>/README.md`.
-- Add an entry to `cowork/INDEX.md`.
+- Add an entry to `DOCS/archive/INDEX.md`.
 
 **Accept**
 ```
-grep -n "<expected string>" services/<svc>/README.md cowork/INDEX.md
+grep -n "<expected string>" services/<svc>/README.md DOCS/archive/INDEX.md
 ```
 
 ---

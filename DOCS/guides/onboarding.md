@@ -1,5 +1,8 @@
 # Developer Onboarding Guide
 
+Class: prescriptive
+Summary: The reading order and first tasks for a developer new to the connector-runtime + workflow-service architecture.
+
 Welcome to the Yoizen platform! This guide walks you through understanding and working with the slim-stack `connector-runtime` and `workflow-service` architecture.
 
 ## Start Here: Reading Order

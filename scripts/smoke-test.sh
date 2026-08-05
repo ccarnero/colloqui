@@ -62,7 +62,7 @@ ALL_KNATIVE_SERVICES=(
 # Deployments; the list below covers 8. connector-runtime-http,
 # connector-runtime-invoke and tracking-ingester-worker are NOT checked, so
 # this gate can pass while they are down. Fixing that is a behavior change,
-# tracked as E27 in cowork/DOCS-TRUTH-LEDGER.md.
+# tracked as E27 in DOCS/archive/audits/DOCS-TRUTH-LEDGER.md.
 ALL_PLAIN_DEPLOYMENTS=(
   workflow-worker
   connector-runtime

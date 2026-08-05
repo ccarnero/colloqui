@@ -212,7 +212,7 @@ live in each resource's `types.ts`** — the linked file is the source of truth 
 > "404s on the dev cluster" / "PENDING DEPLOY" / "not confirmed live" header comments for
 > fixes that `test/e2e/` now hard-asserts as live (see "Known platform gaps" below). The
 > e2e suite is the current record; those comments are a month stale and are tracked as a
-> known inconsistency (`cowork/DOCS-TRUTH-LEDGER.md`, escalation E16). `skills/types.ts` and
+> known inconsistency (`DOCS/archive/audits/DOCS-TRUTH-LEDGER.md`, escalation E16). `skills/types.ts` and
 > `jobs/types.ts` show what a reconciled header looks like.
 
 ### workflows — [`src/resources/workflows/types.ts`](./src/resources/workflows/types.ts)

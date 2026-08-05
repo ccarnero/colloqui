@@ -3,7 +3,7 @@
 Phase 0 of the message-tracking-system effort. All fixtures below were transcribed
 **faithfully** from inline TypeScript object literals in existing unit test files —
 no field was added, removed, renamed, or "fixed" for consistency with
-`docs/messaging/envelope.md` or `packages/shared/src/interfaces.ts`. Where a value
+`DOCS/messaging/envelope.md` or `packages/shared/src/interfaces.ts`. Where a value
 was computed at test-run time (`Date.now()`, `new Date().toISOString()`), the raw
 literal expression is preserved as a placeholder string rather than invented.
 

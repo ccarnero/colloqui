@@ -1,5 +1,8 @@
 # API Gateway
 
+Class: descriptive
+Summary: The single HTTP entry point: its proxy modules, global JWT and tenant guards, webhook ingress and gateway-audit publication, and the dynamic route registry.
+
 The single HTTP entry point for the platform. It proxies to every downstream
 service, enforces JWT authentication and tenant isolation through global guards,
 publishes webhook ingress and gateway-audit events to NATS, and dynamically

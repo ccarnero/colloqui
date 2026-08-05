@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { createClient } from "../../src/infrastructure/create-client.js";
 
 /**
- * Lock K1 (see cowork/DOC-VS-CODE-AUDIT.md): SDK namespace census.
+ * Lock K1 (see DOCS/archive/audits/DOC-VS-CODE-AUDIT.md): SDK namespace census.
  *
  * `createClient()` is documented (DOCS/architecture/overview.md,
  * sdk/README.md) as exposing exactly these 21 resource namespaces, on top of

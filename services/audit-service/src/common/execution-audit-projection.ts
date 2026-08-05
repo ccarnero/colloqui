@@ -2,7 +2,7 @@ import type { Document } from "mongodb";
 
 /**
  * Shape of `envelope.data.payload` for `execution_started/completed/failed`
- * lifecycle events (DOCS/cowork/METERING-FOUNDATION.md G1/G2). Published by
+ * lifecycle events (DOCS/archive/audits/METERING-FOUNDATION.md G1/G2). Published by
  * `agent-ai-service`'s `ExecutionHandler.publishStatus` — wider than the
  * declared `YoizenClawExecutionStatus` union (runtime emits `state: "started"`,
  * which is not part of that type, plus `usage`/`costUsd`/`model`/`provider`/

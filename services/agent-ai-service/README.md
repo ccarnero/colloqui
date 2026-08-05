@@ -1,5 +1,8 @@
 # agent-ai-service
 
+Class: descriptive
+Summary: The LLM execution service: provider registry, tool bridge, skills, memory, MCP clients, the NATS consumer model, and the timeouts that bound an execution.
+
 AI-powered conversational agent service for the YoizenClaw platform. Handles LLM orchestration, tool execution, agent lifecycle, skill management, memory, and multi-agent coordination.
 
 ## Tech Stack
@@ -126,7 +129,7 @@ and recorded as the T01 findings of
 | 6 | Temporal `heartbeatTimeout` | **30 s** | same `proxyActivities` block | Detects a dead worker mid-wait. |
 | 7 | Temporal heartbeat emission | every **15 s** | `services/workflow-service/src/temporal/activities/agent-call.activity.ts:267-276` | Keeps budget 6 satisfied for the whole wait (~8 heartbeats across a 120 s execution). |
 | 8 | `AGENT_CALL_TIMEOUT_MS` | **900 s** | `agent-call.activity.ts:20-23`, passed to `executeAndWait` at `:279` | The activity's own wait on the NATS result. |
-| 9 | Knative revision timeout | **3600 s** (floor **960 s**) | `knative/services/base/api-gateway.yaml:30`, `knative/services/base/ai-agent-gateway.yaml:25`; floor enforced by `scripts/checks/doc-code-guards.sh` (K8) | Bounds any single HTTP request to the gateways. |
+| 9 | Knative revision timeout | **3600 s** (floor **960 s**) | `knative/services/base/api-gateway.yaml:30`, `knative/services/base/ai-agent-gateway.yaml:25`; floor enforced by `scripts/checks/doc-code-guards.sh` (G8) | Bounds any single HTTP request to the gateways. |
 | 10 | api-gateway → ai-agent-gateway fetch | **30 s** | `services/api-gateway/src/constants.ts:5` (`PROXY_TIMEOUT_MS`), used at `runtime-proxy.service.ts:43` | The tightest internal fetch in the path — and it only ever guards sub-second hops (a JetStream publish, a Redis GET). It would only bite if the submit endpoint were made synchronous. |
 | 11 | Redis result / pending TTL | **3600 s** | `packages/shared/src/constants.ts:17-18` | How long a poller can take to collect a terminal result. |
 | 12 | JetStream duplicate window | **120 s** | NATS default on the ingress stream | Collapses retry re-submits whose `Nats-Msg-Id` hash drifted (see `agent-call.activity.ts:294-304`). |

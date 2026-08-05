@@ -7,10 +7,9 @@ import { buildWebhookIngressType } from "../../src/modules/channels/webhook-ingr
  *
  * Stage 1 used to hardcode `io.yoizen.messaging.webhook.received.v1` for EVERY
  * channel — no `<channel>` token and `received` where the envelope's own `kind`
- * says `webhook_received`. `DOCS/messaging/envelope.md:77` prescribes
- * `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`, and §10.1's worked
- * example (`envelope.md:402`) is
- * `io.yoizen.messaging.telegram.webhook.webhook_received.v1`.
+ * says `webhook_received`. `DOCS/messaging/envelope.md §2.1` prescribes
+ * `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`, and its §10.1 worked
+ * example is `io.yoizen.messaging.telegram.webhook.webhook_received.v1`.
  *
  * The old literal made `type` useless as a discriminator: a consumer could not
  * recover the channel from it, nor tell stage-1 `webhook_received` apart from a
@@ -45,7 +44,7 @@ describe("buildWebhookIngressType", () => {
     );
   });
 
-  it("matches the format documented at envelope.md:77", () => {
+  it("matches the format documented at envelope.md §2.1", () => {
     for (const channel of ALL_CHANNELS) {
       const tokens = buildWebhookIngressType(channel).split(".");
       // io . yoizen . <domain> . <channel> . <provider> . <kind> . v1

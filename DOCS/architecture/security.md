@@ -1,5 +1,8 @@
 # Security
 
+Class: descriptive
+Summary: The platform's security posture as built: authn/authz layers, tenant isolation enforcement, secret handling, payload hygiene, and the open risks (including the SKB injection).
+
 **Status:** Operational reference — system implemented
 **Audience:** Infra + Security
 **Last updated:** 2026-06-11

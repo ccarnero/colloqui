@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DESIGN — Workflow run view (contrato visual)</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.30.0/dist/tabler-icons.min.css">
+<style>
+:root{--surface-2:#fff;--surface-1:#F6F5F0;--border:#DDD9CE;--border-stronger:#B4B2A9;--text-primary:#2C2C2A;--text-secondary:#5F5E5A;--text-muted:#888780;--radius:8px;--font-mono:ui-monospace,SFMono-Regular,Menlo,monospace;--bg-success:#EAF3DE;--text-success:#3B6D11;}
+body{font-family:-apple-system,system-ui,sans-serif;color:var(--text-primary);background:#FAF9F5;max-width:720px;margin:0 auto;padding:20px;}
+button{background:transparent;border:0.5px solid var(--border-stronger);border-radius:var(--radius);cursor:pointer;color:var(--text-primary);}
+button:hover{background:var(--surface-1);}
+p{margin:0;}
+svg .t{fill:#2C2C2A}
+svg .ts{fill:#5F5E5A}
+svg .c-teal rect{fill:#E1F5EE;stroke:#0F6E56;stroke-width:1}
+svg .c-teal .t{fill:#085041} svg .c-teal .ts{fill:#0F6E56}
+svg .c-gray rect{fill:#F1EFE8;stroke:#5F5E5A;stroke-width:1}
+svg .c-gray .t{fill:#444441} svg .c-gray .ts{fill:#5F5E5A}
+svg .c-amber rect{fill:#FAEEDA;stroke:#854F0B;stroke-width:1}
+svg .c-amber .t{fill:#633806} svg .c-amber .ts{fill:#854F0B}
+svg .c-purple rect{fill:#EEEDFE;stroke:#534AB7;stroke-width:1}
+svg .c-purple .t{fill:#3C3489} svg .c-purple .ts{fill:#534AB7}
+</style>
+</head>
+<body>
+<p style="font-size:13px;color:var(--text-muted);margin-bottom:12px;">Contrato visual acordado 2026-07-11 — ver DOCS/archive/DESIGN-run-view.md. Click en un paso abre el popup; los botones internos navegan sub-vistas (← vuelve); “Abrir en …” representa deep-links a las páginas reales de la consola.</p>
+<div style="background: var(--surface-2); border: 0.5px solid var(--border); border-radius: 12px; padding: 0.75rem 1.25rem; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px 24px; align-items: center;">
+  <div><p style="font-size: 12px; color: var(--text-muted);">workflow</p><p style="font-size: 13px;">order-flow v12</p></div>
+  <div><p style="font-size: 12px; color: var(--text-muted);">run_id</p><p style="font-family: var(--font-mono); font-size: 13px;">8f2a91c4-…</p></div>
+  <div><p style="font-size: 12px; color: var(--text-muted);">status</p><p style="font-size: 13px; color: var(--text-success);">completed · 1.42 s</p></div>
+  <div><p style="font-size: 12px; color: var(--text-muted);">correlation</p><p style="font-family: var(--font-mono); font-size: 13px;">07102a98-…</p></div>
+</div>
+<div style="background: var(--surface-2); border: 0.5px solid var(--border); border-radius: 12px; padding: 0.75rem 1.25rem; margin-bottom: 12px;">
+  <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">involucrados — click resalta sus pasos</p>
+  <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+    <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 12px; border-radius: 14px; background: var(--surface-1); border: 0.5px solid var(--border);"><i class="ti ti-plug"></i>order-api <span style="color: var(--text-muted);">conector ×2</span></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 12px; border-radius: 14px; background: var(--surface-1); border: 0.5px solid var(--border);"><i class="ti ti-plug"></i>stock-api <span style="color: var(--text-muted);">conector ×1</span></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 12px; border-radius: 14px; background: var(--surface-1); border: 0.5px solid var(--border);"><i class="ti ti-plug"></i>cat_fact <span style="color: var(--text-muted);">tool ×1</span></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 12px; border-radius: 14px; background: #EEEDFE; border: 0.5px solid #AFA9EC; color: #3C3489;"><i class="ti ti-robot"></i>support-agent <span style="color: #534AB7;">agente ×1</span></span>
+    <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 12px; border-radius: 14px; background: #E1F5EE; border: 0.5px solid #5DCAA5; color: #085041;"><i class="ti ti-message"></i>acme-support-bot <span style="color: #0F6E56;">telegram ×2</span></span>
+  </div>
+</div>
+<div id="wrap" style="position: relative;">
+<svg viewBox="0 0 680 1220" xmlns="http://www.w3.org/2000/svg" role="img" style="width:100%; display:block;">
+  <title>Flujo vertical completo de la corrida</title>
+  <defs>
+    <marker id="arr6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#888780"/>
+    </marker>
+  </defs>
+  <text x="170" y="14" text-anchor="middle" class="ts" style="font-size:11px">workflow run</text>
+  <text x="530" y="14" text-anchor="middle" class="ts" style="font-size:11px">artefactos</text>
+  <g class="c-teal" id="s-trigger" style="cursor:pointer">
+    <rect x="40" y="24" width="260" height="46" rx="4"/>
+    <text x="170" y="43" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">message_received</text>
+    <text x="170" y="59" text-anchor="middle" class="ts" style="font-size:11px">acme-support-bot · telegram · t+0</text>
+  </g>
+  <path d="M 170 70 L 170 92" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <g class="c-gray">
+    <rect x="40" y="96" width="260" height="46" rx="4"/>
+    <text x="170" y="115" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">run started</text>
+    <text x="170" y="131" text-anchor="middle" class="ts" style="font-size:11px">workflow-service · t+45 ms</text>
+  </g>
+  <path d="M 170 142 L 170 166" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <g class="c-gray" id="s-step1" style="cursor:pointer">
+    <rect x="40" y="170" width="260" height="54" rx="4"/>
+    <text x="170" y="190" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">1 · http_call → order-api</text>
+    <text x="170" y="206" text-anchor="middle" class="ts" style="font-size:11px">183 ms · ok</text>
+  </g>
+  <path d="M 300 184 L 400 184" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <text x="350" y="178" text-anchor="middle" class="ts" style="font-size:10px">req 0.4 KB</text>
+  <path d="M 400 212 L 300 212" stroke="#888780" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arr6)"/>
+  <text x="350" y="230" text-anchor="middle" class="ts" style="font-size:10px">200 · 1.2 KB · 183 ms</text>
+  <g class="c-gray" id="s-step1a" style="cursor:pointer">
+    <rect x="400" y="170" width="260" height="54" rx="4"/>
+    <text x="530" y="190" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">order-api</text>
+    <text x="530" y="206" text-anchor="middle" class="ts" style="font-size:11px">connector-runtime · mcp_call</text>
+  </g>
+  <path d="M 170 224 C 190 240, 260 246, 312 254" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <g class="c-amber" id="s-cond2" style="cursor:pointer">
+    <rect x="215" y="256" width="250" height="56" rx="4"/>
+    <text x="340" y="276" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">2 · condition order.total</text>
+    <text x="340" y="293" text-anchor="middle" class="ts" style="font-size:11px">evaluó: 320 → caso “100–500” ✓</text>
+  </g>
+  <path d="M 250 312 C 190 326, 140 340, 112 356" stroke="#888780" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arr6)"/>
+  <text x="150" y="338" class="ts" style="font-size:10px">&gt; 500</text>
+  <path d="M 340 312 L 340 356" stroke="#888780" stroke-width="2" fill="none" marker-end="url(#arr6)"/>
+  <text x="352" y="338" class="ts" style="font-size:10px">100–500 ✓</text>
+  <path d="M 430 312 C 490 326, 540 340, 568 356" stroke="#888780" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arr6)"/>
+  <text x="505" y="338" class="ts" style="font-size:10px">else</text>
+  <g class="c-gray">
+    <rect x="20" y="360" width="170" height="48" rx="4" style="stroke-dasharray:4 3"/>
+    <text x="105" y="380" text-anchor="middle" class="ts" style="font-size:11px">2a · agentCall → escalate</text>
+    <text x="105" y="396" text-anchor="middle" class="ts" style="font-size:10px">no ejecutada</text>
+  </g>
+  <g class="c-gray" id="s-step2b" style="cursor:pointer">
+    <rect x="255" y="360" width="170" height="48" rx="4"/>
+    <text x="340" y="380" text-anchor="middle" class="t" style="font-size:11px; font-weight:500">2b · http_call → order-api</text>
+    <text x="340" y="396" text-anchor="middle" class="ts" style="font-size:10px">↔ conector · 95 ms · ok</text>
+  </g>
+  <g class="c-gray">
+    <rect x="490" y="360" width="170" height="48" rx="4" style="stroke-dasharray:4 3"/>
+    <text x="575" y="380" text-anchor="middle" class="ts" style="font-size:11px">2c · autoReply</text>
+    <text x="575" y="396" text-anchor="middle" class="ts" style="font-size:10px">no ejecutada</text>
+  </g>
+  <path d="M 340 408 L 355 424" stroke="#888780" stroke-width="1.5" fill="none"/>
+  <g class="c-amber">
+    <rect x="275" y="426" width="210" height="40" rx="4"/>
+    <text x="380" y="442" text-anchor="middle" class="t" style="font-size:11px; font-weight:500">└ if discount_applied</text>
+    <text x="380" y="457" text-anchor="middle" class="ts" style="font-size:10px">evaluó: true ✓</text>
+  </g>
+  <path d="M 380 466 L 395 480" stroke="#888780" stroke-width="1.5" fill="none"/>
+  <g class="c-teal">
+    <rect x="295" y="482" width="210" height="40" rx="4"/>
+    <text x="400" y="498" text-anchor="middle" class="t" style="font-size:11px; font-weight:500">└ send → acme-support-bot</text>
+    <text x="400" y="513" text-anchor="middle" class="ts" style="font-size:10px">↔ telegram · sent · 34 ms</text>
+  </g>
+  <path d="M 400 522 C 390 530, 365 536, 348 542" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <g class="c-gray">
+    <rect x="285" y="546" width="110" height="30" rx="15"/>
+    <text x="340" y="565" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">3 · fork ∥</text>
+  </g>
+  <path d="M 300 566 C 240 578, 200 588, 176 604" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <path d="M 380 566 C 440 578, 480 588, 504 604" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <text x="150" y="596" class="ts" style="font-size:10px">rama A</text>
+  <text x="498" y="596" class="ts" style="font-size:10px">rama B</text>
+  <g class="c-gray">
+    <rect x="40" y="608" width="260" height="50" rx="4"/>
+    <text x="170" y="627" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">A1 · http_call → stock-api</text>
+    <text x="170" y="643" text-anchor="middle" class="ts" style="font-size:11px">↔ conector · 121 ms · ok</text>
+  </g>
+  <path d="M 170 658 L 170 680" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <g class="c-gray">
+    <rect x="40" y="684" width="260" height="46" rx="4"/>
+    <text x="170" y="703" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">A2 · setVariable stock</text>
+    <text x="170" y="719" text-anchor="middle" class="ts" style="font-size:11px">stock = 12 · 2 ms</text>
+  </g>
+  <g class="c-purple" id="s-b1" style="cursor:pointer">
+    <rect x="380" y="608" width="260" height="68" rx="4"/>
+    <text x="510" y="627" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">B1 · agentCall → support-agent</text>
+    <text x="510" y="643" text-anchor="middle" class="ts" style="font-size:11px">↔ ai-agent-gateway · 412 ms · ok</text>
+    <text x="510" y="659" text-anchor="middle" class="ts" style="font-size:11px">tool_call cat_fact · memory ×1</text>
+  </g>
+  <path d="M 170 730 C 200 762, 260 778, 298 790" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <path d="M 510 676 C 500 730, 435 772, 384 792" stroke="#7F77DD" stroke-width="2.5" fill="none" marker-end="url(#arr6)"/>
+  <text x="480" y="742" class="ts" style="font-size:10px">ruta crítica · 412 ms</text>
+  <g class="c-gray">
+    <rect x="285" y="794" width="110" height="30" rx="15"/>
+    <text x="340" y="813" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">join</text>
+  </g>
+  <text x="405" y="813" class="ts" style="font-size:10px">esperó a B · t+1.02 s</text>
+  <path d="M 340 824 L 340 846" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <g class="c-amber" id="s-if4" style="cursor:pointer">
+    <rect x="215" y="850" width="250" height="56" rx="4"/>
+    <text x="340" y="870" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">4 · if vip_customer</text>
+    <text x="340" y="887" text-anchor="middle" class="ts" style="font-size:11px">evaluó: false → salteado</text>
+  </g>
+  <path d="M 265 906 C 220 920, 195 930, 180 948" stroke="#888780" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arr6)"/>
+  <text x="205" y="932" class="ts" style="font-size:10px">true</text>
+  <g class="c-gray">
+    <rect x="80" y="952" width="240" height="48" rx="4" style="stroke-dasharray:4 3"/>
+    <text x="200" y="972" text-anchor="middle" class="ts" style="font-size:11px">4a · notifyManager</text>
+    <text x="200" y="988" text-anchor="middle" class="ts" style="font-size:10px">definida · no ejecutada</text>
+  </g>
+  <path d="M 435 906 C 560 946, 480 1000, 306 1022" stroke="#888780" stroke-width="2" fill="none" marker-end="url(#arr6)"/>
+  <text x="520" y="960" class="ts" style="font-size:10px">false → bypass</text>
+  <g class="c-gray" id="s-step5" style="cursor:pointer">
+    <rect x="40" y="1024" width="260" height="54" rx="4"/>
+    <text x="170" y="1044" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">5 · send → acme-support-bot</text>
+    <text x="170" y="1060" text-anchor="middle" class="ts" style="font-size:11px">250 ms · ok</text>
+  </g>
+  <path d="M 300 1038 L 400 1038" stroke="#1D9E75" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <text x="350" y="1032" text-anchor="middle" class="ts" style="font-size:10px">send</text>
+  <path d="M 400 1066 L 300 1066" stroke="#1D9E75" stroke-width="1.5" stroke-dasharray="5 4" fill="none" marker-end="url(#arr6)"/>
+  <text x="350" y="1084" text-anchor="middle" class="ts" style="font-size:10px">sent · telegram · 250 ms</text>
+  <g class="c-teal">
+    <rect x="400" y="1024" width="260" height="54" rx="4"/>
+    <text x="530" y="1044" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">channel-service</text>
+    <text x="530" y="1060" text-anchor="middle" class="ts" style="font-size:11px">acme-support-bot · telegram</text>
+  </g>
+  <path d="M 170 1078 L 170 1100" stroke="#888780" stroke-width="1.5" fill="none" marker-end="url(#arr6)"/>
+  <g class="c-gray">
+    <rect x="40" y="1104" width="260" height="46" rx="4"/>
+    <text x="170" y="1123" text-anchor="middle" class="t" style="font-size:12px; font-weight:500">execution_completed</text>
+    <text x="170" y="1139" text-anchor="middle" class="ts" style="font-size:11px">t+1.42 s · 5/5 ok · 3 no ejecutadas</text>
+  </g>
+  <text x="40" y="1186" class="ts" style="font-size:11px">sólida = request / tomada · punteada = response / no ejecutada · gruesa = ruta crítica · ámbar = decisión</text>
+  <text x="40" y="1206" class="ts" style="font-size:11px">popup anclado al paso · botones del popup navegan sub-vistas con “← volver” · “Abrir en …” = deep-link</text>
+</svg>
+<div id="ovl" style="position:absolute; inset:0; display:none; background: rgba(0,0,0,0.14); border-radius: 8px;"></div>
+<div id="pop" style="position:absolute; display:none; width: 320px; background: var(--surface-2); border: 0.5px solid var(--border-stronger); border-radius: 12px; padding: 0.9rem 1rem; z-index: 5;"></div>
+</div>
+<script>
+const V = {
+  "v-b1": { icon:"ti-robot", ib:"#EEEDFE", ic:"#534AB7", name:"support-agent", sub:"paso B1 · agentCall · ai-agent-gateway", badge:"ok · 412 ms",
+    rows:[["agent_id","0d4f6e81-0281-…"],["modelo","claude-sonnet-5 · v3"],["sub-pasos","tool_call cat_fact (51 ms) · memory ×1"],["eventos","exec_started 88ab… → exec_completed 9c41…"]],
+    req:'{ "message": "cuanto sale el envio a…" }', reqL:"request · prompt 2.1 KB",
+    res:'{ "reply": "El envío a tu zona sale $1.200…" }', resL:"response · 0.8 KB",
+    btns:[["Ver agente","v-agent"],["Ver en grafo causal","v-causal"]] },
+  "v-agent": { icon:"ti-robot", ib:"#EEEDFE", ic:"#534AB7", name:"support-agent", sub:"perfil del agente · agent-admin", badge:"published v3",
+    rows:[["estado","published · activo"],["modelo","claude-sonnet-5"],["tools","cat_fact · order-lookup"],["memoria","12 observaciones"],["actualizado","2026-07-08 · por chris"]],
+    req:"", reqL:"", res:"", resL:"",
+    btns:[["Ejecuciones recientes","v-agent-runs"],["Abrir en Agents","v-nav-agent"]] },
+  "v-agent-runs": { icon:"ti-robot", ib:"#EEEDFE", ic:"#534AB7", name:"support-agent", sub:"últimas ejecuciones", badge:"4 de hoy",
+    rows:[["13:42:38","completed · 412 ms · esta corrida"],["13:12:04","completed · 388 ms"],["12:58:51","failed · timeout tool"],["12:31:22","completed · 501 ms"]],
+    req:"", reqL:"", res:"", resL:"", btns:[] },
+  "v-step1": { icon:"ti-plug", ib:"var(--surface-1)", ic:"var(--text-secondary)", name:"order-api", sub:"paso 1 · http_call · connector-runtime", badge:"ok · 183 ms",
+    rows:[["connector_id","con_9d21…"],["operación","GET /orders/{id}"],["cache","miss"],["eventos","mcp_call 71fe… → mcp_result 82aa…"]],
+    req:'{ "order_id": 4412 }', reqL:"request · 0.4 KB",
+    res:'{ "status": 200, "total": 320, … }', resL:"response · 1.2 KB · 200",
+    btns:[["Ver conector","v-con"],["Llamadas recientes","v-con-calls"]] },
+  "v-step2b": { icon:"ti-plug", ib:"var(--surface-1)", ic:"var(--text-secondary)", name:"order-api", sub:"paso 2b · http_call · connector-runtime", badge:"ok · 95 ms",
+    rows:[["operación","POST /orders/{id}/discount"],["rama","condition 2 · caso “100–500”"],["eventos","mcp_call 90cc… → mcp_result 91de…"]],
+    req:'{ "discount": 0.05 }', reqL:"request · 0.1 KB",
+    res:'{ "status": 200, "applied": true }', resL:"response · 0.2 KB",
+    btns:[["Ver conector","v-con"],["Llamadas recientes","v-con-calls"]] },
+  "v-con": { icon:"ti-plug", ib:"var(--surface-1)", ic:"var(--text-secondary)", name:"order-api", sub:"perfil del conector · connector-admin", badge:"enabled",
+    rows:[["base_url","https://api.acme.com"],["auth","bearer (secret ref)"],["cache","estrategia 60 s"],["adapter","v3 · http"],["salud","99.2% ok últimas 24 h"]],
+    req:"", reqL:"", res:"", resL:"",
+    btns:[["Llamadas recientes","v-con-calls"],["Abrir en Connectors","v-nav-con"]] },
+  "v-con-calls": { icon:"ti-plug", ib:"var(--surface-1)", ic:"var(--text-secondary)", name:"order-api", sub:"llamadas recientes", badge:"6 última hora",
+    rows:[["13:42:36","GET /orders · 200 · 183 ms · esta corrida"],["13:42:37","POST /discount · 200 · 95 ms · esta corrida"],["13:30:11","GET /orders · 200 · 122 ms"],["13:11:02","GET /orders · 504 · timeout"]],
+    req:"", reqL:"", res:"", resL:"", btns:[] },
+  "v-cond2": { icon:"ti-arrows-split", ib:"#FAEEDA", ic:"#854F0B", name:"condition order.total", sub:"paso 2 · decisión · workflow-service", badge:"caso “100–500”",
+    rows:[["expresión","order.total"],["valor evaluado","320"],["casos","> 500 · 100–500 · else"],["rama tomada","100–500 (2b)"]],
+    req:"", reqL:"", res:"", resL:"",
+    btns:[["Ver definición","v-def"]] },
+  "v-if4": { icon:"ti-arrows-split", ib:"#FAEEDA", ic:"#854F0B", name:"if vip_customer", sub:"paso 4 · decisión · workflow-service", badge:"false → bypass",
+    rows:[["expresión","vip_customer"],["valor evaluado","false"],["rama true","4a notifyManager — no ejecutada"],["sin else","bypass al paso 5"]],
+    req:"", reqL:"", res:"", resL:"",
+    btns:[["Ver definición","v-def"]] },
+  "v-def": { icon:"ti-sitemap", ib:"var(--surface-1)", ic:"var(--text-secondary)", name:"order-flow v12", sub:"definición del workflow", badge:"5 actions",
+    rows:[["1","http_call → order-api"],["2","condition order.total (3 casos)"],["3","fork ∥ (2 ramas)"],["4","if vip_customer"],["5","sendMessage"],["actualizado","2026-07-10 · builder"]],
+    req:"", reqL:"", res:"", resL:"",
+    btns:[["Abrir en el builder","v-nav-wf"]] },
+  "v-step5": { icon:"ti-message", ib:"#E1F5EE", ic:"#0F6E56", name:"acme-support-bot", sub:"paso 5 · sendMessage · telegram", badge:"sent · 250 ms",
+    rows:[["conversation","tg:88412932"],["provider_message_id","5512"],["eventos","send 7ac1… → sent 7bd2…"]],
+    req:'{ "text": "Tu pedido #4412: el envío…" }', reqL:"mensaje saliente · 0.3 KB",
+    res:'{ "delivered": true }', resL:"confirmación del proveedor",
+    btns:[["Ver cuenta del canal","v-account"],["Ver en grafo causal","v-causal"]] },
+  "v-trigger": { icon:"ti-message", ib:"#E1F5EE", ic:"#0F6E56", name:"acme-support-bot", sub:"trigger · message_received · telegram", badge:"t+0 ms",
+    rows:[["from","tg:user 7741…"],["depth","0 · raíz de la cadena"],["eventos","webhook 4f1a… → received 5c2b…"]],
+    req:'{ "text": "cuanto sale el envio a caballito?" }', reqL:"mensaje entrante · 0.2 KB",
+    res:"", resL:"",
+    btns:[["Ver cuenta del canal","v-account"]] },
+  "v-account": { icon:"ti-message", ib:"#E1F5EE", ic:"#0F6E56", name:"acme-support-bot", sub:"cuenta de canal · telegram", badge:"enabled",
+    rows:[["provider","telegram bot api"],["webhook","https://…/webhooks/tg/acme (ok)"],["último delivery","hace 2 min"],["mensajes hoy","214 in · 198 out"]],
+    req:"", reqL:"", res:"", resL:"",
+    btns:[["Abrir en Channels","v-nav-ch"]] },
+  "v-causal": { icon:"ti-external-link", ib:"var(--surface-1)", ic:"var(--text-secondary)", name:"Ir al grafo causal", sub:"navegación", badge:"→",
+    rows:[["destino","Processes → Trace → Causal graph"],["contexto","este evento queda resaltado"]],
+    req:"", reqL:"", res:"", resL:"", btns:[] },
+  "v-nav-con": { icon:"ti-external-link", ib:"var(--surface-1)", ic:"var(--text-secondary)", name:"Ir a Connectors", sub:"navegación (deep-link real)", badge:"→", rows:[["destino","Connectors → order-api"],["ahí ves","cache, hit-rate, auth, adapter"]], req:"", reqL:"", res:"", resL:"", btns:[] },
+  "v-nav-agent": { icon:"ti-external-link", ib:"var(--surface-1)", ic:"var(--text-secondary)", name:"Ir a Agents", sub:"navegación (deep-link real)", badge:"→", rows:[["destino","Agents → support-agent"]], req:"", reqL:"", res:"", resL:"", btns:[] },
+  "v-nav-wf": { icon:"ti-external-link", ib:"var(--surface-1)", ic:"var(--text-secondary)", name:"Ir al builder", sub:"navegación (deep-link real)", badge:"→", rows:[["destino","Workflows → order-flow → builder"]], req:"", reqL:"", res:"", resL:"", btns:[] },
+  "v-nav-ch": { icon:"ti-external-link", ib:"var(--surface-1)", ic:"var(--text-secondary)", name:"Ir a Channels", sub:"navegación (deep-link real)", badge:"→", rows:[["destino","Channels → acme-support-bot"]], req:"", reqL:"", res:"", resL:"", btns:[] }
+};
+const STEP = { "s-trigger":"v-trigger", "s-step1":"v-step1", "s-step1a":"v-step1", "s-step2b":"v-step2b", "s-cond2":"v-cond2", "s-b1":"v-b1", "s-if4":"v-if4", "s-step5":"v-step5" };
+const wrap = document.getElementById("wrap"), ovl = document.getElementById("ovl"), pop = document.getElementById("pop");
+let stack = [];
+function esc(s){ return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+function draw(){
+  const k = stack[stack.length-1], d = V[k];
+  let h = '<div style="display:flex; align-items:center; gap:8px; margin-bottom:8px;">';
+  if (stack.length > 1) h += '<button id="pback" aria-label="volver" style="font-size:12px; padding:2px 8px;"><i class="ti ti-arrow-left"></i></button>';
+  h += '<div style="width:30px; height:30px; border-radius:50%; background:'+d.ib+'; display:flex; align-items:center; justify-content:center;"><i class="ti '+d.icon+'" style="font-size:16px; color:'+d.ic+'"></i></div>'
+    + '<div style="min-width:0;"><p style="font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'+d.name+'</p><p style="font-size:11px; color:var(--text-secondary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">'+d.sub+'</p></div>'
+    + '<span style="margin-left:auto; flex-shrink:0; font-size:10px; padding:2px 8px; border-radius:9px; background:var(--bg-success); color:var(--text-success);">'+d.badge+'</span>'
+    + '<button id="pclose" aria-label="cerrar" style="font-size:12px; padding:2px 8px; flex-shrink:0;"><i class="ti ti-x"></i></button></div>'
+    + '<table style="width:100%; font-size:11px; border-top:0.5px solid var(--border); border-collapse:collapse;">';
+  for (const r of d.rows) h += '<tr><td style="color:var(--text-secondary); padding:4px 6px 4px 0; width:36%; vertical-align:top;">'+r[0]+'</td><td style="font-family:var(--font-mono); font-size:10px; overflow-wrap:anywhere;">'+esc(r[1])+'</td></tr>';
+  h += '</table>';
+  if (d.reqL) {
+    h += '<div style="border-top:0.5px solid var(--border); margin-top:6px; padding-top:8px;"><p style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">'+d.reqL+' <span style="float:right;"><i class="ti ti-lock" style="font-size:11px"></i> rol admin</span></p><div style="font-family:var(--font-mono); font-size:10px; background:var(--surface-1); border-radius:var(--radius); padding:6px 8px; color:var(--text-secondary); overflow-wrap:anywhere;">'+esc(d.req)+'</div>';
+    if (d.resL) h += '<p style="font-size:11px; color:var(--text-muted); margin:8px 0 4px;">'+d.resL+'</p><div style="font-family:var(--font-mono); font-size:10px; background:var(--surface-1); border-radius:var(--radius); padding:6px 8px; color:var(--text-secondary); overflow-wrap:anywhere;">'+esc(d.res)+'</div>';
+    h += '</div>';
+  }
+  if (d.btns.length) {
+    h += '<div style="display:flex; gap:6px; margin-top:10px; flex-wrap:wrap;">';
+    for (let i = 0; i < d.btns.length; i++) h += '<button data-v="'+d.btns[i][1]+'" class="pnav" style="font-size:11px; padding:4px 10px;">'+d.btns[i][0]+'</button>';
+    h += '</div>';
+  }
+  pop.innerHTML = h;
+  const bk = document.getElementById("pback"); if (bk) bk.addEventListener("click", function(){ stack.pop(); draw(); });
+  document.getElementById("pclose").addEventListener("click", closePop);
+  for (const b of pop.querySelectorAll(".pnav")) b.addEventListener("click", function(){ stack.push(this.getAttribute("data-v")); draw(); });
+}
+function openPop(stepKey, el){
+  stack = [STEP[stepKey]];
+  const wr = wrap.getBoundingClientRect(), r = el.getBoundingClientRect();
+  const cx = (r.left + r.right)/2 - wr.left;
+  let left = cx < wr.width/2 ? (r.right - wr.left + 10) : (r.left - wr.left - 330);
+  left = Math.max(8, Math.min(left, wr.width - 328));
+  let top = r.top - wr.top;
+  top = Math.max(8, Math.min(top, wr.height - 460));
+  pop.style.left = left + "px"; pop.style.top = top + "px";
+  ovl.style.display = "block"; pop.style.display = "block";
+  draw();
+}
+function closePop(){ ovl.style.display = "none"; pop.style.display = "none"; stack = []; }
+ovl.addEventListener("click", closePop);
+for (const k of Object.keys(STEP)) {
+  const el = document.getElementById(k);
+  if (el) el.addEventListener("click", function(){ openPop(k, el); });
+}
+</script>
+</body>
+</html>

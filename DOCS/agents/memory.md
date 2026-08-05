@@ -1,5 +1,8 @@
 # Agent Long-Term Memory
 
+Class: descriptive
+Summary: agent-memory-service as built: memory scopes, kinds and statuses, the tenant-wide approval workflow, and how agents read and write memories.
+
 `agent-memory-service` stores facts, preferences, notices, incidents, and promotions that agents can read and write across conversations. Memory is scoped to a session, a user, or an entire tenant, and has a lightweight approval workflow for tenant-wide writes.
 
 ## Scopes, Kinds, and Statuses

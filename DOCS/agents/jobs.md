@@ -1,5 +1,8 @@
 # Scheduled Agent Jobs
 
+Class: descriptive
+Summary: Scheduled agent jobs: the per-tenant `jobs` table, agent-scheduler-service's ~30 s poll, and the envelope delivered to agent-ai-service.
+
 Jobs are recurring or one-shot work units that trigger an agent on a schedule. They are stored per-tenant in a `jobs` table, polled every ~30 seconds by `agent-scheduler-service`, and delivered as CloudEvents envelopes to `agent-ai-service` for execution.
 
 ## Architecture Overview

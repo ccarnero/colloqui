@@ -1,5 +1,8 @@
 # Connector Runtime vs Workflow Service: Integration Patterns
 
+Class: descriptive
+Summary: When to reach for connector-runtime and when for workflow-service, with decision matrices and worked scenarios using the canonical action schemas.
+
 A practical guide for developers choosing between `connector-runtime` and `workflow-service` for their use cases, with decision matrices, scenario walkthroughs, and example implementations.
 
 > **Schema note**: the JSON action payloads below use the canonical `activity`/`args` shapes

@@ -61,7 +61,7 @@ const DEFAULT_TRANSPORT: EventTransport = {
  * Envelope `type` per lifecycle event, projected from the subject each one is
  * published on (`buildEventTypeFromSubject`), so type and subject can never
  * disagree. Yields the prescriptive
- * `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1` of envelope.md:77 —
+ * `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1` of envelope.md §2.1 —
  * e.g. `io.yoizen.agent-memory.platform.internal.memory_proposed.v1`.
  * Previously a hardcoded, channel-less, dotted-kind literal; see that helper's
  * HISTORY note.

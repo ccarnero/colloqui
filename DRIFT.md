@@ -24,7 +24,7 @@ every field of the envelope contract:
    - `services/api-gateway/src/modules/channels/webhook-ingress-publisher.service.ts` (the actual stage-1 envelope constructor — pulled in after the fixture flagged a `type`-field discrepancy; not in the original primary file list but required to confirm whether the drift was in test data or in production code)
    - `packages/shared/src/channel.utils.ts` (`buildWebhookIngressSubject`, for subject-format cross-check)
 2. **DOCS** — read via `Read`:
-   - `docs/messaging/envelope.md` (prose spec, §1–§12)
+   - `DOCS/messaging/envelope.md` (prose spec, §1–§12)
    - `skills/envelope-messages/assets/envelope-schema.json` (informational JSON Schema, explicitly marked "do not use as validation authority")
 3. **FIXTURES** — the 7 samples captured in `fixtures/bus-events/` (Part A of this task), transcribed verbatim from inline test-object literals in `services/usage-aggregator-service`, `services/channel-service`, `services/audit-service`, and `services/api-gateway` unit tests. See `fixtures/bus-events/README.md` for exact provenance.
 
@@ -79,7 +79,7 @@ unreachable for live capture:
 - **`registry-service` service-upserted/deleted events** — none found.
 - **`connector-runtime` connector-call events** (`parseConnectorCallEnvelope`'s input shape) — the parser exists and is documented in SCHEMAS.md §5, but no `*.spec.ts` under the searched services constructs a literal test envelope for it (only the normalized `IConnectorCallEventRow` output is implied by the parser's own logic, not exercised by an existing spec with an inline fixture).
 - **`platform.tenant.*` control messages** (`TenantReadyMessageV1`) — no test literal found under `packages/database` in this pass; this is a Core-NATS message, not a `evt.` bus envelope, so it is lower priority for this tracker but still an open gap.
-- **`dlq.<tenant>.>` real DLQ envelope with `X-Dlq-Reason`/`X-Dlq-Stage` headers** — the captured DLQ fixture (`usage-aggregator-envelope-parser-dlq-03.json`) reuses the ingress body and does not include the DLQ-specific NATS headers described in `docs/messaging/service-bus.md`.
+- **`dlq.<tenant>.>` real DLQ envelope with `X-Dlq-Reason`/`X-Dlq-Stage` headers** — the captured DLQ fixture (`usage-aggregator-envelope-parser-dlq-03.json`) reuses the ingress body and does not include the DLQ-specific NATS headers described in `DOCS/messaging/service-bus.md`.
 - **`audit.gateway.>` events with populated causal-chain fields** (`correlationId`/`causationId`/`depth` non-null) — the only `GatewayAuditEvent` fixture (`api-gateway-gateway-audit-event-01.json`) omits all three optional causal-chain fields.
 - **Any envelope exceeding the 256 KB claim-check threshold** — by construction, none of the captured unit-test fixtures are large enough to exercise claim-check.
 

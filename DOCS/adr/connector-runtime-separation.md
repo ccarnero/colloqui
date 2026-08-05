@@ -6,6 +6,9 @@ consulted: ""
 informed: ""
 ---
 
+Class: RECORD
+Summary: ADR (accepted 2026-06-12): why connector-runtime is a standalone Temporal worker Deployment instead of part of workflow-service, plus later observations appended to the record.
+
 # ADR: Why connector-runtime is separate
 
 > Extracted verbatim from `DOCS/guides/onboarding.md` on 2026-07-30
@@ -44,7 +47,7 @@ record states what was decided at the time.
   `mcpCall` (`src/activities/mcp-call.activity.ts`). The separation argument is
   unchanged; the activity set grew.
 - The rationale assumes KEDA-based scaling. KEDA is not in the codebase — guard
-  K6b in `scripts/checks/doc-code-guards.sh` actively fails on any live
+  G6b in `scripts/checks/doc-code-guards.sh` actively fails on any live
   `ScaledObject`, and developer mode runs a fixed replica count. The
   independent-scalability argument still holds via replica count; the
   *mechanism* named in the record no longer exists.

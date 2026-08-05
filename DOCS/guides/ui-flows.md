@@ -1,5 +1,8 @@
 # UI Flows
 
+Class: descriptive
+Summary: How admin-console UI actions map onto api-gateway routes and the downstream services and execution paths behind them.
+
 This document explains how UI actions in Angular consoles map to backend services and internal execution paths.
 
 All UI traffic goes through `api-gateway`. The console's `environment.apiUrl` is

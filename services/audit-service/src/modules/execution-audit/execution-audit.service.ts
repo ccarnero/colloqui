@@ -46,7 +46,7 @@ const HANDLER_CONCURRENCY = 16;
 
 /**
  * Automation-domain execution lifecycle subjects, tenant-wildcarded for the
- * per-tenant `INGRESS-<tenant>` consumer filter (DOCS/cowork/METERING-FOUNDATION.md
+ * per-tenant `INGRESS-<tenant>` consumer filter (DOCS/archive/audits/METERING-FOUNDATION.md
  * G1/G2). The canonical `audit-events` consumer (`audit.service.ts`) only
  * matches `evt.*.*.platform.>` — the `automation` domain used by these
  * subjects falls outside that pattern, which is exactly the audit blind spot

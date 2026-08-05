@@ -1,5 +1,8 @@
 # Storage engines (Postgres vs Mongo)
 
+Class: prescriptive
+Summary: How to select and operate the Postgres or Mongo OLTP backend at bootstrap (DB_ENGINE/STORAGE_ENGINE), and what stays on Postgres regardless.
+
 Platform OLTP data can run on **PostgreSQL** (default) or **MongoDB**, selected at **bootstrap time**. Temporal always stays on dedicated Postgres CNPG clusters.
 
 ## Choosing an engine

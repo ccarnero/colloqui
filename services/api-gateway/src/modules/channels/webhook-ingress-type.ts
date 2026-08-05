@@ -7,7 +7,7 @@ import {
 
 /**
  * Reverse-domain prefix every Yoizen event type carries
- * (`DOCS/messaging/envelope.md:77`).
+ * (`DOCS/messaging/envelope.md §2.1`).
  */
 const EVENT_TYPE_PREFIX = "io.yoizen";
 
@@ -23,9 +23,9 @@ const WEBHOOK_INGRESS_PROVIDER = "webhook";
 /**
  * Builds the `type` field of a stage-1 `WebhookIngressEnvelope`.
  *
- * Format (`DOCS/messaging/envelope.md:77`):
+ * Format (`DOCS/messaging/envelope.md §2.1`):
  *   `io.yoizen.<domain>.<channel>.<provider>.<kind>.v1`
- * Worked example: `DOCS/messaging/envelope.md:402` (§10.1) — quoted there
+ * Worked example: `DOCS/messaging/envelope.md` §10.1 — quoted there
  * rather than here on purpose, see the note below.
  *
  * HISTORY (envelope-drift T05, SPEC decision 2): until 2026-07-31 the

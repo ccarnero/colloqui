@@ -1,5 +1,8 @@
 # Usage Aggregator Service
 
+Class: descriptive
+Summary: The usage aggregator that turns channel-message and connector-call events into billable usage rows, with its batching, DLQ handling and read API.
+
 Consumes every tenant's NATS JetStream traffic and turns two event families into
 billable usage rows: **channel messages** (`channel-service` ingress/egress/DLQ)
 and **connector endpoint calls** (`connector-runtime`). Rows are batched in

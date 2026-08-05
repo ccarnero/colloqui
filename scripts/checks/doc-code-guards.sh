@@ -6,20 +6,34 @@
 # Each failure prints the failing guard's ID and a human-readable reason so a
 # broken run points straight at the doc or the code that needs fixing.
 #
-# Guard families actually registered in main() below (the K-numbers are
-# historical labels, not a contiguous series):
-#   K6a..K6g  the 2026-07-07 doc-vs-code audit's K6 findings
-#             (cowork/DOC-VS-CODE-AUDIT.md) — service inventory, no
-#             ScaledObject, autoscaling table, referenced script paths, alert
-#             names, archive-runbook banners, no per-component AGENTS.md.
-#   K7        NATS durable-consumer ackWait census (same audit).
-#   K8        agent-call timeout ceiling (same audit).
-#   K9        type-only constructor-injection check; delegates to the sibling
+# NAMING — every guard in this file carries a `G` (guard) prefix. Until
+# 2026-08-04 the same guards were labelled `K…`, which collided by number with
+# the K1–K10 *proposal* in DOCS/archive/audits/DOC-VS-CODE-AUDIT.md ("K9" and
+# "K10" each named two different things). The docs-truth-audit loop's T09
+# ruling D28 renamed the implemented family K→G, same numbers, and the audit
+# RECORD keeps its K-numbers with a crosswalk table appended to it. The numbers
+# are historical labels, not a contiguous series.
+#
+# Guard families actually registered in main() below:
+#   G6a..G6g  the 2026-07-07 doc-vs-code audit's G6 findings
+#             (DOCS/archive/audits/DOC-VS-CODE-AUDIT.md) — service inventory,
+#             no ScaledObject, autoscaling table, referenced script paths,
+#             alert names, archive banners, no per-component AGENTS.md.
+#   G7        NATS durable-consumer ackWait census (same audit).
+#   G8        agent-call timeout ceiling (same audit).
+#   G9        type-only constructor-injection check; delegates to the sibling
 #             scripts/checks/check-di-imports.mjs. Added after the audit.
-#   K9b       numeric claims in docs vs the artifact they describe. Added
-#             after the audit; second guard in the K9 family, hence K9b.
-#   K10       relative markdown links resolve. Added after the audit.
-#   K11       dual-backend services document DB_ENGINE. Added after the audit.
+#   G9b       numeric claims in docs vs the artifact they describe. Added
+#             after the audit; second guard in the G9 family, hence G9b.
+#   G10       relative markdown links resolve. Added after the audit.
+#   G11       dual-backend services document DB_ENGINE. Added after the audit.
+#   G12       doc class banner (`Class:` + `Summary:`) on every DOCS/**/*.md
+#             and every service/package README. Added by T10 (D1/D24).
+#   G13       doc paths cited from source resolve, and no `DOCS/**.md:NNN`
+#             line cites live in source. Added by T10 (D25).
+#   G14       no NEW hard-coded hex colour literals in added lines under
+#             services/admin-console. Added by T10 (D32), ratchet-scoped to
+#             `git diff` so the 58 grandfathered files are not re-checked.
 #
 # Usage:
 #   scripts/checks/doc-code-guards.sh          # run all guards
@@ -27,10 +41,10 @@
 #
 # Requires: bash 3.2+ (macOS's default /bin/bash — several guards note this
 # explicitly and use case statements instead of associative arrays for it),
-# ripgrep (rg, built with PCRE2 — K6d uses `-oP`), fd, yq (mikefarah v4+), and
-# node (K9 runs check-di-imports.mjs through it; the guard fails loudly if node
+# ripgrep (rg, built with PCRE2 — G6d uses `-oP`), fd, yq (mikefarah v4+), and
+# node (G9 runs check-di-imports.mjs through it; the guard fails loudly if node
 # is not on PATH). All are already used elsewhere in scripts/ and
-# DOCS/guides/doc-code-validation-tests.md.
+# DOCS/guides/doc-code-guards.md.
 #
 # Verify with: /bin/bash scripts/checks/doc-code-guards.sh
 #
@@ -59,10 +73,10 @@ fail() { printf "${RED}[FAIL]${NC} %s\n" "$*" >&2; FAILURES=$((FAILURES + 1)); }
 note() { printf "${YELLOW}[NOTE]${NC} %s\n" "$*"; }
 
 # ---------------------------------------------------------------------------
-# K6a — Service inventory: overview.md's Service Roles table vs services/*
+# G6a — Service inventory: overview.md's Service Roles table vs services/*
 # ---------------------------------------------------------------------------
-k6a_service_inventory() {
-  local guard="K6a(service-inventory)"
+g6a_service_inventory() {
+  local guard="G6a(service-inventory)"
   local overview="DOCS/architecture/overview.md"
 
   # Extract documented service names from the "## Service Roles" table
@@ -97,10 +111,10 @@ k6a_service_inventory() {
 }
 
 # ---------------------------------------------------------------------------
-# K6b — No ScaledObject anywhere (KEDA removed)
+# G6b — No ScaledObject anywhere (KEDA removed)
 # ---------------------------------------------------------------------------
-k6b_no_scaledobject() {
-  local guard="K6b(no-scaledobject)"
+g6b_no_scaledobject() {
+  local guard="G6b(no-scaledobject)"
   local hits
   hits=$(rg -l '^kind:\s*ScaledObject\s*$' knative/ infrastructure/ 2>/dev/null || true)
   if [[ -n "$hits" ]]; then
@@ -111,16 +125,16 @@ k6b_no_scaledobject() {
 }
 
 # ---------------------------------------------------------------------------
-# K6c — Knative autoscaling: overview.md's table vs annotations in yaml
+# G6c — Knative autoscaling: overview.md's table vs annotations in yaml
 # ---------------------------------------------------------------------------
-k6c_autoscaling() {
-  local guard="K6c(autoscaling)"
+g6c_autoscaling() {
+  local guard="G6c(autoscaling)"
   local overview="DOCS/architecture/overview.md"
   local base="knative/services/base"
 
   # doc-row-label -> one or more yaml basenames (without .yaml). Rows whose
   # doc value is "—" (plain Deployment, not Knative) are intentionally
-  # omitted here; K6c only pins the numeric Knative rows.
+  # omitted here; G6c only pins the numeric Knative rows.
   #
   # Implemented as a case statement (not an associative array) so this
   # script runs under macOS's default /bin/bash 3.2, which has no -A support.
@@ -187,10 +201,10 @@ k6c_autoscaling() {
 }
 
 # ---------------------------------------------------------------------------
-# K6d — scripts/... and e2e/... paths referenced in README.md / DOCS/README.md exist
+# G6d — scripts/... and e2e/... paths referenced in README.md / DOCS/README.md exist
 # ---------------------------------------------------------------------------
-k6d_referenced_scripts_exist() {
-  local guard="K6d(referenced-script-paths)"
+g6d_referenced_scripts_exist() {
+  local guard="G6d(referenced-script-paths)"
   local ok=1
   local refs
   refs=$(rg --no-filename -oP '(?:[\w.-]+/)*(?:scripts|e2e)(?:/[\w.-]+)+' README.md DOCS/README.md 2>/dev/null \
@@ -208,11 +222,11 @@ k6d_referenced_scripts_exist() {
 }
 
 # ---------------------------------------------------------------------------
-# K6e — Alert names in observability.md §4 exist in alerts.yaml (and
+# G6e — Alert names in observability.md §4 exist in alerts.yaml (and
 # TemporalHistoryShardImbalance does NOT).
 # ---------------------------------------------------------------------------
-k6e_alert_names() {
-  local guard="K6e(alert-names)"
+g6e_alert_names() {
+  local guard="G6e(alert-names)"
   local obs="DOCS/architecture/observability.md"
   local alerts_file="infrastructure/base/observability/prometheus/alerts.yaml"
   local ok=1
@@ -253,24 +267,51 @@ k6e_alert_names() {
 }
 
 # ---------------------------------------------------------------------------
-# K6f — Archive runbooks keep their historical banner
+# G6f — Everything under DOCS/archive/ declares that it is not present truth.
+#
+# Widened by T10 (ruling D27) from `DOCS/runbooks/archive/*.md` to the whole
+# `DOCS/archive/**` tree, which D2/D3 made the single home for every dated
+# record that is not a manual-loop: the retired `cowork/` audits
+# (`archive/audits/`), the change register (`archive/INDEX.md`), the run-view
+# design contract, and the archived runbooks (moved to `archive/runbooks/`).
+#
+# TWO accepted banners, both checked in the first 10 lines:
+#   * `Status: historical` — a frozen record. Everything in here is one of
+#     these EXCEPT the register below.
+#   * `Status: append-only` — the one live class that lives in the archive:
+#     a `register` (D11) whose dated rows keep being appended to and amended in
+#     place. `DOCS/archive/INDEX.md` is the only instance today. It gets its own
+#     banner rather than a silent exemption, so "archived but still growing" is
+#     a stated property and not a hole in the guard.
 # ---------------------------------------------------------------------------
-k6f_archive_banner() {
-  local guard="K6f(archive-runbook-banner)"
+g6f_archive_banner() {
+  local guard="G6f(archive-banner)"
   local ok=1
+  local count=0
   local f
-  for f in DOCS/runbooks/archive/*.md; do
-    [[ -e "$f" ]] || continue
-    if ! head -n 10 "$f" | rg -qi 'status:?\*?\*?\s*historical'; then
-      fail "$guard: $f is missing its historical-status banner in the first 10 lines"
-      ok=0
+  while IFS= read -r f; do
+    [[ -n "$f" ]] || continue
+    count=$((count + 1))
+    if head -n 10 "$f" | rg -qi 'status:?\*?\*?\s*historical'; then
+      continue
     fi
-  done
-  [[ "$ok" -eq 1 ]] && pass "$guard: every archived runbook keeps its historical banner"
+    if head -n 10 "$f" | rg -qi 'status:?\*?\*?\s*append-only'; then
+      # An append-only banner is only legitimate for a register.
+      if head -n 10 "$f" | rg -q '^Class: register$'; then
+        continue
+      fi
+      fail "$guard: $f declares 'Status: append-only' but is not a 'Class: register' — only a register may keep growing inside DOCS/archive/"
+      ok=0
+      continue
+    fi
+    fail "$guard: $f is missing its archive banner in the first 10 lines — a frozen record needs 'Status: historical', a live register needs 'Status: append-only'"
+    ok=0
+  done <<<"$(fd -e md . DOCS/archive 2>/dev/null)"
+  [[ "$ok" -eq 1 ]] && pass "$guard: all $count files under DOCS/archive/ declare their archive status"
 }
 
 # ---------------------------------------------------------------------------
-# K6g — No per-component AGENTS.md may exist.
+# G6g — No per-component AGENTS.md may exist.
 #
 # Drift class: per-component agent files resurrect. Every `services/*/AGENTS.md`
 # and `packages/*/AGENTS.md` was absorbed into that component's README
@@ -285,8 +326,8 @@ k6f_archive_banner() {
 #     absorbed and deleted in the same commit (a guard must be green when it
 #     lands).
 # ---------------------------------------------------------------------------
-k6g_no_component_agents_md() {
-  local guard="K6g(no-component-agents-md)"
+g6g_no_component_agents_md() {
+  local guard="G6g(no-component-agents-md)"
   local found=""
   local f
   for f in services/*/AGENTS.md packages/*/AGENTS.md; do
@@ -302,7 +343,7 @@ k6g_no_component_agents_md() {
 }
 
 # ---------------------------------------------------------------------------
-# K7 — NATS durable consumer ackWait census.
+# G7 — NATS durable consumer ackWait census.
 #
 # Every durable consumer registration (`new MultiTenantConsumerManager(...)`
 # or `ensureDurableConsumer(...)`) must declare an explicit `ackWaitMs` in its
@@ -311,7 +352,7 @@ k6g_no_component_agents_md() {
 # silently inherit the 60s package default (`DEFAULT_ACK_WAIT_MS` in
 # packages/database/src/nats-durable-consumer.ts) risk JetStream redelivering
 # an in-flight message and duplicating side effects (see
-# cowork/ASYNC-RESILIENCE-AUDIT.md F1).
+# DOCS/archive/audits/ASYNC-RESILIENCE-AUDIT.md F1).
 #
 # The allowlist below is NOT "one consumer" as a first cut of this guard
 # assumed — a full repo census found registrations that omit ackWaitMs
@@ -326,8 +367,8 @@ k6g_no_component_agents_md() {
 # forgets to set ackWaitMs will fail here until someone consciously adds it
 # to this list (or, better, sets an explicit ackWaitMs in code).
 # ---------------------------------------------------------------------------
-k7_ack_wait_census() {
-  local guard="K7(ack-wait-census)"
+g7_ack_wait_census() {
+  local guard="G7(ack-wait-census)"
   local ok=1
 
   # file -> justification for relying on the implicit 60s default.
@@ -431,7 +472,7 @@ k7_ack_wait_census() {
       local reason
       reason=$(ack_wait_allowlist_reason "$f")
       if [[ -z "$reason" ]]; then
-        fail "$guard: $f registers a durable consumer with no explicit ackWaitMs and is not allowlisted (long-running handlers under the 60s default cause JetStream redelivery/duplicate execution — see cowork/ASYNC-RESILIENCE-AUDIT.md F1)"
+        fail "$guard: $f registers a durable consumer with no explicit ackWaitMs and is not allowlisted (long-running handlers under the 60s default cause JetStream redelivery/duplicate execution — see DOCS/archive/audits/ASYNC-RESILIENCE-AUDIT.md F1)"
         ok=0
       else
         pass "$guard: $f relies on the 60s default (allowlisted: $reason)"
@@ -445,11 +486,11 @@ k7_ack_wait_census() {
 }
 
 # ---------------------------------------------------------------------------
-# K8 — Knative timeoutSeconds on ai-agent-gateway/api-gateway >= AGENT_CALL_TIMEOUT_MS
+# G8 — Knative timeoutSeconds on ai-agent-gateway/api-gateway >= AGENT_CALL_TIMEOUT_MS
 # (900s) + margin, and cluster max-revision-timeout-seconds >= the same.
 # ---------------------------------------------------------------------------
-k8_agent_call_timeout_ceiling() {
-  local guard="K8(agent-call-timeout-ceiling)"
+g8_agent_call_timeout_ceiling() {
+  local guard="G8(agent-call-timeout-ceiling)"
   local ok=1
   local min_required=960 # 900s AGENT_CALL_TIMEOUT_MS + 60s margin
 
@@ -490,11 +531,11 @@ k8_agent_call_timeout_ceiling() {
   [[ "$ok" -eq 1 ]] && pass "$guard: ai-agent-gateway/api-gateway timeoutSeconds and cluster ceiling >= ${min_required}s"
 }
 
-# K9: constructor-injected classes must not be imported type-only (Biome
+# G9: constructor-injected classes must not be imported type-only (Biome
 # useImportType vs NestJS emitDecoratorMetadata — runtime DI failure invisible
 # to tsc). Delegates to scripts/checks/check-di-imports.mjs (git-modified scope).
-k9_di_type_imports() {
-  local guard="K9-di-type-imports"
+g9_di_type_imports() {
+  local guard="G9-di-type-imports"
   if ! command -v node >/dev/null 2>&1; then
     fail "$guard: node not found on PATH"
     return
@@ -507,15 +548,15 @@ k9_di_type_imports() {
 }
 
 # ---------------------------------------------------------------------------
-# K9b — Numeric claims in docs vs generated reality.
+# G9b — Numeric claims in docs vs generated reality.
 #
 # Drift class: a number QUOTED in prose ("across the 72 audited rows") silently
 # diverges from the artifact it describes. Descriptive docs are derived FROM
 # the artifact — the artifact decides, so the guard recomputes it and compares.
 #
-# Numbering note: K9 above (k9_di_type_imports) is a different drift class
+# Numbering note: G9 above (g9_di_type_imports) is a different drift class
 # (type-only DI imports) that already claimed the number; this is the second
-# guard in the K9 family, hence K9b.
+# guard in the G9 family, hence G9b.
 #
 # Claim 1 — tracking-ingester golden row count. Three statements must agree
 # with the data-row count of golden/labeled.tsv, computed exactly the way
@@ -525,8 +566,8 @@ k9_di_type_imports() {
 #   * test/classify.golden.spec.ts                  it("parses N labeled data rows")
 #   * test/classify.golden.spec.ts                  expect(rows.length).toBe(N)
 # ---------------------------------------------------------------------------
-k9b_numeric_claims() {
-  local guard="K9b(numeric-claims)"
+g9b_numeric_claims() {
+  local guard="G9b(numeric-claims)"
   local ok=1
 
   local golden="golden/labeled.tsv"
@@ -579,7 +620,7 @@ k9b_numeric_claims() {
 }
 
 # ---------------------------------------------------------------------------
-# K10 — Relative markdown links resolve.
+# G10 — Relative markdown links resolve.
 #
 # Drift class: docs linking deleted docs. When a document is removed or moved,
 # the links pointing at it are left behind and rot silently — the
@@ -589,15 +630,34 @@ k9b_numeric_claims() {
 #
 # SCOPE — the corpus is the LIVE, descriptive documentation:
 #   * root `README.md`
-#   * `DOCS/**/*.md`
+#   * `DOCS/**/*.md` — this now includes `DOCS/archive/**`, which T10 (ruling
+#     D26) folded into the corpus. The archive is frozen PROSE, but its LINKS
+#     are navigation and must still resolve, so a move that orphans an archived
+#     doc fails here. Repointing a dead link is not rewriting a dated claim.
 #   * `services/*/README.md`
 #   * `packages/*/README.md`  — added beyond the SPEC's three globs because
 #     these are first-class component docs of exactly the same class (written
-#     in T04). Today they contain zero relative .md links, so the addition is a
-#     no-op that only pre-empts future rot.
-#   NOT `manual-loops/**` or `cowork/**`: those are loop history, deliberately
-#   frozen (SPEC decision 4), and rewriting them to satisfy a link check would
-#   falsify the record.
+#     in T04).
+#   * `fixtures/bus-events/README.md` — the one surviving "section U" orphan,
+#     added by T10 (ruling D6). It is a co-located component doc like the ones
+#     above. (`knative/services/overlays/_components/README.md`, the other
+#     orphan, was deleted by the same ruling.)
+#   NOT `manual-loops/**`: loop history, deliberately frozen (SPEC decision 4),
+#   and rewriting it to satisfy a link check would falsify the record.
+#   `cowork/` no longer exists — T10 (ruling D3) dissolved it.
+#
+# SECOND CHECK — lowercase `docs/…` path references (T10, ruling D26).
+# The tracked directory is `DOCS/`; `git ls-files | rg -c '^docs/'` is 0. A
+# `docs/messaging/envelope.md` reference resolves on macOS (APFS is
+# case-insensitive) and is a DEAD path on the Linux/minikube target this repo
+# documents as first-class. T09 measured 31 such refs across `TAXONOMY.md` (25),
+# `SCHEMAS.md` (4) and `DRIFT.md` (2); T10 corrected all of them. Those three
+# root docs are therefore scanned for this check too (they are outside the link
+# corpus above — they carry almost no relative links, but they are where this
+# bug lived). To stay free of false positives the check fires ONLY when the
+# lowercase path is dead AND its `DOCS/`-cased twin exists on disk, so a generic
+# convention path in an example (e.g. `docs/decisions/0004-…md` in a skill) can
+# never trip it.
 #
 # WHAT IS CHECKED — relative links whose target is a `.md` file. External
 # (`http://`, `https://`, `mailto:`), absolute (`/...`) and pure-anchor (`#...`)
@@ -618,8 +678,8 @@ k9b_numeric_claims() {
 # code blocks are NOT skipped: 4-space indentation is ambiguous with list
 # continuation, and treating it as code would silently drop real links.
 # ---------------------------------------------------------------------------
-k10_markdown_links_resolve() {
-  local guard="K10(markdown-links-resolve)"
+g10_markdown_links_resolve() {
+  local guard="G10(markdown-links-resolve)"
   local ok=1
 
   local scan_awk
@@ -646,6 +706,7 @@ k10_markdown_links_resolve() {
              fd -e md . DOCS
              fd -g 'README.md' services --max-depth 2
              fd -g 'README.md' packages --max-depth 2
+             [[ -f fixtures/bus-events/README.md ]] && echo "fixtures/bus-events/README.md"
            } 2>/dev/null | sort -u )
 
   if [[ -z "$files" ]]; then
@@ -674,11 +735,39 @@ k10_markdown_links_resolve() {
     fi
   done <<<"$(awk "$scan_awk" $files)"
 
-  [[ "$ok" -eq 1 ]] && pass "$guard: all $scanned relative .md links resolve"
+  # --- lowercase `docs/…` path refs (D26) --------------------------------
+  local case_files case_hits lc upper
+  # LIVE docs only: DOCS/archive/** is excluded here (it IS in the link check
+  # above). Those files are frozen records, and two of them QUOTE the lowercase
+  # paths as the evidence of the very defect this check exists to prevent —
+  # `DOCS-TRUTH-LEDGER.md`'s TAXONOMY row lists `docs/messaging/envelope.md`
+  # and `docs/channels/channel-service.md` verbatim as what it found. Case-
+  # correcting a quotation inside a dated record would falsify the record
+  # (SPEC ground rule 2 / ruling D2), so the check does not look there.
+  case_files=$( { echo "$files" | rg -v '^DOCS/archive/'
+                  for f in TAXONOMY.md SCHEMAS.md DRIFT.md; do [[ -f "$f" ]] && echo "$f"; done
+                } | sort -u )
+  case_hits=$(rg --no-heading -o -n --with-filename \
+    'docs/[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*\.md' $case_files 2>/dev/null \
+    | awk -F: '{print $1 "\t" $2 "\t" $3}' || true)
+  local cf cl
+  while IFS=$'\t' read -r cf cl lc; do
+    [[ -z "$lc" ]] && continue
+    upper="DOCS/${lc#docs/}"
+    # A REAL repo path is one git does NOT track in lowercase while the
+    # DOCS-cased twin exists on disk. A generic example path (a skill's
+    # `docs/decisions/0004-….md`) never satisfies the second half.
+    if [[ -e "$upper" ]] && ! git ls-files --error-unmatch "$lc" >/dev/null 2>&1; then
+      fail "$guard: $cf:$cl references '$lc' — the tracked path is '$upper'. Lowercase resolves on macOS (case-insensitive APFS) and is DEAD on Linux/minikube"
+      ok=0
+    fi
+  done <<<"$case_hits"
+
+  [[ "$ok" -eq 1 ]] && pass "$guard: all $scanned relative .md links resolve; no lowercase docs/ path refs"
 }
 
 # ---------------------------------------------------------------------------
-# K11 — Storage-engine documentation.
+# G11 — Storage-engine documentation.
 #
 # Drift class: undocumented dual-backend support. A service that calls
 # `resolveStorageEngine()` (packages/database/src/engine.ts) silently supports
@@ -695,8 +784,8 @@ k10_markdown_links_resolve() {
 # Spec files are excluded from discovery: a test that imports the helper to
 # assert its behaviour does not make its service dual-backend.
 # ---------------------------------------------------------------------------
-k11_storage_engine_documented() {
-  local guard="K11(storage-engine-documented)"
+g11_storage_engine_documented() {
+  local guard="G11(storage-engine-documented)"
   local ok=1
 
   # Services whose non-test source calls resolveStorageEngine(), one per line.
@@ -731,20 +820,192 @@ k11_storage_engine_documented() {
   [[ "$ok" -eq 1 ]] && pass "$guard: all $count dual-backend services document DB_ENGINE"
 }
 
+# ---------------------------------------------------------------------------
+# G12 — Every cross-cutting doc and component README declares its class.
+#
+# Drift class: the reader cannot tell an as-built description from a 2026-06
+# handoff. Before T10 nothing marked doc class at all, and T01 of the
+# docs-truth-audit had to reclassify four files by hand just to build its
+# ledger. Ruling D1 makes the class explicit and this guard makes it stick.
+#
+# THE BANNER — two lines, both required, inside the first 10 lines of the file:
+#
+#   Class: descriptive|prescriptive|future|RECORD|register
+#   Summary: <one line: what this file documents>
+#
+# The five classes:
+#   descriptive   as-built. The code decides; drift here is a doc bug.
+#   prescriptive  a contract/procedure the code is expected to obey.
+#   future        not implemented yet (`DOCS/v_next/` is its only home).
+#   RECORD        dated, frozen, never rewritten (`DOCS/adr/`, `DOCS/archive/`).
+#   register      dated rows AMENDED IN PLACE — the hybrid D11 added because
+#                 three tasks independently hit the same misfit.
+#
+# CORPUS — `DOCS/**/*.md` plus every `services/*/README.md` and
+# `packages/*/README.md`. The 27 sample READMEs under `integrations/` and
+# `demos/` are deliberately EXCLUDED (D1): they are customer-facing walkthroughs
+# with their own conventions, not platform documentation of record.
+# ---------------------------------------------------------------------------
+g12_class_banner() {
+  local guard="G12(class-banner)"
+  local ok=1
+  local count=0
+
+  local files
+  files=$( { fd -e md . DOCS
+             fd -g 'README.md' services --max-depth 2
+             fd -g 'README.md' packages --max-depth 2
+           } 2>/dev/null | sort -u )
+
+  if [[ -z "$files" ]]; then
+    fail "$guard: corpus discovery returned nothing — the globs or fd broke"
+    return
+  fi
+
+  local f head10 class
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    count=$((count + 1))
+    head10=$(head -n 10 "$f")
+    class=$(echo "$head10" | rg -o '^Class: (descriptive|prescriptive|future|RECORD|register)$' -r '$1' | head -1)
+    if [[ -z "$class" ]]; then
+      fail "$guard: $f has no valid 'Class:' line in its first 10 lines — expected one of descriptive|prescriptive|future|RECORD|register"
+      ok=0
+      continue
+    fi
+    if ! echo "$head10" | rg -q '^Summary: \S'; then
+      fail "$guard: $f declares 'Class: $class' but has no non-empty 'Summary:' line in its first 10 lines (D1 requires both)"
+      ok=0
+    fi
+  done <<<"$files"
+
+  [[ "$ok" -eq 1 ]] && pass "$guard: all $count docs declare Class + Summary"
+}
+
+# ---------------------------------------------------------------------------
+# G13 — Doc references written INSIDE source code stay true.
+#
+# Drift class: a comment names a doc, the doc moves or dies, and nothing fails.
+# G10 checks links in docs; nothing checked doc PATHS in source until this
+# guard. The docs-truth-audit found two live instances:
+#   * E6 — six files under services/ and packages/ cited METERING-FOUNDATION.md
+#     under a `DOCS/cowork/` prefix, a path that has NEVER existed in any layout
+#     of this repo (the file lived at the repo-root `cowork/` until T10 archived
+#     it). The real path is printed by this guard on failure.
+#   * E4 — seven files pinned envelope.md at line 77 / 402. Ground rule 4 of the
+#     audit: line cites rot within days, and envelope.md was rewritten twice
+#     during the audit itself.
+#
+# (The examples above are deliberately written WITHOUT a literal
+# `<dir>/<file>.md` path, so this guard does not flag its own documentation.)
+#
+# TWO CHECKS over `services/`, `packages/`, `sdk/` and `scripts/`
+# (`node_modules`/`dist` excluded by fd/rg defaults plus the globs below):
+#   1. every `DOCS/…`-shaped path mentioned in source exists on disk;
+#   2. no `DOCS/….md:NNN` line cite exists at all — cite by section or symbol
+#      name instead, which is what the audit converted them all to.
+# `cowork/…`-shaped paths are checked by (1) as well: that root was dissolved by
+# ruling D3, so any survivor is by definition dead.
+# ---------------------------------------------------------------------------
+g13_doc_paths_resolve() {
+  local guard="G13(doc-paths-in-source)"
+  local ok=1
+  local roots="services packages sdk scripts"
+
+  # 1) line cites — banned outright.
+  local cites
+  cites=$(rg --no-heading -n -o \
+    -g '!**/node_modules/**' -g '!**/dist/**' -g '!**/.angular/**' \
+    '(DOCS|cowork)/[A-Za-z0-9._/-]+\.md:[0-9]+' \
+    $roots 2>/dev/null || true)
+  if [[ -n "$cites" ]]; then
+    local c
+    while IFS= read -r c; do
+      [[ -z "$c" ]] && continue
+      fail "$guard: $c is a line cite into a doc — line numbers rot (audit ground rule 4). Cite the section heading or the symbol name instead"
+      ok=0
+    done <<<"$cites"
+  fi
+
+  # 2) doc paths that do not exist on disk.
+  local refs
+  refs=$(rg --no-heading -n -o --with-filename \
+    -g '!**/node_modules/**' -g '!**/dist/**' -g '!**/.angular/**' \
+    '(DOCS|cowork)/[A-Za-z0-9._/-]+\.md' \
+    $roots 2>/dev/null \
+    | awk -F: '{print $1 "\t" $2 "\t" $3}' || true)
+
+  local scanned=0
+  local rf rl rp
+  while IFS=$'\t' read -r rf rl rp; do
+    [[ -z "$rp" ]] && continue
+    scanned=$((scanned + 1))
+    if [[ ! -f "$rp" ]]; then
+      fail "$guard: $rf:$rl cites the doc path '$rp' which does not exist on disk — fix the path or drop the reference"
+      ok=0
+    fi
+  done <<<"$refs"
+
+  [[ "$ok" -eq 1 ]] && pass "$guard: all $scanned doc paths cited from source resolve; no line cites"
+}
+
+# ---------------------------------------------------------------------------
+# G14 — No NEW hard-coded hex colour literals in the admin console.
+#
+# AGENTS.md forbids hard-coded hex colours (design tokens exist for this). The
+# clause has never been honoured: T09 measured 58 files under
+# `services/admin-console/src/app/features` carrying a `#rrggbb` literal. Ruling
+# D32 resolved the contradiction as a RATCHET rather than a big-bang cleanup:
+# the clause now reads "no NEW hex literals", and this guard enforces exactly
+# that by looking only at ADDED lines in the working tree's diff. The 58
+# existing files are grandfathered debt and are not re-checked until touched.
+#
+# SCOPE — added lines (`+`, not `+++`) in `git diff HEAD -- services/admin-console`
+# over `.ts`/`.html`/`.scss`/`.css`. With a clean tree the diff is empty and the
+# guard is a no-op, which is the intended steady state.
+# ---------------------------------------------------------------------------
+g14_no_new_hex_colours() {
+  local guard="G14(no-new-hex-colours)"
+  local hits
+
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    fail "$guard: not a git work tree — this guard reads 'git diff HEAD'"
+    return
+  fi
+
+  hits=$(git diff HEAD --unified=0 -- \
+           'services/admin-console/**/*.ts' \
+           'services/admin-console/**/*.html' \
+           'services/admin-console/**/*.scss' \
+           'services/admin-console/**/*.css' 2>/dev/null \
+         | rg '^\+[^+]' \
+         | rg -i '#[0-9a-f]{6}\b' || true)
+
+  if [[ -n "$hits" ]]; then
+    fail "$guard: new hard-coded hex colour(s) added under services/admin-console — use the design tokens (AGENTS.md, styling rules). Offending added lines:"
+    printf '%s\n' "$hits" | while IFS= read -r h; do printf '        %s\n' "$h"; done
+    return
+  fi
+  pass "$guard: no new hard-coded hex colours in the working diff"
+}
+
 main() {
-  k6a_service_inventory
-  k6b_no_scaledobject
-  k6c_autoscaling
-  k6d_referenced_scripts_exist
-  k6e_alert_names
-  k6f_archive_banner
-  k6g_no_component_agents_md
-  k7_ack_wait_census
-  k8_agent_call_timeout_ceiling
-  k9_di_type_imports
-  k9b_numeric_claims
-  k10_markdown_links_resolve
-  k11_storage_engine_documented
+  g6a_service_inventory
+  g6b_no_scaledobject
+  g6c_autoscaling
+  g6d_referenced_scripts_exist
+  g6e_alert_names
+  g6f_archive_banner
+  g6g_no_component_agents_md
+  g7_ack_wait_census
+  g8_agent_call_timeout_ceiling
+  g9_di_type_imports
+  g9b_numeric_claims
+  g10_markdown_links_resolve
+  g11_storage_engine_documented
+  g12_class_banner
+  g13_doc_paths_resolve
+  g14_no_new_hex_colours
 
   echo
   if [[ "$FAILURES" -eq 0 ]]; then

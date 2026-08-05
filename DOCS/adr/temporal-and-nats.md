@@ -6,6 +6,9 @@ consulted: ""
 informed: ""
 ---
 
+Class: RECORD
+Summary: ADR (accepted 2026-06-12): why the platform runs BOTH Temporal (durable orchestration) and NATS JetStream (event bus) rather than choosing one.
+
 # ADR: Why Temporal + NATS (not just Kafka/Event Bus)
 
 > Extracted verbatim from `DOCS/guides/onboarding.md` on 2026-07-30

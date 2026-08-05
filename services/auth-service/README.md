@@ -1,5 +1,8 @@
 # Auth Service
 
+Class: descriptive
+Summary: Token issuance and identity: client-credentials and user-login flows, platform users, tenant users, API clients, scopes, and the Redis-synced public-route registry.
+
 Authentication and authorization service for the Yoizen platform. Issues JWT access/refresh tokens via client credentials and user login flows, manages platform users, tenant users, and API clients with scoped permissions, and maintains a dynamic public routes registry synced to Redis.
 
 ## Quick Start

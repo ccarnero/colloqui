@@ -1,5 +1,8 @@
 # ADR: Scoped Variable System for Agent/Workflow Platform
 
+Class: RECORD
+Summary: ADR (2026-06-07, partially implemented): the scoped variable system (system/workflow/previous/node/request) for agents and workflows, with a status header naming what shipped.
+
 **Status**: Partially implemented — Phase 1 (system variables CRUD in `agent-admin-service`, `inputVariables`/`outputVariables` on `IAgentConfig`, `variables` namespace added to `PROMPT_ALLOWED_NAMESPACES` in `TemplateRendererService`, `knowledgeBaseIds` on agent config) is implemented. Variable resolution is further along than a system-only Phase 1: `workflow-service` (`src/temporal/workflows.ts`) builds a full `VariableResolutionContext` with all five scopes — `system` (via `SystemVariablesProvider`), `workflow`, `previous`, `node`, and `request` — updating `previous`/`node` per executed action, and `AgentCallArgs` carries it as an optional `variables` field. The `variableBindings` field on `AgentCallArgs` and Phase 3 (visual canvas wiring, `DATA` connection type) are not implemented. `variable.interfaces.ts` exists in `packages/shared/src/`. Note: the system-variables controller exposes GET/GET:id/POST/PATCH:id/DELETE — an update endpoint (`PATCH :id`) is implemented (`system-variables.controller.ts`).
 **Author**: Architect  
 **Date**: 2026-06-07

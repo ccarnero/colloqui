@@ -1,5 +1,8 @@
 # Ingress: Webhook Bridge and Agent Pipelines
 
+Class: descriptive
+Summary: The two-stage webhook bridge (api-gateway receipt then channel-service canonical event) and the agent pipelines fed by it, as built.
+
 **Status:** Operational reference — as-built system
 **Audience:** Dev
 **Last updated:** 2026-06-11

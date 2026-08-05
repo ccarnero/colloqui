@@ -1,5 +1,8 @@
 # Agent Memory Service
 
+Class: descriptive
+Summary: Per-tenant long-term agent memory: the propose/approve lifecycle, scopes/kinds/statuses, full-text search, and the events it publishes.
+
 Per-tenant long-term memory for agents. Agents propose memories through a tool
 endpoint; humans review and approve them through an admin endpoint; approved
 memories are retrievable by scope, kind, session or full-text search. Every

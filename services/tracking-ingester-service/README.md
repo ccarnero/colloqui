@@ -1,5 +1,8 @@
 # Tracking Ingester Service
 
+Class: descriptive
+Summary: The bus-to-Postgres tracking ingester: which streams it consumes, how classify.ts labels each event against the golden fixture, and the tracking.tracked_events schema.
+
 Bus→Postgres message-tracking ingester. Consumes every NATS JetStream bus event
 (per-tenant `INGRESS-*`, cross-tenant `GATEWAY_AUDIT`, per-tenant `DLQ-*`),
 classifies it, and persists one row per event to `tracking.tracked_events` for
@@ -410,7 +413,7 @@ Recount the dataset with:
 echo $(( $(rg -c '\S' golden/labeled.tsv) - 1 ))   # from the repo root -> 92
 ```
 
-`scripts/checks/doc-code-guards.sh` guard **K9b(numeric-claims)** pins the three
+`scripts/checks/doc-code-guards.sh` guard **G9b(numeric-claims)** pins the three
 numbers above (this README, the spec's row-count assertion, and the file itself)
 to the same value, so this paragraph cannot silently go stale.
 

@@ -1,5 +1,8 @@
 # DOCS/v_next — future design
 
+Class: future
+Summary: What the future-design folder is for, the promotion rule out of it, and why nothing inside describes how the platform behaves today.
+
 **Status: FUTURE. Nothing in this folder describes how the platform behaves today.**
 
 The repo's documentation had two classes until now

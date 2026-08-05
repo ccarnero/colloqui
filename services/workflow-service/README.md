@@ -1,5 +1,8 @@
 # Workflow Service
 
+Class: descriptive
+Summary: The workflow REST API and Temporal orchestration engine: the action union, trigger consumer, execution projector, status toggle and the two-process deployment.
+
 A REST API and Temporal orchestration engine for multi-step workflow execution. Workflows are defined as sequences of actions (HTTP calls, inline JavaScript, NATS messaging, parallel branches, agent execution) with template-driven dynamic configuration. The service operates as two independent processes: a NestJS HTTP API server for workflow management and a standalone Temporal worker for orchestration and action execution.
 
 ## What is Workflow Service?

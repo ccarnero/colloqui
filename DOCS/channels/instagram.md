@@ -1,7 +1,10 @@
 # Instagram Messaging
 
+Class: descriptive
+Summary: Instagram messaging end to end — the Meta API surface, the channel-service implementation, and (Part 3) the WhatsApp/Instagram code-reuse classification merged in from meta-provider-pattern.md.
+
 > **Status:** implemented
-> **See also:** [meta-provider-pattern.md](./meta-provider-pattern.md) — WhatsApp/Instagram reuse classification · [channel-service.md](./channel-service.md) — full ingress/egress pipeline
+> **See also:** [channel-service.md](./channel-service.md) — full ingress/egress pipeline. The WhatsApp/Instagram reuse classification (formerly `meta-provider-pattern.md`) is Part 3 of this file.
 
 ---
 
@@ -287,3 +290,98 @@ evt.<tenant>.channel-service.messaging.instagram.meta.received.v1
 ```
 
 The `channel` token in the subject lets downstream consumers filter by channel without inspecting the payload.
+
+---
+
+## Part 3 — Meta provider reuse (WhatsApp ↔ Instagram)
+
+> Merged in from the former `DOCS/channels/meta-provider-pattern.md`
+> (docs-truth-audit T10, ruling D7). WhatsApp and Instagram both sit on the Meta
+> Platform, so most of the `channel-service` implementation is shared. Each
+> component below is classified **identical** (reused unchanged), **adapted**
+> (same logic, different structure) or **new** (no WhatsApp equivalent).
+
+### Identical — reused without changes
+
+- **Webhook signature verification.** Both channels use `x-hub-signature-256`
+  (HMAC-SHA256 over the raw body with the App Secret). `verifyWebhookSignature`
+  lives in `meta-base.ts`; `MetaChannelProviderBase` declares `signatureHeader`
+  and delegates `verifySignature()` to it, so neither concrete provider
+  implements verification itself. Quoted in full under "Signature verification"
+  above.
+- **Outbound HTTP send.** `sendMetaMessage()` in `meta-base.ts` performs every
+  Graph API POST for both channels: `Authorization: Bearer <account.accessToken>`,
+  `Content-Type: application/json`, a 10 s `AbortSignal.timeout`, and uniform
+  error/`SendMessageResult` shaping. Each provider supplies only the URL, the
+  JSON body and a `parseSuccessBody` callback that pulls the provider message id
+  out of the channel-specific response.
+- **OAuth token handling.** `exchangeForLongLivedToken()` in `meta-token.ts`
+  trades a short-lived token for a long-lived one via the `fb_exchange_token`
+  grant on `graph.facebook.com/v22.0` (one version ahead of the send endpoints'
+  `v21.0`). `AccountsService` calls it and rejects the request unless
+  `account.provider === "meta"`, so the same path serves both channels. Refresh
+  is an explicit admin action that overwrites `accessToken`, not a background
+  timer.
+- **NATS event-bus pipeline.** `IngressService.processInbound()` takes one
+  `IProcessInboundOptions` (`tenantId`, `channel`, `provider`, `accountId`,
+  `messages`, the causal fields `correlationId`/`causationId`/`depth`, and
+  `webhookHeaders`) and branches on none of them — the channel token only ever
+  becomes a subject segment.
+- **`IChannelProvider` interface.** Both providers implement the interface in
+  `packages/shared/src/channel.interfaces.ts`; downstream consumers know only
+  the interface.
+- **Claim-check.** `packages/database/src/claim-check.ts` operates on the
+  generic envelope and is channel-agnostic.
+
+### Adapted — same logic, different structure
+
+`parseWebhook` differs on message path, id, sender, type and echo handling — the
+full comparison is the "Parse differences vs WhatsApp" table in Part 2. Note that
+account resolution is NOT part of either parser: `WebhookIngressService` narrows
+candidates by the instance-addressed URL segment's `externalId`, then tries every
+active account's `appSecret` against the signature, and only falls back to a body
+hint (`extractMetaPhoneNumberId` for WhatsApp, `extractInstagramBusinessIdHint`
+for Instagram) when more than one account verifies. An unresolved ambiguity is
+rejected as `signature_mismatch`, never guessed.
+
+`sendMessage` differs as follows:
+
+| Aspect | WhatsApp | Instagram |
+|--------|----------|-----------|
+| URL | `graph.facebook.com/v21.0/{account.phoneNumberId}/messages` | `graph.instagram.com/v21.0/{account.igUserId}/messages` |
+| Text body | `{ messaging_product: "whatsapp", to, type: "text", text: { body } }` | `{ recipient: { id }, message: { text } }` |
+| Image body | public URL too — `{ type: "image", image: { link: mediaUrl, caption? } }`; no `media_id` upload step exists | `{ message: { attachment: { type: "image", payload: { url } } } }` |
+| Other types | `template` (name + language + components) and `document` are also built | none — anything not `image` falls back to text |
+| Auth / transport | `sendMetaMessage` — identical | `sendMetaMessage` — identical |
+| Response | `{ messages: [{ id }] }` | `{ message_id }` |
+
+### New — no WhatsApp equivalent
+
+| Component | Why it is new |
+|-----------|---------------|
+| Echo message filter (`isEchoMessage`) | WhatsApp does not send business-sent echoes |
+| `extractInstagramBusinessIdHint` (`recipient.id`) | the WhatsApp sibling reads `metadata.phone_number_id` instead; both live in `webhook-ingress.service.ts`, not in the providers |
+| `account.igUserId` as the send-URL segment | WhatsApp uses `account.phoneNumberId` |
+| Attachment-driven `type` | WhatsApp reads `messages[].type` directly; Instagram defaults to `"text"` and only changes on `attachments[0].type` |
+
+### Checklist for adding a future channel
+
+1. Create the provider class implementing `IChannelProvider`. Meta channels live
+   under `providers/meta/<channel>/<channel>.provider.ts` and extend
+   `MetaChannelProviderBase`; non-Meta ones live at
+   `providers/<channel>/<channel>.provider.ts` (see `telegram/`, `http/`).
+2. Declare `signatureHeader` and `verifySignature` — inherited for free from
+   `MetaChannelProviderBase`, written by hand otherwise.
+3. Implement `parseWebhook(rawBody) → InboundMessage[]`.
+4. Implement `sendMessage(account, message) → Promise<SendMessageResult>`.
+5. Register it: a Meta channel goes into `ProviderRegistry`'s map
+   (`providers/meta/provider-registry.ts`); anything else is injected into the
+   `ChannelRouter` constructor and added to its map.
+6. Add the `channel` token to the `Channel` union in
+   `packages/shared/src/channel.interfaces.ts` (today
+   `"whatsapp" | "instagram" | "telegram" | "http"`), and the family token to
+   `ChannelProvider` if it is a new family.
+7. If account selection needs a payload hint beyond signature verification, add
+   the extractor to `webhook-ingress.service.ts` — otherwise instance-addressed
+   URLs and signature verification already resolve the account.
+8. The bus, streams, and claim-check work without any changes.

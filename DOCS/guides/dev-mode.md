@@ -1,5 +1,8 @@
 # Source-Mounted Developer Mode
 
+Class: prescriptive
+Summary: How to run source-mounted developer mode: which services support it, how to enable and disable it, and what each script does to the cluster.
+
 Source-mounted dev mode lets you edit service TypeScript files on your Mac and see changes reload in the cluster pod in seconds — without a Docker image rebuild. `bun --watch` detects each save and re-runs the entry point inside the pod.
 
 ## What it is

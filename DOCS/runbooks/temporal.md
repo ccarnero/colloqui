@@ -1,5 +1,8 @@
 # RUNBOOK — Temporal Operations
 
+Class: prescriptive
+Summary: Day-2 operating procedures for the Temporal cluster in its current single auto-setup Deployment topology — anything that is not a one-time migration.
+
 > Day-2 reference for operating the Temporal cluster.
 > Scope: anything Temporal-related that's NOT a one-time migration.
 >
@@ -9,9 +12,9 @@
 > split that was used during stress testing.
 >
 > Companion docs (historical context, not current operations):
-> - [`DOCS/runbooks/archive/temporal-ha-migration.md`](./archive/temporal-ha-migration.md) —
+> - [`DOCS/archive/runbooks/temporal-ha-migration.md`](../archive/runbooks/temporal-ha-migration.md) —
 >   the one-time migration to 4-role HA (no longer the active config).
-> - [`DOCS/runbooks/archive/temporal-visibility-split.md`](./archive/temporal-visibility-split.md) —
+> - [`DOCS/archive/runbooks/temporal-visibility-split.md`](../archive/runbooks/temporal-visibility-split.md) —
 >   the visibility datastore split to its own CNPG cluster (also historical —
 >   developer mode uses one shared `postgres-temporal` cluster for both).
 
@@ -115,7 +118,7 @@ Expected resources (after bootstrap + healthy steady-state):
   1 instance in dev overlays; 2 instances HA in base.
 
 > The `postgres-temporal-visibility` CNPG cluster described in
-> [`archive/temporal-visibility-split.md`](./archive/temporal-visibility-split.md)
+> [`DOCS/archive/runbooks/temporal-visibility-split.md`](../archive/runbooks/temporal-visibility-split.md)
 > is **not active** in developer mode. Its manifest
 > (`infrastructure/base/postgres/postgres-temporal-visibility-cluster.yaml`) still
 > exists, but both `POSTGRES_SEEDS` and `VISIBILITY_POSTGRES_SEEDS` point to
@@ -384,7 +387,7 @@ does not honour `VISIBILITY_POSTGRES_SEEDS` for the migration phase.
 **In developer mode this is not a problem** because both env vars point to
 the same cluster (`postgres-temporal-rw`). If you ever split visibility onto
 its own cluster, read
-[`archive/temporal-visibility-split.md`](./archive/temporal-visibility-split.md)
+[`DOCS/archive/runbooks/temporal-visibility-split.md`](../archive/runbooks/temporal-visibility-split.md)
 for the workaround — but note the helper it describes,
 `infrastructure/scripts/ensure-temporal-visibility-schema.sh`, was **deleted from
 the repo** (see `archive/README.md`), so it must be rewritten before it can be
@@ -433,5 +436,5 @@ All alerts live in
 - **Bootstrap script**: [`bootstrap-orbstack-osx.sh`](../../bootstrap-orbstack-osx.sh)
 - **Purge script**: [`scripts/reset/purge-temporal.sh`](../../scripts/reset/purge-temporal.sh)
 - **Prometheus alerts**: [`infrastructure/base/observability/prometheus/alerts.yaml`](../../infrastructure/base/observability/prometheus/alerts.yaml)
-- **Historical HA migration runbook**: [`DOCS/runbooks/archive/temporal-ha-migration.md`](./archive/temporal-ha-migration.md)
-- **Historical visibility-split runbook**: [`DOCS/runbooks/archive/temporal-visibility-split.md`](./archive/temporal-visibility-split.md)
+- **Historical HA migration runbook**: [`DOCS/archive/runbooks/temporal-ha-migration.md`](../archive/runbooks/temporal-ha-migration.md)
+- **Historical visibility-split runbook**: [`DOCS/archive/runbooks/temporal-visibility-split.md`](../archive/runbooks/temporal-visibility-split.md)

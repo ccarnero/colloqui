@@ -48,7 +48,7 @@ export class ChannelAuditPostgresRepository implements IChannelAuditRepository {
           )
         `;
         // Idempotent column add for tenants provisioned before conversation_id
-        // existed (DOCS/cowork/METERING-FOUNDATION.md G3). MUST run before any
+        // existed (DOCS/archive/audits/METERING-FOUNDATION.md G3). MUST run before any
         // CREATE INDEX referencing this column — Postgres resolves
         // `CREATE INDEX IF NOT EXISTS` column references at parse-analysis
         // time, so on a pre-existing table without the column the statement

@@ -1,5 +1,8 @@
 # Adapter Tools
 
+Class: descriptive
+Summary: How agents invoke external APIs through centrally managed connector (adapter) configurations, and how those tools merge with builtin and MCP tools.
+
 Adapter tools allow agents to invoke external APIs through centrally managed adapter configurations, instead of hardcoding HTTP endpoint details in each agent.
 
 > **Related:** agents can also use tools exposed by external **MCP servers**

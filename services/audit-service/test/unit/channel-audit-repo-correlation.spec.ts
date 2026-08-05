@@ -161,7 +161,7 @@ describe("ChannelAuditPostgresRepository.findByCorrelationId", () => {
 });
 
 // ---------------------------------------------------------------------------
-// conversationId projection (DOCS/cowork/METERING-FOUNDATION.md G3)
+// conversationId projection (DOCS/archive/audits/METERING-FOUNDATION.md G3)
 // ---------------------------------------------------------------------------
 
 describe("ChannelAuditPostgresRepository.insertChannelEvent — conversationId", () => {

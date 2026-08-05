@@ -13,7 +13,7 @@ This change adds a role-gated **Message trace** debug view under **Processes** t
 single message's causal chain, the pub/sub fan-out between services, and deep-links into the
 technical traces (Temporal for the run, Tempo for the OTel spans).
 
-It maps onto the two traceability threads documented in `cowork/TRACEABILITY-audit.md`:
+It maps onto the two traceability threads documented in `DOCS/archive/audits/TRACEABILITY-audit.md`:
 
 - **Business trace** — the causal chain + pub/sub topology + audit rows. Durable, queryable
   forever. This view renders it natively.

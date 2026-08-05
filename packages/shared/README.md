@@ -1,5 +1,8 @@
 # `@yoizen/shared`
 
+Class: descriptive
+Summary: The single source of truth for cross-service types, constants, schema DDL and runtime utilities: envelopes, subject helpers, tenancy, workflows, auth and provisioning.
+
 ## Package Overview
 
 `@yoizen/shared` is the single source of truth for cross-service types, constants, schema definitions, and shared runtime utilities in the Yoizen platform. It covers messaging envelopes, NATS/JetStream topology helpers, adapter resolution, circuit breaking, multi-tenancy, workflows, auth, and database schema DDL shared across services.

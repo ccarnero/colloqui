@@ -1,5 +1,8 @@
 # MCP Connections — Screen-by-Screen Parity with Connectors — Design
 
+Class: descriptive
+Summary: MCP servers as first-class citizens alongside HTTP connectors — the original design plus an as-implemented delta recording what shipped and what is still a gap.
+
 Status: Implemented (commit c4da71a). See "As-implemented delta (2026-07-07)"
 below for what shipped, what's still a known gap, and how the §0 baseline
 below has changed. The rest of this document is kept as the original design

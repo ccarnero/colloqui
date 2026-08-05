@@ -1,5 +1,8 @@
 # Cache Service
 
+Class: descriptive
+Summary: The standalone two-tier cache HTTP API (L1 in-memory Map, L2 Redis): its CRUD/batch/scan routes and the fact that it calls no other platform service.
+
 HTTP CRUD API backed by a two-tier cache: L1 in-memory `Map` (1000 entries, FIFO eviction) and L2 Redis. Supports single operations, batch GET via pipelines, and key listing via SCAN.
 
 Standalone HTTP service: no NATS client and no calls to other platform services. It DOES depend on the shared workspace packages:

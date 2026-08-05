@@ -1,5 +1,8 @@
 # Channel Service
 
+Class: descriptive
+Summary: The full channel-service provider directory and the ingress/egress pipeline: signature verification, account resolution, canonical event publication and outbound sends.
+
 > **Status:** implemented
 > **See also:** [../messaging/ingress.md](../messaging/ingress.md) — two-stage bridge contract · [../messaging/envelope.md](../messaging/envelope.md) — envelope spec
 
@@ -567,7 +570,7 @@ t~1-3s    Meta delivers "pong" to user in WhatsApp
 
 ## Adding a new channel
 
-See [meta-provider-pattern.md](./meta-provider-pattern.md) for the full checklist; the short form:
+See [instagram.md](./instagram.md) Part 3 for the full checklist (it absorbed the former `meta-provider-pattern.md`); the short form:
 
 1. Create the provider class implementing `IChannelProvider` — Meta channels under
    `providers/meta/<channel>/`, everything else at `providers/<channel>/`.

@@ -1,5 +1,8 @@
 # Claim-Check Pattern: Large Payloads
 
+Class: descriptive
+Summary: The claim-check pattern as built: how payloads over 256 KB are offloaded, what the envelope carries instead, and how consumers resolve them.
+
 **Status:** Operational reference — as-built system
 **Audience:** Dev + Infra
 **Last updated:** 2026-06-11

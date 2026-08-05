@@ -1,5 +1,8 @@
 # Channel Service
 
+Class: descriptive
+Summary: Everything a tenant's messaging channels need: account CRUD and token refresh, webhook ingress, egress sends, auto-reply, and the provider implementations behind them.
+
 Owns everything a tenant's messaging channels need: channel **accounts** (CRUD +
 token refresh), **ingress** (inbound provider messages → canonical JetStream
 events), **egress** (outbound sends, HTTP and command-driven), **auto-reply**

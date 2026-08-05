@@ -1,5 +1,8 @@
 # provisioning-service
 
+Class: descriptive
+Summary: The declarative provisioning engine: how one manifest is planned and applied across channels, connectors, agents, knowledge bases, hosted services and workflows.
+
 Declarative provisioning engine (`manual-loops/declarative-provisioning.md`). A tenant
 describes a full integration — channels, connectors, agents, knowledge bases,
 hosted-service references, workflows — in ONE manifest, then `plan`s the diff and

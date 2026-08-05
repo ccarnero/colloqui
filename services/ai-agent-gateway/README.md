@@ -1,5 +1,8 @@
 # AI Agent Gateway
 
+Class: descriptive
+Summary: The synchronous HTTP front door to asynchronous agent execution: submit/poll routes, the SSE streaming relay, Redis execution state and the timeout ceiling.
+
 The synchronous front door to asynchronous agent execution. Callers submit an
 execution over HTTP; the actual work happens in agent-ai-service, driven by NATS
 events. This service turns that async flow back into something an HTTP client
@@ -146,7 +149,7 @@ Knative Service, min 1 / max 3, concurrency target 50, image
 
 `timeoutSeconds: 3600` (`ai-agent-gateway.yaml:25`) — long agent executions hold
 an SSE connection open, so the Knative request timeout must clear
-`AGENT_CALL_TIMEOUT_MS` plus margin. This is guarded by K8 in
+`AGENT_CALL_TIMEOUT_MS` plus margin. This is guarded by G8 in
 `scripts/checks/doc-code-guards.sh`.
 
 ```bash

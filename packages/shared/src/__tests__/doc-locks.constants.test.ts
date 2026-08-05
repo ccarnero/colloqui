@@ -12,7 +12,7 @@ import {
 } from "../constants";
 
 /**
- * Lock K5 (see cowork/DOC-VS-CODE-AUDIT.md): constants snapshot.
+ * Lock K5 (see DOCS/archive/audits/DOC-VS-CODE-AUDIT.md): constants snapshot.
  *
  * These literals are documented in DOCS/ (workflow-service README, ADRs,
  * architecture overview) and quoted directly by the doc-vs-code audit. This

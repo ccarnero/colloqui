@@ -1,5 +1,8 @@
 # SKB NL→SQL Pipeline — Security Review
 
+Class: descriptive
+Summary: The threat model and defence layers of the SKB natural-language to SQL pipeline as built, including the open injection risk in executeQuery.
+
 *SKB is a module inside `agent-admin-service` (`src/modules/structured-kb/`, `SERVICE_MODE=api|worker`) — there is no standalone SKB service.*
 
 > Threat model and defense-in-depth analysis for the Structured Knowledge Base
@@ -119,7 +122,7 @@ positions. It can never control:
 > is an unvalidated `@Param("id")` path segment and `categories` is only
 > `@IsArray()`, and neither passes through `isSafe()` or `validateWhereClause()`,
 > which guard the LLM output only. Escalated as **E9** in
-> `cowork/DOCS-TRUTH-LEDGER.md`; the fix is a code change (parameterise the
+> `DOCS/archive/audits/DOCS-TRUTH-LEDGER.md`; the fix is a code change (parameterise the
 > literals, or validate the id as a UUID), out of scope for a documentation audit.
 
 ### Layer 5: LIMIT Cap — `enforceLimit()`
@@ -217,7 +220,7 @@ are never exposed to the client.
 
 **Severity:** High
 **Likelihood:** Medium
-**Status: OPEN — escalated as E9 in `cowork/DOCS-TRUTH-LEDGER.md`, not fixed**
+**Status: OPEN — escalated as E9 in `DOCS/archive/audits/DOCS-TRUTH-LEDGER.md`, not fixed**
 
 The five-layer model above guards the LLM's output. It does not guard the two
 values the CALLER supplies that also reach the executed statement:

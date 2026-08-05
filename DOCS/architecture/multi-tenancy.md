@@ -1,5 +1,8 @@
 # Multi-Tenancy — Deep Reference
 
+Class: descriptive
+Summary: The full reference for tenant isolation: the one-database-per-tenant model, tenant resolution order, and the per-tenant data model.
+
 > **Summary in [overview.md](overview.md).** This document is the full reference for
 > isolation model, tenant resolution, and data model.
 

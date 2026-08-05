@@ -4,9 +4,10 @@ import type { IWorkflowNodeStats } from "./workflow-node-stats.types";
  * STATIC PLACEHOLDER footer stats (SPEC T03). The mock's node-card footer
  * row (`<n> runs` / secondary metric slot / `● ok` status) has no backing
  * per-node data source today — T01 finding 6 confirmed
- * `ITopDefinitionRow` is per-definition, not per-node
- * (`manual-loops/admin-console/console-redesign-builder-v2.md:356-360`,
- * `cowork/INDEX.md:745`). T06 of this loop re-opens that data-gap; T07
+ * `ITopDefinitionRow` is per-definition, not per-node (see
+ * `manual-loops/admin-console/console-redesign-builder-v2.md`, T01 finding 6,
+ * and `DOCS/archive/INDEX.md`, "Change: console redesign ai
+ * (console-redesign-ai)"). T06 of this loop re-opens that data-gap; T07
  * wires the real fetch once it settles.
  *
  * This constant is the DEFAULT value of `WorkflowNodeCardComponent.stats` so

@@ -35,7 +35,10 @@ All non-trivial changes go through the **manual-loop system**:
 4. Tests land in the same task/commit as the behavior they judge; every bug
    fix carries a regression test.
 5. All artifacts in English: code, comments, UI strings, docs, commit
-   messages. Conventional commits, no AI attribution.
+   messages. Conventional commits, no AI attribution. ONE named exception:
+   `skills/envelope-messages/references/diseno-mensajes.md` keeps its Spanish
+   FILENAME (its content is English) because `SKILL.md` references it by that
+   exact path — the file's own header states this.
 6. DDL and provisioning scripts are idempotent (`CREATE ... IF NOT EXISTS`,
    `ADD COLUMN IF NOT EXISTS`); destructive scripts are dry-run by default
    and a human runs the first `--apply`.
@@ -52,7 +55,7 @@ All non-trivial changes go through the **manual-loop system**:
 |:---|:---|
 | Backend services (default) | NestJS-on-Bun: modules/services, class-validator DTOs, `@TenantId()` + `TenantGuard`. Follow the file you are editing, not personal taste. |
 | `tracking-ingester-service` | Named exception: pure functions in `src/lib/*` (one per file), ALL I/O in `main.ts`, plain Bun — NO NestJS. |
-| `admin-console` | Angular standalone components, signals, OnPush, lazy `loadComponent` routes, inline SVG (no chart libs), tokens-only colors (no hard-coded hex — reviewer rejection), no new libraries without human approval. Visual contract: `manual-loops/admin-console/design/Rediseño Terminal.dc.html` — deviations need human sign-off. |
+| `admin-console` | Angular standalone components, signals, OnPush, lazy `loadComponent` routes, inline SVG (no chart libs), tokens-only colors (no NEW hard-coded hex — guard `G14` fails on hex added in a diff; the 58 files that already carry one are grandfathered debt, fix on touch), no new libraries without human approval. Visual contract: `manual-loops/admin-console/design/Rediseño Terminal.dc.html` — deviations need human sign-off. |
 | `api-gateway` | New routes are explicit proxy modules; global guards apply; no `@Public()`. The gateway never auto-forwards. |
 | `connector-runtime` | Pure core libs (no Temporal/NATS/Express imports); Result types in core; `ApplicationFailure` mapping only in the activity wrapper. |
 | `workflow-service` | Temporal workflow code stays deterministic: publishes happen in activities, never inline in workflow code. One publish path. |
@@ -103,8 +106,27 @@ All non-trivial changes go through the **manual-loop system**:
   `multi-tenant`, `playwright`, `yz-ui`, `judgment-day`, `skill-registry`,
   `_shared`.
   Skills are advisory; SPEC Constraints are binding.
-- `cowork/INDEX.md` — registry of shipped changes; every SPEC's docs task
+- `DOCS/archive/INDEX.md` — registry of shipped changes; every SPEC's docs task
   adds its entry.
+- **Doc classes.** Every file under `DOCS/**` and every `services/*/README.md`
+  and `packages/*/README.md` declares its class and a one-line summary in its
+  first 10 lines; guard `G12` fails otherwise. The five classes:
+  `descriptive` (as-built — the code decides), `prescriptive` (a contract or
+  procedure the code must obey), `future` (`DOCS/v_next/` only — not
+  implemented), `RECORD` (dated, frozen, never rewritten) and `register`
+  (dated rows amended in place, e.g.
+  `DOCS/architecture/decision-log.md`, `SCHEMAS.md`,
+  `DOCS/archive/INDEX.md`).
+- `DOCS/archive/` — the single home for dated records that are not loop
+  records: the retired `cowork/` audits (`archive/audits/`), the change
+  register, the run-view visual contract, the archived runbooks. Everything
+  there declares `Status: historical` (or `Status: append-only` for the one
+  register); guard `G6f` fails otherwise.
+- `.sdd/` — a SECOND record system that is alive and blessed: per-change
+  `explore/design/adr/tasks/archive` folders under `.sdd/changes/`. It is the
+  named replacement for several deleted `cowork/` handoffs. It is NOT the
+  retired repo-level SDD tooling listed below — that was the orchestrator
+  commands and agents, not these records.
 
 ## Retired 2026-07-29 (do not resurrect)
 

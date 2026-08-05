@@ -1,5 +1,8 @@
 # Infrastructure and Deployment
 
+Class: descriptive
+Summary: How the single-node developer cluster is put together: Knative vs plain Deployments, the Kustomize base/overlay layout, and what was removed (KEDA, cloud overlays, Temporal HA).
+
 > **Developer mode:** This document describes the current single-node developer
 > configuration. Multi-environment (qa/staging/production), cloud overlays, KEDA
 > autoscaling, Temporal 4-role HA, and Redis cluster mode were removed from the
@@ -49,8 +52,10 @@ Developer mode also uses a single `postgres-temporal` CNPG cluster for both work
 | Plain Deployment (fixed replicas) | Queue/worker workloads (`connector-runtime`, workflow workers, consumer workers) | All workers run at min-scale=max-scale=1 in developer mode |
 
 > **KEDA removed:** KEDA ScaledObjects were deleted from the base manifests.
-> All worker Deployments use fixed `replicas: 1`. Scale-to-zero components
-> (`_components/scale-to-zero-*/`) are not used by the active `dev` overlay.
+> All worker Deployments use fixed `replicas: 1`. The scale-to-zero Kustomize
+> components that once lived under `knative/services/overlays/_components/` were
+> deleted too (commit `2c77968b`, "back to dev mode for k8s") — nothing in the
+> repo composes them and the directory no longer exists.
 
 ## Kustomize Structure
 
@@ -70,9 +75,10 @@ flowchart TD
 ```
 
 > Note: `knative/services/overlays/cloud/` and multi-env overlays (qa/staging/production)
-> were deleted. The scale-to-zero component directories under `_components/` were removed
-> too — only a `README.md` documenting their prior existence remains, and no active overlay
-> references them.
+> were deleted, and so was the whole `knative/services/overlays/_components/` tree
+> (its last surviving file, a README describing the removed scale-to-zero
+> components, was deleted by the docs-truth-audit T10 ruling D6). No
+> `kustomization.yaml` in the repo declares `components:`.
 
 ## Add a New Service (Checklist)
 

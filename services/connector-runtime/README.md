@@ -1,5 +1,8 @@
 # Connector Runtime
 
+Class: descriptive
+Summary: The standalone Temporal worker that executes every HTTP-based activity on the platform: its activities, circuit breaker, caching, error semantics and deployment split.
+
 A standalone Temporal worker service that executes generic HTTP requests with optional connector-driven configuration. This service is the execution engine for all HTTP-based activities in the platform — whether called from workflows, event processors, webhooks, or direct external callers. It operates independently from workflow orchestration and scales based on Temporal task queue depth.
 
 ## What is connector-runtime?

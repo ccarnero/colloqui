@@ -1,5 +1,8 @@
 # `@yoizen/database`
 
+Class: descriptive
+Summary: The shared data-plane and messaging package: Postgres/Mongo/Redis/NATS/Kubernetes clients, per-tenant connection managers, durable-consumer helpers and claim-check.
+
 The platform's shared data-plane and messaging plumbing. Every service that
 touches Postgres, Mongo, Redis, NATS/JetStream or the Kubernetes API does it
 through this package rather than a local client, so connection pooling, tenant
@@ -29,7 +32,7 @@ resolveStorageEngine(env = process.env): "postgres" | "mongo"
 
 `DB_ENGINE` wins, then `STORAGE_ENGINE`, then the `postgres` default; anything
 else **throws** rather than silently degrading (`src/engine.ts:13-23`). Ten
-services call this — guard **K11** in `scripts/checks/doc-code-guards.sh`
+services call this — guard **G11** in `scripts/checks/doc-code-guards.sh`
 requires each of their READMEs to document the variable.
 
 `createRepositoryProvider({ token, engine, postgresClass, mongoClass })`
@@ -114,7 +117,7 @@ longest-running handler causes duplicate deliveries even when `ack_wait` looks
 generous. The default schedule therefore anchors its first step at
 `DEFAULT_ACK_WAIT_MS` to keep the two consistent (`:31-42`).
 
-### Guard K7 — the ackWait census
+### Guard G7 — the ackWait census
 
 Because the 60 s default is safe for fast I/O-bound handlers but dangerous for
 slow ones (LLM calls, large-file ingestion, multi-step provisioning), the
@@ -126,7 +129,7 @@ registration under `services/` and fails when one is not in the script's
 `known_files` list, or declares no explicit `ackWaitMs` and is not on the
 allowlist with a written justification. A new consumer with a slow handler that
 forgets `ackWaitMs` fails the build until someone consciously triages it — see
-the `# K7 — NATS durable consumer ackWait census.` header block immediately
+the `# G7 — NATS durable consumer ackWait census.` header block immediately
 above that function for the full rationale.
 
 Rule of thumb when adding a consumer: if the handler can exceed a few seconds,

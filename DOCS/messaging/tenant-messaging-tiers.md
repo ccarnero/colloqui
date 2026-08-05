@@ -1,5 +1,8 @@
 # Tenant messaging tiers (descriptive — as built)
 
+Class: descriptive
+Summary: How a tenant's messagingTier (free/pro/enterprise) selects the retention window, stream size, message size and replication of its INGRESS-<TENANT> stream.
+
 Shipped 2026-08-01 by `manual-loops/messaging/tenant-messaging-tiers.md`
 (T01–T05; the former `DOCS/v_next/tenant-messaging-tiers.md` design left the
 staging folder per its rule 5). A tenant's **messaging capacity** — retention

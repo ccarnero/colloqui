@@ -1,5 +1,8 @@
 # `@yoizen/observability`
 
+Class: descriptive
+Summary: Logging, tracing, metrics and process bootstrap for every Node/Bun service, including the api/worker bootstrap split and which services use which.
+
 Logging, tracing, metrics and process bootstrap for every Node/Bun service on
 the platform. Importing this package is how a service gets a correlated
 `traceId` in its logs, OTLP export, HTTP/NATS metrics, and the api/worker
