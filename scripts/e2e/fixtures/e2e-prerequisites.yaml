@@ -1,0 +1,90 @@
+# e2e-prerequisites — the two STANDING fixtures scripts/e2e/http-workflow.sh
+# needs before it can run, provisioned the same declarative way every sample
+# is: a manifest applied through provisioning-service's plan/apply engine.
+#
+# WHY THIS FILE EXISTS
+# Both resources below used to be created by hand (a raw `POST /api/connectors`
+# for the connector, a raw `POST /services` for the hosted service) and their
+# server-generated ids pasted into scripts/e2e/.env. Every cluster or tenant
+# reset invalidated those ids and the suite failed at stage 1b with a stale-id
+# 404 until someone re-seeded them manually. The script now applies this
+# manifest on every run (idempotent — a second apply is all-noop) and resolves
+# both ids BY NAME, so there is nothing left to keep in sync by hand.
+#
+# WHY IT IS A SUBSET, NOT A REFERENCE
+# These definitions are copied from the samples that own them:
+#   pokeapi     <- integrations/http/http-connectors/manifest.yaml
+#   sample-echo <- integrations/http/hosted-services-api/manifest.yaml
+# The e2e cannot simply apply those manifests instead: http-connectors ships
+# five connectors, and hosted-services-api additionally provisions a channel,
+# a route and a workflow whose notify step depends on a live Telegram bot —
+# far more than this suite needs, and not hermetic. So this is a deliberate
+# subset. Keep the two blocks byte-compatible with their sources; if a source
+# changes, change it here too.
+#
+# HERMETIC BY DESIGN: pokeapi.co is public, free and unauthenticated, and
+# ealen/echo-server runs in-cluster. Nothing here needs a credential, which is
+# what lets this suite run unattended.
+apiVersion: yoizen.io/v1
+
+# LibraryManifest (not IntegrationManifest): this manifest provisions only
+# catalog resources — no inbound channel and no process — so the
+# >=1-channel/>=1-process structural checks are waived in favour of
+# >=1 connector/mcpServer/service/systemVariable, satisfied by both entries.
+kind: LibraryManifest
+
+metadata:
+  name: e2e-prerequisites
+
+spec:
+  # Target of stage 3's `probeEndpoint` / `probeEndpointScoped` endpointCall
+  # actions. The suite resolves this connector by name, then picks the
+  # `GET /api/v2/pokemon/ditto` endpoint off it at run time — endpoint ids are
+  # server-generated, so they are never written down anywhere.
+  connectors:
+    - name: pokeapi
+      type: http
+      config:
+        baseUrl: https://pokeapi.co
+        context: external
+      endpoints:
+        - label: Get Pokemon by name or id
+          method: GET
+          path: /api/v2/pokemon/ditto
+        - label: List Pokemon (paginated)
+          method: GET
+          path: /api/v2/pokemon
+        - label: Get ability by name or id
+          method: GET
+          path: /api/v2/ability/limber
+        - label: Get type by name or id
+          method: GET
+          path: /api/v2/type/water
+        - label: Get move by name or id
+          method: GET
+          path: /api/v2/move/tackle
+        - label: Get generation by name or id
+          method: GET
+          path: /api/v2/generation/generation-i
+
+  # Target of the `probeService` serviceCall action (and of the composite
+  # workflow's own serviceCall). `ealen/echo-server` answers any method on any
+  # path with a JSON echo of the request, which is what lets stage 17 assert
+  # the nonce survived the round trip.
+  services:
+    - name: sample-echo
+      image: ealen/echo-server:latest
+      port: 8080
+      # DELIBERATE DEVIATION from hosted-services-api's `minScale: 0`, and the
+      # one value here that is NOT copied from it. That sample is a demo:
+      # rarely invoked, so scaling to zero is the right trade. This is a test
+      # fixture invoked by two serviceCall actions on every single run, and
+      # scale-from-zero makes it FLAKY — verified, not assumed: with
+      # `minScale: 0` a run against a freshly-provisioned service failed with
+      # both serviceCalls erroring, `kubectl get pods -n acme-dev-ns` showing
+      # zero pods, and connector-runtime raising CIRCUIT_OPEN
+      # (service-call.activity.ts's breaker `deny` path) after the cold-start
+      # attempts tripped it. One warm pod removes the cliff entirely.
+      minScale: 1
+      maxScale: 2
+      concurrencyTarget: 25

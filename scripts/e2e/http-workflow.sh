@@ -51,13 +51,18 @@ fi
 #      workflow enable/disable
 #      toggle (stage 6/8) are UNCHANGED by this — they operate on whatever
 #      externalId the apply response reports for this run's resources.
-#      The endpointCall's `adapterId` stays the RAW pre-existing adapter id
-#      (E2E_ENDPOINT_ADAPTER_ID) exactly as before — it is a PRE-EXISTING
-#      connector-admin adapter, not manifest-created, so it is never wrapped
-#      in a `{ connectorRef: ... }` ref-object. Verified in
-#      services/provisioning-service/src/modules/PLAN/lib/ (not apply/):
-#      `args.adapterId` IS in `SUBSTITUTION_ALLOWLIST`
-#      (substitution-allowlist.ts, refType `connectorRef`), but
+#      The endpointCall's `adapterId` and the serviceCall's `serviceId` are
+#      SYMBOLIC REFS resolved by name at apply time (`connectorRef` /
+#      `serviceRef`, both in provisioning-service's SUBSTITUTION_ALLOWLIST),
+#      against `external: true` entries declared below — the fixtures are
+#      created out-of-band by fixtures/e2e-prerequisites.yaml. `endpointId`
+#      has no ref type and stays runtime-resolved. Historical note: this
+#      block previously said the opposite ("stays the RAW pre-existing
+#      adapter id ... never wrapped in a ref-object"), which was true only
+#      while the fixtures were hand-seeded; it stopped being true once
+#      stage 1a started provisioning them declaratively. Old text kept
+#      nowhere — corrected in place because it described a mechanism, not a
+#      dated finding. Superseded detail:
 #      substitute-symbolic-refs.ts only substitutes a value shaped
 #      `{ connectorRef: <name> }` (`readRecognizedRefObject`); a plain
 #      string at that same allowlisted key is "NOT a recognized single-key
@@ -249,12 +254,64 @@ WORKFLOW_NAME_PREFIX="e2e-http-log"
 # the same reason as e2e-http-log above.
 AGENT_NAME="e2e-http-agent-echo"
 AGENT_WORKFLOW_NAME_PREFIX="e2e-http-agentflow"
+# COMPOSITION COVERAGE: a third workflow that chains jsFunction -> serviceCall
+# -> conditional, with an agentCall NESTED INSIDE the matching branch. The
+# other two workflows each exercise activities in isolation (workflow 1 runs
+# jsFunction/endpointCall/serviceCall as a flat list; workflow 2 runs a lone
+# agentCall) — neither proves the activities COMPOSE, and before this workflow
+# existed `conditional` had zero e2e coverage of any kind. Kept as a SEPARATE
+# workflow rather than by extending workflow 1 so the existing stages' exact
+# counts and their failure localization stay intact: if only this workflow
+# goes red the defect is in composition, if workflow 1 goes red too it is in
+# the primitive. Same nonce-suffixed naming as the other two.
+COMPOSITE_WORKFLOW_NAME_PREFIX="e2e-http-composite"
+# The literal a branch action logs if the DELIBERATELY-FALSE first branch ever
+# executes. Asserted ABSENT from the worker log — see stage_verify_conditional.
+COMPOSITE_WRONG_BRANCH_MARKER="E2E-COMPOSITE-WRONG-BRANCH"
+# The two branch labels, in definition order. Branch 1's condition is written
+# to never match, so a correct engine must fall through to branch 2 — that is
+# what makes this a real ordering test rather than an always-true no-op.
+COMPOSITE_BRANCH_NEVER="never-matches"
+COMPOSITE_BRANCH_MATCH="matches-nonce"
+# EGRESS COVERAGE: the composite workflow's last action is a `channelSend`
+# through the `e2e-tests` sink channel. That channel exists precisely so this
+# assertion can be made: `EgressService` publishes `sent.v1` only inside
+# `if (result.success)`, and no other channel can reach that branch here —
+# `http` fails by design, and telegram/whatsapp/instagram need live
+# credentials. Everything after the provider returns is the same code the real
+# channels run, so this covers the actual egress publish path.
+EGRESS_CHANNEL_NAME_PREFIX="e2e-egress-sink"
+# Arbitrary recipient: the sink discards the message, so `to` only has to be a
+# non-empty string the action validator accepts.
+EGRESS_RECIPIENT="e2e-sink-recipient"
+# FAN-OUT COVERAGE: `branch` runs every one of its branches CONCURRENTLY
+# (`Promise.all` in workflows.ts) on cloned contexts, then merges their results
+# back — semantically the opposite of `conditional`, which picks exactly one.
+# Each branch's actions carry the branch label on their step events
+# (`branch` on the action_started/completed payload), which is what makes
+# "both branches actually ran" assertable rather than inferred.
+BRANCH_ALPHA="probe-alpha"
+BRANCH_BETA="probe-beta"
+# The `serviceBusCall` lives INSIDE the beta branch: one addition covers the
+# bus publish AND proves actions nest inside a fan-out. Its subject is
+# deliberately NOT under `evt.<tenant>.>` — that pattern is bound to the
+# tenant's INGRESS stream, and this activity publishes a RAW payload, not an
+# envelope, so routing it there would feed the tracking ingester something it
+# cannot parse. An unbound subject makes `executeServiceBusCall` fall back to
+# a core-NATS publish (its documented ad-hoc fan-out path) and disturbs
+# nothing.
+BUS_PROBE_SUBJECT_PREFIX="e2e.bus-probe"
 # T06 (manual-loops/connector-trace-linking.md): the pokeapi adapter — a
-# harmless GET, already registered in the dev cluster — used by stage 3's
-# 'probeEndpoint' endpointCall action so the e2e suite finally exercises the
-# endpointCall activity (T02 finding: previously NO endpoint_call event was
-# ever produced by this script).
-ENDPOINT_ADAPTER_ID="${E2E_ENDPOINT_ADAPTER_ID:-a2dcbf77-7b4f-4a7b-b8ac-3e48c6496f0d}"
+# harmless GET — used by stage 3's 'probeEndpoint' endpointCall action so the
+# e2e suite finally exercises the endpointCall activity (T02 finding:
+# previously NO endpoint_call event was ever produced by this script).
+# PREREQUISITES-AS-MANIFEST (replaces the old hardcoded-id/re-seed-by-hand
+# approach): stage_ensure_prerequisites applies a LibraryManifest declaring
+# this connector and resolves its id BY NAME at run time — never stale after
+# a cluster reset, no manual re-seed, no id to keep in .env. Set
+# E2E_ENDPOINT_ADAPTER_ID explicitly to skip that and pin a specific
+# pre-existing adapter instead (advanced/override use only).
+ENDPOINT_ADAPTER_ID="${E2E_ENDPOINT_ADAPTER_ID:-}"
 # T04 (manual-loops/connectors/endpoint-scoped-recent-calls.md): the ENDPOINT
 # (not adapter) this run's 'probeEndpointScoped' action targets, so the
 # published endpoint_call_completed payload carries a NON-NULL `endpointId`
@@ -284,20 +341,28 @@ ENDPOINT_PREFERRED_PATH="${E2E_ENDPOINT_PREFERRED_PATH:-/api/v2/pokemon/ditto}"
 # isEndpointArgs), so something has to go there.
 ENDPOINT_RESOLVED_PATH=""
 # T12 (manual-loops/connectors/connection-call-inspector.md): the 'sample-echo'
-# hosted service — a harmless echo service, already registered in the dev
-# cluster's registry-service (live-verified via GET /api/registry/services:
-# id=8272b109-e5c5-47d8-b533-bce1d8610495, name='sample-echo') — used by
-# stage 3's 'probeService' serviceCall action so the e2e suite finally
-# exercises the serviceCall activity's per-call capture (T01's documented
-# gap: serviceCall previously emitted NO endpoint_call_completed event at
-# all, and this suite never exercised serviceCall). Same raw-string
-# convention as ENDPOINT_ADAPTER_ID above: sample-echo is NOT manifest
-# created by this script, so `args.serviceId` stays a plain string, never a
-# `{ serviceRef: ... }` ref-object (see the header comment's
-# substitute-symbolic-refs.ts walker note — a raw string at that allowlisted
-# key passes through byte-identical, same as `probeEndpoint.args.adapterId`).
-SERVICE_CALL_SERVICE_ID="${E2E_SERVICE_CALL_SERVICE_ID:-8272b109-e5c5-47d8-b533-bce1d8610495}"
+# hosted service — a harmless echo service — used by stage 3's 'probeService'
+# serviceCall action so the e2e suite finally exercises the serviceCall
+# activity's per-call capture (T01's documented gap: serviceCall previously
+# emitted NO endpoint_call_completed event at all, and this suite never
+# exercised serviceCall). Same PREREQUISITES-AS-MANIFEST convention as
+# ENDPOINT_ADAPTER_ID above: stage_ensure_prerequisites's LibraryManifest also
+# declares this `services[]` entry and resolves its id BY NAME at run time —
+# `args.serviceId` stays a plain string, never a `{ serviceRef: ... }`
+# ref-object, because this manifest is applied by THIS script's own
+# prerequisites step, not the e2e workflow manifest below (see the header
+# comment's substitute-symbolic-refs.ts walker note — a raw string at that
+# allowlisted key passes through byte-identical, same as
+# `probeEndpoint.args.adapterId`). Set E2E_SERVICE_CALL_SERVICE_ID explicitly
+# to skip provisioning and pin a specific pre-existing service instead.
+SERVICE_CALL_SERVICE_ID="${E2E_SERVICE_CALL_SERVICE_ID:-}"
 SERVICE_CALL_SERVICE_SLUG="${E2E_SERVICE_CALL_SERVICE_SLUG:-sample-echo}"
+PREREQUISITES_MANIFEST_NAME="e2e-prerequisites"
+# The YAML this suite's prerequisites are authored in — same format as every
+# sample's manifest.yaml, converted to JSON at call time by
+# e2e_prerequisites_manifest_body. Resolved from the script's own directory so
+# the suite runs from any cwd.
+PREREQUISITES_MANIFEST_FILE="${E2E_SCRIPT_DIR}/fixtures/e2e-prerequisites.yaml"
 # Namespace/pod for the direct SQL assertions in stages 13/14 — same
 # Postgres instance the tracking-ingester-service writes tracking.tracked_events
 # to. There is no ingester-side SQL helper endpoint, so this queries Postgres
@@ -368,6 +433,9 @@ NONCE_REENABLED="e2e-reenabled-$(date +%s)-$RANDOM"
 CHANNEL_NAME="${CHANNEL_NAME_PREFIX}-${NONCE}"
 WORKFLOW_NAME="${WORKFLOW_NAME_PREFIX}-${NONCE}"
 AGENT_WORKFLOW_NAME="${AGENT_WORKFLOW_NAME_PREFIX}-${NONCE}"
+COMPOSITE_WORKFLOW_NAME="${COMPOSITE_WORKFLOW_NAME_PREFIX}-${NONCE}"
+EGRESS_CHANNEL_NAME="${EGRESS_CHANNEL_NAME_PREFIX}-${NONCE}"
+BUS_PROBE_SUBJECT="${BUS_PROBE_SUBJECT_PREFIX}.${NONCE}"
 TOKEN=""
 APP_SECRET=""
 # T08 (manual-loops/connector-trace-linking.md): the http account created by
@@ -379,6 +447,8 @@ ACCOUNT_ID=""
 WORKFLOW_ID=""
 AGENT_ID=""
 AGENT_WORKFLOW_ID=""
+COMPOSITE_WORKFLOW_ID=""
+EGRESS_ACCOUNT_ID=""
 CORRELATION_ID=""
 # The happy-path (nonce=$NONCE) execution id, captured by
 # stage_capture_correlation_id. Used by stage_verify_chain (stage 10) to
@@ -434,7 +504,7 @@ cleanup_e2e_resources() {
   # run, same as the http-account sweep below.
   local wf_ids
   wf_ids="$(api GET /api/workflows 2>/dev/null \
-    | jq -r ".[] | select(.name | startswith(\"${WORKFLOW_NAME_PREFIX}\") or startswith(\"${AGENT_WORKFLOW_NAME_PREFIX}\")) | .id" 2>/dev/null || true)"
+    | jq -r ".[] | select(.name | startswith(\"${WORKFLOW_NAME_PREFIX}\") or startswith(\"${AGENT_WORKFLOW_NAME_PREFIX}\") or startswith(\"${COMPOSITE_WORKFLOW_NAME_PREFIX}\")) | .id" 2>/dev/null || true)"
   for id in $wf_ids; do
     cleanup_delete "workflow" "/api/workflows/${id}" "${id}"
   done
@@ -445,6 +515,15 @@ cleanup_e2e_resources() {
     | jq -r ".[] | select(.externalId | startswith(\"${ACCOUNT_EXTERNAL_PREFIX}\")) | .id" 2>/dev/null || true)"
   for id in $acc_ids; do
     cleanup_delete "http account" "/api/channels/accounts/${id}" "${id}"
+  done
+  # The e2e-tests sink account lives on its own channel, so the http query
+  # above cannot see it. Matched by NAME prefix (not externalId) because the
+  # manifest engine derives the sink account's externalId itself.
+  local sink_ids
+  sink_ids="$(api GET "/api/channels/accounts?channel=e2e-tests" 2>/dev/null \
+    | jq -r ".[] | select(.name | startswith(\"${EGRESS_CHANNEL_NAME_PREFIX}\")) | .id" 2>/dev/null || true)"
+  for id in $sink_ids; do
+    cleanup_delete "e2e-tests sink account" "/api/channels/accounts/${id}" "${id}"
   done
   # Echo agent — DELETE /api/admin/agents/:id (gateway admin-agents route).
   local agent_ids
@@ -552,6 +631,125 @@ api_status_code() {
   printf '%s' "${combined##*$'\n'}"
 }
 
+e2e_prerequisites_manifest_body() {
+  # PREREQUISITES-AS-MANIFEST: emits the JSON body for the LibraryManifest
+  # that provisions this suite's two standing fixtures (the pokeapi connector
+  # and the 'sample-echo' hosted service).
+  #
+  # The manifest is AUTHORED AS YAML (fixtures/e2e-prerequisites.yaml — see
+  # that file's header for what each resource is for and why it is a subset of
+  # the samples that own them) and converted here, so the checked-in artifact
+  # is the same shape every sample and demo uses and can be applied by hand
+  # for debugging:
+  #     yoizen manifests apply -f scripts/e2e/fixtures/e2e-prerequisites.yaml
+  # The conversion keeps this script's no-new-dependency property: it still
+  # talks plain HTTP through api()/api_status() rather than shelling out to
+  # the `yoizen` CLI. `yq` is already a hard dependency of the repo's checks
+  # (scripts/checks/doc-code-guards.sh requires mikefarah v4+), and `-o=json`
+  # preserves numeric types, which matters — `port`/`minScale`/`maxScale`/
+  # `concurrencyTarget` must reach the schema as numbers, not strings.
+  if ! command -v yq >/dev/null 2>&1; then
+    err "yq (mikefarah v4+) is required to read ${PREREQUISITES_MANIFEST_FILE}"
+    return 1
+  fi
+  if [[ ! -f "$PREREQUISITES_MANIFEST_FILE" ]]; then
+    err "Prerequisites manifest not found: ${PREREQUISITES_MANIFEST_FILE}"
+    return 1
+  fi
+  yq -o=json '.' "$PREREQUISITES_MANIFEST_FILE"
+}
+
+stage_ensure_prerequisites() {
+  # Applies the prerequisites manifest, then resolves ENDPOINT_ADAPTER_ID and
+  # SERVICE_CALL_SERVICE_ID BY NAME — skipped entirely for whichever id the
+  # caller already pinned via E2E_ENDPOINT_ADAPTER_ID/E2E_SERVICE_CALL_SERVICE_ID.
+  if [[ -n "$ENDPOINT_ADAPTER_ID" && -n "$SERVICE_CALL_SERVICE_ID" ]]; then
+    log "Stage 1a: both prerequisite ids pinned via env — skipping manifest apply"
+    return 0
+  fi
+
+  log "Stage 1a: PUT+plan+apply '${PREREQUISITES_MANIFEST_NAME}' (pokeapi connector + sample-echo service)"
+  local body put_resp put_revision
+  body="$(e2e_prerequisites_manifest_body)"
+  put_resp="$(api PUT "/api/provisioning/manifests/${PREREQUISITES_MANIFEST_NAME}" "$body")"
+  put_revision="$(echo "$put_resp" | jq -r '.revision // empty')"
+  if [[ -z "$put_revision" ]]; then
+    err "Prerequisites manifest PUT did not return a revision: $put_resp"
+    return 1
+  fi
+
+  api POST "/api/provisioning/manifests/${PREREQUISITES_MANIFEST_NAME}/plan" '{}' >/dev/null
+
+  local apply_resp applied_count
+  apply_resp="$(api POST "/api/provisioning/manifests/${PREREQUISITES_MANIFEST_NAME}/apply" '{}')"
+  applied_count="$(echo "$apply_resp" | jq -r '.appliedCount // empty')"
+  if [[ -z "$applied_count" ]]; then
+    err "Prerequisites manifest apply failed or returned no appliedCount: $apply_resp"
+    return 1
+  fi
+  log "Prerequisites manifest applied: appliedCount=${applied_count} noopCount=$(echo "$apply_resp" | jq -r '.noopCount // 0')"
+
+  if [[ -z "$ENDPOINT_ADAPTER_ID" ]]; then
+    local connector_resp
+    connector_resp="$(api GET "/api/connectors?name=pokeapi")"
+    ENDPOINT_ADAPTER_ID="$(echo "$connector_resp" | jq -r '.[0].id // empty')"
+    if [[ -z "$ENDPOINT_ADAPTER_ID" ]]; then
+      err "Could not resolve pokeapi connector id after apply: $connector_resp"
+      return 1
+    fi
+    log "Resolved pokeapi adapter id: ${ENDPOINT_ADAPTER_ID}"
+  fi
+
+  if [[ -z "$SERVICE_CALL_SERVICE_ID" ]]; then
+    local service_resp
+    service_resp="$(api GET "/api/registry/services?name=${SERVICE_CALL_SERVICE_SLUG}")"
+    SERVICE_CALL_SERVICE_ID="$(echo "$service_resp" | jq -r '.[0].id // empty')"
+    if [[ -z "$SERVICE_CALL_SERVICE_ID" ]]; then
+      err "Could not resolve ${SERVICE_CALL_SERVICE_SLUG} service id after apply: $service_resp"
+      return 1
+    fi
+    log "Resolved ${SERVICE_CALL_SERVICE_SLUG} service id: ${SERVICE_CALL_SERVICE_ID}"
+
+    # The apply returns as soon as the Knative Service OBJECT is created — it
+    # does NOT wait for a pod to be serving. Without this gate the suite races
+    # the rollout: on a freshly-provisioned cluster the webhook fires seconds
+    # later, the serviceCall hits a service with no ready endpoint, and
+    # connector-runtime's circuit breaker (service-call.activity.ts's `deny`
+    # path) opens on the failed attempts and denies the retries too, so the
+    # execution ends FAILED. Verified twice against a from-scratch provision
+    # before this gate existed. `minScale: 1` in the fixture keeps it warm
+    # BETWEEN runs; this gate covers the FIRST run, where there is nothing to
+    # keep warm yet.
+    #
+    # knativeName/namespace come from the registry response rather than being
+    # rebuilt from the "<service>-<tenant>" / "<tenant>-dev-ns" conventions,
+    # so this keeps working if those conventions ever change.
+    local kn_name kn_ns
+    kn_name="$(echo "$service_resp" | jq -r '.[0].knativeName // empty')"
+    kn_ns="$(echo "$service_resp" | jq -r '.[0].namespace // empty')"
+    if [[ -n "$kn_name" && -n "$kn_ns" ]]; then
+      log "Waiting for ksvc/${kn_name} in ${kn_ns} to be Ready (timeout ${POLL_TIMEOUT_S}s)"
+      local ready_deadline=$(( $(date +%s) + POLL_TIMEOUT_S ))
+      local ksvc_ready=""
+      while (( $(date +%s) < ready_deadline )); do
+        # kubectl failure inside a poll loop -> retry, same convention as the
+        # other poll loops here (a transient error is "not yet", not fatal).
+        ksvc_ready="$(kubectl get ksvc "$kn_name" -n "$kn_ns" \
+          -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")"
+        [[ "$ksvc_ready" == "True" ]] && break
+        sleep 3
+      done
+      if [[ "$ksvc_ready" != "True" ]]; then
+        err "ksvc/${kn_name} did not become Ready within ${POLL_TIMEOUT_S}s — serviceCall stages would fail"
+        return 1
+      fi
+      log "ksvc/${kn_name} is Ready"
+    else
+      warn "Registry response carried no knativeName/namespace — skipping the readiness gate"
+    fi
+  fi
+}
+
 stage_login() {
   log "Stage 1: login as ${EMAIL} (tenant ${TENANT})"
   local resp
@@ -635,11 +833,21 @@ e2e_manifest_body() {
   # that forces both workflow NAMES (not just their trigger config) to carry
   # this run's nonce.
   #
-  # `probeEndpoint.args.adapterId` is the RAW pre-existing adapter id
-  # (E2E_ENDPOINT_ADAPTER_ID) — never a `{ connectorRef: ... }` ref-object,
-  # because this adapter is NOT manifest-created (see header comment for the
-  # substitute-symbolic-refs.ts walker evidence that a raw string at this
-  # allowlisted key passes through untouched).
+  # `probeEndpoint.args.adapterId` and `probeService.args.serviceId` are
+  # SYMBOLIC REFS (`{ connectorRef: pokeapi }` / `{ serviceRef: sample-echo }`),
+  # resolved by name at apply time — not raw ids interpolated by this script.
+  # Both resources are declared `external: true` in the `connectors`/`services`
+  # sections below because they are created out-of-band, by
+  # fixtures/e2e-prerequisites.yaml in stage 1a, not by this manifest. This is
+  # the same mechanism the samples use for cross-manifest dependencies (see
+  # integrations/http/hosted-services-api/manifest.yaml's `serviceRef`, and
+  # the CRM demo's `external: true` Telegram account). `adapterId` ->
+  # `connectorRef` and `serviceId` -> `serviceRef` are both entries in
+  # provisioning-service's `SUBSTITUTION_ALLOWLIST`.
+  #
+  # `endpointId` (on `probeEndpointScoped`) is the one that CANNOT be a ref:
+  # there is no `endpointRef` in that allowlist, so it stays resolved at run
+  # time by stage_resolve_endpoint_id.
   #
   # `probeEndpointScoped` (T04,
   # manual-loops/connectors/endpoint-scoped-recent-calls.md) is a SECOND
@@ -656,9 +864,7 @@ e2e_manifest_body() {
   # branch (method/path come from the endpoint definition), so it carries the
   # resolved endpoint's own path for readability.
   #
-  # `probeService.args.serviceId` (T12) is likewise the RAW pre-existing
-  # 'sample-echo' hosted service id (E2E_SERVICE_CALL_SERVICE_ID) for the
-  # same reason — never a `{ serviceRef: ... }` ref-object. `data.nonce`
+  # `probeService` (T12): `data.nonce`
   # embeds `{{request.text}}` (the webhook nonce) so the serviceCall's
   # captured requestBody carries a value stage_verify_service_call_payload
   # can assert on.
@@ -669,7 +875,14 @@ e2e_manifest_body() {
   "metadata": { "name": "${MANIFEST_NAME}" },
   "spec": {
     "channels": [
-      { "name": "${CHANNEL_NAME}", "type": "http", "direction": "inbound" }
+      { "name": "${CHANNEL_NAME}", "type": "http", "direction": "inbound" },
+      { "name": "${EGRESS_CHANNEL_NAME}", "type": "e2e-tests", "direction": "outbound" }
+    ],
+    "connectors": [
+      { "name": "pokeapi", "type": "http", "external": true }
+    ],
+    "services": [
+      { "name": "${SERVICE_CALL_SERVICE_SLUG}", "external": true }
     ],
     "agents": [
       {
@@ -697,7 +910,7 @@ e2e_manifest_body() {
               "name": "probeEndpoint",
               "activity": "endpointCall",
               "args": {
-                "adapterId": "${ENDPOINT_ADAPTER_ID}",
+                "adapterId": { "connectorRef": "pokeapi" },
                 "method": "GET",
                 "url": "/api/v2/pokemon/ditto"
               }
@@ -706,7 +919,7 @@ e2e_manifest_body() {
               "name": "probeService",
               "activity": "serviceCall",
               "args": {
-                "serviceId": "${SERVICE_CALL_SERVICE_ID}",
+                "serviceId": { "serviceRef": "${SERVICE_CALL_SERVICE_SLUG}" },
                 "serviceSlug": "${SERVICE_CALL_SERVICE_SLUG}",
                 "method": "POST",
                 "path": "/anything",
@@ -717,11 +930,122 @@ e2e_manifest_body() {
               "name": "probeEndpointScoped",
               "activity": "endpointCall",
               "args": {
-                "adapterId": "${ENDPOINT_ADAPTER_ID}",
+                "adapterId": { "connectorRef": "pokeapi" },
                 "endpointId": "${ENDPOINT_ID}",
                 "method": "GET",
                 "url": "${ENDPOINT_RESOLVED_PATH}"
               }
+            }
+          ],
+          "trigger": {
+            "type": "message_received",
+            "mode": "shared",
+            "config": {
+              "channels": ["http"],
+              "providers": ["http"],
+              "accountIds": [ { "channelRef": "${CHANNEL_NAME}" } ]
+            }
+          }
+        }
+      },
+      {
+        "name": "${COMPOSITE_WORKFLOW_NAME}",
+        "definition": {
+          "application": "e2e",
+          "actions": [
+            {
+              "name": "compositeLog",
+              "activity": "jsFunction",
+              "args": {
+                "code": "(ctx) => { console.log('[e2e-http-composite]', ctx.request.text); return ctx.request.text; }"
+              }
+            },
+            {
+              "name": "compositeService",
+              "activity": "serviceCall",
+              "args": {
+                "serviceId": { "serviceRef": "${SERVICE_CALL_SERVICE_SLUG}" },
+                "serviceSlug": "${SERVICE_CALL_SERVICE_SLUG}",
+                "method": "POST",
+                "path": "/anything",
+                "data": { "nonce": "{{request.text}}" }
+              }
+            },
+            {
+              "name": "routeByNonce",
+              "activity": "conditional",
+              "branches": [
+                {
+                  "label": "${COMPOSITE_BRANCH_NEVER}",
+                  "condition": {
+                    "variable": "request.text",
+                    "comparator": "eq",
+                    "value": "__e2e_never_matches__"
+                  },
+                  "actions": [
+                    {
+                      "name": "wrongBranch",
+                      "activity": "jsFunction",
+                      "args": {
+                        "code": "(ctx) => { console.log('${COMPOSITE_WRONG_BRANCH_MARKER}', ctx.request.text); return 'wrong'; }"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "label": "${COMPOSITE_BRANCH_MATCH}",
+                  "condition": {
+                    "variable": "request.text",
+                    "comparator": "contains",
+                    "value": "e2e-"
+                  },
+                  "actions": [
+                    {
+                      "name": "callAgentInBranch",
+                      "activity": "agentCall",
+                      "args": {
+                        "agentId": { "agentRef": "${AGENT_NAME}" },
+                        "message": "{{request.text}}"
+                      }
+                    },
+                    {
+                      "name": "sendToSink",
+                      "activity": "channelSend",
+                      "args": {
+                        "accountId": { "channelRef": "${EGRESS_CHANNEL_NAME}" },
+                        "channel": "e2e-tests",
+                        "provider": "e2e-tests",
+                        "to": "${EGRESS_RECIPIENT}",
+                        "type": "text",
+                        "text": "{{request.text}}"
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "fanOut",
+              "activity": "branch",
+              "${BRANCH_ALPHA}": [
+                {
+                  "name": "alphaLog",
+                  "activity": "jsFunction",
+                  "args": {
+                    "code": "(ctx) => { console.log('[e2e-http-composite] alpha', ctx.request.text); return 'alpha'; }"
+                  }
+                }
+              ],
+              "${BRANCH_BETA}": [
+                {
+                  "name": "betaBusPublish",
+                  "activity": "serviceBusCall",
+                  "args": {
+                    "subject": "${BUS_PROBE_SUBJECT}",
+                    "payload": { "nonce": "{{request.text}}", "probe": "e2e-bus" }
+                  }
+                }
+              ]
             }
           ],
           "trigger": {
@@ -808,6 +1132,17 @@ stage_apply_manifest() {
   AGENT_ID="$(echo "$apply_resp" | jq -r --arg n "$AGENT_NAME" '.resources[] | select(.name == $n) | .externalId')"
   WORKFLOW_ID="$(echo "$apply_resp" | jq -r --arg n "$WORKFLOW_NAME" '.resources[] | select(.name == $n) | .externalId')"
   AGENT_WORKFLOW_ID="$(echo "$apply_resp" | jq -r --arg n "$AGENT_WORKFLOW_NAME" '.resources[] | select(.name == $n) | .externalId')"
+  COMPOSITE_WORKFLOW_ID="$(echo "$apply_resp" | jq -r --arg n "$COMPOSITE_WORKFLOW_NAME" '.resources[] | select(.name == $n) | .externalId')"
+  if [[ -z "$COMPOSITE_WORKFLOW_ID" ]]; then
+    err "Manifest apply response missing the composite workflow's externalId: $apply_resp"
+    return 1
+  fi
+  EGRESS_ACCOUNT_ID="$(echo "$apply_resp" | jq -r --arg n "$EGRESS_CHANNEL_NAME" '.resources[] | select(.name == $n) | .externalId')"
+  if [[ -z "$EGRESS_ACCOUNT_ID" ]]; then
+    err "Manifest apply response missing the e2e-tests sink account's externalId: $apply_resp"
+    return 1
+  fi
+  log "Resolved e2e-tests sink account: ${EGRESS_ACCOUNT_ID}"
   if [[ -z "$ACCOUNT_ID" || -z "$AGENT_ID" || -z "$WORKFLOW_ID" || -z "$AGENT_WORKFLOW_ID" ]]; then
     err "Manifest apply response missing an expected resource externalId (channel=${ACCOUNT_ID:-<empty>} agent=${AGENT_ID:-<empty>} workflow=${WORKFLOW_ID:-<empty>} agentWorkflow=${AGENT_WORKFLOW_ID:-<empty>}): $apply_resp"
     return 1
@@ -944,6 +1279,227 @@ stage_wait_execution_completed() {
   done
   err "Execution for nonce ${nonce} did not reach COMPLETED within ${POLL_TIMEOUT_S}s (last status '${status}')"
   return 1
+}
+
+stage_verify_fan_out() {
+  # FAN-OUT COVERAGE: asserts the composite workflow's `fanOut` branch action
+  # ran BOTH of its branches, and that the `serviceBusCall` nested inside one
+  # of them completed.
+  #
+  # The branch LABEL is the load-bearing part. `branch` runs its branches
+  # concurrently on cloned contexts, so "the workflow completed" would also
+  # hold if only one branch had run — the engine merges whatever came back
+  # without noticing an absent branch. Each nested action's step event carries
+  # its enclosing branch label (`branch` on the action payload, set only when
+  # nested), so requiring BOTH labels is what actually proves the fan-out
+  # happened.
+  #
+  # The bus probe is asserted by actionType rather than by reading the subject
+  # off NATS: `executeServiceBusCall` publishes a RAW payload to an ad-hoc
+  # unbound subject over core NATS, so there is no stream to read it back
+  # from. Its action_completed with `status: ok` is the platform's own record
+  # that the publish succeeded — the activity throws otherwise.
+  log "Stage 20: verify fan-out branches + nested serviceBusCall (timeout ${CHAIN_TIMEOUT_S}s)"
+  if [[ -z "$CORRELATION_ID" ]]; then
+    err "CORRELATION_ID is empty — cannot verify the fan-out"
+    return 1
+  fi
+
+  local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  local labels=""
+  while (( $(date +%s) < deadline )); do
+    # kubectl/psql failure inside a poll loop -> retry, same as stages 13/15/19.
+    labels="$(kubectl exec -n "$TRACKING_PG_NAMESPACE" "$TRACKING_PG_POD" -- \
+      psql -U "$TRACKING_PG_USER" -d "$TRACKING_PG_DB" -Atc \
+      "select distinct envelope->'data'->'payload'->>'branch' from tracking.tracked_events where kind = 'action_completed' and correlation_id = '${CORRELATION_ID}' and envelope->'data'->'payload'->>'branch' is not null;" \
+      2>/dev/null)" || true
+    if grep -q "$BRANCH_ALPHA" <<<"$labels" && grep -q "$BRANCH_BETA" <<<"$labels"; then
+      break
+    fi
+    sleep 3
+  done
+  if ! grep -q "$BRANCH_ALPHA" <<<"$labels"; then
+    err "No action_completed carrying branch '${BRANCH_ALPHA}' for correlation ${CORRELATION_ID} — that branch did not run (labels seen: ${labels:-<none>})"
+    return 1
+  fi
+  if ! grep -q "$BRANCH_BETA" <<<"$labels"; then
+    err "No action_completed carrying branch '${BRANCH_BETA}' for correlation ${CORRELATION_ID} — that branch did not run (labels seen: ${labels:-<none>})"
+    return 1
+  fi
+  log "Confirmed: both fan-out branches ran ('${BRANCH_ALPHA}' and '${BRANCH_BETA}')"
+
+  # The nested `serviceBusCall`. Its `action_completed` with `status: ok` is
+  # the platform's own record that the publish succeeded — the activity throws
+  # otherwise — and it is asserted rather than read back off NATS because the
+  # publish goes to an ad-hoc UNBOUND subject over core NATS, so there is no
+  # stream to read it from.
+  #
+  # This action is also the regression guard for a real bug it surfaced:
+  # `js.publish()` to an unbound subject fails with a bare `503`, and
+  # `service-bus.activity.ts`'s fallback used to be gated on the publish
+  # error's TEXT matching "no stream matches" — a phrase only the
+  # `$JS.API.STREAM.NAMES` probe ever emits, never the publish. The documented
+  # ad-hoc fan-out fallback therefore never fired. It now disambiguates by
+  # asking JetStream (probe answers "no stream matches" -> fall back; probe
+  # itself gets no answer -> JetStream is down, propagate). If that regresses,
+  # this assertion goes red.
+  local bus_status=""
+  bus_status="$(kubectl exec -n "$TRACKING_PG_NAMESPACE" "$TRACKING_PG_POD" -- \
+    psql -U "$TRACKING_PG_USER" -d "$TRACKING_PG_DB" -Atc \
+    "select envelope->'data'->'payload'->>'status' from tracking.tracked_events where kind = 'action_completed' and correlation_id = '${CORRELATION_ID}' and envelope->'data'->'payload'->>'actionType' = 'serviceBusCall' limit 1;" \
+    2>/dev/null)" || true
+  if [[ "$bus_status" != "ok" ]]; then
+    err "serviceBusCall action_completed status='${bus_status:-<none>}', expected 'ok' — the bus publish did not succeed"
+    return 1
+  fi
+  log "Confirmed: nested serviceBusCall completed ok (subject ${BUS_PROBE_SUBJECT})"
+}
+
+stage_verify_egress_sent() {
+  # EGRESS COVERAGE: asserts the composite workflow's `sendToSink` channelSend
+  # produced a real `sent.v1` row — the event `EgressService` publishes ONLY
+  # from inside `if (result.success)` (channel-service's egress.service.ts).
+  # Reaching that branch at all is the whole point of the `e2e-tests` sink
+  # channel: `http` fails the send by design and the three real channels need
+  # live credentials, so before this the egress publish path had no coverage
+  # and this table held zero `sent` rows.
+  #
+  # Asserted on three axes so a coincidental row cannot pass it: the kind, the
+  # channel the send went out on, and the happy-path correlation_id. The
+  # payload check below then proves the message BODY survived the round trip,
+  # not merely that some send happened.
+  #
+  # Same direct-SQL shape and polling as stages 13/15 — the row is written
+  # asynchronously by the tracking ingester (whose ingress consumer sets no
+  # filterSubject, so it sees `sent.v1` like every other `evt.<tenant>.>`).
+  log "Stage 19: assert sent.v1 row for channel e2e-tests shares correlation_id ${CORRELATION_ID} (timeout ${CHAIN_TIMEOUT_S}s)"
+  if [[ -z "$CORRELATION_ID" ]]; then
+    err "CORRELATION_ID is empty — cannot verify the egress send"
+    return 1
+  fi
+  local deadline=$(( $(date +%s) + CHAIN_TIMEOUT_S ))
+  local found=""
+  while (( $(date +%s) < deadline )); do
+    # kubectl/psql failure inside a poll loop -> retry, same as stages 13/15.
+    found="$(kubectl exec -n "$TRACKING_PG_NAMESPACE" "$TRACKING_PG_POD" -- \
+      psql -U "$TRACKING_PG_USER" -d "$TRACKING_PG_DB" -Atc \
+      "select event_id from tracking.tracked_events where kind = 'sent' and envelope->>'channel' = 'e2e-tests' and correlation_id = '${CORRELATION_ID}' limit 1;" \
+      2>/dev/null)" || true
+    [[ -n "$found" ]] && break
+    sleep 3
+  done
+  if [[ -z "$found" ]]; then
+    err "No sent.v1 row (channel e2e-tests) found for correlation_id ${CORRELATION_ID} within ${CHAIN_TIMEOUT_S}s — the egress publish path did not run"
+    return 1
+  fi
+  log "Confirmed: sent.v1 row ${found} (channel e2e-tests) shares correlation_id ${CORRELATION_ID}"
+
+  # `sent.v1` is an egress CONFIRMATION, not a copy of the message: its
+  # payload carries `to`/`type`/`accountId`/`providerMessageId` and
+  # deliberately NOT the message text (verified against a live row). So the
+  # assertion below is on what the platform actually publishes, and it still
+  # pins the two things that matter:
+  #   * `providerMessageId` starting with `e2e-` — only E2eTestsProvider mints
+  #     that prefix, so the success came from the sink and not from some other
+  #     provider or a stubbed result;
+  #   * `to`/`accountId` — the channelSend action's own args reached the
+  #     provider intact, on the sink account this run provisioned.
+  # Run-scoping is already covered: correlation_id above is a per-run UUID.
+  local payload=""
+  payload="$(kubectl exec -n "$TRACKING_PG_NAMESPACE" "$TRACKING_PG_POD" -- \
+    psql -U "$TRACKING_PG_USER" -d "$TRACKING_PG_DB" -Atc \
+    "select concat_ws('|', envelope->'data'->'payload'->>'providerMessageId', envelope->'data'->'payload'->>'to', envelope->'data'->'payload'->>'accountId') from tracking.tracked_events where event_id = '${found}';" \
+    2>/dev/null)" || true
+  local got_msg_id="${payload%%|*}"
+  local rest="${payload#*|}"
+  local got_to="${rest%%|*}"
+  local got_account="${rest##*|}"
+
+  if [[ "$got_msg_id" != e2e-* ]]; then
+    err "sent.v1 row ${found} providerMessageId='${got_msg_id:-<none>}' does not carry the sink's 'e2e-' prefix — the success did not come from E2eTestsProvider"
+    return 1
+  fi
+  if [[ "$got_to" != "$EGRESS_RECIPIENT" ]]; then
+    err "sent.v1 row ${found} to='${got_to:-<none>}', expected '${EGRESS_RECIPIENT}' — the channelSend args did not reach the provider"
+    return 1
+  fi
+  if [[ "$got_account" != "$EGRESS_ACCOUNT_ID" ]]; then
+    err "sent.v1 row ${found} accountId='${got_account:-<none>}', expected '${EGRESS_ACCOUNT_ID}' — the send went out on the wrong account"
+    return 1
+  fi
+  log "Confirmed: sent.v1 payload carries providerMessageId=${got_msg_id}, to=${got_to}, accountId=${got_account}"
+}
+
+stage_verify_conditional() {
+  # COMPOSITION COVERAGE: asserts the third workflow's chain
+  # (jsFunction -> serviceCall -> conditional{agentCall}) behaved correctly.
+  # Three independent signals, because "the run completed" alone would also
+  # pass if the engine silently took the wrong branch or skipped the
+  # conditional entirely:
+  #   (a) the composite execution reached COMPLETED for this nonce;
+  #   (b) the deliberately-false FIRST branch never executed — its marker is
+  #       absent from the worker log (this is what proves top-to-bottom
+  #       ordering rather than "always take branch 0");
+  #   (c) a condition_evaluated event was emitted onto this run's chain, and
+  #       its payload names the SECOND branch as the one taken.
+  local nonce="$1"
+  log "Stage 18: verify composite workflow's conditional (nonce ${nonce}, timeout ${POLL_TIMEOUT_S}s)"
+
+  # (a) — same executions-by-nonce poll shape as stage 5b.
+  local deadline=$(( $(date +%s) + POLL_TIMEOUT_S ))
+  local status=""
+  while (( $(date +%s) < deadline )); do
+    status="$(api GET "/api/workflows/${COMPOSITE_WORKFLOW_ID}/executions?pageSize=100" \
+      | jq -r ".items[]? | select(.request.text == \"${nonce}\") | .status" | head -1)" || true
+    [[ "$status" == "COMPLETED" ]] && break
+    [[ "$status" == "FAILED" ]] && break
+    sleep 3
+  done
+  if [[ "$status" != "COMPLETED" ]]; then
+    err "Composite workflow execution for nonce ${nonce} did not reach COMPLETED (last status '${status:-<none>}')"
+    return 1
+  fi
+  log "Composite execution reached COMPLETED"
+
+  # (b) — capture-then-grep, never `kubectl logs | grep -q` (see the SIGPIPE
+  # note in stage_verify_execution).
+  local logs
+  logs="$(kubectl logs -n "$NAMESPACE" -l app.kubernetes.io/name=workflow-worker \
+      --since=10m --tail=5000 2>/dev/null || true)"
+  if grep -q "$COMPOSITE_WRONG_BRANCH_MARKER" <<<"$logs"; then
+    err "The deliberately-false first branch ('${COMPOSITE_BRANCH_NEVER}') EXECUTED — conditional is not evaluating branches in order"
+    return 1
+  fi
+  log "Confirmed: false first branch ('${COMPOSITE_BRANCH_NEVER}') never executed"
+
+  # (c) — condition_evaluated on this run's chain, and which branch it took.
+  if [[ -z "$CORRELATION_ID" ]]; then
+    err "CORRELATION_ID is empty — cannot verify condition_evaluated"
+    return 1
+  fi
+  local cond_event_id
+  cond_event_id="$(api GET "/api/tracking/chains/${CORRELATION_ID}" \
+    | jq -r '.events[]? | select(.kind == "condition_evaluated") | .event_id' | head -1)" || true
+  if [[ -z "$cond_event_id" ]]; then
+    err "No condition_evaluated event found on chain ${CORRELATION_ID}"
+    return 1
+  fi
+  log "Found condition_evaluated event ${cond_event_id}"
+
+  local combined status_code body branch_taken
+  combined="$(api_status GET "/api/tracking/chains/${CORRELATION_ID}/events/${cond_event_id}/payload")"
+  status_code="$(api_status_code "$combined")"
+  body="$(api_status_body "$combined")"
+  if [[ "$status_code" != "200" ]]; then
+    err "condition_evaluated payload fetch returned ${status_code}: ${body}"
+    return 1
+  fi
+  branch_taken="$(echo "$body" | jq -r '.. | .branchTaken? // empty' | head -1)"
+  if [[ "$branch_taken" != "$COMPOSITE_BRANCH_MATCH" ]]; then
+    err "condition_evaluated reports branchTaken='${branch_taken:-<none>}', expected '${COMPOSITE_BRANCH_MATCH}': ${body}"
+    return 1
+  fi
+  log "Confirmed: conditional took branch '${branch_taken}' with a nested agentCall"
 }
 
 stage_disable_workflow() {
@@ -1668,6 +2224,10 @@ stage_verify_service_call_payload() {
 main() {
   command -v jq >/dev/null || { err "jq is required"; exit 1; }
   stage_login
+  # Must precede stage_resolve_endpoint_id — provisions/resolves the
+  # pokeapi connector + sample-echo service this run needs, replacing the
+  # old hardcoded-id-that-goes-stale-after-a-reset approach.
+  stage_ensure_prerequisites
   # T04: must precede stage_apply_manifest — the manifest body interpolates
   # the endpoint id this stage resolves off the live adapter.
   stage_resolve_endpoint_id
@@ -1710,6 +2270,15 @@ main() {
   stage_verify_service_call_correlation
   stage_verify_service_call_events_gateway
   stage_verify_service_call_payload "$NONCE"
+  # COMPOSITION COVERAGE: runs last — it needs CORRELATION_ID (stage 9) and
+  # reads the same chain the stages above already proved is complete.
+  stage_verify_conditional "$NONCE"
+  # EGRESS COVERAGE: last, for the same reason as the stage above — it reads
+  # the happy-path correlation the earlier stages established.
+  stage_verify_egress_sent "$NONCE"
+  # FAN-OUT COVERAGE: last, same reason as the two stages above — reads the
+  # happy-path correlation the earlier stages established.
+  stage_verify_fan_out
   log_endpoint_orphans "after this run"
   log "E2E http → workflow → jsFunction chain + toggle scenario + tracking chain + step events + payload round-trip + run view + endpointCall correlation round-trip + endpoint-scoped events round-trip + serviceCall correlation round-trip verified (nonces ${NONCE}, ${NONCE_DISABLED}, ${NONCE_REENABLED}; correlation ${CORRELATION_ID})"
 }
