@@ -262,6 +262,39 @@ describe("hosted service — exactly one of image|buildRef", () => {
     const result = integrationManifestSchema.safeParse(valid);
     expect(result.success).toBe(true);
   });
+
+  test("accepts an external service declaring neither image nor buildRef", () => {
+    // An `external: true` entry is a REFERENCE to a service provisioned
+    // out-of-band, so it has no deployment spec of its own to state. Before
+    // this case was handled, the image/buildRef rule rejected it outright and
+    // a manifest could not use `{ serviceRef: <name> }` against a service it
+    // did not itself create — the exact shape scripts/e2e/http-workflow.sh
+    // needs for the fixtures fixtures/e2e-prerequisites.yaml provisions.
+    const manifest = buildValidManifest();
+    const { image, ...serviceWithoutImage } = manifest.spec.services[0];
+    const valid = {
+      ...manifest,
+      spec: {
+        ...manifest.spec,
+        services: [{ ...serviceWithoutImage, external: true }],
+      },
+    };
+    const result = integrationManifestSchema.safeParse(valid);
+    expect(result.success).toBe(true);
+  });
+
+  test("still rejects a NON-external service declaring neither", () => {
+    // Guards the exemption above from widening: dropping `external` must put
+    // the original rule back in force.
+    const manifest = buildValidManifest();
+    const { image, ...serviceWithoutImage } = manifest.spec.services[0];
+    const invalid = {
+      ...manifest,
+      spec: { ...manifest.spec, services: [{ ...serviceWithoutImage }] },
+    };
+    const result = integrationManifestSchema.safeParse(invalid);
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("hosted service — scaling fields (T05, gap 5)", () => {

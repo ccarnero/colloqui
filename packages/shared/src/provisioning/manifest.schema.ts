@@ -708,6 +708,19 @@ const serviceSchema = z
   })
   .strict()
   .superRefine((service, ctx) => {
+    // `external: true` declares a REFERENCE to a service provisioned
+    // out-of-band, resolved by name against live state — the entry exists so
+    // `{ serviceRef: <name> }` elsewhere in the manifest can be substituted,
+    // and this manifest never creates or updates it. `image`/`buildRef` are
+    // creation-time deployment properties, so demanding one here forced the
+    // author to restate (and risk drifting from) a spec they do not own.
+    // The planner already treats `external` uniformly across all eight kinds
+    // (`list-manifest-resources.ts`); this refinement was written before any
+    // manifest referenced an external service and simply did not account for
+    // the case.
+    if (service.external === true) {
+      return;
+    }
     const hasImage = service.image !== undefined;
     const hasBuildRef = service.buildRef !== undefined;
     if (hasImage === hasBuildRef) {
