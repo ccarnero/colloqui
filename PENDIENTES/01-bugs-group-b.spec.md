@@ -369,7 +369,7 @@ bash scripts/checks/doc-code-guards.sh
 - [x] T04 E15 sdk test glob
 - [x] T05 E18 sample slug lookups
 - [x] T06 E29+E33 dev-mode / rebuild-redeploy drift
-- [ ] T07 E24+E25 purge-circuit-breakers
+- [x] T07 E24+E25 purge-circuit-breakers
 - [ ] T08 E28 hook runner
 - [ ] T09 E12 parseFrontmatter
 - [ ] T10 E36 delete cache-service (needs user confirmation)

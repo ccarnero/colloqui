@@ -29,7 +29,9 @@
 #      blocking O(1) DEL). SCAN/UNLINK are slot-local, which is why
 #      we don't try to fan out a single Lua script.
 #   3. Prints per-prefix and total counts. Idempotent — re-running
-#      with no surviving keys is a no-op.
+#      with no surviving keys is a no-op. A failed prefix/endpoint is
+#      logged and the sweep CONTINUES (every prefix is still visited),
+#      but the script then exits 1 instead of 0.
 #
 # What it preserves (NEVER touched):
 #   - rate-limit counters  `ratelimit:*`   (RATE_LIMIT_KEY_PREFIX)
@@ -65,8 +67,11 @@
 #   --yes / -y            Skip the interactive confirmation.
 #
 # Exit codes:
-#   0  purge/count finished. NOTE: per-master failures are swallowed by the
-#      `|| true` in the main loop, so a PARTIAL sweep also exits 0 today.
+#   0  purge/count finished and EVERY prefix/endpoint operation succeeded
+#   1  the sweep ran to completion (all prefixes visited) but at least
+#      one prefix/endpoint operation failed — unreachable master,
+#      redis-cli error, or non-numeric output. The per-endpoint FAILED
+#      lines in the log say which ones.
 #   2  bad input / preflight failed before any mutation
 
 set -euo pipefail
@@ -96,7 +101,7 @@ DRY_RUN=0
 ASSUME_YES=0
 
 usage() {
-  sed -n '2,70p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,75p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 parse_flag_value() {
@@ -160,11 +165,26 @@ list_masters() {
     | awk '/master/ { split($2, a, "@"); print a[1] }'
 }
 
+# Preamble injected into every in-pod `sh -c`. Both helpers below end
+# in a pipeline whose LAST element (`wc -l` / `awk`) always succeeds, so
+# a plain POSIX sh would report 0 ("no keys") for a redis-cli that never
+# reached the master. Two guards, both needed:
+#   1. PING first and exit 3 if the endpoint does not answer — works on
+#      any /bin/sh, including one without pipefail (dash).
+#   2. Enable pipefail when the pod's shell supports it (bash and the
+#      busybox ash the redis image ships do) so a redis-cli that dies
+#      MID-scan also propagates. The probe runs in a subshell because
+#      `set` is a special builtin: on a shell that rejects `-o pipefail`
+#      the error would abort the whole script, not just the test.
+POD_SH_PREAMBLE='if (set -o pipefail) 2>/dev/null; then set -o pipefail; fi'
+
 count_keys_for_prefix_on_master() {
   local host="$1" port="$2" prefix="$3"
   # `--scan` streams keys to stdout; `wc -l` counts. Empty stream → 0.
   "${KCTL[@]}" exec -i "${POD}" -- sh -c \
-    "redis-cli -h '${host}' -p '${port}' --scan --pattern '${prefix}:*' | wc -l" \
+    "${POD_SH_PREAMBLE}
+     redis-cli -h '${host}' -p '${port}' ping >/dev/null || exit 3
+     redis-cli -h '${host}' -p '${port}' --scan --pattern '${prefix}:*' | wc -l" \
     </dev/null
 }
 
@@ -174,7 +194,9 @@ unlink_keys_for_prefix_on_master() {
   # use UNLINK over DEL so a multi-thousand-key sweep doesn't block
   # the shard. -r → no-op on empty input.
   "${KCTL[@]}" exec -i "${POD}" -- sh -c \
-    "redis-cli -h '${host}' -p '${port}' --scan --pattern '${prefix}:*' \
+    "${POD_SH_PREAMBLE}
+     redis-cli -h '${host}' -p '${port}' ping >/dev/null || exit 3
+     redis-cli -h '${host}' -p '${port}' --scan --pattern '${prefix}:*' \
        | xargs -r -n 200 redis-cli -h '${host}' -p '${port}' unlink \
        | awk '{ s += \$1 } END { print s+0 }'" \
     </dev/null
@@ -209,7 +231,13 @@ fi
 
 if [[ "${MODE}" == "cluster" ]]; then
   # Each master owns ~1/3 of the slots; discover and iterate them all.
-  mapfile -t MASTERS < <(list_masters)
+  # while-read loop: macOS ships bash 3.2, which has no bash-4 builtin
+  # for slurping a stream into an array (same pattern as purge-temporal.sh).
+  MASTERS=()
+  while IFS= read -r master_endpoint; do
+    [[ -z "${master_endpoint}" ]] && continue
+    MASTERS+=("${master_endpoint}")
+  done < <(list_masters)
   if [[ ${#MASTERS[@]} -eq 0 ]]; then
     fail "could not discover any master from CLUSTER NODES"
   fi
@@ -246,19 +274,29 @@ for prefix in "${PREFIXES[@]}"; do
   for endpoint in "${MASTERS[@]}"; do
     host="${endpoint%:*}"
     port="${endpoint#*:}"
+    # Capture the helper's REAL exit status: the assignment is the left
+    # side of an `||` so `set -e` stays out of the way and a failure
+    # neither aborts the run nor gets laundered into an empty string.
+    rc=0
     if [[ "${SUBCOMMAND}" == "count" || ${DRY_RUN} -eq 1 ]]; then
-      n=$(count_keys_for_prefix_on_master "${host}" "${port}" "${prefix}" \
-            | tr -d '[:space:]' || true)
-      n=${n:-0}
-      log "  ${host}:${port}  count=${n}"
-      prefix_total+=${n}
+      op="count"
+      raw=$(count_keys_for_prefix_on_master "${host}" "${port}" "${prefix}") || rc=$?
     else
-      n=$(unlink_keys_for_prefix_on_master "${host}" "${port}" "${prefix}" \
-            | tr -d '[:space:]' || true)
-      n=${n:-0}
-      log "  ${host}:${port}  unlinked=${n}"
-      prefix_total+=${n}
+      op="unlinked"
+      raw=$(unlink_keys_for_prefix_on_master "${host}" "${port}" "${prefix}") || rc=$?
     fi
+    n=$(printf '%s' "${raw}" | tr -d '[:space:]')
+    # An operation only counts as successful when it exited 0 AND printed
+    # a number. Anything else (unreachable master, redis-cli/kubectl
+    # error, error text on stdout) is a failure: flag it, log it, and
+    # keep going so the sweep still visits every prefix on every master.
+    if [[ ${rc} -ne 0 || ! "${n}" =~ ^[0-9]+$ ]]; then
+      any_error=1
+      log "  ${host}:${port}  FAILED ${op} (exit=${rc}, output='$(printf '%s' "${raw}" | tr '\n' ' ')') — continuing with the rest of the sweep"
+      continue
+    fi
+    log "  ${host}:${port}  ${op}=${n}"
+    prefix_total+=${n}
   done
   log "  total for ${prefix}: ${prefix_total}"
   grand_total+=${prefix_total}
@@ -267,5 +305,11 @@ done
 log "==========================================================="
 log "grand total ($([[ ${SUBCOMMAND} == 'count' || ${DRY_RUN} -eq 1 ]] \
   && echo 'would delete' || echo 'unlinked')): ${grand_total}"
+
+if [[ ${any_error} -ne 0 ]]; then
+  log "PARTIAL: at least one prefix/endpoint operation failed (see the FAILED lines above) — exiting 1"
+else
+  log "OK: every prefix swept on every endpoint"
+fi
 
 exit "${any_error}"
