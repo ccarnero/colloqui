@@ -788,6 +788,8 @@ Deployment gets independent resource requests and (if enabled) HPA targets.
 | `REDIS_PORT` | `6379` | Redis port |
 | `REDIS_CLUSTER_MODE` | *(off)* | Cluster client only on the literal `"true"` (`workflowHttpWorkerConfig.redisClusterMode`) |
 | `HTTP_RESPONSE_CACHE_ENABLED` | `true` | Disabled only by the literal `"false"` (case-insensitive) |
+| `CACHE_SERVICE_URL` | `platformServiceUrl("cache-service", env)` | Backend for the HTTP-response cache (per-endpoint `cache` strategy) — served by cache-service, NOT Redis, since SPEC `PENDIENTES/01-bugs-group-b.spec.md` T11/E36b. Every other Redis user here is unaffected; any cache-service failure degrades to a miss/no-op |
+| `CACHE_SERVICE_TIMEOUT_MS` | `1000` | Bounded per-request timeout for those cache-service calls (a wedged cache never blocks a connector call for longer) |
 | `REGISTRY_SERVICE_URL` | `platformServiceUrl("registry-service", env)` | Registry DNS-fallback lookup for `executeServiceCall` |
 | `AGENT_ADMIN_SERVICE_URL` | `platformServiceUrl("agent-admin-service", env)` | Target of `reportMcpUsageEvent` |
 | `NATS_URL` | `nats://localhost:4222` | JetStream endpoint for the audit events and the async invoke transport |
@@ -884,6 +886,7 @@ redis-cli KEYS "*adapter*"
 | **Temporal Server** | gRPC | Receive activity tasks, report results |
 | **connector-admin** | HTTP | Fetch connector configs |
 | **Redis** | TCP | Cache connector configs |
+| **cache-service** | HTTP | Backing store for the HTTP-response cache (T11/E36b) — best-effort, a failure degrades to a cache miss |
 | **Target endpoints** | HTTP(S) | Execute user-requested HTTP calls |
 
 ## Integration Points
@@ -903,7 +906,12 @@ redis-cli KEYS "*adapter*"
 
 - **connector-admin**: REST API for connector config resolution
 - **Redis**: stale-while-revalidate connector-config cache AND (T05) invocation result
-  parking (`invocation:<tenant>:<id>`)
+  parking (`invocation:<tenant>:<id>`) — NOT the HTTP-response cache anymore
+- **cache-service**: `GET`/`PUT`/`DELETE /cache/:key` for the per-endpoint HTTP-response
+  cache (`httpcache:v1:*`), via
+  `src/activities/_shared/http-cache/cache-service-store.ts`. Bounded by
+  `CACHE_SERVICE_TIMEOUT_MS`; every failure logs at warn and degrades to a miss/no-op,
+  so a connector call never fails because the cache is down
 - **Target endpoints**: user-configured HTTP endpoints (sync, and async via the invoke consumer)
 - **Caller-supplied webhook URLs**: best-effort async invoke result delivery, SSRF-guarded
 - **OpenTelemetry collector** (if configured): Traces and metrics

@@ -25,6 +25,10 @@
 // `beforeEach` so `tracedFetch` calls always land on THAT file's currently
 // active fake, resolved at CALL TIME rather than at binding time.
 import { mock } from "bun:test";
+import {
+  handleFakeCacheServiceRequest,
+  resetFakeCacheService,
+} from "./fake-cache-service";
 
 export type TracedFetchImpl = (
   input: string | URL | Request,
@@ -34,20 +38,72 @@ export type TracedFetchImpl = (
 let activeTracedFetch: TracedFetchImpl = () =>
   Promise.resolve(new Response("{}", { status: 200 }));
 
-/** Call in `beforeEach`/before importing the unit under test so calls land on YOUR fake. */
+/**
+ * Call in `beforeEach`/before importing the unit under test so calls land on
+ * YOUR fake.
+ *
+ * ALSO clears the in-memory cache-service double (`fake-cache-service.ts`):
+ * since T11/E36b the HTTP-response cache is a real, stateful store behind the
+ * same `tracedFetch` edge, and leaking entries between tests would silently
+ * turn a spec's intended cache MISS into a HIT (its upstream fake would then
+ * never be called at all). The Redis double this replaced was stateless per
+ * spec file, so resetting here keeps the previous isolation guarantee.
+ */
 export function setActiveTracedFetch(fn: TracedFetchImpl): void {
   activeTracedFetch = fn;
+  resetFakeCacheService();
+}
+
+/** Sink for the fake logger's calls; see `setActiveLoggerSink`. */
+export interface FakeLoggerSink {
+  log?: (message: string) => void;
+  warn?: (message: string) => void;
+  debug?: (message: string) => void;
+  error?: (message: string) => void;
+}
+
+let activeLoggerSink: FakeLoggerSink = {};
+
+/**
+ * Routes `PinoLoggerService` calls to YOUR sink (same mutable-indirection
+ * rationale as `setActiveTracedFetch`: the double is registered once for the
+ * whole process, so log assertions must resolve at CALL time). Call with `{}`
+ * in `beforeEach` to stop recording.
+ */
+export function setActiveLoggerSink(sink: FakeLoggerSink): void {
+  activeLoggerSink = sink;
 }
 
 class FakeLogger {
-  log() {}
-  warn() {}
-  error() {}
+  log(message: unknown) {
+    activeLoggerSink.log?.(String(message));
+  }
+  warn(message: unknown) {
+    activeLoggerSink.warn?.(String(message));
+  }
+  // `debug` exists on the real `PinoLoggerService` and IS called in
+  // production code (e.g. the cache-service-backed HTTP-response cache
+  // store), so the double must expose it too — omitting it turned a plain
+  // debug log into a `TypeError` swallowed by the store's catch-all.
+  debug(message: unknown) {
+    activeLoggerSink.debug?.(String(message));
+  }
+  error(message: unknown) {
+    activeLoggerSink.error?.(String(message));
+  }
 }
 
 mock.module("@yoizen/observability", () => ({
-  tracedFetch: (...args: Parameters<TracedFetchImpl>) =>
-    activeTracedFetch(...args),
+  // cache-service traffic (the HTTP-response cache store, T11/E36b) is served
+  // by the in-memory `fake-cache-service` double BEFORE the spec's own fake
+  // sees it — see that file's header for why.
+  tracedFetch: (...args: Parameters<TracedFetchImpl>) => {
+    const cacheResponse = handleFakeCacheServiceRequest(args[0], args[1]);
+    if (cacheResponse) {
+      return Promise.resolve(cacheResponse);
+    }
+    return activeTracedFetch(...args);
+  },
   PinoLoggerService: FakeLogger,
   getMeter: () => ({
     createCounter: () => ({ add() {} }),

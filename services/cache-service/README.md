@@ -7,10 +7,16 @@ HTTP CRUD API backed by a two-tier cache: L1 in-memory `Map` (1000 entries, FIFO
 
 ## Consumers
 
-`connector-runtime` is the incoming consumer — it is being wired to this
-service's HTTP contract (the follow-up task to SPEC
-`PENDIENTES/01-bugs-group-b.spec.md` T10). Until that lands, the only callers
-are this service's own suites and `scripts/e2e/cache-service.sh`.
+`connector-runtime` is the first live consumer (SPEC
+`PENDIENTES/01-bugs-group-b.spec.md` T11/E36b): its HTTP-response cache — the
+per-endpoint `cache` strategy the admin console exposes — reads and writes
+`httpcache:v1:*` keys here through `GET`/`PUT /cache/:key`
+(`services/connector-runtime/src/activities/_shared/http-cache/cache-service-store.ts`).
+It sends NO `x-yoizen-tenant` header on purpose (its key already hashes the
+tenant id) and treats every error from this service as a cache miss/no-op, so
+an outage here degrades connector calls to uncached, never to failures. The
+other callers are this service's own suites and `scripts/e2e/cache-service.sh`
+(whose stage 10 drives exactly that consumer path end to end).
 
 It had NEVER had a live consumer before, which is exactly how two defects
 survived to the T10 audit — both are now covered by regression tests

@@ -863,6 +863,11 @@ spec:
               value: "6379"
             - name: REDIS_CLUSTER_MODE
               value: "false"
+            # HTTP-response cache backend (T11/E36b) — only the per-endpoint
+            # `cache` strategy; REDIS_* above still serves every other Redis
+            # user in this image.
+            - name: CACHE_SERVICE_URL
+              value: "http://cache-service.platform-services-dev.svc.cluster.local"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector.support-services-dev.svc.cluster.local:4318"
             - name: OTEL_SERVICE_NAME

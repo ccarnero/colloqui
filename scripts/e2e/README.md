@@ -218,11 +218,10 @@ directly:
 
 Validates the deployed `cache-service` ksvc over its own Knative route
 (`http://cache-service.<ns>.dev.local`, resolved to `E2E_RESOLVE_IP` like every
-other script here). It is not part of any chain: cache-service has no gateway
-route and no NATS surface, and until `connector-runtime` is wired to it (the
-follow-up to SPEC `PENDIENTES/01-bugs-group-b.spec.md` T10) it has no platform
-consumer at all — this script is the only executable proof the deployed pod
-works.
+other script here) and, since SPEC `PENDIENTES/01-bugs-group-b.spec.md` T11,
+its first platform consumer: `connector-runtime`'s HTTP-response cache. It is
+still not part of any chain — cache-service has no gateway route and no NATS
+surface, so this script is the only executable proof the deployed pod works.
 
 Stages: `/health`; an object round trip; a STRING round trip (must come back
 JSON-quoted as `application/json` — strings used to be shipped verbatim as
@@ -230,16 +229,26 @@ JSON-quoted as `application/json` — strings used to be shipped verbatim as
 straight into Redis by a foreign writer via `kubectl exec redis-0 -- redis-cli`
 (the L1 backfill used to drop that TTL and pin the value forever — this stage
 self-skips when kubectl or the Redis pod is unavailable); `POST /cache/batch`
-(hits returned, misses omitted); `SCAN`; `DELETE` then a `null` GET; and tenant
-scoping via `x-yoizen-tenant`.
+(hits returned, misses omitted); `SCAN`; `DELETE` then a `null` GET; tenant
+scoping via `x-yoizen-tenant`; and the **consumer** stage (T11/E36b): it
+creates a throwaway connector with a cached `GET` endpoint, invokes it through
+the api-gateway twice, and proves both directions against cache-service's own
+API — a new `httpcache:v1:*` key appears in `SCAN` after the `miss` (write),
+and after that key is overwritten through cache-service with a sentinel body
+the second invoke returns the SENTINEL with `cacheResult=hit` (read).
 
 Knobs: `E2E_CACHE_URL`, `E2E_CACHE_HOST_HEADER`, `E2E_CACHE_TTL_SECONDS`
 (default 3), `E2E_CACHE_POLL_TIMEOUT_S` (default 60), `E2E_REDIS_NAMESPACE` /
-`E2E_REDIS_POD` (default `support-services-dev` / `redis-0`), plus the shared
-`E2E_NAMESPACE`, `E2E_TENANT`, `E2E_RESOLVE_IP` and `E2E_KEEP`. Every key it
-writes carries a per-run nonce and is deleted by an `EXIT` trap. Exit `0` =
-verified, `1` = a stage failed, `2` = missing prerequisite (`curl`/`jq`) or an
-unreachable service.
+`E2E_REDIS_POD` (default `support-services-dev` / `redis-0`), plus — for the
+consumer stage — `E2E_CACHE_SKIP_CONSUMER=1` (run stages 1-9 alone, e.g. when
+api-gateway/connector-runtime are not deployed), `E2E_CACHE_CONSUMER_TTL_SECONDS`
+(default 300), `E2E_CACHE_CONSUMER_KEY_TIMEOUT_S` (default 20), and the shared
+api-gateway knobs `E2E_API_URL`, `E2E_HOST_HEADER`, `E2E_EMAIL`, `E2E_PASSWORD`.
+The shared `E2E_NAMESPACE`, `E2E_TENANT`, `E2E_RESOLVE_IP` and `E2E_KEEP` apply
+too. Every key it writes carries a per-run nonce and is deleted by an `EXIT`
+trap (which also deletes the consumer connector). Exit `0` = verified, `1` = a
+stage failed, `2` = missing prerequisite (`curl`/`jq`) or an unreachable
+service.
 
 **Not orchestrated by `run-all.sh`** — it has no stage entry there. Run it
 directly (~15 s):
@@ -255,5 +264,6 @@ bash scripts/e2e/cache-service.sh
 `teardown-regression.sh` adds another manifest-apply.sh-sized round trip
 (~30-60s) when run explicitly. `long-agent-execution.sh` is the slowest of
 all and is not part of any suite: it deliberately waits out two 120 s
-injected delays. `cache-service.sh` is the cheapest (~15 s, dominated by its
-two TTL-expiry polls) and is likewise not part of any suite.
+injected delays. `cache-service.sh` is the cheapest (~20 s, dominated by its
+two TTL-expiry polls plus the consumer stage's two invokes) and is likewise
+not part of any suite.

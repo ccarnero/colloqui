@@ -4,6 +4,7 @@ import {
   createAdapterClientWithRedisAndFetch,
 } from "@yoizen/shared";
 import { workflowHttpWorkerConfig } from "../../config";
+import { createCacheServiceAdapterCache } from "./http-cache/cache-service-store";
 import {
   createHttpResponseCache,
   type IHttpResponseCache,
@@ -55,7 +56,7 @@ function logCacheError(scope: string, err: Error): void {
   cacheErrorCounts.set(dedupKey, count);
   if (count === 1 || count % CACHE_ERROR_LOG_EVERY === 0) {
     cacheLogger.warn(
-      `redis cache ${scope} error (repeat=${count}): ${err.message}`,
+      `redis cache ${scope} error (repeat=${count}): ${err.message}`
     );
   }
 }
@@ -91,11 +92,7 @@ export function createSafeAdapterCache(client: RedisClient): AdapterCache {
         return null;
       }
     },
-    async setex(
-      key: string,
-      seconds: number,
-      value: string,
-    ): Promise<unknown> {
+    async setex(key: string, seconds: number, value: string): Promise<unknown> {
       try {
         return await client.setex(key, seconds, value);
       } catch (err) {
@@ -115,7 +112,9 @@ export function createSafeAdapterCache(client: RedisClient): AdapterCache {
 }
 
 function getSafeCache(): AdapterCache {
-  if (safeCache) return safeCache;
+  if (safeCache) {
+    return safeCache;
+  }
   safeCache = createSafeAdapterCache(getRedis());
   return safeCache;
 }
@@ -126,22 +125,43 @@ function getSafeCache(): AdapterCache {
  * AND one SWR cache — prevents two clients racing on the same keys.
  */
 export function getAdapterClient(): AdapterClientInstance {
-  if (adapterClient) return adapterClient;
+  if (adapterClient) {
+    return adapterClient;
+  }
 
   adapterClient = createAdapterClientWithRedisAndFetch(
     workflowHttpWorkerConfig.adapterServiceUrl,
     getSafeCache(),
-    tracedFetch,
+    tracedFetch
   );
 
   return adapterClient;
 }
 
+/**
+ * Process-wide singleton HTTP-response cache (the per-endpoint `cache`
+ * strategy the admin console exposes).
+ *
+ * Backed by cache-service over HTTP (T11/E36b), NOT by the raw Redis client
+ * this module also owns: cache-service already owns that key namespace (L1 +
+ * L2, TTL semantics, operator-visible SCAN/DELETE), and two writers on one
+ * namespace is exactly the drift this SPEC is closing. The store never
+ * throws — every cache-service failure degrades to a miss/no-op — so a
+ * connector call can't fail because the cache is down.
+ *
+ * Every OTHER Redis user here (the adapter SWR mirror via `getSafeCache`,
+ * circuit breaker, rate limits, invocation store) is intentionally untouched.
+ */
 export function getHttpResponseCache(): IHttpResponseCache {
   if (httpResponseCache) {
     return httpResponseCache;
   }
 
-  httpResponseCache = createHttpResponseCache(getSafeCache());
+  httpResponseCache = createHttpResponseCache(
+    createCacheServiceAdapterCache({
+      baseUrl: workflowHttpWorkerConfig.cacheServiceUrl,
+      timeoutMs: workflowHttpWorkerConfig.cacheServiceTimeoutMs,
+    })
+  );
   return httpResponseCache;
 }

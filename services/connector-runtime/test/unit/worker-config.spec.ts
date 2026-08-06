@@ -25,6 +25,20 @@ describe("workflowHttpWorkerConfig", () => {
     expect(workflowHttpWorkerConfig.registryServiceUrl).toBe(expected);
   });
 
+  it("defaults cache-service URL to an env-aware URL when CACHE_SERVICE_URL unset", () => {
+    const env = process.env.PLATFORM_ENVIRONMENT ?? "dev";
+    const expected =
+      process.env.CACHE_SERVICE_URL ?? platformServiceUrl("cache-service", env);
+    expect(workflowHttpWorkerConfig.cacheServiceUrl).toBe(expected);
+  });
+
+  it("bounds the cache-service call timeout", () => {
+    expect(
+      Number.isFinite(workflowHttpWorkerConfig.cacheServiceTimeoutMs)
+    ).toBe(true);
+    expect(workflowHttpWorkerConfig.cacheServiceTimeoutMs).toBeGreaterThan(0);
+  });
+
   it("defaults temporal address and namespace", () => {
     expect(workflowHttpWorkerConfig.temporalAddress.length).toBeGreaterThan(0);
     expect(workflowHttpWorkerConfig.temporalNamespace.length).toBeGreaterThan(

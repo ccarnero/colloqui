@@ -44,6 +44,15 @@ spec:
           env:
             - name: PROMETHEUS_BIND_ADDRESS
               value: "0.0.0.0:9464"
+            # HTTP-response cache backend (SPEC 01-bugs-group-b T11/E36b).
+            # ONLY the per-endpoint `cache` strategy goes through
+            # cache-service; every other Redis use in this image (adapter SWR
+            # mirror, circuit breaker, rate limits, invocation store) still
+            # talks to Redis via REDIS_HOST/REDIS_PORT from the overlay.
+            # Overridden per overlay (`env-patches.yaml`) like every other
+            # service URL.
+            - name: CACHE_SERVICE_URL
+              value: http://cache-service.platform-services-dev.svc.cluster.local
           readinessProbe:
             httpGet:
               path: /health

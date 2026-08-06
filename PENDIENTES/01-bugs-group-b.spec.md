@@ -417,7 +417,7 @@ bash scripts/e2e/cache-service.sh
 - [x] T08 E28 hook runner
 - [x] T09 E12 parseFrontmatter
 - [x] T10 E36a validate cache-service (suite + live CRUD e2e script)
-- [ ] T11 E36b connector http-response cache via cache-service
+- [x] T11 E36b connector http-response cache via cache-service
 
 ## Rebuild map (services to rebuild/redeploy per task)
 

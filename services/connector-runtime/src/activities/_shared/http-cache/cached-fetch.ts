@@ -27,11 +27,13 @@ export interface ICachedFetchContext {
 }
 
 /**
- * Wraps `fetch` with a Redis-backed response cache.
+ * Wraps `fetch` with an `IHttpResponseCache`-backed response cache (since
+ * T11/E36b the concrete store is cache-service over HTTP, not Redis —
+ * `http-cache/cache-service-store.ts`).
  *
  * When the resolved policy is null the wrapper behaves as a transparent
- * passthrough. Otherwise it rehydrates fresh entries from Redis and stores
- * successful responses after buffering the body once.
+ * passthrough. Otherwise it rehydrates fresh entries from the store and
+ * stores successful responses after buffering the body once.
  */
 export async function cachedFetch(
   input: string,

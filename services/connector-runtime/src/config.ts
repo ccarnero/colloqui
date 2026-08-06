@@ -36,6 +36,22 @@ type WorkflowHttpWorkerConfig = {
    */
   readonly redisClusterMode: boolean;
   readonly httpResponseCacheEnabled: boolean;
+  /**
+   * cache-service base URL for the HTTP-response cache (T11/E36b). ONLY the
+   * per-endpoint HTTP-response cache goes through cache-service; every other
+   * Redis user in this service (adapter SWR mirror, circuit breaker, rate
+   * limits, invocation store) keeps talking to Redis directly, so
+   * `redisHost`/`redisPort` above stay required.
+   */
+  readonly cacheServiceUrl: string;
+  /**
+   * Per-request timeout (ms) for cache-service calls. Deliberately short: the
+   * store sits on the critical path of an outbound connector call and every
+   * failure degrades to a cache miss, so a wedged cache-service must cost at
+   * most this much before we fall through to the real upstream. Matches the
+   * 1s `commandTimeout` the Redis client uses for the same reason.
+   */
+  readonly cacheServiceTimeoutMs: number;
   readonly adapterServiceUrl: string;
   readonly registryServiceUrl: string;
   readonly agentAdminServiceUrl: string;
@@ -88,6 +104,12 @@ export const workflowHttpWorkerConfig: WorkflowHttpWorkerConfig = {
   redisClusterMode: process.env.REDIS_CLUSTER_MODE === "true",
   httpResponseCacheEnabled:
     process.env.HTTP_RESPONSE_CACHE_ENABLED?.toLowerCase() !== "false",
+  cacheServiceUrl:
+    process.env.CACHE_SERVICE_URL ?? platformServiceUrl("cache-service", env),
+  cacheServiceTimeoutMs: Number.parseInt(
+    process.env.CACHE_SERVICE_TIMEOUT_MS ?? "1000",
+    10
+  ),
   adapterServiceUrl:
     process.env.CONNECTOR_ADMIN_URL ??
     platformServiceUrl("connector-admin-api", env),

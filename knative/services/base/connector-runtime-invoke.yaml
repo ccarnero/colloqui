@@ -45,6 +45,12 @@ spec:
           env:
             - name: INVOKE_CONSUMER_HEALTH_PORT
               value: "3200"
+            # HTTP-response cache backend (SPEC 01-bugs-group-b T11/E36b) —
+            # same rationale as `connector-runtime.yaml`: only the
+            # per-endpoint `cache` strategy moves to cache-service, the rest
+            # of this image's Redis use is untouched.
+            - name: CACHE_SERVICE_URL
+              value: http://cache-service.platform-services-dev.svc.cluster.local
           readinessProbe:
             httpGet:
               path: /health
