@@ -1,18 +1,17 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
+import { BadRequestException } from "@nestjs/common";
 import { TENANT_HEADER } from "@yoizen/shared";
 import { ProxyService } from "../../src/modules/proxy/proxy.service";
+import { setActiveTracedFetch } from "../helpers/fake-traced-fetch";
 
 describe("ProxyService", () => {
-  const originalFetch = globalThis.fetch;
   let fetchMock: ReturnType<typeof mock>;
 
   beforeEach(() => {
+    // The service reaches upstreams through `tracedFetch`, not bare `fetch`,
+    // so the double has to be installed on the observability module.
     fetchMock = mock();
-    globalThis.fetch = fetchMock as typeof fetch;
-  });
-
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
+    setActiveTracedFetch(fetchMock as never);
   });
 
   function createReply() {
@@ -48,8 +47,8 @@ describe("ProxyService", () => {
             JSON.stringify({
               configuration: { ySocialUrl: "https://ys.example" },
             }),
-            { status: 200, headers: { "content-type": "application/json" } },
-          ),
+            { status: 200, headers: { "content-type": "application/json" } }
+          )
         );
       }
       if (url.startsWith("https://ys.example")) {
@@ -86,8 +85,8 @@ describe("ProxyService", () => {
             JSON.stringify({
               configuration: { yFlowUrl: "https://flow.example" },
             }),
-            { status: 200, headers: { "content-type": "application/json" } },
-          ),
+            { status: 200, headers: { "content-type": "application/json" } }
+          )
         );
       }
       if (url.startsWith("https://flow.example")) {
@@ -110,7 +109,7 @@ describe("ProxyService", () => {
     expect(reply.body).toBe("flow");
   });
 
-  it("handleGeneric returns 400 when x-proxy-target is missing", async () => {
+  it("handleGeneric raises a 400 when x-proxy-target is missing", async () => {
     const service = new ProxyService();
     const reply = createReply();
     const req = {
@@ -120,17 +119,26 @@ describe("ProxyService", () => {
       body: undefined,
     } as never;
 
-    await service.handleGeneric(req, reply as never);
-    expect(reply.code).toBe(400);
-    expect((reply.body as { message?: string }).message).toContain(
-      "x-proxy-target",
+    // The service signals the error by throwing a Nest exception (the global
+    // exception filter renders the 400 body); it never writes the reply itself.
+    const raised = await service
+      .handleGeneric(req, reply as never)
+      .then(() => null)
+      .catch((err: unknown) => err);
+
+    expect(raised).toBeInstanceOf(BadRequestException);
+    const exception = raised as BadRequestException;
+    expect(exception.getStatus()).toBe(400);
+    expect((exception.getResponse() as { message?: string }).message).toContain(
+      "x-proxy-target"
     );
+    expect(reply.body).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("handleGeneric forwards to x-proxy-target base URL", async () => {
     fetchMock.mockImplementation(() =>
-      Promise.resolve(new Response("upstream", { status: 200 })),
+      Promise.resolve(new Response("upstream", { status: 200 }))
     );
     const service = new ProxyService();
     const reply = createReply();
@@ -149,7 +157,7 @@ describe("ProxyService", () => {
 
   it("proxyTo returns upstream status and body", async () => {
     fetchMock.mockImplementation(() =>
-      Promise.resolve(new Response("hello", { status: 418 })),
+      Promise.resolve(new Response("hello", { status: 418 }))
     );
 
     const service = new ProxyService();

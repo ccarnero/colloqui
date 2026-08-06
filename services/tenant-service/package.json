@@ -6,9 +6,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "bun run dist/main.js",
     "start:dev": "bun run --watch src/main.ts",
-    "test": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} pnpm test",
-    "test:unit": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} pnpm test test/unit",
-    "test:integration": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} pnpm test test/integration"
+    "test": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} bun test",
+    "test:unit": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} bun test test/unit",
+    "test:integration": "MONGO_PASSWORD=${MONGO_PASSWORD:-test} bun test test/integration"
   },
   "dependencies": {
     "@kubernetes/client-node": "^1.2.0",

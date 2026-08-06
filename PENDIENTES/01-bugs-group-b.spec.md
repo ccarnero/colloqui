@@ -356,7 +356,7 @@ bash scripts/checks/doc-code-guards.sh
 ## Progress
 
 - [x] T01 E11 remove phantom oauth2 auth (services + UI)
-- [ ] T02 E10 recursive test scripts
+- [x] T02 E10 recursive test scripts
 - [ ] T03 E27 smoke-test full worker list
 - [ ] T04 E15 sdk test glob
 - [ ] T05 E18 sample slug lookups

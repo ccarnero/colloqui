@@ -1,25 +1,17 @@
-import { describe, it, expect, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-
-let tracedFetchMock: ReturnType<typeof mock>;
-
-mock.module("@yoizen/observability", () => {
-  tracedFetchMock = mock(() =>
-    Promise.resolve(new Response(null, { status: 200 })),
-  );
-  return { tracedFetch: tracedFetchMock };
-});
-
 import { HealthController } from "../../src/modules/health/health.controller";
+import { setActiveTracedFetch } from "../helpers/fake-traced-fetch";
 
 describe("HealthController (proxy-service)", () => {
   let controller: HealthController;
+  let tracedFetchMock: ReturnType<typeof mock>;
 
   beforeEach(async () => {
-    tracedFetchMock.mockReset();
-    tracedFetchMock.mockImplementation(() =>
-      Promise.resolve(new Response(null, { status: 200 })),
+    tracedFetchMock = mock(() =>
+      Promise.resolve(new Response(null, { status: 200 }))
     );
+    setActiveTracedFetch(tracedFetchMock as never);
     const moduleRef = await Test.createTestingModule({
       controllers: [HealthController],
     }).compile();
@@ -37,7 +29,7 @@ describe("HealthController (proxy-service)", () => {
 
   it("returns degraded when tenant-service returns non-OK", async () => {
     tracedFetchMock.mockImplementation(() =>
-      Promise.resolve(new Response(null, { status: 503 })),
+      Promise.resolve(new Response(null, { status: 503 }))
     );
     const r = await controller.check();
     expect(r).toEqual({
@@ -48,7 +40,7 @@ describe("HealthController (proxy-service)", () => {
 
   it("returns degraded when fetch throws", async () => {
     tracedFetchMock.mockImplementation(() =>
-      Promise.reject(new Error("network")),
+      Promise.reject(new Error("network"))
     );
     const r = await controller.check();
     expect(r).toEqual({
