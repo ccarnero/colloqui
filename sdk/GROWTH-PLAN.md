@@ -18,8 +18,11 @@ Scope: evolve `sdk/` (`@yoizen/http-sdk` v0.1.0) into a full platform SDK coveri
 >   `secrets` were added afterwards by the declarative-provisioning /
 >   samples-reorg efforts, not by this plan.
 > - **Test tallies**: Phase 5's closing "unit `283/283`, e2e `57/57`" is a
->   2026-07-05 snapshot. Today `npm test` reports **343 tests across 38
->   files** and `test/e2e/` holds **9 files / 62 `test()` cases**.
+>   2026-07-05 snapshot. Today `npm test` (now `bun test src/ test/`, not
+>   tsx — see sdk/README.md "Why Bun runs the unit suite") reports **407
+>   tests across 52 files**: the 38 under `test/` plus the 14 co-located
+>   `src/cli/**/*.test.ts` specs the old tsx glob never reached (E15).
+>   `test/e2e/` still runs on tsx and holds **9 files / 62 `test()` cases**.
 > - **§1.2's "No API versioning" / "No OpenAPI"** are the 2026-07-04 audit's
 >   findings; Phase 0 closed both. `/api/v1` + `/api/docs` are live.
 >

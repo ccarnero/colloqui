@@ -58,13 +58,27 @@ shape as illustrative, not as alignment with an existing house style.
    - Trigger: every PR touching `sdk/**`.
 
 2. **Unit tests**
-   - Command: `cd sdk && npm ci && npm test` (`tsx --test 'test/**/*.test.ts'`,
-     343 tests across 38 files, verified 2026-08-03). Fully offline — no
-     cluster, no network dependency, safe to run on every PR.
+   - Command: `cd sdk && npm ci && npm test` (`bun test src/ test/`, 407
+     tests across 52 files, verified 2026-08-06). Fully offline — no cluster,
+     no network dependency, safe to run on every PR.
+   - **The runner is Bun, so the job needs a Bun install step** (e.g.
+     `oven-sh/setup-bun`, or `curl -fsSL https://bun.sh/install | bash` on a
+     self-hosted agent) before `npm test`. `npm ci` still installs the dev
+     deps that `build` and `test:e2e` need.
    - Trigger: every PR touching `sdk/**`.
-   - Gap to fix when this is wired: that glob misses the 14 co-located CLI
-     specs under `src/cli/**/*.test.ts`. A CI job running only `npm test`
-     leaves the CLI untested.
+   - Why not tsx: the old `tsx --test 'test/**/*.test.ts'` glob missed the 14
+     co-located CLI specs under `src/cli/**/*.test.ts`, leaving the whole
+     `yoizen` CLI untested by the documented command (E15) — and 10 tests
+     inside two of those files (2 in `read-manifest-file.test.ts`, all 8 in
+     `manifest-gaps-cli-compat.test.ts`) exercise the real `Bun.YAML`
+     manifest parser, so tsx/Node cannot run them at all (whole suite under
+     tsx: 397 pass / 10 fail). See sdk/README.md "Why Bun runs the unit
+     suite".
+   - Do not simplify the command to bare `bun test`: it also picks up
+     `dist/**/*.test.js` after a build, re-running the 14 CLI files from
+     stale compiled output (471 tests / 66 files on a built checkout vs
+     407 / 52 on a fresh clone). If the Typecheck job above shares a
+     workspace with this one, that is exactly the ordering that would hit it.
 
 3. **E2E tests** (env-gated, NOT on every PR)
    - Command: `cd sdk && SDK_E2E=1 npm run test:e2e`
@@ -130,11 +144,14 @@ stages:
         pool:
           vmImage: 'ubuntu-latest'
         steps:
+          # `npm test` is `bun test src/ test/` — Bun must be on PATH.
+          - script: curl -fsSL https://bun.sh/install | bash
+            displayName: 'install bun'
           - script: |
               cd sdk
               npm ci
-              npm test
-            displayName: 'npm test (343 tests, offline)'
+              PATH="$HOME/.bun/bin:$PATH" npm test
+            displayName: 'npm test (407 tests, offline)'
 
   - stage: SdkE2E
     displayName: 'SDK — E2E (manual/scheduled, needs dev cluster)'

@@ -182,16 +182,24 @@ exists to catch: fix the worker or report, do not trim the list.)
 `--secrets-from-env`, untested by the documented command; 38 files matched, 14
 missed). `test:watch` (:113) and `test:e2e` (:114) share the blind spot.
 
-Widen the globs to include `src/**/*.test.ts` in all three scripts. Rebaseline
-any documented test count (register cites 471 vs 343 — update whatever doc
-states the old number, if any).
+USER RULING (2026-08-06): 10 of the 14 CLI specs are Bun-only by design
+(`read-manifest-file.ts` requires `Bun.YAML`; the CLI is documented as
+`bunx yoizen`) and can never pass under tsx/Node — so the fix is to move the
+SDK's test scripts to `bun test`, the runner every other package already uses
+(471/471 green). Keep `test:e2e` on its current runner if moving it would
+change its semantics. Rebaseline any documented test count (471 vs 343 —
+update whatever doc states the old number).
 
 **Accept**
 ```
 cd sdk && pnpm test
-cd sdk && pnpm test 2>&1 | rg "run-cli"
-rg -n "src/\*\*" sdk/package.json
+cd sdk && pnpm test 2>&1 | rg "across 52 files"
+rg -n '"test": "bun test' sdk/package.json
 ```
+(52 files is unreachable without `src/cli` — the old glob ran 38. Note: bare
+`bun test` would double-count specs compiled into `dist/`; the `src/ test/`
+filters are load-bearing. The register's "471" was that artifact: real count
+is 407.)
 
 ### T05 — E18: the ai-system-variables sample must look up slugs
 
@@ -358,7 +366,7 @@ bash scripts/checks/doc-code-guards.sh
 - [x] T01 E11 remove phantom oauth2 auth (services + UI)
 - [x] T02 E10 recursive test scripts
 - [x] T03 E27 smoke-test full worker list
-- [ ] T04 E15 sdk test glob
+- [x] T04 E15 sdk test glob
 - [ ] T05 E18 sample slug lookups
 - [ ] T06 E29+E33 dev-mode / rebuild-redeploy drift
 - [ ] T07 E24+E25 purge-circuit-breakers

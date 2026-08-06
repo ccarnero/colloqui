@@ -601,9 +601,11 @@ shape is identical either way, so nothing breaks when the gateway adds real pagi
 
 ## E2E testing
 
-Unit tests (`npm test`, 343 tests across 38 files) are fully offline — mocked transport, no
-network. The e2e suite (`test/e2e/`, 9 files, 62 `test()` cases — 9 top-level plus 53
-subtests) runs against a **live dev cluster**:
+Unit tests (`npm test` → `bun test src/ test/`, 407 tests across 52 files) are fully offline
+— mocked transport, no network. The 52 files are the 38 under `test/` plus the **14
+co-located `src/cli/**/*.test.ts` specs** (64 tests); the runner is Bun, not tsx — see "Why
+Bun runs the unit suite" below. The e2e suite (`test/e2e/`, 9 files, 62 `test()` cases — 9
+top-level plus 53 subtests) still runs on tsx, against a **live dev cluster**:
 
 ```bash
 # From the repo root: expose the gateway on localhost:8080
@@ -621,6 +623,36 @@ SDK_E2E=1 npm run test:e2e
   probes `localhost:8080` then the ingress hostname. Full variable table in
   [`test/e2e/README.md`](./test/e2e/README.md).
 - Tests create uniquely-named resources and clean up in `finally` blocks.
+
+### Why Bun runs the unit suite
+
+**Bun is a prerequisite for `npm test`.** The unit suite used to be
+`tsx --test 'test/**/*.test.ts'`, a glob that never reached the 14 co-located
+`src/cli/**/*.test.ts` specs — the entire `yoizen` CLI, `--secrets-from-env` included, went
+untested by its own documented command (escalation E15). Bun discovers both trees with no
+glob to keep in sync, and it is the only runner that can execute the CLI specs at all: the
+CLI parses manifests with `Bun.YAML.parse` (no YAML dependency — see "CLI" below), so the 10
+tests that exercise the real `Bun.YAML` parse — 2 in `src/cli/read-manifest-file.test.ts`
+(temp-file manifests under `os.tmpdir()`), all 8 in
+`src/cli/manifest-gaps-cli-compat.test.ts` (driving
+`test/cli/fixtures/comprehensive-manifest.yaml`) — fail under tsx/Node with the CLI's own
+documented error, "requires the Bun runtime to parse YAML manifests". The third test in
+`read-manifest-file.test.ts` is runtime-agnostic: it asserts the missing-file path, where
+`readFileSync` fails and returns before the Bun guard is reached. Under Bun the whole suite
+is 407/407.
+
+**The `src/ test/` scope is deliberate, not decoration.** Bare `bun test` also matches
+`dist/**/*.test.js` whenever `npm run build` has run (`tsconfig.json` has `"include": ["src"]`,
+so `tsc` emits the CLI specs to `dist/` too). That re-runs all 14 CLI files from stale
+compiled output and inflates the tally to 471 tests across 66 files on a built checkout while
+reporting 407/52 on a fresh clone. The positional filters `src/` and `test/` match only the
+source trees (`dist/cli/run-cli.test.js` contains `test.` but not `test/`), so the count is
+deterministic.
+
+**`test:e2e` stays on tsx.** Bun only discovers `.test.`/`_test_`/`.spec.`/`_spec_`
+filenames, so it finds none of the `test/e2e/*.e2e.ts` files, and it has no equivalent of the
+`--test-concurrency=1` serialization the rate limit requires. Moving it would mean renaming
+9 files and changing behavior.
 
 ## Known platform gaps
 
@@ -770,8 +802,8 @@ never logged.
 cd sdk
 npm install        # dev deps only (typescript, tsx, @types/node)
 npm run build      # tsc — strict typecheck + emit dist/ (ESM + .d.ts)
-npm test           # unit tests (offline, 343 tests)
-npm run test:e2e   # live-cluster e2e (requires SDK_E2E=1, see above)
+npm test           # unit tests via bun (offline, 407 tests across 52 files) — needs Bun
+npm run test:e2e   # live-cluster e2e via tsx (requires SDK_E2E=1, see above)
 ```
 
 Layout: `src/domain` (pure value objects + errors), `src/application` (ingest use case +

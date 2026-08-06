@@ -109,8 +109,8 @@
   ],
   "scripts": {
     "build": "tsc",
-    "test": "tsx --test 'test/**/*.test.ts'",
-    "test:watch": "tsx --test --watch 'test/**/*.test.ts'",
+    "test": "bun test src/ test/",
+    "test:watch": "bun test --watch src/ test/",
     "test:e2e": "tsx --test --test-concurrency=1 'test/e2e/**/*.e2e.ts'"
   },
   "devDependencies": {
