@@ -298,7 +298,24 @@ task summary.)
     as adjacent smell); `DOCS/archive/audits/DOCS-TRUTH-LEDGER.md:947-952`
     still lists the old drift as a live finding (frozen archive, left as-is);
     `test/unit/jobs/` is the first subdir among flat jobs specs.
-- [ ] T03 E5 remove dead consumer filters from nats-consumer-lag alerts
+- [x] T03 E5 remove dead consumer filters from nats-consumer-lag alerts
+  - Done 2026-08-06, 1 attempt, 2× APPROVED first review. G4 cluster proof:
+    alerts ConfigMap applied to `support-services-dev`, Prometheus restarted,
+    `/api/v1/rules` shows group `nats-consumer-lag` loaded with both alerts,
+    all four real durables present, zero occurrences of the removed names.
+  - G4 note: applying the BASE kustomization directly errors on
+    `ClusterRoleBinding prometheus-discovery` (base omits the subject
+    namespace by design — overlays inject it); the CRB is live and untouched,
+    only the alerts ConfigMap needed the apply.
+  - ADJACENT SMELL (reported per Constraints → candidate infra ticket): the
+    alerts now cover 4 of 13 real durables. Uncovered: `execution-audit`,
+    `audit-events`, `channel-audit`, `workflow-projector`,
+    `connector-runtime-invoke`, `adapter-internal-sync`, `ingestion-worker`,
+    `skb-ingestion-worker`, `ai-agent-gateway-results`. Ticket shape: broad
+    match + exclusion list instead of allow-list, so new durables are covered
+    by default (the exact failure mode E5 fixed). Also: the consumer list is
+    hand-copied in 3 places (2 exprs + doc prose) with no guard tying them —
+    doc-code-guards watch alert names, not label filters.
 
 <!-- Progress convention: entries above grow into a changelog as tasks
 complete — record findings, human-approved mid-flight design changes

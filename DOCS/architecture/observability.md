@@ -225,11 +225,11 @@ Alerts are defined in `infrastructure/base/observability/prometheus/alerts.yaml`
 ### 4.2 Group `nats-consumer-lag` — Consumer Backpressure
 
 Monitored consumers: `workflow-triggers`, `channel-webhook-ingress`, `auto-reply`,
-`channel-egress`, `webhook-dispatcher`, `event-processor`.
+`channel-egress`.
 
 | Alert | Condition | Severity |
 |---|---|---|
-| `NatsConsumerPendingHigh` | `jetstream_consumer_num_pending{consumer_name=~"workflow-triggers\|channel-webhook-ingress\|auto-reply\|channel-egress\|webhook-dispatcher\|event-processor"} > 500` for 2m | **warning** |
+| `NatsConsumerPendingHigh` | `jetstream_consumer_num_pending{consumer_name=~"workflow-triggers\|channel-webhook-ingress\|auto-reply\|channel-egress"} > 500` for 2m | **warning** |
 | `NatsConsumerAckPendingHigh` | `jetstream_consumer_num_ack_pending{...same filter...} > 200` for 5m | **warning** |
 
 ### 4.3 Group `nats` — Infrastructure Health
