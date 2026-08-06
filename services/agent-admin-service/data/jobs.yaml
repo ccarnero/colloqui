@@ -1,20 +1,30 @@
+# Reference job definitions. NOT auto-seeded — create jobs via the admin API.
+# Shapes enforced by test/unit/jobs/jobs-fixture.spec.ts:
+#   - `is_active` (IJob), never `enabled`
+#   - `schedule`: "once" | "<seconds>" | "interval:<minutes>" | cron
+#   - `payload.action_type`: llm_call | webhook | function | python_code | agent_task
 jobs:
   - id: job-metrics-snapshot
     name: "Metrics Snapshot"
     description: "Collect conversation metrics snapshot every hour"
-    enabled: true
+    is_active: true
     agent_id: "agent-default"
-    schedule: "interval:3600"
+    schedule: "interval:60" # minutes → hourly
     payload:
-      action: "collect_metrics"
-      metric_types: ["conversations", "response_times", "satisfaction"]
+      action_type: "function"
+      action_config:
+        function: "get_conversation_metrics"
+        parameters: {}
 
   - id: job-demo-notification
     name: "Demo Notification"
     description: "Manual job for testing job execution from admin UI"
-    enabled: true
+    is_active: true
     agent_id: "agent-sales-assistant"
     schedule: "once"
     payload:
-      action: "notify"
-      message: "Demo job triggered from admin panel"
+      action_type: "function"
+      action_config:
+        function: "notify_backend"
+        parameters:
+          message: "Demo job triggered from admin panel"

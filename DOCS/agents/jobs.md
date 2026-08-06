@@ -157,19 +157,22 @@ Only one scheduler instance fires jobs at a time. Leadership uses a PostgreSQL a
 
 `services/agent-admin-service/data/jobs.yaml` defines two reference jobs:
 
-| ID | Name | Schedule | Agent | Purpose |
+| ID | Name | Schedule | Agent | Action |
 |---|---|---|---|---|
-| `job-metrics-snapshot` | Metrics Snapshot | `interval:3600` | `agent-default` | Collect conversation metrics |
-| `job-demo-notification` | Demo Notification | `once` | `agent-sales-assistant` | Test job for admin UI |
+| `job-metrics-snapshot` | Metrics Snapshot | `interval:60` (hourly) | `agent-default` | `function` → `get_conversation_metrics` |
+| `job-demo-notification` | Demo Notification | `once` | `agent-sales-assistant` | `function` → `notify_backend` |
 
 These are reference definitions only — the YAML is not auto-seeded; they must be created via the API or admin console.
 
-**Do not copy them verbatim.** The fixture has drifted from every shape on this page:
-`interval:3600` is **3 600 minutes (60 h)** under `parseSchedule`, not the "every hour"
-its own `description` claims (bare `"3600"` would be the hourly form); its keys are
-`enabled`/`payload.action`, while `IJob` uses `is_active` and the executor dispatches on
-`payload.action_type` — a job created from this payload would hit the unknown-action
-branch and publish `execution_failed`.
+The three axes that had drifted are now contract-true and lint-guarded: `is_active`
+(as `IJob` declares it), a schedule the `schedule.validator` accepts with the intended
+unit (`interval:<minutes>`), and `payload.action_type` / `payload.action_config` as the
+executor dispatches them. `services/agent-admin-service/test/unit/jobs/jobs-fixture.spec.ts`
+lints all three so the fixture cannot drift back — it has no runtime consumer to catch it.
+The fixture is still not a verbatim `POST /admin/jobs` body: drop its `id` and
+`description` keys (`CreateJobDto` declares neither, and the global pipe runs with
+`forbidNonWhitelisted: true` → 400) and replace the slug `agent_id` with a real agent
+UUID (`@IsUUID()`).
 
 ## Sample Requests
 

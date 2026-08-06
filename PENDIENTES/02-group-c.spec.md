@@ -283,7 +283,21 @@ task summary.)
     text); `security.md:196` "Layers 2-5 all operate on LLM output" stale
     (Layer 5 clamps caller input); `clampLimit` has no lower bound (DTO
     `@Min(1)` is the floor).
-- [ ] T02 E7 jobs.yaml fixture passes the real contract
+- [x] T02 E7 jobs.yaml fixture passes the real contract
+  - Done 2026-08-06, 2 attempts (attempt 2 = one doc sentence: "safe to copy"
+    overclaimed — fixture is still not a verbatim POST body: `id`/`description`
+    keys and slug `agent_id` fail `CreateJobDto` + `forbidNonWhitelisted`).
+  - Sanctioned deviation (reviewer-endorsed): extra test pinning
+    `job-metrics-snapshot.schedule === "interval:60"` — `isValidSchedule`
+    accepts `interval:3600` as syntactically valid, so the validator assertion
+    alone cannot guard the unit-semantics axis.
+  - FOLLOW-UPS (reviewer-flagged, non-blocking): lint window — a future drift
+    to `action_type: "python_code"` would pass the fixture lint yet no-op at
+    runtime (`function-action.service.ts:23-32` returns `{supported: false}`
+    and the execution still reports completed — silent no-op success, reported
+    as adjacent smell); `DOCS/archive/audits/DOCS-TRUTH-LEDGER.md:947-952`
+    still lists the old drift as a live finding (frozen archive, left as-is);
+    `test/unit/jobs/` is the first subdir among flat jobs specs.
 - [ ] T03 E5 remove dead consumer filters from nats-consumer-lag alerts
 
 <!-- Progress convention: entries above grow into a changelog as tasks
