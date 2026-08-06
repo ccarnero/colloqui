@@ -58,18 +58,19 @@ ALL_KNATIVE_SERVICES=(
 # declares `replicas: 1`, so available < 1 always indicates a crash or bad
 # config — treat it as preflight failure.
 #
-# INCOMPLETE vs the manifests: knative/services/base declares 11 worker
-# Deployments; the list below covers 8. connector-runtime-http,
-# connector-runtime-invoke and tracking-ingester-worker are NOT checked, so
-# this gate can pass while they are down. Fixing that is a behavior change,
-# tracked as E27 in DOCS/archive/audits/DOCS-TRUTH-LEDGER.md.
+# COMPLETE vs the manifests: knative/services/base declares 11 worker
+# Deployments and all 11 are listed below. Keep this list in sync whenever a
+# worker Deployment is added to or removed from knative/services/base.
 ALL_PLAIN_DEPLOYMENTS=(
   workflow-worker
   connector-runtime
+  connector-runtime-http
+  connector-runtime-invoke
   agent-admin-service-worker
   connector-admin-worker
   audit-service-worker
   channel-service-worker
+  tracking-ingester-worker
   usage-aggregator-worker
   workflow-service-worker
 )
