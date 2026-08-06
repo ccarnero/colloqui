@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import {
-  AdapterCacheMethod,
   type AdapterCache,
+  AdapterCacheMethod,
   type AdapterConfig,
 } from "../../src/adapter.interfaces";
 import { AdapterClient } from "../../src/adapter-client";
@@ -165,7 +165,7 @@ describe("AdapterClient", () => {
 
     it("should throw for unknown endpoint", async () => {
       await expect(
-        client.resolveRequest("t1", "adp-1", "nonexistent"),
+        client.resolveRequest("t1", "adp-1", "nonexistent")
       ).rejects.toThrow("Endpoint 'nonexistent' not found on adapter 'adp-1'");
     });
   });
@@ -231,9 +231,9 @@ describe("AdapterClient", () => {
             makeAdapter({
               authType: "api-key",
               authConfig: { apiKey: "secret-123", apiKeyHeader: "X-My-Key" },
-            }),
-          ),
-        ),
+            })
+          )
+        )
       );
       client = new AdapterClient({
         baseUrl: "http://adapter-svc",
@@ -253,9 +253,9 @@ describe("AdapterClient", () => {
             makeAdapter({
               authType: "bearer",
               authConfig: { bearerToken: "tok-abc" },
-            }),
-          ),
-        ),
+            })
+          )
+        )
       );
       client = new AdapterClient({
         baseUrl: "http://adapter-svc",
@@ -275,9 +275,9 @@ describe("AdapterClient", () => {
             makeAdapter({
               authType: "basic",
               authConfig: { basicUsername: "user", basicPassword: "pass" },
-            }),
-          ),
-        ),
+            })
+          )
+        )
       );
       client = new AdapterClient({
         baseUrl: "http://adapter-svc",
@@ -288,30 +288,16 @@ describe("AdapterClient", () => {
 
       const resolved = await client.resolveRequest("t1", "adp-1", "ep-1");
       expect(resolved.headers["Authorization"]).toBe(
-        `Basic ${btoa("user:pass")}`,
+        `Basic ${btoa("user:pass")}`
       );
     });
 
-    it("should fetch and cache OAuth2 token", async () => {
-      const oauthAdapter = makeAdapter({
-        authType: "oauth2",
-        authConfig: {
-          oauth2TokenUrl: "https://auth.example.com/token",
-          oauth2ClientId: "cid",
-          oauth2ClientSecret: "csecret",
-        },
+    it("should not set any auth header for an unrecognized authType", async () => {
+      const unknownAuthAdapter = makeAdapter({
+        authType: "some-removed-auth",
+        authConfig: { accessToken: "should-not-be-used" },
       });
-
-      let callCount = 0;
-      fetchFn = mock((url: string) => {
-        callCount++;
-        if (url.includes("/token")) {
-          return Promise.resolve(
-            jsonResponse({ access_token: "atok-1", expires_in: 3600 }),
-          );
-        }
-        return Promise.resolve(jsonResponse(oauthAdapter));
-      });
+      fetchFn = mock(() => Promise.resolve(jsonResponse(unknownAuthAdapter)));
       client = new AdapterClient({
         baseUrl: "http://adapter-svc",
         fetchFn: fetchFn as unknown as typeof globalThis.fetch,
@@ -320,45 +306,8 @@ describe("AdapterClient", () => {
       });
 
       const resolved = await client.resolveRequest("t1", "adp-1", "ep-1");
-      expect(resolved.headers["Authorization"]).toBe("Bearer atok-1");
-
-      const oauthSetex = cache.setex.mock.calls.find(
-        (c: unknown[]) => (c[0] as string).startsWith("adapter:oauth:"),
-      );
-      expect(oauthSetex).toBeDefined();
-      expect(oauthSetex![1]).toBe(3570);
-      expect(oauthSetex![2]).toBe("atok-1");
-    });
-
-    it("should return cached OAuth2 token without re-fetching", async () => {
-      const oauthAdapter = makeAdapter({
-        authType: "oauth2",
-        authConfig: {
-          oauth2TokenUrl: "https://auth.example.com/token",
-          oauth2ClientId: "cid",
-          oauth2ClientSecret: "csecret",
-        },
-      });
-
-      cache.get = mock((key: string) => {
-        if (key.startsWith("adapter:oauth:")) return Promise.resolve("cached-tok");
-        return Promise.resolve(null);
-      });
-      fetchFn = mock(() => Promise.resolve(jsonResponse(oauthAdapter)));
-      client = new AdapterClient({
-        baseUrl: "http://adapter-svc",
-        fetchFn: fetchFn as unknown as typeof globalThis.fetch,
-        cache,
-        cacheTtlSeconds: 10,
-      });
-
-      const resolved = await client.resolveRequest("t1", "adp-1", "ep-1");
-      expect(resolved.headers["Authorization"]).toBe("Bearer cached-tok");
-
-      const tokenFetchCalls = fetchFn.mock.calls.filter(
-        (c: unknown[]) => (c[0] as string).includes("/token"),
-      );
-      expect(tokenFetchCalls.length).toBe(0);
+      expect(resolved.headers["Authorization"]).toBeUndefined();
+      expect(resolved.headers["X-API-Key"]).toBeUndefined();
     });
   });
 
@@ -366,13 +315,6 @@ describe("AdapterClient", () => {
     it("should call cache.del with the correct key", async () => {
       await client.invalidate("t1", "adp-1");
       expect(cache.del).toHaveBeenCalledWith("adapter:config:t1:adp-1");
-    });
-  });
-
-  describe("invalidateOAuthToken", () => {
-    it("should call cache.del with the OAuth key", async () => {
-      await client.invalidateOAuthToken("adp-1");
-      expect(cache.del).toHaveBeenCalledWith("adapter:oauth:adp-1");
     });
   });
 
@@ -461,7 +403,7 @@ describe("AdapterClient", () => {
     it("deletes the internal-by-service cache key", async () => {
       await client.invalidateInternalByServiceId("t1", "svc-1");
       expect(cache.del).toHaveBeenCalledWith(
-        "adapter:internal-by-service:t1:svc-1",
+        "adapter:internal-by-service:t1:svc-1"
       );
     });
   });
@@ -504,7 +446,7 @@ describe("AdapterClient", () => {
       });
       expect(resolved).not.toBeNull();
       expect(resolved!.url).toBe(
-        "http://svc-1.tenant-a-dev-ns.svc.cluster.local/api/ping",
+        "http://svc-1.tenant-a-dev-ns.svc.cluster.local/api/ping"
       );
       expect(resolved!.method).toBe("POST");
       expect(resolved!.headers["X-Internal"]).toBe("yes");

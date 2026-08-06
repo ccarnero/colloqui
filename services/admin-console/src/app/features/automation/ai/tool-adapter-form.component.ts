@@ -29,7 +29,6 @@ const AUTH_TYPE_LABELS: ReadonlyMap<string, string> = new Map([
   ["api-key", "API Key"],
   ["bearer", "Bearer"],
   ["basic", "Basic Auth"],
-  ["oauth2", "OAuth2"],
 ]);
 
 @Component({

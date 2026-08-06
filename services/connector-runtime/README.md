@@ -82,7 +82,7 @@ bun test test/unit
 - `AdapterClient` class wraps connector-admin REST API calls
 - Redis stale-while-revalidate cache (soft TTL 60s, stale-serve window 300s)
 - Lazy cache misses: fetch from connector-admin while serving stale data if cache is fresh
-- OAuth2 client credentials token management for secured adapters
+- Auth header injection for the supported types (`none` / `api-key` / `bearer` / `basic`)
 
 ### Data Flow
 
@@ -816,7 +816,7 @@ GET /connectors/{adapterId}
     name: string,
     context: string,
     baseUrl: string,
-    authType: string,                       // "none" | "api-key" | "bearer" | "basic" | "oauth2-client"
+    authType: string,                       // "none" | "api-key" | "bearer" | "basic"
     authConfig: Record<string, unknown>,
     headers: IAdapterHeaderEntry[],         // an ARRAY, not a map
     timeoutMs: number,
@@ -883,7 +883,7 @@ redis-cli KEYS "*adapter*"
 |---------|----------|---------|
 | **Temporal Server** | gRPC | Receive activity tasks, report results |
 | **connector-admin** | HTTP | Fetch connector configs |
-| **Redis** | TCP | Cache connector configs and OAuth2 tokens |
+| **Redis** | TCP | Cache connector configs |
 | **Target endpoints** | HTTP(S) | Execute user-requested HTTP calls |
 
 ## Integration Points

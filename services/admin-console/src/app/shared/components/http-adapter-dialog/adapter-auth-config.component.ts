@@ -87,30 +87,6 @@ import { AUTH_TYPE_LABELS, authTypeOptions } from "./http-adapter-dialog.types";
               </mat-form-field>
             </div>
           }
-          @case ("oauth2") {
-            <div class="form-row">
-              <mat-form-field appearance="outline" class="form-field-half">
-                <mat-label>Client ID</mat-label>
-                <input matInput formControlName="oauth2ClientId" />
-              </mat-form-field>
-              <mat-form-field appearance="outline" class="form-field-half">
-                <mat-label>Client Secret</mat-label>
-                <input
-                  matInput
-                  formControlName="oauth2ClientSecret"
-                  type="password"
-                />
-              </mat-form-field>
-            </div>
-            <mat-form-field appearance="outline" class="form-field-full">
-              <mat-label>Token URL</mat-label>
-              <input
-                matInput
-                formControlName="oauth2TokenUrl"
-                placeholder="https://auth.example.com/oauth/token"
-              />
-            </mat-form-field>
-          }
         }
       </div>
     </div>

@@ -25,10 +25,7 @@ describe("AdapterAuthConfigComponent", () => {
         bearerToken: [""],
         basicUsername: [""],
         basicPassword: [""],
-        oauth2ClientId: [""],
-        oauth2ClientSecret: [""],
-        oauth2TokenUrl: [""],
-      }),
+      })
     );
     fixture.componentRef.setInput("authType", "none");
     fixture.detectChanges();
@@ -38,5 +35,17 @@ describe("AdapterAuthConfigComponent", () => {
     const el: HTMLElement = fixture.nativeElement;
     expect(el.textContent).toContain("Authentication");
     expect(el.textContent).toContain("Auth Type");
+  });
+
+  // Regression guard: OAuth2 was removed from the connector auth types — the
+  // selector must offer exactly the four supported values so the UI can never
+  // persist a connector the injectors would drop.
+  it("offers only the four supported auth types", () => {
+    expect(fixture.componentInstance.authOptions.map((o) => o.value)).toEqual([
+      "none",
+      "api-key",
+      "bearer",
+      "basic",
+    ]);
   });
 });

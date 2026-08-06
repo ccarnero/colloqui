@@ -40,12 +40,7 @@
  */
 
 export type ConnectorContext = "internal" | "external";
-export type ConnectorAuthType =
-  | "none"
-  | "api-key"
-  | "bearer"
-  | "basic"
-  | "oauth2-client";
+export type ConnectorAuthType = "none" | "api-key" | "bearer" | "basic";
 export type ConnectorStatus = "enabled" | "disabled";
 export type ConnectorCacheMethod =
   | "GET"

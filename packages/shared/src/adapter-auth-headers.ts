@@ -1,13 +1,16 @@
 import type { AdapterConfig } from "./adapter.interfaces";
 
 /**
- * Applies adapter auth headers for types that do not require async token fetch
- * (`none`, `api-key`, `bearer`, `basic`). For `oauth2`, use {@link AdapterClient}
- * `resolveRequest` or compose with an async token provider.
+ * Applies adapter auth headers for the four supported auth types
+ * (`none`, `api-key`, `bearer`, `basic`).
+ *
+ * Any other value is unsupported: no header is injected and the call is
+ * logged, so a connector stored with a stale/unknown `authType` cannot
+ * silently issue unauthenticated requests.
  */
 export function applyAdapterAuthHeadersSync(
   adapter: AdapterConfig,
-  headers: Record<string, string>,
+  headers: Record<string, string>
 ): void {
   const { authType, authConfig } = adapter;
 
@@ -17,8 +20,7 @@ export function applyAdapterAuthHeadersSync(
 
     case "api-key": {
       const apiKey = authConfig.apiKey as string;
-      const headerName =
-        (authConfig.apiKeyHeader as string) ?? "X-API-Key";
+      const headerName = (authConfig.apiKeyHeader as string) ?? "X-API-Key";
       headers[headerName] = apiKey;
       return;
     }
@@ -35,10 +37,12 @@ export function applyAdapterAuthHeadersSync(
       return;
     }
 
-    case "oauth2":
-      return;
-
     default:
+      console.warn(
+        `applyAdapterAuthHeadersSync: unsupported authType '${String(authType)}' ` +
+          `on adapter '${adapter.id}' (tenant '${adapter.tenantId}') — ` +
+          `no Authorization header injected. Supported: none, api-key, bearer, basic.`
+      );
       return;
   }
 }

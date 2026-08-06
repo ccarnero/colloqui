@@ -83,3 +83,49 @@ describe("UpdateAdapterDto resilience caps", () => {
     });
   }
 });
+
+// PENDIENTES/01-bugs-group-b.spec.md T01 (E11) — `oauth2-client` was an
+// accepted `authType` that no injector could ever honour, so such connectors
+// silently sent no `Authorization`. The value is gone from the whitelist:
+// the four surviving types stay accepted, `oauth2-client` is now rejected.
+describe("adapter authType whitelist", () => {
+  const supported = ["none", "api-key", "bearer", "basic"] as const;
+
+  for (const authType of supported) {
+    it(`accepts authType '${authType}' on create`, async () => {
+      const dto = plainToInstance(CreateAdapterDto, {
+        ...CREATE_BASE,
+        authType,
+      });
+      expect(await failedProperties(dto)).toHaveLength(0);
+    });
+
+    it(`accepts authType '${authType}' on update`, async () => {
+      const dto = plainToInstance(UpdateAdapterDto, { authType });
+      expect(await failedProperties(dto)).toHaveLength(0);
+    });
+  }
+
+  it("rejects the removed 'oauth2-client' authType on create", async () => {
+    const dto = plainToInstance(CreateAdapterDto, {
+      ...CREATE_BASE,
+      authType: "oauth2-client",
+    });
+    const errors = await validate(dto);
+    expect(errors.map((error) => error.property)).toContain("authType");
+    expect(
+      errors.find((error) => error.property === "authType")?.constraints
+    ).toHaveProperty("isIn");
+  });
+
+  it("rejects the removed 'oauth2-client' authType on update", async () => {
+    const dto = plainToInstance(UpdateAdapterDto, {
+      authType: "oauth2-client",
+    });
+    const errors = await validate(dto);
+    expect(errors.map((error) => error.property)).toContain("authType");
+    expect(
+      errors.find((error) => error.property === "authType")?.constraints
+    ).toHaveProperty("isIn");
+  });
+});

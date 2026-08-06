@@ -19,9 +19,7 @@ interface CachedInternalLookup {
 
 const DEFAULT_CACHE_TTL_S = 60;
 const STALE_MULTIPLIER = 5;
-const OAUTH_TOKEN_BUFFER_S = 30;
 const ADAPTER_KEY_PREFIX = "adapter:config:";
-const OAUTH_KEY_PREFIX = "adapter:oauth:";
 const INTERNAL_BY_SERVICE_KEY_PREFIX = "adapter:internal-by-service:";
 /** Shorter negative-cache TTL: new mirrors should propagate fast. */
 const NEGATIVE_CACHE_TTL_S = 10;
@@ -116,7 +114,7 @@ export class AdapterClient {
       headers[h.key] = h.value;
     }
 
-    await this.injectAuthHeaders(adapter, headers);
+    applyAdapterAuthHeadersSync(adapter, headers);
     const cache = endpoint.cache ?? adapter.defaultCache;
 
     return {
@@ -159,10 +157,6 @@ export class AdapterClient {
   async invalidate(tenantId: string, adapterId: string): Promise<void> {
     const key = `${ADAPTER_KEY_PREFIX}${tenantId}:${adapterId}`;
     await this.cache.del(key);
-  }
-
-  async invalidateOAuthToken(adapterId: string): Promise<void> {
-    await this.cache.del(`${OAUTH_KEY_PREFIX}${adapterId}`);
   }
 
   async invalidateInternalByServiceId(
@@ -256,7 +250,7 @@ export class AdapterClient {
       const h = adapter.headers[i]!;
       headers[h.key] = h.value;
     }
-    await this.injectAuthHeaders(adapter, headers);
+    applyAdapterAuthHeadersSync(adapter, headers);
 
     return {
       url: `${base}${path}`,
@@ -385,57 +379,6 @@ export class AdapterClient {
     }
 
     return (await res.json()) as AdapterConfig;
-  }
-
-  private async injectAuthHeaders(
-    adapter: AdapterConfig,
-    headers: Record<string, string>
-  ): Promise<void> {
-    applyAdapterAuthHeadersSync(adapter, headers);
-    if (adapter.authType === "oauth2") {
-      const token = await this.getOAuthToken(adapter);
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-  }
-
-  private async getOAuthToken(adapter: AdapterConfig): Promise<string> {
-    const key = `${OAUTH_KEY_PREFIX}${adapter.id}`;
-    const cached = await this.cache.get(key);
-
-    if (cached) {
-      return cached;
-    }
-
-    const tokenUrl = adapter.authConfig.oauth2TokenUrl as string;
-    const clientId = adapter.authConfig.oauth2ClientId as string;
-    const clientSecret = adapter.authConfig.oauth2ClientSecret as string;
-
-    const res = await this.fetchFn(tokenUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "client_credentials",
-        client_id: clientId,
-        client_secret: clientSecret,
-      }).toString(),
-      signal: AbortSignal.timeout(10_000),
-    });
-
-    if (!res.ok) {
-      throw new Error(
-        `OAuth2 token request failed for adapter '${adapter.id}': HTTP ${res.status}`
-      );
-    }
-
-    const body = (await res.json()) as {
-      access_token: string;
-      expires_in: number;
-    };
-
-    const ttlSeconds = Math.max(body.expires_in - OAUTH_TOKEN_BUFFER_S, 1);
-    await this.cache.setex(key, ttlSeconds, body.access_token);
-
-    return body.access_token;
   }
 }
 

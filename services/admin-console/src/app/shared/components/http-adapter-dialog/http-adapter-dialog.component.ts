@@ -1,3 +1,4 @@
+import { COMMA, ENTER } from "@angular/cdk/keycodes";
 import {
   ChangeDetectionStrategy,
   Component,
@@ -12,6 +13,7 @@ import {
   Validators,
 } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
+import { MatChipsModule } from "@angular/material/chips";
 import {
   MAT_DIALOG_DATA,
   MatDialogModule,
@@ -21,16 +23,14 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
-import { MatChipsModule } from "@angular/material/chips";
-import { COMMA, ENTER } from "@angular/cdk/keycodes";
 import {
   type AuthType,
+  type HttpMethod,
   type IHttpAdapter,
   type IHttpAdapterCacheStrategy,
   type IHttpAdapterContext,
   type IHttpAdapterDialogData,
   type IHttpAdapterDialogResult,
-  type HttpMethod,
 } from "../../models/http-adapter.model";
 import { AdapterAuthConfigComponent } from "./adapter-auth-config.component";
 import { AdapterCacheStrategyFormComponent } from "./adapter-cache-strategy-form.component";
@@ -295,7 +295,7 @@ import { AdapterEndpointConfigComponent } from "./adapter-endpoint-config.compon
 export class HttpAdapterDialogComponent {
   private readonly fb = inject(FormBuilder);
   readonly dialogRef = inject(
-    MatDialogRef<HttpAdapterDialogComponent, IHttpAdapterDialogResult>,
+    MatDialogRef<HttpAdapterDialogComponent, IHttpAdapterDialogResult>
   );
   readonly data = inject<IHttpAdapterDialogData>(MAT_DIALOG_DATA);
 
@@ -307,7 +307,7 @@ export class HttpAdapterDialogComponent {
     this.data.mode === "create" && !this.data.context;
 
   readonly contextSignal = signal<IHttpAdapterContext>(
-    this.data.context ?? "internal",
+    this.data.context ?? "internal"
   );
 
   readonly tags = signal<string[]>(this.data.adapter?.tags ?? []);
@@ -317,7 +317,7 @@ export class HttpAdapterDialogComponent {
   readonly isManaged = this.managedBy !== null;
 
   private readonly authTypeSignal = signal<AuthType>(
-    this.data.adapter?.auth.type ?? "none",
+    this.data.adapter?.auth.type ?? "none"
   );
 
   readonly authType = this.authTypeSignal.asReadonly();
@@ -343,7 +343,7 @@ export class HttpAdapterDialogComponent {
       this.fb.group({
         key: ["", Validators.required],
         value: ["", Validators.required],
-      }),
+      })
     );
   }
 
@@ -392,11 +392,6 @@ export class HttpAdapterDialogComponent {
           basicUsername: v.auth.basicUsername ?? "",
           basicPassword: v.auth.basicPassword ?? "",
         }),
-        ...(authTypeVal === "oauth2" && {
-          oauth2ClientId: v.auth.oauth2ClientId ?? "",
-          oauth2ClientSecret: v.auth.oauth2ClientSecret ?? "",
-          oauth2TokenUrl: v.auth.oauth2TokenUrl ?? "",
-        }),
       },
       headers: v.headers.map((h) => ({
         key: h.key ?? "",
@@ -406,7 +401,8 @@ export class HttpAdapterDialogComponent {
       endpoints: endpointValues.map((endpointValue) => ({
         id: (endpointValue["id"] as string | null | undefined) ?? undefined,
         label: (endpointValue["label"] as string | undefined) ?? "",
-        method: ((endpointValue["method"] as HttpMethod | undefined) ?? "GET") as HttpMethod,
+        method: ((endpointValue["method"] as HttpMethod | undefined) ??
+          "GET") as HttpMethod,
         path: (endpointValue["path"] as string | undefined) ?? "",
         cache: this.serializeCacheStrategyFormValue(
           endpointValue["cache"] as
@@ -419,7 +415,7 @@ export class HttpAdapterDialogComponent {
                 queryParamsMode?: string;
                 keyQueryParamsList?: string[];
               }
-            | undefined,
+            | undefined
         ),
       })),
       timeoutMs: v.timeoutMs ?? 5000,
@@ -449,21 +445,18 @@ export class HttpAdapterDialogComponent {
         bearerToken: [a?.auth.bearerToken ?? ""],
         basicUsername: [a?.auth.basicUsername ?? ""],
         basicPassword: [a?.auth.basicPassword ?? ""],
-        oauth2ClientId: [a?.auth.oauth2ClientId ?? ""],
-        oauth2ClientSecret: [a?.auth.oauth2ClientSecret ?? ""],
-        oauth2TokenUrl: [a?.auth.oauth2TokenUrl ?? ""],
       }),
       headers: this.fb.array(
         (a?.headers ?? []).map((h) =>
           this.fb.group({
             key: [h.key, Validators.required],
             value: [h.value, Validators.required],
-          }),
-        ),
+          })
+        )
       ),
       defaultCache: this.createCacheFormGroup(a?.defaultCache),
       endpoints: this.fb.array(
-        (a?.endpoints ?? []).map((e) => this.createEndpointGroup(e)),
+        (a?.endpoints ?? []).map((e) => this.createEndpointGroup(e))
       ),
       timeoutMs: [
         a?.timeoutMs ?? 5000,
@@ -498,7 +491,9 @@ export class HttpAdapterDialogComponent {
     return form;
   }
 
-  private createEndpointGroup(endpoint?: IHttpAdapter["endpoints"][number]): FormGroup {
+  private createEndpointGroup(
+    endpoint?: IHttpAdapter["endpoints"][number]
+  ): FormGroup {
     return this.fb.group({
       id: [endpoint?.id ?? null],
       label: [endpoint?.label ?? "", Validators.required],
@@ -510,7 +505,7 @@ export class HttpAdapterDialogComponent {
 
   private createCacheFormGroup(
     strategy?: IHttpAdapterCacheStrategy,
-    method?: HttpMethod,
+    method?: HttpMethod
   ): FormGroup {
     const selectedMethod = method ?? strategy?.methods?.[0] ?? "GET";
     const queryParamsMode = Array.isArray(strategy?.keyQueryParams)
@@ -552,7 +547,7 @@ export class HttpAdapterDialogComponent {
           queryParamsMode?: string;
           keyQueryParamsList?: string[];
         }
-      | undefined,
+      | undefined
   ): IHttpAdapterCacheStrategy | undefined {
     if (!value?.enabled) {
       return undefined;

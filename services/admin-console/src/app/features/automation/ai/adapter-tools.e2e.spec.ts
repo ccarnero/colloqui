@@ -10,7 +10,10 @@
  */
 // Vitest globals (see tsconfig.spec.json); keep filename *.e2e.spec.ts for Bun runners if needed.
 
-import type { IAgentToolPayload, IToolAdapterRef } from "../../../core/models/agent.model";
+import type {
+  IAgentToolPayload,
+  IToolAdapterRef,
+} from "../../../core/models/agent.model";
 
 // ---------------------------------------------------------------------------
 // Mock contract types (E2E stubs — not all fields match production DTOs)
@@ -84,10 +87,12 @@ function createMockAdminClient() {
 
     async updateAgent(
       id: string,
-      update: Partial<IAgentCreateRequest>,
+      update: Partial<IAgentCreateRequest>
     ): Promise<IAgentResponse | undefined> {
       const existing = agents.get(id);
-      if (!existing) return undefined;
+      if (!existing) {
+        return undefined;
+      }
       if (update.tools) {
         existing.tools = update.tools;
       }
@@ -96,7 +101,9 @@ function createMockAdminClient() {
 
     async publishAgent(id: string): Promise<IAgentResponse | undefined> {
       const agent = agents.get(id);
-      if (!agent) return undefined;
+      if (!agent) {
+        return undefined;
+      }
       agent.status = "published";
       return agent;
     },
@@ -279,7 +286,7 @@ describe("Adapter Tools E2E: Create Agent with Adapter Tool", () => {
     expect(adapter!.name).toBe("CRM API Adapter");
 
     const endpoint = adapter!.endpoints.find(
-      (ep) => ep.id === MOCK_ADAPTER_REF.endpointId,
+      (ep) => ep.id === MOCK_ADAPTER_REF.endpointId
     );
     expect(endpoint).toBeDefined();
     expect(endpoint!.method).toBe("POST");
@@ -435,14 +442,12 @@ describe("Adapter Tools E2E: Execute Agent with Adapter Tool", () => {
      * - api-key: X-Api-Key header
      * - bearer: Authorization: Bearer header
      * - basic: Authorization: Basic header (base64)
-     * - oauth2-client: Authorization: Bearer header (from access_token)
      */
     const authCases = [
       { authType: "none", expectedHeader: null },
       { authType: "api-key", expectedHeader: "X-Api-Key" },
       { authType: "bearer", expectedHeader: "Authorization" },
       { authType: "basic", expectedHeader: "Authorization" },
-      { authType: "oauth2-client", expectedHeader: "Authorization" },
     ];
 
     for (const { authType, expectedHeader } of authCases) {

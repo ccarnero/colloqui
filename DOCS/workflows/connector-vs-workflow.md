@@ -64,7 +64,7 @@ connector-runtime executeEndpointCall
 connector-admin resolves:
   baseUrl: https://crm.example.com/api
   endpoint path: /customers/{customerId}
-  auth: OAuth2 bearer token
+  auth: bearer token (from the connector's authConfig)
   ↓
 tracedFetch to https://crm.example.com/api/customers/123
   with Authorization header

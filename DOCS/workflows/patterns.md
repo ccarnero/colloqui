@@ -103,7 +103,7 @@ result = client.activity.executeEndpointCall({
 // AdapterClient resolves:
 //   baseUrl: https://crm.example.com/api (from adapter config)
 //   endpoint path: /contacts/{contactId}
-//   auth: Bearer token (OAuth2 client credentials)
+//   auth: Bearer token (from the adapter's authConfig)
 //   headers: { "X-API-Key": "...", ... }
 //   timeout: 45000 (adapter-configured)
 //   retries: 3 (adapter-configured)

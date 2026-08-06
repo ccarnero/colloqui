@@ -876,7 +876,7 @@ describe("connectorAuthSchema — secretRef-only, nested-field targeting", () =>
   test("rejects an unknown authType", () => {
     expect(
       connectorAuthSchema.safeParse({
-        authType: "oauth2",
+        authType: "digest",
         bearerToken: { secretRef: "x" },
       }).success
     ).toBe(false);

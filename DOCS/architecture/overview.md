@@ -933,7 +933,7 @@ graph TB
     subgraph "Cache Miss Path"
         ADA["connector-admin<br/>REST API"]
         MERGE["Merge Config<br/>baseUrl + endpoint.path"]
-        AUTH["Resolve Auth<br/>(OAuth2 tokens)"]
+        AUTH["Resolve Auth<br/>(api-key / bearer / basic)"]
         HEADERS["Merge Headers<br/>(default + custom)"]
         FINAL["Return Resolved<br/>URL, Headers, Timeout, Retries"]
         STORE["Cache in Redis<br/>TTL: 300s / Stale: 60s"]

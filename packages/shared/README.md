@@ -65,7 +65,7 @@ src/
 ├── adapter.interfaces.ts           # AdapterConfig, AdapterEndpointConfig, AdapterCache,
 │                                   #   ResolvedAdapterRequest, AdapterReference,
 │                                   #   DEFAULT_CONNECTOR_ADMIN_URL
-├── adapter-client.ts               # AdapterClient (SWR cache, OAuth2, request resolution),
+├── adapter-client.ts               # AdapterClient (SWR cache, request resolution),
 │                                   #   createAdapterClientWithRedisAndFetch
 ├── adapter-auth-headers.ts         # applyAdapterAuthHeadersSync (none/api-key/bearer/basic)
 │
@@ -274,27 +274,26 @@ Auth types exported: `JwtPayload`, `TokenResponse`, `TokenScope`, `UserRole`, `P
 
 The one substantial runtime class in this package: it fetches connector config
 from connector-admin's REST API, caches it in Redis with
-**stale-while-revalidate**, manages OAuth2 client-credentials tokens, and
-resolves a full request (URL + auth headers + timeout + retries) for an
-adapter + endpoint pair.
+**stale-while-revalidate**, and resolves a full request (URL + auth headers +
+timeout + retries) for an adapter + endpoint pair.
 
 | Knob | Value | Source |
 |---|---|---|
-| Soft TTL | `60` s, overridable per instance via `cacheTtlSeconds` | `adapter-client.ts:20`, `:58` |
+| Soft TTL | `60` s, overridable per instance via `cacheTtlSeconds` | `adapter-client.ts:20`, `:56` |
 | Hard (stale) TTL | soft × `5` = 300 s | `STALE_MULTIPLIER`, `adapter-client.ts:21` |
-| Negative-cache TTL | `10` s — deliberately shorter, so a newly created mirror propagates fast | `adapter-client.ts:26-27` |
+| Negative-cache TTL | `10` s — deliberately shorter, so a newly created mirror propagates fast | `adapter-client.ts:24-25` |
 | Default base URL | `http://connector-admin-api.platform-services-dev.svc.cluster.local` (`DEFAULT_CONNECTOR_ADMIN_URL`) | `adapter.interfaces.ts:20-22` |
 
-Read path (`getAdapter`, `adapter-client.ts:66-82`): a cache entry inside its
+Read path (`getAdapter`, `adapter-client.ts:64-80`): a cache entry inside its
 soft TTL is returned directly; past it, the client attempts a refresh and
 **falls back to the stale entry** when connector-admin is unreachable
-(`:62-65`). That fallback is the point of the hard TTL — a connector-admin
+(`:60-63`). That fallback is the point of the hard TTL — a connector-admin
 outage degrades freshness, not availability.
 
-Auth header injection is split: `applyAdapterAuthHeadersSync`
-(`adapter-auth-headers.ts`) covers `none` / `api-key` / `bearer` / `basic`,
-while `AdapterClient` adds the OAuth2 bearer token, since that one needs an
-async token fetch.
+Auth header injection is delegated to `applyAdapterAuthHeadersSync`
+(`adapter-auth-headers.ts`), which covers every supported auth type —
+`none` / `api-key` / `bearer` / `basic`. Any other stored `authType` injects
+no header and logs a warning.
 
 ## Consumer Services
 
@@ -351,9 +350,9 @@ bun test
 
 - `src/__tests__/` (10 specs) + `src/provisioning/__tests__/` (4 specs +
   `fixtures.ts`) — co-located with the code they cover.
-- `test/unit/` (6 specs) — `adapter-client`, `circuit-breaker`,
-  `envelope.utils`, `envelope-schema`, `channel-usage-schema`,
-  `mcp-usage-client`.
+- `test/unit/` (7 specs) — `adapter-client`, `adapter-auth-headers`,
+  `circuit-breaker`, `envelope.utils`, `envelope-schema`,
+  `channel-usage-schema`, `mcp-usage-client`.
 
 ## Common Tasks
 

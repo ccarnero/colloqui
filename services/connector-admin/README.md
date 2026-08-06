@@ -113,23 +113,21 @@ re-run lazily by `ensureSchema(tenantId)` (all `IF NOT EXISTS`).
 
 ## Auth types
 
-`POST`/`PATCH` accept `authType` from a five-value list
-(`ADAPTER_AUTH_TYPES`, `src/modules/adapters/adapters.dto.ts:39-45`, enforced by
-`@IsIn` at `:177` and `:239`): `none`, `api-key`, `bearer`, `basic`,
-`oauth2-client`.
+`POST`/`PATCH` accept `authType` from a four-value list
+(`ADAPTER_AUTH_TYPES`, `src/modules/adapters/adapters.dto.ts:39`, enforced by
+`@IsIn` at `:171` and `:233`): `none`, `api-key`, `bearer`, `basic`.
 
 Header injection happens in the CONSUMING service, not here:
-`applyAdapterAuthHeadersSync` (`packages/shared/src/adapter-auth-headers.ts:8-43`)
-handles `none`, `api-key` (header name defaults to `X-API-Key`, `:20-21`),
-`bearer` and `basic`; `AdapterClient.injectAuthHeaders`
-(`packages/shared/src/adapter-client.ts:390-399`) adds the OAuth2 bearer token.
+`applyAdapterAuthHeadersSync` (`packages/shared/src/adapter-auth-headers.ts:11`)
+handles all four — `none`, `api-key` (header name defaults to `X-API-Key`),
+`bearer` and `basic`. `AdapterClient` calls it directly; there is no async
+auth flavour left, so no token-fetch path exists.
 
-> Known mismatch — the DTO's accepted value is `oauth2-client` but both
-> consumer-side switches test for `oauth2`
-> (`adapter-auth-headers.ts:38`, `adapter-client.ts:395`). A connector stored
-> with `oauth2-client` therefore falls through to the no-op `default` branch and
-> gets no `Authorization` header. Recorded as a code follow-up; not fixed in a
-> docs change.
+> Any other stored `authType` (e.g. connectors persisted before the
+> client-credentials flow was removed) hits the injector's `default` branch:
+> NO `Authorization` header is injected and a warning is logged. Such rows are
+> still readable, but a `PATCH` that echoes the old `authType` is rejected by
+> `@IsIn`; pick one of the four supported values.
 
 ## Retry-chain caps (`timeoutMs`, `maxRetries`, `retryBackoffMs`)
 

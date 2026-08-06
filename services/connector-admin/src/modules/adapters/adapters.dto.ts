@@ -36,13 +36,7 @@ const HTTP_METHODS = [
   "OPTIONS",
 ] as const;
 
-const ADAPTER_AUTH_TYPES = [
-  "none",
-  "api-key",
-  "bearer",
-  "basic",
-  "oauth2-client",
-] as const;
+const ADAPTER_AUTH_TYPES = ["none", "api-key", "bearer", "basic"] as const;
 
 const CACHE_METHODS = [
   AdapterCacheMethod.GET,

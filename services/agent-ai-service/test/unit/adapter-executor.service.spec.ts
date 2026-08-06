@@ -1,6 +1,9 @@
-import { describe, it, expect, mock, beforeEach, afterEach } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { AdapterExecutorService } from "../../src/modules/tools/adapter-executor.service";
-import type { AdapterReference, RuntimeState } from "../../src/modules/tools/tool-definition";
+import type {
+  AdapterReference,
+  RuntimeState,
+} from "../../src/modules/tools/tool-definition";
 
 // ── Env helpers ────────────────────────────────────────────────────────────
 
@@ -8,15 +11,21 @@ const originalEnv = { ...process.env };
 
 function setEnv(vars: Record<string, string | undefined>) {
   for (const [key, value] of Object.entries(vars)) {
-    if (value === undefined) delete process.env[key];
-    else process.env[key] = value;
+    if (value === undefined) {
+      delete process.env[key];
+    } else {
+      process.env[key] = value;
+    }
   }
 }
 
 function restoreEnv() {
   for (const key of Object.keys(process.env)) {
-    if (!(key in originalEnv)) delete process.env[key];
-    else if (process.env[key] !== originalEnv[key]) process.env[key] = originalEnv[key];
+    if (!(key in originalEnv)) {
+      delete process.env[key];
+    } else if (process.env[key] !== originalEnv[key]) {
+      process.env[key] = originalEnv[key];
+    }
   }
 }
 
@@ -24,14 +33,16 @@ function restoreEnv() {
 
 const originalFetch = globalThis.fetch;
 const fetchMock = mock((_input: RequestInfo | URL, _init?: RequestInit) =>
-  Promise.resolve(new Response(JSON.stringify({}), { status: 200 })),
+  Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
 );
 
 // ── Fixture factories ──────────────────────────────────────────────────────
 
 const CONNECTOR_ADMIN_URL = "http://connector-admin-test:3000";
 
-function makeAdapterRef(overrides?: Partial<AdapterReference>): AdapterReference {
+function makeAdapterRef(
+  overrides?: Partial<AdapterReference>
+): AdapterReference {
   return {
     adapterId: "adapter-1",
     endpointId: "ep-1",
@@ -69,7 +80,10 @@ function makeAdapterResponse(overrides: Record<string, unknown> = {}) {
 }
 
 /** Builds a successful connector-admin Response. */
-function connectorAdminResponse(adapter: Record<string, unknown> = makeAdapterResponse(), status = 200) {
+function connectorAdminResponse(
+  adapter: Record<string, unknown> = makeAdapterResponse(),
+  status = 200
+) {
   return new Response(JSON.stringify(adapter), {
     status,
     headers: { "Content-Type": "application/json" },
@@ -91,14 +105,18 @@ function adapterResponse(data: unknown, status = 200) {
  */
 function setupFetchSequence(
   connectorResponse: Response,
-  adapterResp: Response,
+  adapterResp: Response
 ) {
   let callIndex = 0;
-  fetchMock.mockImplementation((_input: RequestInfo | URL, _init?: RequestInit) => {
-    const idx = callIndex++;
-    if (idx === 0) return Promise.resolve(connectorResponse);
-    return Promise.resolve(adapterResp);
-  });
+  fetchMock.mockImplementation(
+    (_input: RequestInfo | URL, _init?: RequestInit) => {
+      const idx = callIndex++;
+      if (idx === 0) {
+        return Promise.resolve(connectorResponse);
+      }
+      return Promise.resolve(adapterResp);
+    }
+  );
 }
 
 /**
@@ -120,8 +138,9 @@ describe("AdapterExecutorService", () => {
     globalThis.fetch = fetchMock;
     fetchMock.mockReset();
     // Restore default implementation so tests that don't configure it still work
-    fetchMock.mockImplementation((_input: RequestInfo | URL, _init?: RequestInit) =>
-      Promise.resolve(new Response(JSON.stringify({}), { status: 200 })),
+    fetchMock.mockImplementation(
+      (_input: RequestInfo | URL, _init?: RequestInit) =>
+        Promise.resolve(new Response(JSON.stringify({}), { status: 200 }))
     );
   });
 
@@ -139,14 +158,14 @@ describe("AdapterExecutorService", () => {
       const adapterData = { result: "hello" };
       setupFetchSequence(
         connectorAdminResponse(makeAdapterResponse()),
-        adapterResponse(adapterData),
+        adapterResponse(adapterData)
       );
 
       const result = await service.execute(
         "tenant-1",
         makeAdapterRef(),
         { query: "test" },
-        makeState(),
+        makeState()
       );
 
       expect(result.success).toBe(true);
@@ -158,7 +177,7 @@ describe("AdapterExecutorService", () => {
         "",
         makeAdapterRef(),
         {},
-        makeState(),
+        makeState()
       );
 
       expect(result.success).toBe(false);
@@ -168,15 +187,13 @@ describe("AdapterExecutorService", () => {
     });
 
     it("should return error when adapter resolution fails (404 from connector-admin)", async () => {
-      setupFetchSame(
-        new Response(JSON.stringify({}), { status: 404 }),
-      );
+      setupFetchSame(new Response(JSON.stringify({}), { status: 404 }));
 
       const result = await service.execute(
         "tenant-1",
         makeAdapterRef(),
         {},
-        makeState(),
+        makeState()
       );
 
       expect(result.success).toBe(false);
@@ -186,14 +203,14 @@ describe("AdapterExecutorService", () => {
     it("should return error when adapter HTTP response is non-2xx", async () => {
       setupFetchSequence(
         connectorAdminResponse(makeAdapterResponse()),
-        new Response(JSON.stringify({ error: "bad" }), { status: 500 }),
+        new Response(JSON.stringify({ error: "bad" }), { status: 500 })
       );
 
       const result = await service.execute(
         "tenant-1",
         makeAdapterRef(),
         {},
-        makeState(),
+        makeState()
       );
 
       expect(result.success).toBe(false);
@@ -209,7 +226,7 @@ describe("AdapterExecutorService", () => {
         "tenant-1",
         makeAdapterRef(),
         {},
-        makeState(),
+        makeState()
       );
 
       expect(result.success).toBe(false);
@@ -220,18 +237,22 @@ describe("AdapterExecutorService", () => {
       let capturedInit: RequestInit | undefined;
       setupFetchSequence(
         connectorAdminResponse(makeAdapterResponse()),
-        adapterResponse({ ok: true }),
+        adapterResponse({ ok: true })
       );
 
       // Override mock to capture headers on the second call
       let callIdx = 0;
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 1) capturedInit = init;
-        return idx === 0
-          ? Promise.resolve(connectorAdminResponse(makeAdapterResponse()))
-          : Promise.resolve(adapterResponse({ ok: true }));
-      });
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 1) {
+            capturedInit = init;
+          }
+          return idx === 0
+            ? Promise.resolve(connectorAdminResponse(makeAdapterResponse()))
+            : Promise.resolve(adapterResponse({ ok: true }));
+        }
+      );
 
       await service.execute("tenant-42", makeAdapterRef(), {}, makeState());
 
@@ -242,13 +263,17 @@ describe("AdapterExecutorService", () => {
     it("should include Content-Type application/json header in the adapter request", async () => {
       let capturedInit: RequestInit | undefined;
       let callIdx = 0;
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 1) capturedInit = init;
-        return idx === 0
-          ? Promise.resolve(connectorAdminResponse(makeAdapterResponse()))
-          : Promise.resolve(adapterResponse({ ok: true }));
-      });
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 1) {
+            capturedInit = init;
+          }
+          return idx === 0
+            ? Promise.resolve(connectorAdminResponse(makeAdapterResponse()))
+            : Promise.resolve(adapterResponse({ ok: true }));
+        }
+      );
 
       await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
 
@@ -259,13 +284,17 @@ describe("AdapterExecutorService", () => {
     it("should send payload as JSON body in the adapter request", async () => {
       let capturedInit: RequestInit | undefined;
       let callIdx = 0;
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 1) capturedInit = init;
-        return idx === 0
-          ? Promise.resolve(connectorAdminResponse(makeAdapterResponse()))
-          : Promise.resolve(adapterResponse({ ok: true }));
-      });
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 1) {
+            capturedInit = init;
+          }
+          return idx === 0
+            ? Promise.resolve(connectorAdminResponse(makeAdapterResponse()))
+            : Promise.resolve(adapterResponse({ ok: true }));
+        }
+      );
 
       const payload = { action: "search", term: "hello" };
       await service.execute("tenant-1", makeAdapterRef(), payload, makeState());
@@ -278,21 +307,30 @@ describe("AdapterExecutorService", () => {
       for (const method of methods) {
         let capturedInit: RequestInit | undefined;
         let callIdx = 0;
-        fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-          const idx = callIdx++;
-          if (idx === 1) capturedInit = init;
-          return idx === 0
-            ? Promise.resolve(
-                connectorAdminResponse(
-                  makeAdapterResponse({
-                    endpoints: [{ id: "ep-1", path: "/data", method }],
-                  }),
-                ),
-              )
-            : Promise.resolve(adapterResponse({ ok: true }));
-        });
+        fetchMock.mockImplementation(
+          (_input: RequestInfo | URL, init?: RequestInit) => {
+            const idx = callIdx++;
+            if (idx === 1) {
+              capturedInit = init;
+            }
+            return idx === 0
+              ? Promise.resolve(
+                  connectorAdminResponse(
+                    makeAdapterResponse({
+                      endpoints: [{ id: "ep-1", path: "/data", method }],
+                    })
+                  )
+                )
+              : Promise.resolve(adapterResponse({ ok: true }));
+          }
+        );
 
-        await service.execute("tenant-1", makeAdapterRef(), { query: "data" }, makeState());
+        await service.execute(
+          "tenant-1",
+          makeAdapterRef(),
+          { query: "data" },
+          makeState()
+        );
 
         expect(capturedInit?.body).toBeUndefined();
       }
@@ -311,7 +349,7 @@ describe("AdapterExecutorService", () => {
     async function executeWithUrl(baseUrl: string) {
       setupFetchSequence(
         connectorAdminResponse(makeAdapterResponse({ baseUrl })),
-        adapterResponse({ ok: true }),
+        adapterResponse({ ok: true })
       );
       return service.execute("tenant-1", makeAdapterRef(), {}, makeState());
     }
@@ -364,7 +402,9 @@ describe("AdapterExecutorService", () => {
     });
 
     it("should reject 169.254.169.254 (cloud metadata)", async () => {
-      const result = await executeWithUrl("http://169.254.169.254/latest/meta-data");
+      const result = await executeWithUrl(
+        "http://169.254.169.254/latest/meta-data"
+      );
       expect(result.success).toBe(false);
       expect(result.error).toContain("cloud metadata");
     });
@@ -437,23 +477,25 @@ describe("AdapterExecutorService", () => {
      */
     async function executeWithAuth(
       authType: string,
-      authConfig: Record<string, unknown>,
+      authConfig: Record<string, unknown>
     ): Promise<Record<string, string>> {
       let capturedHeaders: Record<string, string> = {};
 
       let callIdx = 0;
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(
-            connectorAdminResponse(
-              makeAdapterResponse({ authType, authConfig }),
-            ),
-          );
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(
+              connectorAdminResponse(
+                makeAdapterResponse({ authType, authConfig })
+              )
+            );
+          }
+          capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
       await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
       return capturedHeaders;
@@ -510,16 +552,20 @@ describe("AdapterExecutorService", () => {
       expect(headers["Authorization"]).toBe(expected);
     });
 
-    it("should add Authorization: Bearer for oauth2-client auth", async () => {
-      const headers = await executeWithAuth("oauth2-client", {
-        access_token: "oauth-access-token",
-      });
-
-      expect(headers["Authorization"]).toBe("Bearer oauth-access-token");
-    });
-
     it("should not add any auth header when authType is none", async () => {
       const headers = await executeWithAuth("none", {});
+
+      expect(headers["Authorization"]).toBeUndefined();
+      expect(headers["X-Api-Key"]).toBeUndefined();
+    });
+
+    // Regression guard: an adapter stored with an auth type the platform does
+    // not support (e.g. the removed `oauth2-client`) must not smuggle a
+    // credential into the request through an unhandled branch.
+    it("should not add any auth header for an unrecognized authType", async () => {
+      const headers = await executeWithAuth("oauth2-client", {
+        access_token: "should-not-be-used",
+      });
 
       expect(headers["Authorization"]).toBeUndefined();
       expect(headers["X-Api-Key"]).toBeUndefined();
@@ -530,22 +576,24 @@ describe("AdapterExecutorService", () => {
       let capturedHeaders: Record<string, string> = {};
       let callIdx = 0;
 
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(
-            connectorAdminResponse(
-              makeAdapterResponse({
-                authType: "bearer",
-                authConfig: { token: "should-not-override" },
-                headers: [{ key: "Authorization", value: "Custom existing" }],
-              }),
-            ),
-          );
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(
+              connectorAdminResponse(
+                makeAdapterResponse({
+                  authType: "bearer",
+                  authConfig: { token: "should-not-override" },
+                  headers: [{ key: "Authorization", value: "Custom existing" }],
+                })
+              )
+            );
+          }
+          capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
       await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
 
@@ -557,22 +605,27 @@ describe("AdapterExecutorService", () => {
       let capturedHeaders: Record<string, string> = {};
       let callIdx = 0;
 
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(
-            connectorAdminResponse(
-              makeAdapterResponse({
-                authType: "api-key",
-                authConfig: { headerName: "X-Api-Key", key: "should-not-override" },
-                headers: [{ key: "X-Api-Key", value: "pre-existing-key" }],
-              }),
-            ),
-          );
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(
+              connectorAdminResponse(
+                makeAdapterResponse({
+                  authType: "api-key",
+                  authConfig: {
+                    headerName: "X-Api-Key",
+                    key: "should-not-override",
+                  },
+                  headers: [{ key: "X-Api-Key", value: "pre-existing-key" }],
+                })
+              )
+            );
+          }
+          capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
       await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
 
@@ -592,13 +645,13 @@ describe("AdapterExecutorService", () => {
     async function executeWithResponseData(data: unknown) {
       setupFetchSequence(
         connectorAdminResponse(makeAdapterResponse()),
-        adapterResponse(data),
+        adapterResponse(data)
       );
       const result = await service.execute(
         "tenant-1",
         makeAdapterRef(),
         {},
-        makeState(),
+        makeState()
       );
       return result;
     }
@@ -624,10 +677,10 @@ describe("AdapterExecutorService", () => {
       const output = result.output as Record<string, unknown>;
       expect(output._truncated).toBe(true);
       expect(typeof output.original_size_bytes).toBe("number");
-      expect((output.original_size_bytes as number)).toBeGreaterThan(100_000);
+      expect(output.original_size_bytes as number).toBeGreaterThan(100_000);
       expect(Array.isArray(output.top_level_keys)).toBe(true);
       expect(typeof output.message).toBe("string");
-      expect((output.message as string)).toContain("truncated");
+      expect(output.message as string).toContain("truncated");
     });
 
     it("should truncate large array responses with item_count", async () => {
@@ -644,7 +697,7 @@ describe("AdapterExecutorService", () => {
       expect(output._truncated).toBe(true);
       expect(typeof output.original_size_bytes).toBe("number");
       expect(typeof output.item_count).toBe("number");
-      expect((output.item_count as number)).toBe(5000);
+      expect(output.item_count as number).toBe(5000);
     });
 
     it("should truncate large string responses with message only", async () => {
@@ -687,7 +740,7 @@ describe("AdapterExecutorService", () => {
         "tenant-1",
         makeAdapterRef({ adapterId: "missing-adapter" }),
         {},
-        makeState(),
+        makeState()
       );
 
       expect(result.success).toBe(false);
@@ -697,14 +750,14 @@ describe("AdapterExecutorService", () => {
 
     it("should return error when connector-admin returns non-200 status", async () => {
       setupFetchSame(
-        new Response(JSON.stringify({ error: "internal" }), { status: 500 }),
+        new Response(JSON.stringify({ error: "internal" }), { status: 500 })
       );
 
       const result = await service.execute(
         "tenant-1",
         makeAdapterRef({ adapterId: "adapter-1" }),
         {},
-        makeState(),
+        makeState()
       );
 
       expect(result.success).toBe(false);
@@ -717,15 +770,15 @@ describe("AdapterExecutorService", () => {
         connectorAdminResponse(
           makeAdapterResponse({
             endpoints: [{ id: "other-ep", path: "/v1/other" }],
-          }),
-        ),
+          })
+        )
       );
 
       const result = await service.execute(
         "tenant-1",
         makeAdapterRef({ endpointId: "ep-1" }),
         {},
-        makeState(),
+        makeState()
       );
 
       expect(result.success).toBe(false);
@@ -738,15 +791,20 @@ describe("AdapterExecutorService", () => {
       let callIdx = 0;
       fetchMock.mockImplementation((input: RequestInfo | URL) => {
         const idx = callIdx++;
-        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
         if (idx === 0) {
           return Promise.resolve(
             connectorAdminResponse(
               makeAdapterResponse({
                 baseUrl: "https://api.service.io/",
                 endpoints: [{ id: "ep-1", path: "/v2/resources" }],
-              }),
-            ),
+              })
+            )
           );
         }
         capturedUrl = url;
@@ -764,15 +822,20 @@ describe("AdapterExecutorService", () => {
       let callIdx = 0;
       fetchMock.mockImplementation((input: RequestInfo | URL) => {
         const idx = callIdx++;
-        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
         if (idx === 0) {
           return Promise.resolve(
             connectorAdminResponse(
               makeAdapterResponse({
                 baseUrl: "https://api.service.io///",
                 endpoints: [{ id: "ep-1", path: "///v1/data" }],
-              }),
-            ),
+              })
+            )
           );
         }
         capturedUrl = url;
@@ -788,20 +851,22 @@ describe("AdapterExecutorService", () => {
       let capturedInit: RequestInit | undefined;
       let callIdx = 0;
 
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(
-            connectorAdminResponse(
-              makeAdapterResponse({
-                endpoints: [{ id: "ep-1", path: "/data", method: "PUT" }],
-              }),
-            ),
-          );
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(
+              connectorAdminResponse(
+                makeAdapterResponse({
+                  endpoints: [{ id: "ep-1", path: "/data", method: "PUT" }],
+                })
+              )
+            );
+          }
+          capturedInit = init;
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        capturedInit = init;
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
       await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
 
@@ -812,20 +877,22 @@ describe("AdapterExecutorService", () => {
       let capturedInit: RequestInit | undefined;
       let callIdx = 0;
 
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(
-            connectorAdminResponse(
-              makeAdapterResponse({
-                endpoints: [{ id: "ep-1", path: "/data" }],
-              }),
-            ),
-          );
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(
+              connectorAdminResponse(
+                makeAdapterResponse({
+                  endpoints: [{ id: "ep-1", path: "/data" }],
+                })
+              )
+            );
+          }
+          capturedInit = init;
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        capturedInit = init;
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
       await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
 
@@ -839,63 +906,79 @@ describe("AdapterExecutorService", () => {
       // Instead, we test that a valid timeout works end-to-end.
       let callIdx = 0;
 
-      fetchMock.mockImplementation((_input: RequestInfo | URL, _init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(
-            connectorAdminResponse(
-              makeAdapterResponse({
-                endpoints: [{ id: "ep-1", path: "/data", timeoutMs: 10000 }],
-              }),
-            ),
-          );
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, _init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(
+              connectorAdminResponse(
+                makeAdapterResponse({
+                  endpoints: [{ id: "ep-1", path: "/data", timeoutMs: 10000 }],
+                })
+              )
+            );
+          }
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
-      const result = await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
+      const result = await service.execute(
+        "tenant-1",
+        makeAdapterRef(),
+        {},
+        makeState()
+      );
       expect(result.success).toBe(true);
     });
 
     it("should fall back to adapter.timeoutMs when endpoint.timeoutMs is not set", async () => {
       let callIdx = 0;
 
-      fetchMock.mockImplementation((_input: RequestInfo | URL, _init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(
-            connectorAdminResponse(
-              makeAdapterResponse({
-                timeoutMs: 15000,
-                endpoints: [{ id: "ep-1", path: "/data" }],
-              }),
-            ),
-          );
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, _init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(
+              connectorAdminResponse(
+                makeAdapterResponse({
+                  timeoutMs: 15000,
+                  endpoints: [{ id: "ep-1", path: "/data" }],
+                })
+              )
+            );
+          }
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
-      const result = await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
+      const result = await service.execute(
+        "tenant-1",
+        makeAdapterRef(),
+        {},
+        makeState()
+      );
       expect(result.success).toBe(true);
     });
 
     it("should fall back to 5000ms when neither endpoint nor adapter timeoutMs is set", async () => {
       let callIdx = 0;
 
-      fetchMock.mockImplementation((_input: RequestInfo | URL, _init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(
-            connectorAdminResponse(
-              makeAdapterResponse({
-                endpoints: [{ id: "ep-1", path: "/data" }],
-                // No timeoutMs on endpoint or adapter
-              }),
-            ),
-          );
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, _init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(
+              connectorAdminResponse(
+                makeAdapterResponse({
+                  endpoints: [{ id: "ep-1", path: "/data" }],
+                  // No timeoutMs on endpoint or adapter
+                })
+              )
+            );
+          }
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
       // Remove timeoutMs from adapter response
       const adapterResp = makeAdapterResponse();
@@ -905,15 +988,22 @@ describe("AdapterExecutorService", () => {
 
       // Re-configure mock
       callIdx = 0;
-      fetchMock.mockImplementation((_input: RequestInfo | URL, _init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(connectorAdminResponse(adapterResp));
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, _init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(connectorAdminResponse(adapterResp));
+          }
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
-      const result = await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
+      const result = await service.execute(
+        "tenant-1",
+        makeAdapterRef(),
+        {},
+        makeState()
+      );
       expect(result.success).toBe(true);
     });
 
@@ -921,23 +1011,25 @@ describe("AdapterExecutorService", () => {
       let capturedHeaders: Record<string, string> = {};
       let callIdx = 0;
 
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(
-            connectorAdminResponse(
-              makeAdapterResponse({
-                headers: [
-                  { key: "X-Custom-Header", value: "custom-value" },
-                  { key: "X-Another", value: "another" },
-                ],
-              }),
-            ),
-          );
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(
+              connectorAdminResponse(
+                makeAdapterResponse({
+                  headers: [
+                    { key: "X-Custom-Header", value: "custom-value" },
+                    { key: "X-Another", value: "another" },
+                  ],
+                })
+              )
+            );
+          }
+          capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
       await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
 
@@ -949,23 +1041,25 @@ describe("AdapterExecutorService", () => {
       let capturedHeaders: Record<string, string> = {};
       let callIdx = 0;
 
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        const idx = callIdx++;
-        if (idx === 0) {
-          return Promise.resolve(
-            connectorAdminResponse(
-              makeAdapterResponse({
-                headers: [
-                  { key: "", value: "should-be-skipped" },
-                  { key: "X-Valid", value: "valid" },
-                ],
-              }),
-            ),
-          );
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          const idx = callIdx++;
+          if (idx === 0) {
+            return Promise.resolve(
+              connectorAdminResponse(
+                makeAdapterResponse({
+                  headers: [
+                    { key: "", value: "should-be-skipped" },
+                    { key: "X-Valid", value: "valid" },
+                  ],
+                })
+              )
+            );
+          }
+          capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
+          return Promise.resolve(adapterResponse({ ok: true }));
         }
-        capturedHeaders = (init?.headers ?? {}) as Record<string, string>;
-        return Promise.resolve(adapterResponse({ ok: true }));
-      });
+      );
 
       await service.execute("tenant-1", makeAdapterRef(), {}, makeState());
 
@@ -979,15 +1073,20 @@ describe("AdapterExecutorService", () => {
       let callIdx = 0;
       fetchMock.mockImplementation((input: RequestInfo | URL) => {
         const idx = callIdx++;
-        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        const url =
+          typeof input === "string"
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url;
         if (idx === 0) {
           return Promise.resolve(
             connectorAdminResponse(
               makeAdapterResponse({
                 baseUrl: "https://api.example.com/health",
                 endpoints: [{ id: "ep-1", path: "" }],
-              }),
-            ),
+              })
+            )
           );
         }
         capturedUrl = url;
@@ -1002,16 +1101,18 @@ describe("AdapterExecutorService", () => {
     it("should call connector-admin with X-Yoizen-Tenant header", async () => {
       let capturedInit: RequestInit | undefined;
 
-      fetchMock.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
-        capturedInit = init;
-        return Promise.resolve(
-          connectorAdminResponse(
-            makeAdapterResponse({
-              baseUrl: "http://203.0.113.50/api",
-            }),
-          ),
-        );
-      });
+      fetchMock.mockImplementation(
+        (_input: RequestInfo | URL, init?: RequestInit) => {
+          capturedInit = init;
+          return Promise.resolve(
+            connectorAdminResponse(
+              makeAdapterResponse({
+                baseUrl: "http://203.0.113.50/api",
+              })
+            )
+          );
+        }
+      );
 
       await service.execute("tenant-99", makeAdapterRef(), {}, makeState());
 

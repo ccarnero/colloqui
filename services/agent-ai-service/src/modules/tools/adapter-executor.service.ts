@@ -1,6 +1,10 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { agentAiServiceConfig } from "../../config";
-import type { AdapterReference, ToolResult, ToolExecutionContext } from "./tool-definition";
+import type {
+  AdapterReference,
+  ToolExecutionContext,
+  ToolResult,
+} from "./tool-definition";
 
 export interface ResolvedRequest {
   readonly url: string;
@@ -17,7 +21,7 @@ export class AdapterExecutorService {
     tenantId: string,
     adapterRef: AdapterReference,
     payload: Record<string, unknown>,
-    _state: ToolExecutionContext,
+    _state: ToolExecutionContext
   ): Promise<ToolResult> {
     if (!tenantId) {
       return { success: false, output: null, error: "Missing tenant context" };
@@ -28,7 +32,7 @@ export class AdapterExecutorService {
       resolved = await this.resolveRequest(
         adapterRef.adapterId,
         adapterRef.endpointId,
-        tenantId,
+        tenantId
       );
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -75,7 +79,7 @@ export class AdapterExecutorService {
   private async resolveRequest(
     adapterId: string,
     endpointId: string,
-    tenantId: string,
+    tenantId: string
   ): Promise<ResolvedRequest> {
     const baseUrl = agentAiServiceConfig.connectorAdminUrl;
     const url = `${baseUrl}/connectors/${adapterId}`;
@@ -93,40 +97,47 @@ export class AdapterExecutorService {
 
     if (!response.ok) {
       throw new Error(
-        `Failed to fetch adapter ${adapterId}: HTTP ${response.status}`,
+        `Failed to fetch adapter ${adapterId}: HTTP ${response.status}`
       );
     }
 
     const adapter = await response.json();
     const endpoints = adapter.endpoints ?? [];
     const endpoint = endpoints.find(
-      (ep: Record<string, unknown>) => ep.id === endpointId,
+      (ep: Record<string, unknown>) => ep.id === endpointId
     );
 
     if (!endpoint) {
       throw new Error(
-        `Endpoint '${endpointId}' not found in adapter '${adapterId}'`,
+        `Endpoint '${endpointId}' not found in adapter '${adapterId}'`
       );
     }
 
     const adapterBaseUrl = (adapter.baseUrl as string).replace(/\/+$/, "");
-    const endpointPath = (endpoint.path as string ?? "").replace(/^\/+/, "");
-    const fullUrl =
-      endpointPath ? `${adapterBaseUrl}/${endpointPath}` : adapterBaseUrl;
+    const endpointPath = ((endpoint.path as string) ?? "").replace(/^\/+/, "");
+    const fullUrl = endpointPath
+      ? `${adapterBaseUrl}/${endpointPath}`
+      : adapterBaseUrl;
 
     const headers: Record<string, string> = {};
     for (const entry of adapter.headers ?? []) {
       const key = entry.key as string;
       const value = entry.value as string;
-      if (key) headers[key] = value;
+      if (key) {
+        headers[key] = value;
+      }
     }
 
-    this.injectAuthHeaders(adapter.authType as string ?? "none", adapter.authConfig as Record<string, unknown> ?? {}, headers);
+    this.injectAuthHeaders(
+      (adapter.authType as string) ?? "none",
+      (adapter.authConfig as Record<string, unknown>) ?? {},
+      headers
+    );
 
     const timeoutMs =
       typeof endpoint.timeoutMs === "number"
         ? endpoint.timeoutMs
-        : (adapter.timeoutMs as number ?? 5000);
+        : ((adapter.timeoutMs as number) ?? 5000);
 
     return {
       url: fullUrl,
@@ -139,13 +150,15 @@ export class AdapterExecutorService {
   private injectAuthHeaders(
     authType: string,
     authConfig: Record<string, unknown>,
-    headers: Record<string, string>,
+    headers: Record<string, string>
   ): void {
     switch (authType) {
       case "api-key": {
         const headerName = (authConfig.headerName as string) ?? "X-Api-Key";
         const key = authConfig.key as string;
-        if (key && !(headerName in headers)) headers[headerName] = key;
+        if (key && !(headerName in headers)) {
+          headers[headerName] = key;
+        }
         break;
       }
       case "bearer": {
@@ -154,8 +167,9 @@ export class AdapterExecutorService {
           (authConfig.bearerToken as string) ??
           (authConfig.bearer_token as string) ??
           "";
-        if (token && !("Authorization" in headers))
+        if (token && !("Authorization" in headers)) {
           headers["Authorization"] = `Bearer ${token}`;
+        }
         break;
       }
       case "basic": {
@@ -167,33 +181,29 @@ export class AdapterExecutorService {
         }
         break;
       }
-      case "oauth2-client": {
-        const accessToken = authConfig.access_token as string;
-        if (accessToken && !("Authorization" in headers))
-          headers["Authorization"] = `Bearer ${accessToken}`;
-        break;
-      }
     }
   }
 
-  private truncateResponse(
-    data: unknown,
-    maxBytes = 100_000,
-  ): unknown {
+  private truncateResponse(data: unknown, maxBytes = 100_000): unknown {
     const serialized = JSON.stringify(data);
     const sizeBytes = new TextEncoder().encode(serialized).length;
 
-    if (sizeBytes <= maxBytes) return data;
+    if (sizeBytes <= maxBytes) {
+      return data;
+    }
 
     this.logger.warn(
-      `Truncating response: ${sizeBytes} bytes exceeds limit of ${maxBytes}`,
+      `Truncating response: ${sizeBytes} bytes exceeds limit of ${maxBytes}`
     );
 
     if (typeof data === "object" && data !== null && !Array.isArray(data)) {
       return {
         _truncated: true,
         original_size_bytes: sizeBytes,
-        top_level_keys: Object.keys(data as Record<string, unknown>).slice(0, 20),
+        top_level_keys: Object.keys(data as Record<string, unknown>).slice(
+          0,
+          20
+        ),
         message: `Response truncated: ${sizeBytes} bytes exceeded limit of ${maxBytes} bytes`,
       };
     }
@@ -228,7 +238,11 @@ export class AdapterExecutorService {
 
     const hostname = parsed.hostname.toLowerCase();
 
-    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+    if (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "::1"
+    ) {
       throw new Error("Adapter URL must not target localhost");
     }
 
@@ -251,7 +265,7 @@ export class AdapterExecutorService {
         (octets[0] === 192 && octets[1] === 168)
       ) {
         throw new Error(
-          "Adapter URL must not target private/RFC1918 addresses",
+          "Adapter URL must not target private/RFC1918 addresses"
         );
       }
     }

@@ -169,7 +169,7 @@ Connectors are reusable configurations for external APIs (managed by `connector-
 ```
 Connector: crm-connector
 ├── baseUrl: https://crm.example.com/api
-├── auth: OAuth2 client credentials
+├── auth: bearer token
 ├── headers: { "X-API-Key": "..." }
 ├── timeout: 45000
 ├── retries: 3
@@ -489,7 +489,7 @@ curl http://localhost:7233/health
 # Connect to Redis
 redis-cli
 
-# List connector cache keys — the prefixes are adapter:config: / adapter:oauth: /
+# List connector cache keys — the prefixes are adapter:config: /
 # adapter:internal-by-service: (ADAPTER_KEY_PREFIX & friends in adapter-client.ts)
 KEYS "adapter:*"
 

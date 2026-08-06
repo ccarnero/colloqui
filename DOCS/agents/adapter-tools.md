@@ -242,7 +242,7 @@ Each adapter endpoint has a configurable timeout (default: 5000 ms, from the end
 
 ### Auth Credential Handling
 
-`injectAuthHeaders` switches on four auth types; anything else — including the
+`injectAuthHeaders` switches on three auth types; anything else — including the
 `none` default applied when the adapter has no `authType` — injects nothing:
 
 | Auth Type | Header Injected | Configuration |
@@ -251,7 +251,6 @@ Each adapter endpoint has a configurable timeout (default: 5000 ms, from the end
 | `api-key` | `X-Api-Key: {key}` (or `authConfig.headerName`) | `authConfig.key`, `authConfig.headerName` |
 | `bearer` | `Authorization: Bearer {token}` | `authConfig.token`, `authConfig.bearerToken` or `authConfig.bearer_token` |
 | `basic` | `Authorization: Basic {btoa(user:pass)}` | `authConfig.username`, `authConfig.password` |
-| `oauth2-client` | `Authorization: Bearer {access_token}` | `authConfig.access_token` |
 
 Every case is no-clobber: an already-present header (e.g. one set by the endpoint
 config) is never overwritten by the injected credential.

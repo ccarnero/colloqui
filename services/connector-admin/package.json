@@ -7,9 +7,9 @@
     "start": "node dist/main.js",
     "start:dev": "tsx watch src/main.ts",
     "backfill:internal-mirrors": "tsx src/scripts/backfill-internal-mirrors.ts",
-    "test": "node --import tsx test/unit",
-    "test:unit": "node --import tsx test/unit",
-    "test:integration": "node --import tsx --test test/integration"
+    "test": "bun test",
+    "test:unit": "bun test test/unit",
+    "test:integration": "bun test test/integration"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.14",

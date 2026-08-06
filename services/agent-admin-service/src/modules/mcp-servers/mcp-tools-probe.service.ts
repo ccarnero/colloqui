@@ -158,8 +158,7 @@ export class McpToolsProbeService {
 
   /**
    * Injects auth headers per `auth_type`, same shape as
-   * `adapter-executor.service.ts`'s `injectAuthHeaders` (minus
-   * `oauth2-client`, an explicit non-goal for MCP servers in this phase).
+   * `adapter-executor.service.ts`'s `injectAuthHeaders`.
    */
   private buildHeaders(server: IMcpServer): Record<string, string> {
     const headers: Record<string, string> = { ...(server.headers ?? {}) };

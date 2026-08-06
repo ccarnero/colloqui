@@ -435,7 +435,7 @@ The `packages/shared/` package (`@yoizen/shared`) contains all cross-service typ
 - **Auth interfaces**: `JwtPayload`, `TokenResponse`, `TokenScope`, `PublicRouteEntry`
 - **Workflow interfaces**: `WorkflowDefinition`, `WorkflowAction`, `WorkflowExecutionContext`
 - **Adapter interfaces**: `AdapterConfig`, `AdapterEndpointConfig`, `AdapterCache`, `ResolvedAdapterRequest`, `AdapterReference`
-- **Adapter client**: `AdapterClient` (stale-while-revalidate Redis cache, OAuth2 token management, request resolution)
+- **Adapter client**: `AdapterClient` (stale-while-revalidate Redis cache, request resolution)
 - **Constants**: stream/consumer names, Redis key prefixes, TTLs, task queues (`CONNECTOR_RUNTIME_TASK_QUEUE`, `WORKFLOW_ORCHESTRATOR_TASK_QUEUE`), Knative API versions
 
 ## Prerequisites
@@ -482,7 +482,7 @@ Arch/
 │           ├── auth.interfaces.ts    # JwtPayload, TokenResponse, TokenScope, PublicRouteEntry
 │           ├── workflow.interfaces.ts # WorkflowDefinition, WorkflowAction, activity args
 │           ├── adapter.interfaces.ts # AdapterConfig, AdapterEndpointConfig, AdapterCache, ResolvedAdapterRequest
-│           ├── adapter-client.ts     # AdapterClient (SWR cache, OAuth2, request resolution)
+│           ├── adapter-client.ts     # AdapterClient (SWR cache, request resolution)
 │           └── index.ts              # Barrel export
 ├── infrastructure/
 │   ├── base/                         # Kustomize base manifests

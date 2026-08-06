@@ -1,4 +1,4 @@
-export type AuthType = "none" | "api-key" | "bearer" | "basic" | "oauth2";
+export type AuthType = "none" | "api-key" | "bearer" | "basic";
 
 export const HTTP_ADAPTER_METHOD = {
   GET: "GET",
@@ -26,9 +26,6 @@ export interface IHttpAdapterAuth {
   bearerToken?: string;
   basicUsername?: string;
   basicPassword?: string;
-  oauth2ClientId?: string;
-  oauth2ClientSecret?: string;
-  oauth2TokenUrl?: string;
 }
 
 export interface IHttpAdapterHeader {
