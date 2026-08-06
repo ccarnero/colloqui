@@ -265,7 +265,24 @@ task summary.)
 
 ## Progress
 
-- [ ] T01 E8 wire validateSelectOnly/enforceLimit into the executed path
+- [x] T01 E8 wire validateSelectOnly/enforceLimit into the executed path
+  - Done 2026-08-06, 2 attempts (attempt 2 = doc-consistency objections from
+    reviewer B). Gates green; G4 redeploy of agent-admin-service completed.
+  - ORCHESTRATOR RULING (2026-08-06): reviewer B showed the sanctioned Layer 4
+    rewrite left security.md self-contradictory about E9 — the three remaining
+    stale pre-E9 spots (Multi-Tenant Isolation, Risk 3b, checklist row) were
+    ruled the same sanctioned class and got minimal truth edits in attempt 2.
+  - PRE-EXISTING DEBT (recorded per gate rules, NOT caused by this task): 14
+    integration/e2e suites in agent-admin-service fail identically on the base
+    commit (743/14 base vs 758/14 with T01) — NestJS DI rot:
+    `YoizenclawTenantConnectionManager` unresolved in SystemVariables/
+    ConfigFiles/etc. test modules. Candidate register entry; same class as
+    Group B's E10 (suites that never run green).
+  - FOLLOW-UPS (reviewer-flagged, non-blocking): comment at
+    `skb-query.service.ts:331-333` still says "byte-identical" (values, not
+    text); `security.md:196` "Layers 2-5 all operate on LLM output" stale
+    (Layer 5 clamps caller input); `clampLimit` has no lower bound (DTO
+    `@Min(1)` is the floor).
 - [ ] T02 E7 jobs.yaml fixture passes the real contract
 - [ ] T03 E5 remove dead consumer filters from nats-consumer-lag alerts
 

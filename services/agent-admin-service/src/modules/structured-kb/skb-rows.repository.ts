@@ -1,12 +1,16 @@
 import { Inject, Injectable } from "@nestjs/common";
 import type { TenantConnectionManager } from "@yoizen/database";
+import { PinoLoggerService } from "@yoizen/observability";
 import { YoizenclawTenantConnectionManager } from "../../providers/tenant-connection-manager";
 import { TenantScopedPostgresRepository } from "../../providers/tenant-scoped.repository";
+import { validateSelectOnly } from "./skb-sql-safety";
 
 const BATCH_SIZE = 5000;
 
 @Injectable()
 export class SKBRowsRepository extends TenantScopedPostgresRepository {
+  private readonly logger = new PinoLoggerService(SKBRowsRepository.name);
+
   constructor(
     @Inject(YoizenclawTenantConnectionManager)
     connectionManager: TenantConnectionManager,
@@ -22,7 +26,14 @@ export class SKBRowsRepository extends TenantScopedPostgresRepository {
    * `isSafe`/`validateWhereClause` (skb-sql-safety.ts) in the only current
    * caller, SKBQueryService.query, before they ever reach this method.
    * `containerId`, `tenantId` and `categories` are caller-controlled VALUES,
-   * not SQL syntax, so they are bound as parameters instead.
+   * not SQL syntax, so they are bound as parameters instead. `limit`/`offset`
+   * are bound too; the limit is already clamped by `clampLimit()` in
+   * SKBQueryService.query, which passes the same clamped value to `buildSql()`.
+   *
+   * Defense in depth: both assembled statements are re-checked with
+   * `validateSelectOnly()` immediately before execution, so the guarantee is
+   * asserted on the exact text that reaches Postgres and not only on the
+   * fragments the service validated.
    */
   async executeQuery(
     tenantId: string,
@@ -60,6 +71,23 @@ export class SKBRowsRepository extends TenantScopedPostgresRepository {
     const dataParams = [...whereParams, options.limit, options.offset];
     const dataQuery = `SELECT data FROM skb_rows WHERE ${where} ${orderClause} LIMIT $${whereParams.length + 1} OFFSET $${whereParams.length + 2}`;
     const countQuery = `SELECT COUNT(*)::bigint AS count FROM skb_rows WHERE ${where}`;
+
+    // Layer 2 re-applied on the final statements, before they are executed.
+    // The fixed template contains no blocked keyword (`created_at` does not
+    // match `\bCREATE\b`), so only a hostile spliced fragment can trip this.
+    for (const [label, statement] of [
+      ["data", dataQuery],
+      ["count", countQuery],
+    ] as const) {
+      try {
+        validateSelectOnly(statement);
+      } catch (err) {
+        this.logger.warn(
+          `SKB ${label} query rejected by validateSelectOnly for container ${containerId} (tenant ${tenantId}): ${statement}`
+        );
+        throw err;
+      }
+    }
 
     const [dataResult, countResult] = await Promise.all([
       sql.unsafe(dataQuery, dataParams as any),

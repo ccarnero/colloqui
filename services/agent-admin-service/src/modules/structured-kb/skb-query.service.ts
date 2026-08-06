@@ -6,7 +6,13 @@ import {
   createSkbLanguageModel,
   resolveSkbLlmCredentials,
 } from "./skb-llm.config";
-import { isSafe, validateWhereClause } from "./skb-sql-safety";
+import {
+  clampLimit,
+  DEFAULT_LIMIT,
+  isSafe,
+  MAX_LIMIT,
+  validateWhereClause,
+} from "./skb-sql-safety";
 
 // ---------------------------------------------------------------------------
 // Zod schema for LLM output
@@ -321,8 +327,17 @@ export class SKBQueryService {
         validateWhereClause(orderBy);
       }
 
-      // 5. Execute query
-      const limit = options?.limit ?? 100;
+      // 5. Execute query.
+      // The limit is clamped ONCE, here, so `executeQuery` (which binds it as
+      // a parameter) and `buildSql` (which renders the debug string stored in
+      // skb_query_history) see the exact same value and stay byte-identical.
+      const requestedLimit = options?.limit ?? DEFAULT_LIMIT;
+      const limit = clampLimit(requestedLimit, MAX_LIMIT);
+      if (limit !== requestedLimit) {
+        this.logger.warn(
+          `SKB query limit ${requestedLimit} exceeds the SQL-layer cap ${MAX_LIMIT}; clamped to ${limit} for container ${containerId} (tenant ${tenantId})`
+        );
+      }
       const offset = options?.offset ?? 0;
 
       const result = await this.rowsRepository.executeQuery(

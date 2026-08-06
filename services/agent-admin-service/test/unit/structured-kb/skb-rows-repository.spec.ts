@@ -399,6 +399,87 @@ describe("SKBRowsRepository", () => {
       expect(result.results).toEqual([{ name: "Alice" }]);
       expect(result.totalCount).toBe(1);
     });
+
+    it("should keep LIMIT and OFFSET bound as parameters (E9 non-regression)", async () => {
+      mockSql.unsafe.mockResolvedValue([]);
+      const repo = createRepositoryWithSql(mockSql);
+
+      await repo.executeQuery(TENANT_ID, CONTAINER_ID, {
+        whereClause: "",
+        categories: [],
+        limit: 25,
+        offset: 75,
+      });
+
+      const [dataSql, dataParams] = mockSql.unsafe.mock.calls[0];
+      expect(dataSql).toContain("LIMIT $3 OFFSET $4");
+      expect(dataSql).not.toContain("LIMIT 25");
+      expect(dataParams).toEqual([CONTAINER_ID, TENANT_ID, 25, 75]);
+    });
+
+    describe("validateSelectOnly wiring", () => {
+      it("should accept the fixed SELECT template (created_at is not CREATE)", async () => {
+        mockSql.unsafe.mockResolvedValue([]);
+        const repo = createRepositoryWithSql(mockSql);
+
+        await repo.executeQuery(TENANT_ID, CONTAINER_ID, {
+          whereClause: "(data->>'status') = 'active'",
+          categories: [],
+          limit: 10,
+          offset: 0,
+        });
+
+        const [dataSql] = mockSql.unsafe.mock.calls[0];
+        expect(dataSql).toContain("ORDER BY created_at DESC");
+        expect(mockSql.unsafe).toHaveBeenCalledTimes(2);
+      });
+
+      it("should reject a hostile assembled statement BEFORE calling sql.unsafe", async () => {
+        const repo = createRepositoryWithSql(mockSql);
+
+        await expect(
+          repo.executeQuery(TENANT_ID, CONTAINER_ID, {
+            whereClause: "1=1) AND (SELECT 1 FROM skb_rows WHERE DROP",
+            categories: [],
+            limit: 10,
+            offset: 0,
+          })
+        ).rejects.toThrow("SQL safety violation");
+
+        expect(mockSql.unsafe).not.toHaveBeenCalled();
+      });
+
+      it("should reject a hostile ORDER BY fragment BEFORE calling sql.unsafe", async () => {
+        const repo = createRepositoryWithSql(mockSql);
+
+        await expect(
+          repo.executeQuery(TENANT_ID, CONTAINER_ID, {
+            whereClause: "",
+            orderBy: "created_at DESC; TRUNCATE skb_rows",
+            categories: [],
+            limit: 10,
+            offset: 0,
+          })
+        ).rejects.toThrow("SQL safety violation");
+
+        expect(mockSql.unsafe).not.toHaveBeenCalled();
+      });
+
+      it("should reject a blocked keyword in the shared WHERE clause (data + count)", async () => {
+        const repo = createRepositoryWithSql(mockSql);
+
+        await expect(
+          repo.executeQuery(TENANT_ID, CONTAINER_ID, {
+            whereClause: "1=1 AND GRANT",
+            categories: [],
+            limit: 10,
+            offset: 0,
+          })
+        ).rejects.toThrow("SQL safety violation");
+
+        expect(mockSql.unsafe).not.toHaveBeenCalled();
+      });
+    });
   });
 
   describe("death check", () => {

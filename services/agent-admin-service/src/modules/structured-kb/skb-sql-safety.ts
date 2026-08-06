@@ -20,8 +20,10 @@ const BLOCKED_KEYWORDS = [
   "REPLACE",
 ];
 
-const MAX_LIMIT = 1000;
-const DEFAULT_LIMIT = 100;
+/** Hard ceiling for any row limit reaching the database. */
+export const MAX_LIMIT = 1000;
+/** Effective cap when the caller does not ask for a specific one. */
+export const DEFAULT_LIMIT = 100;
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -30,7 +32,9 @@ const DEFAULT_LIMIT = 100;
 function hasBlockedKeyword(sql: string): boolean {
   for (const kw of BLOCKED_KEYWORDS) {
     const re = new RegExp(`\\b${kw}\\b`, "i");
-    if (re.test(sql)) return true;
+    if (re.test(sql)) {
+      return true;
+    }
   }
   return false;
 }
@@ -68,13 +72,27 @@ function hasInformationSchema(sql: string): boolean {
  * Safe for use on WHERE clause fragments or full SQL strings.
  */
 export function isSafe(sql: string): boolean {
-  if (hasBlockedKeyword(sql)) return false;
-  if (hasSemicolon(sql)) return false;
-  if (hasUnion(sql)) return false;
-  if (hasLineComment(sql)) return false;
-  if (hasBlockComment(sql)) return false;
-  if (hasInformationSchema(sql)) return false;
-  if (hasPgCatalog(sql)) return false;
+  if (hasBlockedKeyword(sql)) {
+    return false;
+  }
+  if (hasSemicolon(sql)) {
+    return false;
+  }
+  if (hasUnion(sql)) {
+    return false;
+  }
+  if (hasLineComment(sql)) {
+    return false;
+  }
+  if (hasBlockComment(sql)) {
+    return false;
+  }
+  if (hasInformationSchema(sql)) {
+    return false;
+  }
+  if (hasPgCatalog(sql)) {
+    return false;
+  }
   return true;
 }
 
@@ -87,7 +105,9 @@ export function validateSelectOnly(sql: string): void {
 
   // Also reject if any blocked keyword is present
   if (hasBlockedKeyword(trimmed)) {
-    throw new Error("SQL safety violation: potentially dangerous pattern detected");
+    throw new Error(
+      "SQL safety violation: potentially dangerous pattern detected"
+    );
   }
 }
 
@@ -97,45 +117,95 @@ export function validateSelectOnly(sql: string): void {
  */
 export function validateWhereClause(sql: string): void {
   if (hasSemicolon(sql)) {
-    throw new Error("SQL safety violation: potentially dangerous pattern detected");
+    throw new Error(
+      "SQL safety violation: potentially dangerous pattern detected"
+    );
   }
   if (hasUnion(sql)) {
-    throw new Error("SQL safety violation: potentially dangerous pattern detected");
+    throw new Error(
+      "SQL safety violation: potentially dangerous pattern detected"
+    );
   }
   if (hasLineComment(sql)) {
-    throw new Error("SQL safety violation: potentially dangerous pattern detected");
+    throw new Error(
+      "SQL safety violation: potentially dangerous pattern detected"
+    );
   }
   if (hasBlockComment(sql)) {
-    throw new Error("SQL safety violation: potentially dangerous pattern detected");
+    throw new Error(
+      "SQL safety violation: potentially dangerous pattern detected"
+    );
   }
   if (hasPgCatalog(sql)) {
-    throw new Error("SQL safety violation: potentially dangerous pattern detected");
+    throw new Error(
+      "SQL safety violation: potentially dangerous pattern detected"
+    );
   }
   if (hasInformationSchema(sql)) {
-    throw new Error("SQL safety violation: potentially dangerous pattern detected");
+    throw new Error(
+      "SQL safety violation: potentially dangerous pattern detected"
+    );
   }
   if (hasBlockedKeyword(sql)) {
-    throw new Error("SQL safety violation: potentially dangerous pattern detected");
+    throw new Error(
+      "SQL safety violation: potentially dangerous pattern detected"
+    );
   }
 }
 
 /**
- * Adds or caps the LIMIT clause in a SQL query.
+ * Numeric LIMIT clamp — the part of `enforceLimit()` that does not depend on
+ * the SQL being a text blob.
+ *
+ * Use this on query paths that bind the limit as a parameter (`LIMIT $n`):
+ * `enforceLimit()`'s regex only sees literal `LIMIT <digits>` text, so on a
+ * parameterised statement it would find nothing and APPEND a second LIMIT.
+ *
+ * - No limit supplied (or a non-finite one) → the cap.
+ * - Limit above the cap → the cap.
+ * - Limit at or below the cap → preserved (truncated to an integer).
+ *
+ * The cap is `min(maxLimit, MAX_LIMIT)`, so no caller can raise the hard
+ * ceiling by passing a larger `maxLimit`.
+ *
+ * @param limit    Requested row limit, may be undefined
+ * @param maxLimit Maximum allowed limit (default 100, hard max 1000)
+ */
+export function clampLimit(
+  limit: number | undefined | null,
+  maxLimit: number = DEFAULT_LIMIT
+): number {
+  const cap = Math.min(maxLimit, MAX_LIMIT);
+
+  if (typeof limit !== "number" || !Number.isFinite(limit)) {
+    return cap;
+  }
+
+  return Math.min(Math.trunc(limit), cap);
+}
+
+/**
+ * Adds or caps the LIMIT clause in a SQL query **text**.
  * - If no LIMIT is present, `LIMIT <maxLimit>` is appended (before OFFSET if present).
  * - If LIMIT exceeds `maxLimit`, it is capped.
  * - If LIMIT is within bounds, it is preserved.
  *
+ * Text-only contract: for statements that bind the limit as a parameter use
+ * `clampLimit()` on the value instead — both share the same cap arithmetic.
+ *
  * @param sql      SQL SELECT query
  * @param maxLimit Maximum allowed limit (default 100, max 1000)
  */
-export function enforceLimit(sql: string, maxLimit: number = DEFAULT_LIMIT): string {
-  const cap = Math.min(maxLimit, MAX_LIMIT);
-
+export function enforceLimit(
+  sql: string,
+  maxLimit: number = DEFAULT_LIMIT
+): string {
   const limitRe = /\blimit\s+(\d+)\b/i;
   const match = sql.match(limitRe);
 
   if (!match) {
-    // No LIMIT clause — add one
+    // No LIMIT clause — add one, at the cap
+    const cap = clampLimit(undefined, maxLimit);
     const offsetRe = /\boffset\s+(\d+)\b/i;
     const offsetMatch = sql.match(offsetRe);
     if (offsetMatch) {
@@ -145,8 +215,9 @@ export function enforceLimit(sql: string, maxLimit: number = DEFAULT_LIMIT): str
   }
 
   const existingLimit = parseInt(match[1], 10);
-  if (existingLimit > cap) {
-    return sql.replace(limitRe, `LIMIT ${cap}`);
+  const clamped = clampLimit(existingLimit, maxLimit);
+  if (clamped !== existingLimit) {
+    return sql.replace(limitRe, `LIMIT ${clamped}`);
   }
 
   return sql;

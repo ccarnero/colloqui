@@ -291,6 +291,51 @@ describe("SKBQueryService", () => {
 
       const execCall = rowsRepository.executeQuery.mock.calls[0];
       expect(execCall).toBeDefined();
+      expect(execCall[2].limit).toBe(100);
+    });
+
+    it("should pass the requested limit through untouched when below the cap", async () => {
+      mockGenerateObject.mockResolvedValue({
+        object: LLM_TRANSLATION,
+      } as any);
+
+      const result = await service.query(
+        TENANT_ID,
+        CONTAINER_ID,
+        "show sales",
+        {
+          limit: 500,
+          offset: 20,
+        }
+      );
+
+      const execCall = rowsRepository.executeQuery.mock.calls[0];
+      expect(execCall[2].limit).toBe(500);
+      expect(execCall[2].offset).toBe(20);
+      expect(result.sql).toContain("LIMIT 500 OFFSET 20");
+    });
+
+    it("should clamp a limit above the hard cap for both the executed query and the debug sql", async () => {
+      mockGenerateObject.mockResolvedValue({
+        object: LLM_TRANSLATION,
+      } as any);
+
+      const result = await service.query(
+        TENANT_ID,
+        CONTAINER_ID,
+        "show sales",
+        {
+          limit: 999999,
+          offset: 0,
+        }
+      );
+
+      // One clamp, one value: the repository and buildSql must agree, or the
+      // `sql` recorded in skb_query_history stops matching what ran.
+      const execCall = rowsRepository.executeQuery.mock.calls[0];
+      expect(execCall[2].limit).toBe(1000);
+      expect(result.sql).toContain("LIMIT 1000 OFFSET 0");
+      expect(result.sql).not.toContain("999999");
     });
   });
 
