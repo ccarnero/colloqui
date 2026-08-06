@@ -24,6 +24,7 @@ workflow. Nada de eso está acá — esto es solo lo que **no** se hizo.
 | 5 | Deuda de plataforma | Huecos estructurales encontrados | [`05-deuda-plataforma.md`](05-deuda-plataforma.md) |
 | 6 | Cobertura e2e restante | `mcpCall`, lo único sin cubrir | [`06-e2e-restante.md`](06-e2e-restante.md) |
 | 7 | Verificación pendiente | Lo que falta correr/mirar | [`07-verificacion.md`](07-verificacion.md) |
+| 8 | Manifest gap — `defaultCache` | Paridad declarativa UI/SDK ↔ manifiesto | [`08-manifest-defaultcache-gap.md`](08-manifest-defaultcache-gap.md) |
 
 ---
 
