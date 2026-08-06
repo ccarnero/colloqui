@@ -9,12 +9,12 @@
 # short result to stderr (which Claude sees) and a verbose log to .claude/hook.log.
 # To make lint failures BLOCK instead, change the final `exit 0` after biome to `exit 2`.
 #
-# CAVEAT on the "test" half: it runs `vitest related`, but vitest is a devDependency
-# of services/admin-console ONLY — every other package in this repo runs its tests
-# with `bun test` or `tsx --test`. So for almost every edited file this step finds no
-# vitest project and reports nothing useful; treat the biome half as the real check.
-# Swapping the runner is a behavior change, tracked as E28 in
-# DOCS/archive/audits/DOCS-TRUTH-LEDGER.md.
+# The "test" half is SCOPED: `vitest related` runs only for files under
+# services/admin-console/, the single package that declares vitest as a devDependency.
+# Every other package runs its tests with `bun test`, `tsx --test` or
+# `node --import tsx`, and none of those runners has `related` semantics (no way to
+# map a source file to its tests), so for those paths the test half is skipped
+# explicitly and logged. The biome half always runs and is the real check.
 
 set -uo pipefail
 
@@ -47,10 +47,22 @@ else
   say "biome reported issues on $(basename "$FILE") (see .claude/hook.log) — not blocking"
 fi
 
-# 2) Related tests (best-effort, won't block). Passes with no tests so source-only edits are quiet.
-if "$runner" vitest related "$FILE" --run --passWithNoTests >>"$LOG" 2>&1; then
+# 2) Related tests (best-effort, won't block), but ONLY for the one package that has
+#    vitest: services/admin-console. Other packages have no per-file test runner.
+case "$FILE" in
+  services/admin-console/*|*/services/admin-console/*) has_vitest="yes" ;;
+  *) has_vitest="no" ;;
+esac
+
+if [ "$has_vitest" = "no" ]; then
+  note "test half skipped (no per-file runner for this package): $FILE"
+  say "tests skipped: no per-file runner for this package ($(basename "$FILE"))"
+# Passes with no tests so source-only edits are quiet.
+elif "$runner" vitest related "$FILE" --run --passWithNoTests >>"$LOG" 2>&1; then
+  note "vitest related ok: $FILE"
   say "vitest related: ok"
 else
+  note "vitest related FAILURES: $FILE"
   say "vitest related: FAILURES for $(basename "$FILE") (see .claude/hook.log) — not blocking"
 fi
 
