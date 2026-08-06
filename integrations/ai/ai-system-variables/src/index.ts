@@ -116,21 +116,26 @@ async function main(): Promise<void> {
   let escalationPriority = "(missing!)";
   let brandVoice = "(missing!)";
   let escalationVarId: string | undefined;
+  // The platform-side variable NAMES are the manifest's slugs
+  // (`nameSchema`: lowercase alphanumeric + hyphens, see manifest.yaml:51-59)
+  // — `system-variables-writer` stores `name` verbatim, so these lookups must
+  // use the slug, not the pre-manifest camelCase names. Only the local JS
+  // variable names below stay camelCase.
   for await (const variable of client.systemVariables.list({ pageSize: 100 })) {
-    if (variable.name === "companyName") {
+    if (variable.name === "company-name") {
       companyName = String(variable.value);
-    } else if (variable.name === "escalationPriority") {
+    } else if (variable.name === "escalation-priority") {
       escalationPriority = String(variable.value);
       escalationVarId = variable.id;
-    } else if (variable.name === "brandVoice") {
+    } else if (variable.name === "brand-voice") {
       brandVoice = String(variable.value);
     }
   }
-  console.log(`[run]     companyName        = ${companyName}`);
+  console.log(`[run]     company-name        = ${companyName}`);
   console.log(
-    `[run]     escalationPriority = ${escalationPriority}   <- messages classified at THIS priority take the 🚨 arm`
+    `[run]     escalation-priority = ${escalationPriority}   <- messages classified at THIS priority take the 🚨 arm`
   );
-  console.log(`[run]     brandVoice         = ${brandVoice}`);
+  console.log(`[run]     brand-voice         = ${brandVoice}`);
 
   // ----- 3/3: drive it ---------------------------------------------------------
   let secret: string | undefined;
@@ -177,7 +182,7 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    "[run] sent — check Telegram. Both notifications are stamped with the companyName"
+    "[run] sent — check Telegram. Both notifications are stamped with the company-name"
   );
   console.log("[run] variable, e.g.:");
   console.log(
@@ -211,7 +216,7 @@ async function main(): Promise<void> {
   );
   console.log(`[run]     -d '{"value":"urgent"}'`);
   console.log(
-    "[run] Same for the brand: PATCH companyName or brandVoice and re-run ./run.sh (or npm start)."
+    "[run] Same for the brand: PATCH company-name or brand-voice and re-run ./run.sh (or npm start)."
   );
   console.log(
     "[run] NOTE: workflow-service caches system variables per tenant for 5 minutes —"

@@ -119,16 +119,6 @@ Original: <the customer's message>
 Original: <the customer's message>
 ```
 
-> **KNOWN BUG (ledger escalation E18) — step 2/3 always prints `(missing!)`.** `src/index.ts`
-> matches the variables by their PRE-MANIFEST camelCase names (`companyName`,
-> `escalationPriority`, `brandVoice`), but this manifest declares the slugs `company-name`,
-> `escalation-priority`, `brand-voice` and `system-variables-writer` sends `name` through verbatim
-> — so no name ever matches. The three values print as `(missing!)` and the "flip the routing
-> policy LIVE" hint at the end falls back to `<id>` instead of the real
-> `escalation-priority` id. The Telegram DMs above are unaffected (the workflow resolves the SAME
-> slugs the manifest declares). Read the live values with
-> `GET /api/admin/system-variables` until the driver is fixed.
-
 ## Environment (run.sh overrides only — provisioning is manifest-driven)
 
 | Var | Default | Notes |
