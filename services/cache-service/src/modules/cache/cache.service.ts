@@ -1,8 +1,8 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type Redis from "ioredis";
-import { evictOldestIfCapacityBeforeSet } from "@yoizen/shared";
-import { cacheServiceConfig } from "../../config";
 import { REDIS_CLIENT } from "@yoizen/database";
+import { evictOldestIfCapacityBeforeSet } from "@yoizen/shared";
+import type Redis from "ioredis";
+import { cacheServiceConfig } from "../../config";
 
 interface IL1Entry {
   value: unknown;
@@ -19,7 +19,16 @@ export class CacheService {
   }
 
   /**
-   * Reads a key from L1 (when fresh) then Redis; backfills L1 on Redis hit.
+   * Reads a key from L1 (when fresh) then Redis; backfills L1 on Redis hit
+   * with the key's REMAINING Redis TTL.
+   *
+   * GET and PTTL are issued in the same tick (`Promise.all`) so ioredis writes
+   * both to the socket before either reply comes back — one round-trip, same
+   * cost as the previous bare GET. They are NOT atomic (another client can
+   * interleave), which is why a `-2` PTTL — the key vanished between the two
+   * commands — skips the L1 backfill entirely instead of caching the value
+   * forever.
+   *
    * @param key - Fully scoped cache key.
    * @returns Parsed JSON value, raw string if not JSON, or `null` if missing.
    */
@@ -31,15 +40,24 @@ export class CacheService {
       }
       this.l1.delete(key);
     }
-    const raw = await this.redis.get(key);
-    if (raw === null) return null;
+    const [raw, pttl] = await Promise.all([
+      this.redis.get(key),
+      this.redis.pttl(key),
+    ]);
+    if (raw === null) {
+      return null;
+    }
     let value: unknown;
     try {
       value = JSON.parse(raw);
     } catch {
       return raw;
     }
-    this.setL1(key, value, 0);
+    // PTTL: > 0 remaining ms, -1 key exists without TTL, -2 key is gone.
+    if (pttl === -2) {
+      return value;
+    }
+    this.setL1(key, value, pttl > 0 ? Date.now() + pttl : 0);
     return value;
   }
 
@@ -84,7 +102,7 @@ export class CacheService {
         "MATCH",
         pattern,
         "COUNT",
-        count,
+        count
       );
       cursor = nextCursor;
       keys.push(...resultKeys);
@@ -99,15 +117,21 @@ export class CacheService {
    */
   async batchGet(keys: string[]): Promise<Map<string, unknown>> {
     const result = new Map<string, unknown>();
-    if (keys.length === 0) return result;
+    if (keys.length === 0) {
+      return result;
+    }
     const pipeline = this.redis.pipeline();
     for (const key of keys) {
       pipeline.get(key);
     }
     const replies = await pipeline.exec();
-    if (!replies) return result;
+    if (!replies) {
+      return result;
+    }
     replies.forEach(([err, raw], i) => {
-      if (err || raw == null) return;
+      if (err || raw == null) {
+        return;
+      }
       const key = keys[i];
       try {
         result.set(key, JSON.parse(raw as string));

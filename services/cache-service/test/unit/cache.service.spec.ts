@@ -1,8 +1,8 @@
 import "./preload-env";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { CacheService } from "../../src/modules/cache/cache.service";
 import { REDIS_CLIENT } from "@yoizen/database";
+import { CacheService } from "../../src/modules/cache/cache.service";
 
 /** Minimal ioredis pipeline chain for tests (chaining `get` returns `this`). */
 interface IoredisPipelineStub {
@@ -17,6 +17,9 @@ describe("CacheService", () => {
   beforeEach(async () => {
     mockRedis = {
       get: mock(() => Promise.resolve(null)),
+      // PTTL is issued alongside every Redis GET so the L1 backfill inherits
+      // the key's remaining TTL. -1 = "key exists, no TTL" (the default here).
+      pttl: mock(() => Promise.resolve(-1)),
       set: mock(() => Promise.resolve("OK")),
       del: mock(() => Promise.resolve(1)),
       scan: mock(() => Promise.resolve(["0", []])),
@@ -82,6 +85,51 @@ describe("CacheService", () => {
       const result = await service.get("raw");
       expect(result).toBe("not-json");
     });
+
+    /**
+     * Regression: the Redis-hit backfill used to write L1 with `expiry: 0`
+     * ("never expires"), so a key whose TTL was set by another writer (a second
+     * replica, or any direct Redis client) stayed readable from L1 forever
+     * after Redis had expired it.
+     */
+    it("should backfill L1 with the key's remaining Redis TTL", async () => {
+      const originalNow = Date.now;
+      let currentTime = 5_000_000;
+      Date.now = () => currentTime;
+
+      mockRedis.get = mock(() => Promise.resolve(JSON.stringify("ttl-value")));
+      mockRedis.pttl = mock(() => Promise.resolve(1000));
+
+      expect(await service.get("elsewhere")).toBe("ttl-value");
+      expect(mockRedis.pttl).toHaveBeenCalledWith("elsewhere");
+
+      // Still within the inherited TTL: served from L1, Redis untouched.
+      currentTime = 5_000_000 + 500;
+      mockRedis.get = mock(() => Promise.resolve(JSON.stringify("ttl-value")));
+      expect(await service.get("elsewhere")).toBe("ttl-value");
+      expect(mockRedis.get).not.toHaveBeenCalled();
+
+      // Past the inherited TTL: L1 entry is dropped and Redis decides.
+      currentTime = 5_000_000 + 1500;
+      mockRedis.get = mock(() => Promise.resolve(null));
+      expect(await service.get("elsewhere")).toBeNull();
+      expect(mockRedis.get).toHaveBeenCalledWith("elsewhere");
+
+      Date.now = originalNow;
+    });
+
+    it("should not backfill L1 when PTTL reports the key is already gone", async () => {
+      // GET and PTTL are not atomic: -2 means the key expired between them, so
+      // caching the value would resurrect an already-dead entry.
+      mockRedis.get = mock(() => Promise.resolve(JSON.stringify("racy")));
+      mockRedis.pttl = mock(() => Promise.resolve(-2));
+
+      expect(await service.get("racy")).toBe("racy");
+
+      mockRedis.get = mock(() => Promise.resolve(null));
+      expect(await service.get("racy")).toBeNull();
+      expect(mockRedis.get).toHaveBeenCalledWith("racy");
+    });
   });
 
   describe("set", () => {
@@ -91,7 +139,7 @@ describe("CacheService", () => {
         "key",
         JSON.stringify("value"),
         "EX",
-        300,
+        300
       );
     });
 
@@ -99,7 +147,7 @@ describe("CacheService", () => {
       await service.set("key", "value");
       expect(mockRedis.set).toHaveBeenCalledWith(
         "key",
-        JSON.stringify("value"),
+        JSON.stringify("value")
       );
     });
 
@@ -130,7 +178,9 @@ describe("CacheService", () => {
       let callCount = 0;
       mockRedis.scan = mock(() => {
         callCount++;
-        if (callCount === 1) return Promise.resolve(["1", ["a", "b"]]);
+        if (callCount === 1) {
+          return Promise.resolve(["1", ["a", "b"]]);
+        }
         return Promise.resolve(["0", ["c"]]);
       });
 
@@ -155,7 +205,7 @@ describe("CacheService", () => {
           Promise.resolve([
             [null, JSON.stringify({ a: 1 })],
             [null, JSON.stringify({ b: 2 })],
-          ]),
+          ])
         ),
       };
       mockRedis.pipeline = mock(() => pipelineMock);
@@ -176,7 +226,7 @@ describe("CacheService", () => {
           Promise.resolve([
             [new Error("fail"), null],
             [null, JSON.stringify("ok")],
-          ]),
+          ])
         ),
       };
       mockRedis.pipeline = mock(() => pipelineMock);

@@ -1,11 +1,34 @@
 # Cache Service
 
 Class: descriptive
-Summary: The standalone two-tier cache HTTP API (L1 in-memory Map, L2 Redis): its CRUD/batch/scan routes and the fact that it calls no other platform service.
+Summary: The standalone two-tier cache HTTP API (L1 in-memory Map, L2 Redis): its CRUD/batch/scan wire contract, its consumers, and the caller gotchas an in-cluster e2e run proved.
 
 HTTP CRUD API backed by a two-tier cache: L1 in-memory `Map` (1000 entries, FIFO eviction) and L2 Redis. Supports single operations, batch GET via pipelines, and key listing via SCAN.
 
-Standalone HTTP service: no NATS client and no calls to other platform services. It DOES depend on the shared workspace packages:
+## Consumers
+
+`connector-runtime` is the incoming consumer — it is being wired to this
+service's HTTP contract (the follow-up task to SPEC
+`PENDIENTES/01-bugs-group-b.spec.md` T10). Until that lands, the only callers
+are this service's own suites and `scripts/e2e/cache-service.sh`.
+
+It had NEVER had a live consumer before, which is exactly how two defects
+survived to the T10 audit — both are now covered by regression tests
+(`test/unit/`, `test/integration/`) and by the e2e script:
+
+1. A Redis hit backfilled L1 with "never expires", so a key whose TTL was
+   written by ANOTHER writer (a second replica — max-scale is 5 — or any direct
+   Redis client) stayed readable from that instance forever after Redis had
+   expired it. `get` now reads PTTL alongside GET and inherits the remaining
+   TTL (`src/modules/cache/cache.service.ts:35-62`).
+2. A cached STRING was handed to Fastify as a plain-string payload, which it
+   ships verbatim as `text/plain` — `GET` returned `hello`, unparseable by any
+   JSON client, while objects/numbers/`null` came back as JSON. `GET /cache/:key`
+   now serializes explicitly and always answers `application/json`
+   (`src/modules/cache/cache.controller.ts:58-66`).
+
+Standalone otherwise: no NATS client and no calls to other platform services.
+It DOES depend on the shared workspace packages:
 
 - `@yoizen/shared` — `TENANT_HEADER` for tenant-scoped keys (`src/modules/cache/cache.controller.ts:14`), `evictOldestIfCapacityBeforeSet` for the L1 FIFO eviction (`src/modules/cache/cache.service.ts:3`), and the `ICacheServiceHealthResponse` type (`src/modules/health/health.controller.ts:4`).
 - `@yoizen/database` — the `redisProvider` / `REDIS_CLIENT` token re-exported by `src/redis.module.ts:2-8`.
@@ -29,12 +52,29 @@ service has no tenant guard.
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/cache/:key` | Get cached value; `null` when missing (`cache.controller.ts:47-53`) |
+| `GET` | `/cache/:key` | Get cached value. ALWAYS `200` + `application/json`, for every value type; a miss is the JSON literal `null`, never a `404` and never an empty body (`cache.controller.ts:58-66`) |
 | `PUT` | `/cache/:key` | Set value `{ value, ttl? }` → `{ ok: true }`. `ttl` is seconds, integer `>= 1` (`cache.dto.ts:12-21`) |
-| `DELETE` | `/cache/:key` | Delete from Redis AND L1 → `{ ok: true }` (`cache.controller.ts:76-83`) |
-| `POST` | `/cache/batch` | Batch GET `{ keys: string[] }` → object keyed by the SCOPED key; `200`, not `201` (`cache.controller.ts:90-99`) |
+| `DELETE` | `/cache/:key` | Delete from Redis AND L1 → `{ ok: true }`. Idempotent: deleting a missing key is still `{ ok: true }` (`cache.controller.ts:89-96`) |
+| `POST` | `/cache/batch` | Batch GET `{ keys: string[] }` → object keyed by the SCOPED key; `200`, not `201`. Misses are OMITTED from the object rather than returned as `null` (`cache.controller.ts:103-112`) |
 | `GET` | `/cache` | SCAN by `pattern` (default `*`) with `count` (default `100`, max `10000`) (`cache.dto.ts:30-41`) |
 | `GET` | `/health` | `{ status, redis }` — `"ok"`/`"degraded"` and `"connected"`/`"disconnected"` (`src/modules/health/health.controller.ts:12-19`) |
+
+### Caller gotchas
+
+- **Never send `Content-Type: application/json` on a bodyless request.** A
+  `DELETE /cache/:key` that declares a JSON content type with no body is
+  rejected by Fastify with `400 Body cannot be empty when content-type is set
+  to 'application/json'` before it ever reaches the controller. This is
+  platform-wide Nest+Fastify behaviour, not something this service opts into —
+  an HTTP client that pins the header on every request (a shared axios/fetch
+  wrapper, say) cannot delete a key. `scripts/e2e/cache-service.sh` hit exactly
+  this and now sets the header only when it sends a body.
+- **The `PUT` body is validated with `whitelist + forbidNonWhitelisted`**
+  (`src/main.ts` → `bootstrapFastifyApp({ withValidationPipe: true })`), so any
+  property other than `value`/`ttl` is a `400`.
+- **Values are JSON round-tripped, not stored verbatim**: `undefined` inside an
+  object disappears, `Date` becomes an ISO string, and a key written into Redis
+  by a non-JSON writer is returned as its RAW string (`cache.service.ts:50-55`).
 
 ## Two-tier cache
 
@@ -42,27 +82,32 @@ service has no tenant guard.
 
 - **L1** — `Map<string, IL1Entry>` where `IL1Entry = { value, expiry }` (`:7-10`).
   `expiry === 0` means "no expiry"; otherwise it is an absolute epoch-ms
-  deadline (`:29`).
-- **Read path** (`get`, `:26-44`): L1 hit with a fresh entry returns
-  immediately; an expired entry is deleted and the read falls through to Redis;
-  a Redis hit backfills L1 with `expiry: 0` — **the backfilled entry does not
-  inherit the Redis TTL** (`:42`).
-- **Write path** (`set`, `:52-61`): always writes through to Redis first
+  deadline (`:38`).
+- **Read path** (`get`, `:35-62`): L1 hit with a fresh entry returns
+  immediately; an expired entry is deleted and the read falls through to Redis.
+  A Redis hit backfills L1 with the key's REMAINING Redis TTL, read via a PTTL
+  issued in the same tick as the GET (`:43-46`, `:60`) — so a TTL written by
+  another replica or a foreign Redis client is honoured here too. PTTL `-1`
+  (key without TTL) backfills with no expiry; PTTL `-2` (the key expired
+  between the two commands, which are pipelined but NOT atomic) returns the
+  value and backfills nothing (`:56-59`).
+- **Write path** (`set`, `:70-79`): always writes through to Redis first
   (`SET ... EX ttl` when a TTL is given), then updates L1 with the matching
   deadline.
 - **JSON handling**: values are `JSON.stringify`d on the way in; on the way out
   a `JSON.parse` failure returns the RAW string rather than erroring
-  (`:36-41`, and the same fallback per key in `batchGet`, `:112-116`).
-- **`scan`** (`:78-93`) loops the Redis cursor until it returns to `"0"`, so one
+  (`:50-55`, and the same fallback per key in `batchGet`, `:136-140`).
+- **`scan`** (`:96-111`) loops the Redis cursor until it returns to `"0"`, so one
   HTTP call can issue many SCAN round-trips.
-- **`batchGet`** (`:100-119`) issues one `redis.pipeline()` with an N-key GET
+- **`batchGet`** (`:118-143`) issues one `redis.pipeline()` with an N-key GET
   fan-out — a single round-trip. Per-key errors and misses are skipped, so the
-  response object simply omits them.
+  response object simply omits them. Unlike `get` it neither reads nor writes
+  L1: every batch key is a Redis round-trip.
 
 ### L1 eviction
 
 FIFO by `Map` insertion order, delegated to the shared
-`evictOldestIfCapacityBeforeSet` helper (`cache.service.ts:3`, `:121-124`):
+`evictOldestIfCapacityBeforeSet` helper (`cache.service.ts:3`, `:145-148`):
 the oldest entry is removed BEFORE inserting a new key once the map is at
 `CACHE_L1_MAX_SIZE`. Entries are not re-ordered on read, so this is
 insertion-order FIFO, not LRU.
@@ -81,8 +126,32 @@ module load (`src/config.ts:6-9`), so setting them after import has no effect.
 ## Testing
 
 ```bash
-bun run test:unit          # Mocked REDIS_CLIENT token
-bun run test:integration   # Bootstraps the app against a real Redis on :6379
+bun run test:unit          # Mocked REDIS_CLIENT token — no infrastructure
+
+# The integration suite bootstraps the REAL AppModule, so it needs a reachable
+# Redis. It is env-gated (same convention as agent-admin-service's
+# TEST_POSTGRES_URL suite) and SKIPS itself when TEST_REDIS_URL is unset, which
+# is why a bare `bun test` is green on a laptop with no Redis.
+kubectl port-forward -n support-services-dev svc/redis 16379:6379 &
+TEST_REDIS_URL=redis://localhost:16379 bun run test:integration
+```
+
+`TEST_REDIS_URL` also sets `REDIS_HOST`/`REDIS_PORT` for the shared
+`redisProvider` before the app module loads
+(`test/integration/cache.integration.spec.ts:28-34`). Keys are written under a
+run-unique `integ:<pid>-<ts>` prefix and deleted in `afterAll` — the dev
+cluster's Redis is shared with every other service.
+
+### Live cluster check
+
+`scripts/e2e/cache-service.sh` exercises the DEPLOYED ksvc over its Knative
+route: health, object and string round trips, TTL expiry (both a TTL this
+service wrote and one a foreign Redis writer wrote), batch GET, SCAN, DELETE
+and tenant scoping. Exit `0` = verified, `1` = a stage failed, `2` = missing
+prerequisite or unreachable service. It cleans up its own keys on exit.
+
+```bash
+bash scripts/e2e/cache-service.sh
 ```
 
 ## Deploy

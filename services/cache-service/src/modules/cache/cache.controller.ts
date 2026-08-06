@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Headers,
   HttpCode,
   HttpStatus,
@@ -12,8 +13,8 @@ import {
   Query,
 } from "@nestjs/common";
 import { TENANT_HEADER } from "@yoizen/shared";
-import { CacheService } from "./cache.service";
 import { BatchGetDto, ListCacheKeysQueryDto, SetCacheDto } from "./cache.dto";
+import { CacheService } from "./cache.service";
 
 function tenantKey(tenantId: string | undefined, key: string): string {
   return tenantId ? `${tenantId}:${key}` : key;
@@ -31,7 +32,7 @@ export class CacheController {
   @Get()
   async listKeys(
     @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Query() query: ListCacheKeysQueryDto,
+    @Query() query: ListCacheKeysQueryDto
   ): Promise<string[]> {
     const scopedPattern = tenantId
       ? `${tenantId}:${query.pattern}`
@@ -41,15 +42,27 @@ export class CacheController {
 
   /**
    * Gets a single cached value by key.
+   *
+   * The value is serialized HERE instead of being handed to Fastify as-is:
+   * Fastify sends a plain-string payload verbatim as `text/plain`, so a cached
+   * string used to come back unquoted and unparseable by any JSON client
+   * (`GET` of `"hello"` returned `hello` as text/plain) while objects, numbers
+   * and `null` came back as `application/json`. Stringifying with an explicit
+   * JSON content type makes every value type — including a miss (`null`) —
+   * round-trip through `response.json()`.
+   *
    * @param tenantId - Optional tenant prefix.
    * @param key - Logical key (combined with tenant when present).
+   * @returns The JSON text of the value, or `"null"` when the key is missing.
    */
   @Get(":key")
+  @Header("Content-Type", "application/json; charset=utf-8")
   async get(
     @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Param("key") key: string,
-  ): Promise<unknown> {
-    return this.cache.get(tenantKey(tenantId, key));
+    @Param("key") key: string
+  ): Promise<string> {
+    const value = await this.cache.get(tenantKey(tenantId, key));
+    return JSON.stringify(value ?? null);
   }
 
   /**
@@ -62,7 +75,7 @@ export class CacheController {
   async set(
     @Headers(TENANT_HEADER) tenantId: string | undefined,
     @Param("key") key: string,
-    @Body() body: SetCacheDto,
+    @Body() body: SetCacheDto
   ): Promise<{ ok: boolean }> {
     await this.cache.set(tenantKey(tenantId, key), body.value, body.ttl);
     return { ok: true };
@@ -76,7 +89,7 @@ export class CacheController {
   @Delete(":key")
   async del(
     @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Param("key") key: string,
+    @Param("key") key: string
   ): Promise<{ ok: boolean }> {
     await this.cache.del(tenantKey(tenantId, key));
     return { ok: true };
@@ -91,7 +104,7 @@ export class CacheController {
   @HttpCode(HttpStatus.OK)
   async batchGet(
     @Headers(TENANT_HEADER) tenantId: string | undefined,
-    @Body() body: BatchGetDto,
+    @Body() body: BatchGetDto
   ): Promise<Record<string, unknown>> {
     const scopedKeys = body.keys.map((k) => tenantKey(tenantId, k));
     const map = await this.cache.batchGet(scopedKeys);

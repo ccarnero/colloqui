@@ -1,10 +1,11 @@
 # scripts/e2e/README.md — end-to-end checks against the live dev cluster
 
-Five scripts exercise the deployed platform (OrbStack dev cluster) end to
+Six scripts exercise the deployed platform (OrbStack dev cluster) end to
 end — `manifest-apply.sh`, `http-workflow.sh`, `connector-invoke.sh`,
-`teardown-regression.sh`, `long-agent-execution.sh` — plus `run-all.sh`,
-which orchestrates the first three (and, with `--only`, the fourth).
-`long-agent-execution.sh` is NOT reachable from `run-all.sh` at all.
+`teardown-regression.sh`, `long-agent-execution.sh`, `cache-service.sh` — plus
+`run-all.sh`, which orchestrates the first three (and, with `--only`, the
+fourth). `long-agent-execution.sh` and `cache-service.sh` are NOT reachable
+from `run-all.sh` at all.
 
 Each check is dry-run-free by design: it creates real e2e-prefixed resources,
 asserts against them, and tears itself down (idempotent, via an `EXIT`
@@ -213,6 +214,40 @@ directly:
 ./scripts/e2e/long-agent-execution.sh
 ```
 
+## 7. Cache service — `cache-service.sh` (standalone)
+
+Validates the deployed `cache-service` ksvc over its own Knative route
+(`http://cache-service.<ns>.dev.local`, resolved to `E2E_RESOLVE_IP` like every
+other script here). It is not part of any chain: cache-service has no gateway
+route and no NATS surface, and until `connector-runtime` is wired to it (the
+follow-up to SPEC `PENDIENTES/01-bugs-group-b.spec.md` T10) it has no platform
+consumer at all — this script is the only executable proof the deployed pod
+works.
+
+Stages: `/health`; an object round trip; a STRING round trip (must come back
+JSON-quoted as `application/json` — strings used to be shipped verbatim as
+`text/plain`); TTL expiry from a `PUT` with `ttl`; TTL expiry for a key written
+straight into Redis by a foreign writer via `kubectl exec redis-0 -- redis-cli`
+(the L1 backfill used to drop that TTL and pin the value forever — this stage
+self-skips when kubectl or the Redis pod is unavailable); `POST /cache/batch`
+(hits returned, misses omitted); `SCAN`; `DELETE` then a `null` GET; and tenant
+scoping via `x-yoizen-tenant`.
+
+Knobs: `E2E_CACHE_URL`, `E2E_CACHE_HOST_HEADER`, `E2E_CACHE_TTL_SECONDS`
+(default 3), `E2E_CACHE_POLL_TIMEOUT_S` (default 60), `E2E_REDIS_NAMESPACE` /
+`E2E_REDIS_POD` (default `support-services-dev` / `redis-0`), plus the shared
+`E2E_NAMESPACE`, `E2E_TENANT`, `E2E_RESOLVE_IP` and `E2E_KEEP`. Every key it
+writes carries a per-run nonce and is deleted by an `EXIT` trap. Exit `0` =
+verified, `1` = a stage failed, `2` = missing prerequisite (`curl`/`jq`) or an
+unreachable service.
+
+**Not orchestrated by `run-all.sh`** — it has no stage entry there. Run it
+directly (~15 s):
+
+```bash
+bash scripts/e2e/cache-service.sh
+```
+
 ## Full suite runtime
 
 ~2-4 minutes total for the three default stages, dominated by
@@ -220,4 +255,5 @@ directly:
 `teardown-regression.sh` adds another manifest-apply.sh-sized round trip
 (~30-60s) when run explicitly. `long-agent-execution.sh` is the slowest of
 all and is not part of any suite: it deliberately waits out two 120 s
-injected delays.
+injected delays. `cache-service.sh` is the cheapest (~15 s, dominated by its
+two TTL-expiry polls) and is likewise not part of any suite.

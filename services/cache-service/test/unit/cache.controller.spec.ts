@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
+import { REDIS_CLIENT } from "@yoizen/database";
 import { CacheController } from "../../src/modules/cache/cache.controller";
 import { CacheService } from "../../src/modules/cache/cache.service";
-import { REDIS_CLIENT } from "@yoizen/database";
 
 const TENANT_ID = "test-tenant";
 
@@ -13,6 +13,7 @@ describe("CacheController", () => {
   beforeEach(async () => {
     const mockRedis = {
       get: mock(() => Promise.resolve(null)),
+      pttl: mock(() => Promise.resolve(-1)),
       set: mock(() => Promise.resolve("OK")),
       del: mock(() => Promise.resolve(1)),
       scan: mock(() => Promise.resolve(["0", []])),
@@ -34,12 +35,40 @@ describe("CacheController", () => {
   });
 
   describe("GET /cache/:key", () => {
-    it("should return value from service", async () => {
+    it("should return value from service as JSON text", async () => {
       service.get = mock(() =>
-        Promise.resolve({ data: "hello" }),
+        Promise.resolve({ data: "hello" })
       ) as CacheService["get"];
       const result = await controller.get(TENANT_ID, "mykey");
-      expect(result).toEqual({ data: "hello" });
+      expect(JSON.parse(result)).toEqual({ data: "hello" });
+      expect(service.get).toHaveBeenCalledWith(`${TENANT_ID}:mykey`);
+    });
+
+    /**
+     * Regression: a string value used to be returned to Fastify as a plain
+     * string, which it ships verbatim as `text/plain` — so a cached `"hello"`
+     * came back as unquoted `hello` that no JSON client could parse, while
+     * objects/numbers/null came back as JSON.
+     */
+    it("should JSON-quote a string value instead of returning it raw", async () => {
+      service.get = mock(() => Promise.resolve("hello")) as CacheService["get"];
+      const result = await controller.get(TENANT_ID, "mykey");
+      expect(result).toBe('"hello"');
+      expect(JSON.parse(result)).toBe("hello");
+    });
+
+    it("should return JSON null on a miss", async () => {
+      service.get = mock(() => Promise.resolve(null)) as CacheService["get"];
+      const result = await controller.get(TENANT_ID, "missing");
+      expect(result).toBe("null");
+      expect(JSON.parse(result)).toBeNull();
+    });
+
+    it("should use the raw key when no tenant header is present", async () => {
+      service.get = mock(() => Promise.resolve(7)) as CacheService["get"];
+      const result = await controller.get(undefined, "mykey");
+      expect(result).toBe("7");
+      expect(service.get).toHaveBeenCalledWith("mykey");
     });
   });
 
@@ -54,7 +83,7 @@ describe("CacheController", () => {
       expect(service.set).toHaveBeenCalledWith(
         `${TENANT_ID}:mykey`,
         "data",
-        300,
+        300
       );
     });
   });
@@ -70,7 +99,9 @@ describe("CacheController", () => {
 
   describe("GET /cache (listKeys)", () => {
     it("should return keys from scan", async () => {
-      service.scan = mock(() => Promise.resolve(["a", "b"])) as CacheService["scan"];
+      service.scan = mock(() =>
+        Promise.resolve(["a", "b"])
+      ) as CacheService["scan"];
       const result = await controller.listKeys(TENANT_ID, {
         pattern: "test*",
         count: 50,
@@ -92,7 +123,9 @@ describe("CacheController", () => {
         [`${TENANT_ID}:k1`, "v1"],
         [`${TENANT_ID}:k2`, "v2"],
       ]);
-      service.batchGet = mock(() => Promise.resolve(map)) as CacheService["batchGet"];
+      service.batchGet = mock(() =>
+        Promise.resolve(map)
+      ) as CacheService["batchGet"];
       const result = await controller.batchGet(TENANT_ID, {
         keys: ["k1", "k2"],
       });
