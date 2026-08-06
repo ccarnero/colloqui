@@ -368,7 +368,7 @@ bash scripts/checks/doc-code-guards.sh
 - [x] T03 E27 smoke-test full worker list
 - [x] T04 E15 sdk test glob
 - [x] T05 E18 sample slug lookups
-- [ ] T06 E29+E33 dev-mode / rebuild-redeploy drift
+- [x] T06 E29+E33 dev-mode / rebuild-redeploy drift
 - [ ] T07 E24+E25 purge-circuit-breakers
 - [ ] T08 E28 hook runner
 - [ ] T09 E12 parseFrontmatter

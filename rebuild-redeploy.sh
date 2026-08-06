@@ -27,13 +27,21 @@ VALID_SERVICES=(
   tracking-ingester-service provisioning-service
 )
 
-VALID_ENVIRONMENTS=(dev qa staging production)
+# Only `dev` exists: get_overlay_path_for_env below maps `dev` and nothing
+# else, and the filesystem only carries knative/services/overlays/local/{dev,
+# mongo-dev,postgres-dev}. Advertising qa/staging/production here let callers
+# pass an environment that resolves to the namespace platform-services-<env>,
+# which does not exist either.
+VALID_ENVIRONMENTS=(dev)
 
 usage() {
   cat <<EOF
 Usage: $0 <service-name> [environment] [options]
 
-Rebuilds a Docker image and triggers a Knative rollout for a single service.
+Rebuilds a Docker image and redeploys a single service: patches its Knative
+Services, restarts its plain Deployments, and creates its CronJobs if they
+are missing (existing CronJobs are left untouched — spec.suspend is
+human-managed). A service may have any combination of the three.
 
 Arguments:
   service-name    Service name: directory under services/
@@ -41,8 +49,8 @@ Arguments:
 
 Options:
   --no-cache      Build Docker image without cache
-  --build-only    Only build the image, skip Knative rollout
-  --deploy-only   Only trigger Knative rollout, skip image build
+  --build-only    Only build the image, skip the deploy phase
+  --deploy-only   Only redeploy (ksvc + Deployments + CronJobs), skip the build
   -h, --help      Show this help message
 
 Valid services:
@@ -53,7 +61,7 @@ Valid environments:
 
 Examples:
   $0 tenant-service
-  $0 tenant-service qa
+  $0 tenant-service dev
   $0 agent-admin-service dev --no-cache
   $0 tenant-service dev --deploy-only
 EOF
@@ -123,12 +131,8 @@ build_image() {
 #
 # Coverage, machine-diffed against knative/services/base: get_deployment_names
 # maps EXACTLY the 11 worker Deployments, get_cronjob_names the 1 CronJob, and
-# get_ksvc_names all 18 ksvc — plus one phantom: connector-runtime is
-# Deployment-only but has no empty case here, so the default arm below emits
-# "connector-runtime" as a ksvc and rollout_ksvc logs a harmless "not found —
-# skipping" warning on every connector-runtime rebuild. Same footgun the
-# tracking-ingester-service case exists to avoid; see E33 in
-# DOCS/archive/audits/DOCS-TRUTH-LEDGER.md (adding the case is a behavior change).
+# get_ksvc_names all 18 ksvc — no phantoms (E33a fixed the connector-runtime
+# one; see DOCS/archive/audits/DOCS-TRUTH-LEDGER.md).
 get_ksvc_names() {
   local svc="$1"
   case "$svc" in
@@ -141,6 +145,11 @@ get_ksvc_names() {
     # case is REQUIRED: the default case echoes "$svc", which would make
     # rollout_ksvc try to patch a nonexistent ksvc named after the service.
     tracking-ingester-service) echo "" ;;
+    # connector-runtime is Deployment-only too (three Deployments, see
+    # get_deployment_names below). Without this empty case the default arm
+    # emitted a phantom "connector-runtime" ksvc and every rebuild warned
+    # "not found — skipping" in rollout_ksvc.
+    connector-runtime)        echo "" ;;
     *)                        echo "$svc" ;;
   esac
 }

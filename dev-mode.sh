@@ -208,9 +208,19 @@ get_targets() {
       echo "deploy	workflow-service-worker	src/main.ts	workflow-service"
       echo "deploy	workflow-worker	src/temporal/worker.ts	workflow-service"
       ;;
-    # ── connector-runtime: deployment only ────────────────────────────────
+    # ── connector-runtime: three Deployments, no ksvc ─────────────────────
+    # All three run from the same image (dev.local/connector-runtime:local)
+    # but with different entry points, verified against
+    # knative/services/base/connector-runtime*.yaml:
+    #   connector-runtime         → no `command:` override, so the Dockerfile
+    #                               CMD applies: bun dist/worker.js
+    #   connector-runtime-http    → command: bun dist/http-main.js
+    #   connector-runtime-invoke  → command: bun dist/invoke-consumer-main.js
+    # rebuild-redeploy.sh get_deployment_names rolls the same three.
     connector-runtime)
       echo "deploy	connector-runtime	src/worker.ts	connector-runtime"
+      echo "deploy	connector-runtime-http	src/http-main.ts	connector-runtime"
+      echo "deploy	connector-runtime-invoke	src/invoke-consumer-main.ts	connector-runtime"
       ;;
     # ── tracking-ingester-service: deployment only (worker, no KSVC) ───────
     tracking-ingester-service)
