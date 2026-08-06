@@ -20,11 +20,15 @@ Accept check where none does (shell scripts, sample drivers).
    a phantom feature: accepted by validation, never able to work.
 2. **E13**: POSTPONED (user ruling 2026-08-06) — the agent-scheduler-service
    deployment fix moves to its own future feature. Not in this queue.
-3. **E36**: PENDING — evidence confirms cache-service is orphaned (the connector
-   cache UI persists a config field that connector-runtime serves directly from
-   Redis via ioredis; `cache-service` is not in that path — see register). T10 is
-   spec'd as *delete*, but MUST NOT start until the user confirms. If the loop
-   reaches T10 without a recorded confirmation, STOP and report.
+3. **E36**: RESOLVED (user ruling 2026-08-06, supersedes the delete option) —
+   keep cache-service, VALIDATE it, and make the connectors consume it. History
+   verified: no integration was ever removed; the connector cache was born on
+   direct ioredis (`e9af887a`) and cache-service was never adopted by anything
+   (only the gateway health probe and its own deleted self-test ever called it).
+   T10 validates the service; T11 routes connector-runtime's HTTP-response
+   cache through it. Accepted tradeoff: one in-cluster HTTP hop per cache op;
+   mandated mitigation: cache-service failure degrades to cache-miss, NEVER a
+   failed connector call.
 4. Scope discipline: fix exactly the registered bug. Adjacent smells found while
    fixing get REPORTED in the task summary, never patched in the same commit.
 
@@ -72,6 +76,8 @@ Gate table (per touched package — the runners differ, do not "normalize" them)
 | `services/agent-ai-service` | `cd services/agent-ai-service && bun test && bunx tsc -p tsconfig.build.json --noEmit` |
 | `services/connector-admin` | `cd services/connector-admin && pnpm test:unit && bunx tsc -p tsconfig.json --noEmit` |
 | `services/admin-console` | `cd services/admin-console && pnpm test` |
+| `services/cache-service` | `cd services/cache-service && bun test && bunx tsc -p tsconfig.json --noEmit` |
+| `services/connector-runtime` | `cd services/connector-runtime && bun test && bunx tsc -p tsconfig.json --noEmit` |
 | `services/api-gateway` | `cd services/api-gateway && bun test && bunx tsc -p tsconfig.json --noEmit` |
 | `sdk` | `cd sdk && pnpm test` |
 | `integrations/ai/ai-system-variables` | `cd integrations/ai/ai-system-variables && bunx tsc --noEmit` (skip if no tsconfig — then G2-style `rg` Accept checks are the guard) |
@@ -327,36 +333,74 @@ cd services/agent-ai-service && bun test test/unit/skill-file.service.spec.ts
 cd services/agent-ai-service && bun test && bunx tsc -p tsconfig.build.json --noEmit
 ```
 
-### T10 — E36: delete the orphaned cache-service **[cluster]** ⚠ DECISION-GATED
+### T10 — E36a: validate cache-service end to end **[cluster]**
 
-> **PRECONDITION: explicit user confirmation.** Evidence (register + trace of
-> 2026-08-06): the connectors cache UI persists a config field that
-> connector-runtime serves DIRECTLY from Redis (ioredis —
-> `adapter-client.provider.ts:145`, `redis-client.ts`); `cache-service`'s only
-> repo consumer is the api-gateway health probe. It burns a permanent pod
-> (`min-scale: "1"`, `knative/services/base/cache-service.yaml:15`) for nothing.
-> If the user instead rules "wire the gateway route", REWRITE this task before
-> running it.
+User ruling: cache-service stays and gets adopted. First, prove the service
+itself is sound — it has never had a real consumer, so treat it as unaudited:
 
-Delete, in one commit:
-
-- `services/cache-service/` (whole service).
-- `knative/services/base/cache-service.yaml` + its kustomization entry.
-- `CACHE_SERVICE_URL` env patches:
-  `knative/services/overlays/local/postgres-dev/env-patches.yaml:29`,
-  `knative/services/overlays/local/mongo-dev/env-patches.yaml:30`.
-- api-gateway: the `cache` entry in `src/config/gateway.config.ts:75` and the
-  probe row in `src/modules/health/gateway-health.service.ts:17` (+ their tests).
-- Any README/doc references (let `doc-code-guards.sh` confirm).
-- `kubectl delete ksvc cache-service -n <ns>` on the dev cluster so the running
-  pod actually goes away.
+- Its own suites green: `cd services/cache-service && bun test` (unit +
+  integration; check what the integration suite needs to run — if it expects a
+  live Redis, wire it to the dev cluster's Redis the way sibling services do).
+- Typecheck: `bunx tsc -p tsconfig.json --noEmit` (add nothing to package.json).
+- Live CRUD validation against the deployed pod (port-forward or in-cluster):
+  PUT `{value, ttl}` → GET returns the value → TTL expiry honored (short TTL,
+  poll until null) → DELETE → GET null. Batch endpoint too if it exists (read
+  `cache.controller.ts` first). Script the check into
+  `scripts/e2e/cache-service.sh` following the existing `scripts/e2e/` pattern
+  and exit-code contract, so validation stays executable.
+- Fix what validation exposes IN the service (rot from never being used).
+  A defect too large for one attempt → STOP and report.
+- `services/cache-service/README.md`: replace the "nobody calls this" admission
+  with the real contract and the incoming consumer (T11).
 
 **Accept**
 ```
-rg -n "CACHE_SERVICE_URL" --glob '!DOCS/archive/**' . ; test $? -eq 1
-rg -n "cache-service" services/api-gateway/src knative/ ; test $? -eq 1
-cd services/api-gateway && bun test && bunx tsc -p tsconfig.json --noEmit
-bash scripts/checks/doc-code-guards.sh
+cd services/cache-service && bun test
+cd services/cache-service && bunx tsc -p tsconfig.json --noEmit
+bash scripts/e2e/cache-service.sh
+```
+
+### T11 — E36b: connector-runtime's HTTP-response cache consumes cache-service **[cluster]**
+
+Route the connector cache (the `cache` config the admin-console already
+exposes per adapter/endpoint) through cache-service instead of raw ioredis:
+
+- New `AdapterCache` implementation backed by cache-service's HTTP API
+  (`get`/`setex` semantics mapped to its GET/PUT endpoints — read
+  `cache.controller.ts` for the real contract; TTL rides the PUT body). Place it
+  next to the consumer in `connector-runtime` unless an existing shared seam
+  fits naturally — do NOT invent a new shared package for one consumer.
+- `services/connector-runtime/src/activities/_shared/adapter-client.provider.ts:145`:
+  `createHttpResponseCache(...)` receives the cache-service-backed store instead
+  of `getSafeCache()` (raw Redis). ONLY the HTTP-response cache moves — every
+  other Redis use in connector-runtime (adapter config cache, rate limits,
+  whatever exists) stays untouched.
+- **Resilience mandate**: any cache-service error (timeout, 5xx, connection
+  refused) logs at warn and behaves as a cache miss on `get` / a no-op on
+  `setex`. A connector call must NEVER fail because the cache is down. Bounded
+  timeout on cache calls (follow existing HTTP-call timeout patterns in the
+  service).
+- Config: `CACHE_SERVICE_URL` in `services/connector-runtime/src/config.ts` +
+  env entries in all THREE deployment manifests (`connector-runtime`,
+  `connector-runtime-http`, `connector-runtime-invoke`) and the overlay
+  env-patches, following how the existing `CACHE_SERVICE_URL` patches for
+  api-gateway are shaped.
+- Unit tests: the new store (mocked fetch — hit, miss, TTL passthrough, error →
+  miss/no-op + warn); existing cache-policy/cached-fetch specs untouched.
+- Cluster proof: with everything deployed, run an adapter endpoint with
+  `cache.enabled` twice and show the second response is served from cache AND
+  the key is visible through cache-service's API. Extend
+  `scripts/e2e/cache-service.sh` (from T10) with this consumer scenario, or a
+  sibling script if the existing e2e layout separates concerns that way.
+
+**Accept**
+```
+cd services/connector-runtime && bun test && bunx tsc -p tsconfig.json --noEmit
+rg -n "CACHE_SERVICE_URL" services/connector-runtime/src/config.ts
+rg -n "CACHE_SERVICE_URL" knative/services/base/connector-runtime.yaml knative/services/base/connector-runtime-http.yaml knative/services/base/connector-runtime-invoke.yaml
+./rebuild-redeploy.sh connector-runtime dev
+./rebuild-redeploy.sh cache-service dev
+bash scripts/e2e/cache-service.sh
 ```
 
 ---
@@ -372,7 +416,8 @@ bash scripts/checks/doc-code-guards.sh
 - [x] T07 E24+E25 purge-circuit-breakers
 - [x] T08 E28 hook runner
 - [x] T09 E12 parseFrontmatter
-- [ ] T10 E36 delete cache-service (needs user confirmation)
+- [ ] T10 E36a validate cache-service (suite + live CRUD e2e script)
+- [ ] T11 E36b connector http-response cache via cache-service
 
 ## Rebuild map (services to rebuild/redeploy per task)
 
@@ -380,7 +425,9 @@ bash scripts/checks/doc-code-guards.sh
 |---|---|
 | T01 | `connector-runtime`, `connector-admin`, `agent-ai-service`, `admin-console` |
 | T06 | `connector-runtime` (exercised by the Accept gate) |
-| T10 | `api-gateway`; plus `kubectl delete ksvc cache-service` |
+| T09 | `agent-ai-service` (src change — added to the map post-hoc) |
+| T10 | `cache-service` (if validation fixes touch src) |
+| T11 | `connector-runtime` + `cache-service` |
 | others | none (scripts, sdk, sample, hook, or test-only changes) |
 
 ## Out of scope (explicit)
@@ -391,7 +438,10 @@ bash scripts/checks/doc-code-guards.sh
   `knative/services/base/agent-scheduler-service.yaml:26-47`,
   `scheduler.service.ts:52-63`, `health.controller.ts:22-28`) stays in the
   register for that future SPEC.
-- E36 "wire the gateway route" variant (dead unless the user rules otherwise).
+- E36 "delete cache-service" variant — dead: the user ruled adopt-and-validate
+  (2026-08-06). No api-gateway public route for the cache either: the consumer
+  is in-cluster service-to-service (connector-runtime → cache-service); a public
+  cache API is a non-goal.
 - Documenting the bash 3.2 rule in AGENTS.md — real gap (the rule exists only as
   scattered script comments), but it is a constitution change: separate ticket.
 - Inventing per-file "related tests" semantics for bun/tsx in the hook (T09).
