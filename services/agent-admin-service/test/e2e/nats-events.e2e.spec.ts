@@ -1,41 +1,43 @@
+import "../pin-storage-engine";
+
 import {
-  describe,
-  it,
-  expect,
-  beforeAll,
   afterAll,
+  beforeAll,
   beforeEach,
+  describe,
+  expect,
+  it,
+  setDefaultTimeout,
 } from "bun:test";
-import { Test } from "@nestjs/testing";
-import type { INestApplication } from "@nestjs/common";
-import request from "supertest";
-import { AppModule } from "../../src/app.module";
-import { TenantConnectionManager } from "@yoizen/database";
-import { NatsPublisher } from "../../src/providers/nats.provider";
+import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { TENANT_HEADER } from "@yoizen/shared";
+import request from "supertest";
 import {
-  setupPostgres,
-  createMockNatsPublisher,
-  createTestTenant,
   cleanupTenantTables,
   clearNatsEvents,
-  getLastEventByType,
+  createE2eApp,
+  createMockNatsPublisher,
+  createTestTenant,
   getEventsByType,
+  getLastEventByType,
+  setupPostgres,
   type TestContext,
   type TestTenant,
+  teardownTestContext,
 } from "./setup";
 
+/** See the note in `health.e2e.spec.ts` — bun rejects `beforeAll(fn, ms)`. */
+setDefaultTimeout(180_000);
+
 const AGENT_PUBLISHED_TYPE = "io.yoizen.platform.admin.agent.published.v1";
-const AGENT_UNPUBLISHED_TYPE =
-  "io.yoizen.platform.admin.agent.unpublished.v1";
-const RUNTIME_CONFIG_SYNC_TYPE =
-  "io.yoizen.platform.runtime.config.synced.v1";
+const AGENT_UNPUBLISHED_TYPE = "io.yoizen.platform.admin.agent.unpublished.v1";
+const RUNTIME_CONFIG_SYNC_TYPE = "io.yoizen.platform.runtime.config.synced.v1";
 const JOB_TRIGGER_TYPE = "io.yoizen.platform.admin.job.triggered.v1";
 const AGENT_PUBLISHED_SUBJECT =
   "evt.nats-events-tenant.agent-admin-service.automation.platform.internal.agent_published.v1";
 
 describe("NATS Events E2E Tests", () => {
-  let app: INestApplication;
+  let app: NestFastifyApplication;
   let context: TestContext;
   let tenant: TestTenant;
 
@@ -43,36 +45,19 @@ describe("NATS Events E2E Tests", () => {
     context = await setupPostgres();
     tenant = await createTestTenant(context, "nats-events-tenant");
 
-    const mockNatsPublisher = createMockNatsPublisher(context);
-
-    const mockConnectionManager = {
-      getConnection: () => tenant.sql,
-      ensureSchema: async () => {},
-      isInitialized: () => true,
-      markInitialized: () => {},
-      closeAll: async () => {},
-      onModuleDestroy: async () => {},
-    };
-
-    const module = await Test.createTestingModule({
-      imports: [AppModule],
-    })
-      .overrideProvider(TenantConnectionManager)
-      .useValue(mockConnectionManager)
-      .overrideProvider(NatsPublisher)
-      .useValue(mockNatsPublisher)
-      .compile();
-
-    app = module.createNestApplication();
-    await app.init();
+    app = await createE2eApp({
+      natsPublisher: createMockNatsPublisher(context),
+      sql: tenant.sql,
+      tenantId: tenant.id,
+    });
   });
 
   afterAll(async () => {
     if (app) {
       await app.close();
     }
-    if (context?.postgresContainer) {
-      await context.postgresContainer.stop();
+    if (context) {
+      await teardownTestContext(context);
     }
   });
 
@@ -84,8 +69,8 @@ describe("NATS Events E2E Tests", () => {
   describe("Event Structure Validation", () => {
     it("should emit event with correct structure on agent publish", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Event Test Agent', 'Prompt', 'draft')
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Event Test Agent', 'Prompt', 'draft')
         RETURNING id;
       `;
 
@@ -119,9 +104,7 @@ describe("NATS Events E2E Tests", () => {
       expect(event!.specversion).toBe("1.0");
       expect(event!.tenant).toBe(tenant.id);
       expect(event!.producer).toBe("agent-admin-service");
-      expect(event!.source).toBe(
-        "agent-admin-service/admin/agents/publish",
-      );
+      expect(event!.source).toBe("agent-admin-service/admin/agents/publish");
       expect(event!.data.payload_inline).toBe(true);
       expect(event!.data.payload_ref).toBeNull();
 
@@ -131,15 +114,15 @@ describe("NATS Events E2E Tests", () => {
       expect(event!.data.payload?.agentId).toBe(agent.id);
       expect(event!.metadata.tenantId).toBe(tenant.id);
       expect(event!.metadata.source).toBe(
-        "agent-admin-service/admin/agents/publish",
+        "agent-admin-service/admin/agents/publish"
       );
       expect(typeof event!.metadata.timestamp).toBe("number");
     });
 
     it("should emit event with correct structure on agent unpublish", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status, published_at)
-        VALUES ('Unpublish Test Agent', 'Prompt', 'published', NOW())
+        INSERT INTO agents (id, name, system_prompt, status, published_at)
+        VALUES (gen_random_uuid(), 'Unpublish Test Agent', 'Prompt', 'published', NOW())
         RETURNING id;
       `;
 
@@ -169,8 +152,8 @@ describe("NATS Events E2E Tests", () => {
   describe("Agent Publish/Unpublish Events", () => {
     it("should emit agent.published event when publishing agent", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Publish Event Agent', 'Prompt', 'draft')
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Publish Event Agent', 'Prompt', 'draft')
         RETURNING id;
       `;
 
@@ -189,8 +172,8 @@ describe("NATS Events E2E Tests", () => {
 
     it("should emit agent.unpublished event when unpublishing agent", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status, published_at)
-        VALUES ('Unpublish Event Agent', 'Prompt', 'published', NOW())
+        INSERT INTO agents (id, name, system_prompt, status, published_at)
+        VALUES (gen_random_uuid(), 'Unpublish Event Agent', 'Prompt', 'published', NOW())
         RETURNING id;
       `;
 
@@ -208,8 +191,8 @@ describe("NATS Events E2E Tests", () => {
 
     it("should emit both events for publish-unpublish cycle", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Cycle Agent', 'Prompt', 'draft')
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Cycle Agent', 'Prompt', 'draft')
         RETURNING id;
       `;
 
@@ -240,10 +223,10 @@ describe("NATS Events E2E Tests", () => {
     it("should emit runtime.config.sync event when deploying config files", async () => {
       // Crear algunos config files
       await tenant.sql`
-        INSERT INTO config_files (name, path, content, format)
-        VALUES 
-          ('App Config', '/config/app.yaml', 'key: value', 'yaml'),
-          ('API Config', '/config/api.json', '{"key": "value"}', 'json');
+        INSERT INTO config_files (id, name, path, content, format)
+        VALUES
+          (gen_random_uuid(), 'App Config', '/config/app.yaml', 'key: value', 'yaml'),
+          (gen_random_uuid(), 'API Config', '/config/api.json', '{"key": "value"}', 'json');
       `;
 
       await request(app.getHttpServer())
@@ -267,15 +250,15 @@ describe("NATS Events E2E Tests", () => {
     it("should emit job.trigger event when triggering job", async () => {
       // Crear agent primero
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Job Agent', 'Prompt', 'published')
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Job Agent', 'Prompt', 'published')
         RETURNING id;
       `;
 
       // Crear job
       const [job] = await tenant.sql`
-        INSERT INTO jobs (name, agent_id, schedule, is_active)
-        VALUES ('Test Job', ${agent.id}, '0 0 * * *', true)
+        INSERT INTO jobs (id, name, agent_id, schedule, is_active)
+        VALUES (gen_random_uuid(), 'Test Job', ${agent.id}, '0 0 * * *', true)
         RETURNING id;
       `;
 
@@ -301,14 +284,14 @@ describe("NATS Events E2E Tests", () => {
 
     it("should emit job.trigger event when running job manually", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Manual Job Agent', 'Prompt', 'published')
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Manual Job Agent', 'Prompt', 'published')
         RETURNING id;
       `;
 
       const [job] = await tenant.sql`
-        INSERT INTO jobs (name, agent_id, schedule, is_active)
-        VALUES ('Manual Job', ${agent.id}, '0 0 * * *', true)
+        INSERT INTO jobs (id, name, agent_id, schedule, is_active)
+        VALUES (gen_random_uuid(), 'Manual Job', ${agent.id}, '0 0 * * *', true)
         RETURNING id;
       `;
 

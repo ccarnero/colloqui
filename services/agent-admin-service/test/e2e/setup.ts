@@ -1,114 +1,83 @@
-import { GenericContainer, type StartedTestContainer } from "testcontainers";
-import postgres from "postgres";
+import "../pin-storage-engine";
+
 import { randomBytes, randomUUID } from "node:crypto";
+import { ValidationPipe } from "@nestjs/common";
+import {
+  FastifyAdapter,
+  type NestFastifyApplication,
+} from "@nestjs/platform-fastify";
+import { Test } from "@nestjs/testing";
 import type { Sql } from "@yoizen/database";
 import {
-  PLATFORM_ACCOUNT_ID,
   AGENT_ADMIN_AGENT_PUBLISHED,
   AGENT_ADMIN_AGENT_UNPUBLISHED,
-  PLATFORM_CHANNEL,
   AGENT_ADMIN_CONFIG_SYNC,
-  AUTOMATION_DOMAIN,
   AGENT_ADMIN_JOB_TRIGGER,
   AGENT_ADMIN_PRODUCER,
-  PLATFORM_PROVIDER,
+  AUTOMATION_DOMAIN,
   buildPlatformSubject,
   type EventEnvelope,
+  PLATFORM_ACCOUNT_ID,
+  PLATFORM_CHANNEL,
+  PLATFORM_PROVIDER,
+  tenantPostgresDatabaseName,
 } from "@yoizen/shared";
+import type {
+  JetStreamClient,
+  JetStreamManager,
+  NatsConnection,
+  Subscription,
+} from "nats";
+import postgres from "postgres";
+import {
+  GenericContainer,
+  type StartedTestContainer,
+  Wait,
+} from "testcontainers";
+import { AppModule } from "../../src/app.module";
+import { LAZY_NATS, NatsPublisher } from "../../src/providers/nats.provider";
+import { initAgentAdminTenantSchema } from "../../src/providers/schema-initializer";
+import { YoizenclawTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
 import {
   calculateChecksum,
   serializeCanonicalPayload,
 } from "../../src/utils/payload-utils";
 
-// Schema SQL to initialize tables for e2e PostgreSQL
-const SCHEMA_SQL = `
-  CREATE TABLE IF NOT EXISTS agents (
-    id UUID PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    description TEXT,
-    system_prompt TEXT NOT NULL,
-    model_config JSONB NOT NULL DEFAULT '{}',
-    tools JSONB DEFAULT '[]',
-    channels JSONB DEFAULT '[]',
-    status VARCHAR(50) DEFAULT 'draft',
-    is_active BOOLEAN DEFAULT true,
-    published_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-  );
+/**
+ * `pgvector/pgvector:pg16` (not plain `postgres:16-alpine`) because the
+ * canonical tenant DDL runs `CREATE EXTENSION IF NOT EXISTS vector` for the
+ * knowledge-base embedding tables. Same image family `tenant-service` uses to
+ * provision real tenant databases (`DEFAULT_TENANT_POSTGRES_IMAGE`).
+ */
+const POSTGRES_IMAGE = "pgvector/pgvector:pg16";
 
-  CREATE INDEX IF NOT EXISTS idx_agents_status ON agents(status);
-  CREATE INDEX IF NOT EXISTS idx_agents_created_at ON agents(created_at DESC);
+/**
+ * Postgres logs the ready banner TWICE: once for the bootstrap/init-scripts
+ * server that is then shut down, once for the real one. Waiting for a single
+ * occurrence hands back a container whose listener is about to disappear.
+ */
+const POSTGRES_READY_LOG = /database system is ready to accept connections/;
+const POSTGRES_READY_LOG_OCCURRENCES = 2;
+const POSTGRES_STARTUP_TIMEOUT_MS = 120_000;
 
-  CREATE TABLE IF NOT EXISTS credentials (
-    id UUID PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    type VARCHAR(50) NOT NULL CHECK (type IN ('api_key', 'oauth', 'basic', 'custom')),
-    value TEXT NOT NULL,
-    is_encrypted BOOLEAN DEFAULT false,
-    metadata JSONB DEFAULT '{}',
-    expires_at TIMESTAMPTZ,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-  );
+const POSTGRES_DATABASE = "yoizen";
+const POSTGRES_USERNAME = "yoizen";
+const POSTGRES_PASSWORD = "yoizen-test-password";
 
-  CREATE TABLE IF NOT EXISTS channels (
-    id UUID PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    type VARCHAR(50) NOT NULL CHECK (type IN ('webchat', 'whatsapp', 'telegram', 'slack', 'custom')),
-    config JSONB NOT NULL DEFAULT '{}',
-    webhook_url TEXT,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_channels_type ON channels(type);
-
-  CREATE TABLE IF NOT EXISTS jobs (
-    id UUID PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    agent_id UUID NOT NULL REFERENCES agents(id),
-    schedule VARCHAR(255) NOT NULL,
-    payload JSONB DEFAULT '{}',
-    is_active BOOLEAN DEFAULT true,
-    last_run TIMESTAMPTZ,
-    next_run TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  CREATE INDEX IF NOT EXISTS idx_jobs_agent_id ON jobs(agent_id);
-  CREATE INDEX IF NOT EXISTS idx_jobs_active ON jobs(is_active) WHERE is_active = true;
-
-  CREATE TABLE IF NOT EXISTS job_executions (
-    id UUID PRIMARY KEY,
-    job_id UUID NOT NULL REFERENCES jobs(id),
-    status VARCHAR(50) NOT NULL,
-    event_payload JSONB DEFAULT '{}',
-    result JSONB,
-    logs TEXT[],
-    error_message TEXT,
-    retry_count INTEGER DEFAULT 0,
-    triggered_by VARCHAR(50),
-    started_at TIMESTAMPTZ,
-    finished_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-  );
-
-  CREATE TABLE IF NOT EXISTS config_files (
-    id UUID PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    path TEXT NOT NULL UNIQUE,
-    content TEXT NOT NULL,
-    format VARCHAR(10) NOT NULL CHECK (format IN ('yaml', 'json')),
-    version INTEGER DEFAULT 1,
-    is_active BOOLEAN DEFAULT true,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
-  );
-`;
+/**
+ * Tables the e2e suites write to. `agent_versions` is listed explicitly even
+ * though `CASCADE` would reach it through its FK to `agents` — naming it keeps
+ * Postgres from emitting a `truncate cascades to ...` NOTICE on every
+ * `beforeEach`. `credentials`/`channels` are gone: the specs that used them
+ * were retired in T01c and nothing in `src/` reads `channels` as a table.
+ */
+const TRUNCATABLE_TABLES = [
+  "agents",
+  "agent_versions",
+  "jobs",
+  "job_executions",
+  "config_files",
+] as const;
 
 export interface TestContext {
   postgresContainer: StartedTestContainer;
@@ -117,6 +86,8 @@ export interface TestContext {
   postgresDatabase: string;
   postgresUsername: string;
   postgresPassword: string;
+  /** Maintenance pool on the bootstrap database — used to `CREATE DATABASE`. */
+  adminSql: Sql;
   sqlConnections: Map<string, Sql>;
   natsEvents: NatsEvent[];
   tenantSchemas: Map<string, Sql>;
@@ -166,7 +137,7 @@ function createCapturedEvent(
     occurredAt: string;
     resource: string;
     source: string;
-  },
+  }
 ): NatsEvent {
   const time = options.occurredAt;
   const serializedPayload = serializeCanonicalPayload(payload);
@@ -220,26 +191,41 @@ export interface TestTenant {
  * Inicializa PostgreSQL testcontainer con schema completo
  */
 export async function setupPostgres(): Promise<TestContext> {
-  const container = await new GenericContainer("postgres:16-alpine")
+  const container = await new GenericContainer(POSTGRES_IMAGE)
     .withEnvironment({
-      POSTGRES_USER: "yoizen",
-      POSTGRES_PASSWORD: "yoizen-test-password",
-      POSTGRES_DB: "yoizen",
+      POSTGRES_USER: POSTGRES_USERNAME,
+      POSTGRES_PASSWORD: POSTGRES_PASSWORD,
+      POSTGRES_DB: POSTGRES_DATABASE,
     })
     .withExposedPorts(5432)
-    .withStartupTimeout(60000)
+    .withWaitStrategy(
+      Wait.forLogMessage(POSTGRES_READY_LOG, POSTGRES_READY_LOG_OCCURRENCES)
+    )
+    .withStartupTimeout(POSTGRES_STARTUP_TIMEOUT_MS)
     .start();
 
   const port = container.getMappedPort(5432);
   const host = container.getHost();
 
+  const adminSql = postgres({
+    host,
+    port,
+    database: POSTGRES_DATABASE,
+    username: POSTGRES_USERNAME,
+    password: POSTGRES_PASSWORD,
+    max: 2,
+    idle_timeout: 10,
+    connect_timeout: 10,
+  });
+
   return {
     postgresContainer: container,
     postgresPort: port,
     postgresHost: host,
-    postgresDatabase: "yoizen",
-    postgresUsername: "yoizen",
-    postgresPassword: "yoizen-test-password",
+    postgresDatabase: POSTGRES_DATABASE,
+    postgresUsername: POSTGRES_USERNAME,
+    postgresPassword: POSTGRES_PASSWORD,
+    adminSql,
     sqlConnections: new Map(),
     natsEvents: [],
     tenantSchemas: new Map(),
@@ -247,20 +233,30 @@ export async function setupPostgres(): Promise<TestContext> {
 }
 
 /**
- * Crea una conexión SQL para un tenant específico
+ * Crea una conexión SQL para un tenant específico.
+ *
+ * Cada tenant recibe su PROPIA base de datos (`tenant_<id>`), igual que en
+ * producción: `TenantConnectionManager.buildSharedTarget` resuelve el pool con
+ * `tenantPostgresDatabaseName(tenantId)`. El aislamiento multi-tenant de este
+ * servicio es por base de datos, no por columna — compartir una sola base aquí
+ * volvería inútiles los tests de aislamiento.
  */
-export function createTenantConnection(
+export async function createTenantConnection(
   context: TestContext,
-  tenantId: string,
-): Sql {
-  if (context.tenantSchemas.has(tenantId)) {
-    return context.tenantSchemas.get(tenantId)!;
+  tenantId: string
+): Promise<Sql> {
+  const cached = context.tenantSchemas.get(tenantId);
+  if (cached) {
+    return cached;
   }
+
+  const database = tenantPostgresDatabaseName(tenantId);
+  await context.adminSql.unsafe(`CREATE DATABASE "${database}"`);
 
   const sql = postgres({
     host: context.postgresHost,
     port: context.postgresPort,
-    database: context.postgresDatabase,
+    database,
     username: context.postgresUsername,
     password: context.postgresPassword,
     max: 5,
@@ -273,14 +269,20 @@ export function createTenantConnection(
 }
 
 /**
- * Inicializa el schema para un tenant específico
+ * Inicializa el schema para un tenant específico.
+ *
+ * Delega en {@link initAgentAdminTenantSchema}, el MISMO DDL que
+ * `YoizenclawTenantConnectionManagerPostgres` corre para un tenant real, para
+ * que el schema del e2e no pueda volver a quedar retrasado respecto del
+ * producto (le faltaban `knowledge_base_ids`, `input_variables`,
+ * `output_variables`, `enabled_tools` y `agent_versions`).
  */
 export async function initializeTenantSchema(
   context: TestContext,
-  tenantId: string,
+  tenantId: string
 ): Promise<Sql> {
-  const sql = createTenantConnection(context, tenantId);
-  await sql.unsafe(SCHEMA_SQL);
+  const sql = await createTenantConnection(context, tenantId);
+  await initAgentAdminTenantSchema(tenantId, sql);
   return sql;
 }
 
@@ -289,7 +291,7 @@ export async function initializeTenantSchema(
  */
 export async function createTestTenant(
   context: TestContext,
-  tenantId: string,
+  tenantId: string
 ): Promise<TestTenant> {
   const sql = await initializeTenantSchema(context, tenantId);
   return {
@@ -304,7 +306,7 @@ export async function createTestTenant(
 export async function createTestTenants(
   context: TestContext,
   count: number,
-  prefix = "test-tenant",
+  prefix = "test-tenant"
 ): Promise<TestTenant[]> {
   const tenants: TestTenant[] = [];
   for (let i = 1; i <= count; i++) {
@@ -319,15 +321,128 @@ export async function createTestTenants(
  */
 export async function cleanupTenantTables(
   context: TestContext,
-  tenantId: string,
+  tenantId: string
 ): Promise<void> {
   const sql = context.tenantSchemas.get(tenantId);
-  if (!sql) return;
+  if (!sql) {
+    return;
+  }
 
-  await sql`
-    TRUNCATE TABLE agents, credentials, channels, jobs, job_executions, config_files 
-    RESTART IDENTITY CASCADE;
-  `;
+  await sql.unsafe(
+    `TRUNCATE TABLE ${TRUNCATABLE_TABLES.join(", ")} RESTART IDENTITY CASCADE`
+  );
+}
+
+/**
+ * Doble del {@link YoizenclawTenantConnectionManager} real apuntando al
+ * testcontainer. Solo cuatro métodos porque son los únicos que consume `src/`:
+ * `ensureSchema`, `getKnownTenantIds`, `probeFirstPool` y `evictTenant`.
+ */
+export function createMockTenantConnectionManager(
+  tenantId: string,
+  sql: Sql
+): Record<string, unknown> {
+  return {
+    ensureSchema: async (): Promise<Sql> => sql,
+    getConnection: (): Sql => sql,
+    getKnownTenantIds: (): string[] => [tenantId],
+    probeFirstPool: async (): Promise<boolean> => {
+      await sql`SELECT 1`;
+      return true;
+    },
+    evictTenant: async (): Promise<void> => {},
+    onModuleDestroy: async (): Promise<void> => {},
+  };
+}
+
+/**
+ * Suscripción NATS falsa que permanece abierta hasta `unsubscribe()`.
+ *
+ * NO puede completarse de inmediato: `TenantDeletionEvictionListener.consume`
+ * vuelve a suscribirse en cuanto el iterador termina (`attempt = 0; continue`),
+ * así que un iterador vacío convierte el listener en un bucle caliente que
+ * cuelga el proceso de tests.
+ */
+function createMockSubscription(): Subscription {
+  let release: () => void = () => {};
+  const closed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+
+  return {
+    unsubscribe: (): void => {
+      release();
+    },
+    async *[Symbol.asyncIterator]() {
+      await closed;
+    },
+  } as unknown as Subscription;
+}
+
+/**
+ * Doble de `LazyNatsConnection`.
+ *
+ * Obligatorio: `jetStreamManagerProvider`/`jetStreamClientProvider` son
+ * factories `Promise<...>` que Nest resuelve durante `app.init()`, y
+ * `JobExecutionStatusConsumer.onModuleInit` hace `await getConnection()` — con
+ * el proveedor real, `app.init()` se bloquea 10s marcando al broker ausente y
+ * después revienta.
+ */
+export function createMockLazyNats(): Record<string, unknown> {
+  const connection = {
+    subscribe: (): Subscription => createMockSubscription(),
+    close: async (): Promise<void> => {},
+  } as unknown as NatsConnection;
+
+  return {
+    getConnection: async (): Promise<NatsConnection> => connection,
+    jetstreamManager: async (): Promise<JetStreamManager> =>
+      ({}) as JetStreamManager,
+    jetstream: async (): Promise<JetStreamClient> => ({}) as JetStreamClient,
+    close: async (): Promise<void> => {},
+  };
+}
+
+/**
+ * Levanta el `AppModule` completo tal como lo hace producción:
+ * `bootstrapSplitService` -> `bootstrapFastifyApp` = FastifyAdapter +
+ * `ValidationPipe` con `whitelist`/`forbidNonWhitelisted`/`transform`/
+ * `enableImplicitConversion` (packages/observability/src/bootstrap-fastify.ts).
+ * Con `createNestApplication()` a secas se levantaba Express sin pipes, así que
+ * ninguna aserción de 400 medía lo que corre en producción.
+ */
+export async function createE2eApp(options: {
+  natsPublisher: unknown;
+  sql: Sql;
+  tenantId: string;
+}): Promise<NestFastifyApplication> {
+  const module = await Test.createTestingModule({
+    imports: [AppModule],
+  })
+    .overrideProvider(YoizenclawTenantConnectionManager)
+    .useValue(createMockTenantConnectionManager(options.tenantId, options.sql))
+    .overrideProvider(LAZY_NATS)
+    .useValue(createMockLazyNats())
+    .overrideProvider(NatsPublisher)
+    .useValue(options.natsPublisher)
+    .compile();
+
+  const app = module.createNestApplication<NestFastifyApplication>(
+    new FastifyAdapter()
+  );
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+      transformOptions: {
+        enableImplicitConversion: true,
+      },
+    })
+  );
+  await app.init();
+  await app.getHttpAdapter().getInstance().ready();
+  return app;
 }
 
 /**
@@ -338,7 +453,7 @@ export function createMockNatsPublisher(context: TestContext) {
     publishAgentPublished: async (
       tenantId: string,
       agentId: string,
-      name: string,
+      name: string
     ) => {
       const publishedAt = new Date().toISOString();
       const event = createCapturedEvent(
@@ -355,7 +470,7 @@ export function createMockNatsPublisher(context: TestContext) {
           occurredAt: publishedAt,
           resource: `tenant/${tenantId}/agents/${agentId}`,
           source: "agent-admin-service/admin/agents/publish",
-        },
+        }
       );
       context.natsEvents.push(event);
       return { seq: context.natsEvents.length };
@@ -364,7 +479,7 @@ export function createMockNatsPublisher(context: TestContext) {
     publishAgentUnpublished: async (
       tenantId: string,
       agentId: string,
-      name: string,
+      name: string
     ) => {
       const unpublishedAt = new Date().toISOString();
       const event = createCapturedEvent(
@@ -381,7 +496,7 @@ export function createMockNatsPublisher(context: TestContext) {
           occurredAt: unpublishedAt,
           resource: `tenant/${tenantId}/agents/${agentId}`,
           source: "agent-admin-service/admin/agents/unpublish",
-        },
+        }
       );
       context.natsEvents.push(event);
       return { seq: context.natsEvents.length };
@@ -390,7 +505,7 @@ export function createMockNatsPublisher(context: TestContext) {
     publishRuntimeConfigSync: async (
       tenantId: string,
       files: Array<{ path: string; content: string; format: string }>,
-      deletePaths: string[] = [],
+      deletePaths: string[] = []
     ) => {
       const syncedAt = new Date().toISOString();
       const event = createCapturedEvent(
@@ -406,34 +521,40 @@ export function createMockNatsPublisher(context: TestContext) {
           occurredAt: syncedAt,
           resource: `tenant/${tenantId}/runtime/config`,
           source: "agent-admin-service/admin/config-files/deploy",
-        },
+        }
       );
       context.natsEvents.push(event);
       return { seq: context.natsEvents.length };
     },
 
-    publishJobTrigger: async (
-      tenantId: string,
-      jobId: string,
-      executionId: string,
-      eventPayload: Record<string, unknown>,
-    ) => {
+    /**
+     * Firma de OBJETO, igual que `NatsPublisher.publishJobTrigger`. El doble
+     * anterior tomaba posicionales `(tenantId, jobId, executionId, payload)`
+     * mientras `JobsService.trigger`/`run` ya llamaban con un objeto, así que
+     * capturaba `tenantId = { ... }` y el resto `undefined`.
+     */
+    publishJobTrigger: async (options: {
+      tenantId: string;
+      jobId: string;
+      executionId: string;
+      eventPayload: Record<string, unknown>;
+    }) => {
       const triggeredAt = new Date().toISOString();
       const event = createCapturedEvent(
         "job.trigger",
-        tenantId,
+        options.tenantId,
         {
-          eventPayload,
-          executionId,
-          jobId,
+          eventPayload: options.eventPayload,
+          executionId: options.executionId,
+          jobId: options.jobId,
           triggeredAt,
         },
         {
-          correlationId: `job:${jobId}:execution:${executionId}`,
+          correlationId: `job:${options.jobId}:execution:${options.executionId}`,
           occurredAt: triggeredAt,
-          resource: `tenant/${tenantId}/jobs/${jobId}/executions/${executionId}`,
+          resource: `tenant/${options.tenantId}/jobs/${options.jobId}/executions/${options.executionId}`,
           source: "agent-admin-service/admin/jobs/trigger",
-        },
+        }
       );
       context.natsEvents.push(event);
       return { seq: context.natsEvents.length };
@@ -450,6 +571,7 @@ export async function teardownTestContext(context: TestContext): Promise<void> {
     await sql.end();
   }
   context.tenantSchemas.clear();
+  await context.adminSql.end();
 
   // Detener el container de PostgreSQL
   await context.postgresContainer.stop();
@@ -460,10 +582,10 @@ export async function teardownTestContext(context: TestContext): Promise<void> {
  */
 export function getEventsByType(
   context: TestContext,
-  eventType: string,
+  eventType: string
 ): NatsEvent[] {
   return context.natsEvents.filter(
-    (event) => event.eventName === eventType || event.type === eventType,
+    (event) => event.eventName === eventType || event.type === eventType
   );
 }
 
@@ -472,7 +594,7 @@ export function getEventsByType(
  */
 export function getLastEventByType(
   context: TestContext,
-  eventType: string,
+  eventType: string
 ): NatsEvent | undefined {
   const events = getEventsByType(context, eventType);
   return events.length > 0 ? events[events.length - 1] : undefined;

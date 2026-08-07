@@ -1,67 +1,58 @@
+import "../pin-storage-engine";
+
 import {
-  describe,
-  it,
-  expect,
-  beforeAll,
   afterAll,
+  beforeAll,
   beforeEach,
+  describe,
+  expect,
+  it,
+  setDefaultTimeout,
 } from "bun:test";
-import { Test } from "@nestjs/testing";
-import type { INestApplication } from "@nestjs/common";
-import request from "supertest";
-import { AppModule } from "../../src/app.module";
-import { TenantConnectionManager } from "@yoizen/database";
-import { NatsPublisher } from "../../src/providers/nats.provider";
+import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { TENANT_HEADER } from "@yoizen/shared";
+import request from "supertest";
 import {
-  setupPostgres,
+  cleanupTenantTables,
+  createE2eApp,
   createMockNatsPublisher,
   createTestTenant,
-  cleanupTenantTables,
+  setupPostgres,
   type TestContext,
   type TestTenant,
+  teardownTestContext,
 } from "./setup";
 
+/** See the note in `health.e2e.spec.ts` — bun rejects `beforeAll(fn, ms)`. */
+setDefaultTimeout(180_000);
+
 describe("Multi-Tenancy E2E Tests", () => {
-  let app: INestApplication;
+  let app: NestFastifyApplication;
   let context: TestContext;
   let tenantA: TestTenant;
   let tenantB: TestTenant;
-  let mockConnectionManager: { getConnection: () => unknown };
 
   beforeAll(async () => {
     context = await setupPostgres();
     tenantA = await createTestTenant(context, "tenant-a");
     tenantB = await createTestTenant(context, "tenant-b");
 
-    const mockNatsPublisher = createMockNatsPublisher(context);
-
-    // Mock TenantConnectionManager que devuelve la conexión según el tenant
-    mockConnectionManager = {
-      getConnection: () => {
-        // Por defecto retorna tenantA, pero en los tests usaremos override
-        return tenantA.sql;
-      },
-    };
-
-    const module = await Test.createTestingModule({
-      imports: [AppModule],
-    })
-      .overrideProvider(TenantConnectionManager)
-      .useValue(mockConnectionManager)
-      .overrideProvider(NatsPublisher)
-      .useValue(mockNatsPublisher)
-      .compile();
-
-    app = module.createNestApplication();
-    await app.init();
+    // Por defecto apunta a tenantA; cada test levanta su propia app cuando
+    // necesita la conexión del otro tenant.
+    app = await createE2eApp({
+      natsPublisher: createMockNatsPublisher(context),
+      sql: tenantA.sql,
+      tenantId: tenantA.id,
+    });
   });
 
   afterAll(async () => {
     if (app) {
       await app.close();
     }
-    await context.postgresContainer.stop();
+    if (context) {
+      await teardownTestContext(context);
+    }
   });
 
   beforeEach(async () => {
@@ -73,40 +64,27 @@ describe("Multi-Tenancy E2E Tests", () => {
     it("Tenant A should only see their own agents", async () => {
       // Crear 3 agents en Tenant A directamente en DB
       await tenantA.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES 
-          ('Tenant A Agent 1', 'Prompt 1', 'draft'),
-          ('Tenant A Agent 2', 'Prompt 2', 'draft'),
-          ('Tenant A Agent 3', 'Prompt 3', 'draft');
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES
+          (gen_random_uuid(), 'Tenant A Agent 1', 'Prompt 1', 'draft'),
+          (gen_random_uuid(), 'Tenant A Agent 2', 'Prompt 2', 'draft'),
+          (gen_random_uuid(), 'Tenant A Agent 3', 'Prompt 3', 'draft');
       `;
 
       // Crear 2 agents diferentes en Tenant B directamente en DB
       await tenantB.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES 
-          ('Tenant B Agent 1', 'Prompt 1', 'draft'),
-          ('Tenant B Agent 2', 'Prompt 2', 'draft');
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES
+          (gen_random_uuid(), 'Tenant B Agent 1', 'Prompt 1', 'draft'),
+          (gen_random_uuid(), 'Tenant B Agent 2', 'Prompt 2', 'draft');
       `;
 
-      // Mock temporal para Tenant A
-      const moduleA = await Test.createTestingModule({
-        imports: [AppModule],
-      })
-        .overrideProvider(TenantConnectionManager)
-        .useValue({
-          getConnection: () => tenantA.sql,
-          ensureSchema: async () => {},
-          isInitialized: () => true,
-          markInitialized: () => {},
-          closeAll: async () => {},
-          onModuleDestroy: async () => {},
-        })
-        .overrideProvider(NatsPublisher)
-        .useValue(createMockNatsPublisher(context))
-        .compile();
-
-      const appA = moduleA.createNestApplication();
-      await appA.init();
+      // App temporal para Tenant A
+      const appA = await createE2eApp({
+        natsPublisher: createMockNatsPublisher(context),
+        sql: tenantA.sql,
+        tenantId: tenantA.id,
+      });
 
       // Tenant A lista sus agents
       const responseA = await request(appA.getHttpServer())
@@ -118,31 +96,18 @@ describe("Multi-Tenancy E2E Tests", () => {
       expect(responseA.body.total).toBe(3);
       expect(
         responseA.body.agents.every((a: { name: string }) =>
-          a.name.includes("Tenant A"),
-        ),
+          a.name.includes("Tenant A")
+        )
       ).toBe(true);
 
       await appA.close();
 
-      // Mock temporal para Tenant B
-      const moduleB = await Test.createTestingModule({
-        imports: [AppModule],
-      })
-        .overrideProvider(TenantConnectionManager)
-        .useValue({
-          getConnection: () => tenantB.sql,
-          ensureSchema: async () => {},
-          isInitialized: () => true,
-          markInitialized: () => {},
-          closeAll: async () => {},
-          onModuleDestroy: async () => {},
-        })
-        .overrideProvider(NatsPublisher)
-        .useValue(createMockNatsPublisher(context))
-        .compile();
-
-      const appB = moduleB.createNestApplication();
-      await appB.init();
+      // App temporal para Tenant B
+      const appB = await createE2eApp({
+        natsPublisher: createMockNatsPublisher(context),
+        sql: tenantB.sql,
+        tenantId: tenantB.id,
+      });
 
       // Tenant B lista sus agents
       const responseB = await request(appB.getHttpServer())
@@ -154,8 +119,8 @@ describe("Multi-Tenancy E2E Tests", () => {
       expect(responseB.body.total).toBe(2);
       expect(
         responseB.body.agents.every((a: { name: string }) =>
-          a.name.includes("Tenant B"),
-        ),
+          a.name.includes("Tenant B")
+        )
       ).toBe(true);
 
       await appB.close();
@@ -164,30 +129,17 @@ describe("Multi-Tenancy E2E Tests", () => {
     it("Tenant B cannot access Tenant A agent by ID", async () => {
       // Crear agent en Tenant A
       const [agentA] = await tenantA.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Secret Agent A', 'Secret Prompt', 'draft')
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Secret Agent A', 'Secret Prompt', 'draft')
         RETURNING id;
       `;
 
-      // Mock para Tenant B intentando acceder a agent de Tenant A
-      const moduleB = await Test.createTestingModule({
-        imports: [AppModule],
-      })
-        .overrideProvider(TenantConnectionManager)
-        .useValue({
-          getConnection: () => tenantB.sql,
-          ensureSchema: async () => {},
-          isInitialized: () => true,
-          markInitialized: () => {},
-          closeAll: async () => {},
-          onModuleDestroy: async () => {},
-        })
-        .overrideProvider(NatsPublisher)
-        .useValue(createMockNatsPublisher(context))
-        .compile();
-
-      const appB = moduleB.createNestApplication();
-      await appB.init();
+      // App para Tenant B intentando acceder a agent de Tenant A
+      const appB = await createE2eApp({
+        natsPublisher: createMockNatsPublisher(context),
+        sql: tenantB.sql,
+        tenantId: tenantB.id,
+      });
 
       // Tenant B intenta acceder al agent de Tenant A - debería retornar 404
       await request(appB.getHttpServer())
@@ -200,30 +152,19 @@ describe("Multi-Tenancy E2E Tests", () => {
 
     it("Tenant B cannot modify Tenant A agent", async () => {
       // Crear agent en Tenant A
-      const [agentA] = await tenantA.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Protected Agent A', 'Protected Prompt', 'draft')
+      await tenantA.sql`
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Protected Agent A', 'Protected Prompt', 'draft')
         RETURNING id;
       `;
 
-      // Mock para Tenant B intentando modificar agent de Tenant A
-      const moduleB = await Test.createTestingModule({
-        imports: [AppModule],
-      })
-        .overrideProvider(TenantConnectionManager)
-        .useValue({
-          getConnection: () => tenantB.sql,
-          ensureSchema: async () => {},
-          isInitialized: () => true,
-          markInitialized: () => {},
-          closeAll: async () => {},
-          onModuleDestroy: async () => {},
-        })
-        .overrideProvider(NatsPublisher)
-        .useValue(createMockNatsPublisher(context))
-        .compile();
+      // App para Tenant B intentando modificar agent de Tenant A
+      const appB = await createE2eApp({
+        natsPublisher: createMockNatsPublisher(context),
+        sql: tenantB.sql,
+        tenantId: tenantB.id,
+      });
 
-      const appB = moduleB.createNestApplication();
       await appB.close();
     });
   });
@@ -231,42 +172,16 @@ describe("Multi-Tenancy E2E Tests", () => {
   describe("Mixed Tenant Operations", () => {
     it("should handle concurrent operations from different tenants", async () => {
       // Configurar ambas aplicaciones
-      const moduleA = await Test.createTestingModule({
-        imports: [AppModule],
-      })
-        .overrideProvider(TenantConnectionManager)
-        .useValue({
-          getConnection: () => tenantA.sql,
-          ensureSchema: async () => {},
-          isInitialized: () => true,
-          markInitialized: () => {},
-          closeAll: async () => {},
-          onModuleDestroy: async () => {},
-        })
-        .overrideProvider(NatsPublisher)
-        .useValue(createMockNatsPublisher(context))
-        .compile();
-
-      const moduleB = await Test.createTestingModule({
-        imports: [AppModule],
-      })
-        .overrideProvider(TenantConnectionManager)
-        .useValue({
-          getConnection: () => tenantB.sql,
-          ensureSchema: async () => {},
-          isInitialized: () => true,
-          markInitialized: () => {},
-          closeAll: async () => {},
-          onModuleDestroy: async () => {},
-        })
-        .overrideProvider(NatsPublisher)
-        .useValue(createMockNatsPublisher(context))
-        .compile();
-
-      const appA = moduleA.createNestApplication();
-      const appB = moduleB.createNestApplication();
-      await appA.init();
-      await appB.init();
+      const appA = await createE2eApp({
+        natsPublisher: createMockNatsPublisher(context),
+        sql: tenantA.sql,
+        tenantId: tenantA.id,
+      });
+      const appB = await createE2eApp({
+        natsPublisher: createMockNatsPublisher(context),
+        sql: tenantB.sql,
+        tenantId: tenantB.id,
+      });
 
       // Operaciones concurrentes
       const [responseA, responseB] = await Promise.all([

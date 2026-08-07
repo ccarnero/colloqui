@@ -376,7 +376,23 @@ cd services/agent-admin-service && bunx tsc -p tsconfig.build.json --noEmit
     `enableImplicitConversion` + untyped-object-array trap exists potentially
     in every service using `withValidationPipe: true` → candidate register
     entry for a platform-wide sweep.
-- [ ] T01a repair e2e suites: health + agents + T01c survivors
+- [x] T01a repair e2e suites: health + agents + T01c survivors
+  - Done 2026-08-07, 1 attempt + STOP-and-report round (the stop surfaced the
+    T01d product bug; after T01d landed, Accept went green). 2× APPROVED.
+    e2e 35 pass / 0 fail; full suite 811 pass / 6 fail (integration only).
+    Layers fixed: DI retarget, LAZY_NATS, Fastify + production ValidationPipe
+    parity, testcontainers Wait.forLogMessage, canonical schema via
+    `initAgentAdminTenantSchema` (dup SCHEMA_SQL deleted), DB-per-tenant,
+    engine pin via `bunfig.toml` preload (empirically proven: bunfig
+    `[test].preload` MERGES with CLI `--preload`; 29 fail without pin, 6
+    with; `test:unit` 776/0 unpoisoned).
+  - FOLLOW-UPS (reviewer-flagged, non-blocking): multi-tenancy's "Tenant B
+    cannot modify Tenant A agent" is still vacuous (pre-existing; needs a
+    real PUT + 404 or retirement); nats-events still asserts mock-fabricated
+    envelopes (pre-existing smell, marginally improved by the
+    signature-parity fix); ValidationPipe options are parity-by-copy —
+    extracting the options object from packages/observability would kill the
+    duplication; one pgvector container per spec file (pre-existing).
 - [ ] T01b integration suites via in-memory repo fake (bun test → 0 fail)
 
 <!-- Progress convention: entries grow into a changelog as tasks complete —

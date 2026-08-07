@@ -1,20 +1,34 @@
-import { describe, it, expect, beforeAll, afterAll } from "bun:test";
-import { Test } from "@nestjs/testing";
-import type { INestApplication } from "@nestjs/common";
-import request from "supertest";
-import { AppModule } from "../../src/app.module";
-import { TenantConnectionManager } from "@yoizen/database";
-import { NatsPublisher } from "../../src/providers/nats.provider";
+import "../pin-storage-engine";
+
 import {
-  setupPostgres,
+  afterAll,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  setDefaultTimeout,
+} from "bun:test";
+import type { NestFastifyApplication } from "@nestjs/platform-fastify";
+import request from "supertest";
+import {
+  createE2eApp,
   createMockNatsPublisher,
   createTestTenant,
+  setupPostgres,
   type TestContext,
   type TestTenant,
+  teardownTestContext,
 } from "./setup";
 
+/**
+ * Bun rejects the per-hook `beforeAll(fn, ms)` timeout overload, so the budget
+ * for pulling/starting the Postgres testcontainer is set process-wide — same
+ * pattern as `services/connector-admin/test/integration/*`.
+ */
+setDefaultTimeout(180_000);
+
 describe("Health E2E Tests", () => {
-  let app: INestApplication;
+  let app: NestFastifyApplication;
   let context: TestContext;
   let tenant: TestTenant;
 
@@ -22,38 +36,20 @@ describe("Health E2E Tests", () => {
     context = await setupPostgres();
     tenant = await createTestTenant(context, "health-test-tenant");
 
-    const mockNatsPublisher = createMockNatsPublisher(context);
-
-    // Mock para HealthController que usa TenantConnectionManager
-    const mockConnectionManager = {
-      getConnection: () => tenant.sql,
-      ensureSchema: async () => {},
-      isInitialized: () => true,
-      markInitialized: () => {},
-      getPoolCount: () => 1,
-      probeFirstPool: async () => true,
-      verifyConnectivity: async () => true,
-      onModuleDestroy: async () => {},
-    };
-
-    const module = await Test.createTestingModule({
-      imports: [AppModule],
-    })
-      .overrideProvider(TenantConnectionManager)
-      .useValue(mockConnectionManager)
-      .overrideProvider(NatsPublisher)
-      .useValue(mockNatsPublisher)
-      .compile();
-
-    app = module.createNestApplication();
-    await app.init();
+    app = await createE2eApp({
+      natsPublisher: createMockNatsPublisher(context),
+      sql: tenant.sql,
+      tenantId: tenant.id,
+    });
   });
 
   afterAll(async () => {
     if (app) {
       await app.close();
     }
-    await context.postgresContainer.stop();
+    if (context) {
+      await teardownTestContext(context);
+    }
   });
 
   describe("GET /health", () => {
@@ -75,7 +71,7 @@ describe("Health E2E Tests", () => {
       expect(typeof response.body.timestamp).toBe("string");
       // Verificar que es una fecha ISO válida
       expect(new Date(response.body.timestamp).toISOString()).toBe(
-        response.body.timestamp,
+        response.body.timestamp
       );
     });
 
@@ -150,7 +146,7 @@ describe("Health E2E Tests", () => {
       // Todos deben reportar el mismo estado de DB
       const dbStatuses = responses.map(
         (r: { body: { checks: { database: string } } }) =>
-          r.body.checks.database,
+          r.body.checks.database
       );
       expect(new Set(dbStatuses).size).toBe(1); // Todos iguales
     });

@@ -1,35 +1,38 @@
+import "../pin-storage-engine";
+
 import {
-  describe,
-  it,
-  expect,
-  beforeAll,
   afterAll,
+  beforeAll,
   beforeEach,
+  describe,
+  expect,
+  it,
+  setDefaultTimeout,
 } from "bun:test";
-import { Test } from "@nestjs/testing";
-import type { INestApplication } from "@nestjs/common";
-import request from "supertest";
-import { AppModule } from "../../src/app.module";
-import { TenantConnectionManager } from "@yoizen/database";
-import { NatsPublisher } from "../../src/providers/nats.provider";
+import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { TENANT_HEADER } from "@yoizen/shared";
+import request from "supertest";
 import {
-  setupPostgres,
-  createMockNatsPublisher,
-  createTestTenant,
   cleanupTenantTables,
   clearNatsEvents,
+  createE2eApp,
+  createMockNatsPublisher,
+  createTestTenant,
   getLastEventByType,
+  setupPostgres,
   type TestContext,
   type TestTenant,
+  teardownTestContext,
 } from "./setup";
 
+/** See the note in `health.e2e.spec.ts` — bun rejects `beforeAll(fn, ms)`. */
+setDefaultTimeout(180_000);
+
 const AGENT_PUBLISHED_TYPE = "io.yoizen.platform.admin.agent.published.v1";
-const AGENT_UNPUBLISHED_TYPE =
-  "io.yoizen.platform.admin.agent.unpublished.v1";
+const AGENT_UNPUBLISHED_TYPE = "io.yoizen.platform.admin.agent.unpublished.v1";
 
 describe("Agents E2E Tests", () => {
-  let app: INestApplication;
+  let app: NestFastifyApplication;
   let context: TestContext;
   let tenant: TestTenant;
 
@@ -37,37 +40,19 @@ describe("Agents E2E Tests", () => {
     context = await setupPostgres();
     tenant = await createTestTenant(context, "agents-test-tenant");
 
-    const mockNatsPublisher = createMockNatsPublisher(context);
-
-    // Mock TenantConnectionManager para usar el container de test
-    const mockConnectionManager = {
-      getConnection: () => tenant.sql,
-      ensureSchema: async () => {},
-      isInitialized: () => true,
-      markInitialized: () => {},
-      closeAll: async () => {},
-      onModuleDestroy: async () => {},
-    };
-
-    const module = await Test.createTestingModule({
-      imports: [AppModule],
-    })
-      .overrideProvider(TenantConnectionManager)
-      .useValue(mockConnectionManager)
-      .overrideProvider(NatsPublisher)
-      .useValue(mockNatsPublisher)
-      .compile();
-
-    app = module.createNestApplication();
-    await app.init();
+    app = await createE2eApp({
+      natsPublisher: createMockNatsPublisher(context),
+      sql: tenant.sql,
+      tenantId: tenant.id,
+    });
   });
 
   afterAll(async () => {
     if (app) {
       await app.close();
     }
-    if (context?.postgresContainer) {
-      await context.postgresContainer.stop();
+    if (context) {
+      await teardownTestContext(context);
     }
   });
 
@@ -118,11 +103,11 @@ describe("Agents E2E Tests", () => {
     it("should list all agents", async () => {
       // Crear algunos agents primero
       await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES 
-          ('Agent 1', 'Prompt 1', 'draft'),
-          ('Agent 2', 'Prompt 2', 'published'),
-          ('Agent 3', 'Prompt 3', 'draft');
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES
+          (gen_random_uuid(), 'Agent 1', 'Prompt 1', 'draft'),
+          (gen_random_uuid(), 'Agent 2', 'Prompt 2', 'published'),
+          (gen_random_uuid(), 'Agent 3', 'Prompt 3', 'draft');
       `;
 
       const response = await request(app.getHttpServer())
@@ -139,11 +124,11 @@ describe("Agents E2E Tests", () => {
 
     it("should filter agents by status", async () => {
       await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES 
-          ('Agent 1', 'Prompt 1', 'draft'),
-          ('Agent 2', 'Prompt 2', 'published'),
-          ('Agent 3', 'Prompt 3', 'published');
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES
+          (gen_random_uuid(), 'Agent 1', 'Prompt 1', 'draft'),
+          (gen_random_uuid(), 'Agent 2', 'Prompt 2', 'published'),
+          (gen_random_uuid(), 'Agent 3', 'Prompt 3', 'published');
       `;
 
       const response = await request(app.getHttpServer())
@@ -154,8 +139,8 @@ describe("Agents E2E Tests", () => {
       expect(response.body.agents.length).toBe(2);
       expect(
         response.body.agents.every(
-          (a: { status: string }) => a.status === "published",
-        ),
+          (a: { status: string }) => a.status === "published"
+        )
       ).toBe(true);
     });
   });
@@ -163,8 +148,8 @@ describe("Agents E2E Tests", () => {
   describe("GET /admin/agents/:id", () => {
     it("should get agent by id", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Test Agent', 'Test Prompt', 'draft')
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Test Agent', 'Test Prompt', 'draft')
         RETURNING id;
       `;
 
@@ -188,8 +173,8 @@ describe("Agents E2E Tests", () => {
   describe("PUT /admin/agents/:id", () => {
     it("should update agent", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Original Name', 'Original Prompt', 'draft')
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Original Name', 'Original Prompt', 'draft')
         RETURNING id;
       `;
 
@@ -218,8 +203,8 @@ describe("Agents E2E Tests", () => {
   describe("DELETE /admin/agents/:id", () => {
     it("should delete agent", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Agent to Delete', 'Prompt', 'draft')
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Agent to Delete', 'Prompt', 'draft')
         RETURNING id;
       `;
 
@@ -238,8 +223,8 @@ describe("Agents E2E Tests", () => {
   describe("POST /admin/agents/:id/publish", () => {
     it("should publish agent and emit NATS event", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status)
-        VALUES ('Agent to Publish', 'Prompt', 'draft')
+        INSERT INTO agents (id, name, system_prompt, status)
+        VALUES (gen_random_uuid(), 'Agent to Publish', 'Prompt', 'draft')
         RETURNING id;
       `;
 
@@ -259,7 +244,7 @@ describe("Agents E2E Tests", () => {
       expect(event!.payload.name).toBe("Agent to Publish");
       expect(event!.metadata.tenantId).toBe(tenant.id);
       expect(event!.metadata.source).toBe(
-        "agent-admin-service/admin/agents/publish",
+        "agent-admin-service/admin/agents/publish"
       );
     });
 
@@ -274,8 +259,8 @@ describe("Agents E2E Tests", () => {
   describe("POST /admin/agents/:id/unpublish", () => {
     it("should unpublish agent and emit NATS event", async () => {
       const [agent] = await tenant.sql`
-        INSERT INTO agents (name, system_prompt, status, published_at)
-        VALUES ('Agent to Unpublish', 'Prompt', 'published', NOW())
+        INSERT INTO agents (id, name, system_prompt, status, published_at)
+        VALUES (gen_random_uuid(), 'Agent to Unpublish', 'Prompt', 'published', NOW())
         RETURNING id;
       `;
 
@@ -336,7 +321,7 @@ describe("Agents E2E Tests", () => {
 
       expect(listResponse.body.agents.length).toBeGreaterThan(0);
       expect(
-        listResponse.body.agents.find((a: { id: string }) => a.id === agentId),
+        listResponse.body.agents.find((a: { id: string }) => a.id === agentId)
       ).toBeDefined();
 
       // 4. Update agent
@@ -379,11 +364,10 @@ describe("Agents E2E Tests", () => {
       // Verificar que tenemos ambos eventos NATS
       const events = context.natsEvents;
       expect(
-        events.filter((event) => event.eventName === "agent.published").length,
+        events.filter((event) => event.eventName === "agent.published").length
       ).toBe(1);
       expect(
-        events.filter((event) => event.eventName === "agent.unpublished")
-          .length,
+        events.filter((event) => event.eventName === "agent.unpublished").length
       ).toBe(1);
     });
   });

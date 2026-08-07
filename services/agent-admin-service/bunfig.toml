@@ -1,0 +1,7 @@
+# Global bun test config for this service. Without this, a bare `bun test`
+# invocation (as opposed to `bun run test:e2e`) does not pin the DI storage
+# engine, and the e2e suites — which bun loads AFTER test/integration — inherit
+# the Mongo bindings those specs froze into the module registry. See
+# ./test/pin-storage-engine.ts for the full explanation.
+[test]
+preload = ["./test/pin-storage-engine.ts"]
