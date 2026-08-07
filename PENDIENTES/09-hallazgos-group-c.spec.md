@@ -188,8 +188,16 @@ is this task's G4, quoted in the task summary.)
 
 ## Progress
 
-- [ ] T01 H1 repair the 14 DI-rotted suites (bun test → 0 fail)
-- [ ] T02 H3 invert lag-alert pattern + durable guard
+- [ ] T01 H1 repair the 14 DI-rotted suites (bun test → 0 fail) —
+  **BLOCKED 2026-08-07** (see `BLOCKED.md`): the DI token is layer 1 of 5;
+  three e2e suites test `/admin/credentials` / `/admin/channels`, modules that
+  DO NOT EXIST in `src` — green requires a product ruling (implement vs
+  retire), out of loop scope. Attempt's working repair of `e2e/health`
+  (10 pass standalone) reverted per protocol. Pending human decisions:
+  approve the T01a/T01b/T01c re-scope in `BLOCKED.md`, and rule on
+  credentials/channels.
+- [ ] T02 H3 invert lag-alert pattern + durable guard — NOT RUN (loop stopped
+  at T01 per protocol; runnable independently once the loop restarts).
 
 <!-- Progress convention: entries grow into a changelog as tasks complete —
 findings, human-approved design changes, FOLLOW-UPS sub-lists. New tasks are
