@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { classify } from "../src/lib/classify.js";
+import { classify, SKIP_PERSIST_RULES } from "../src/lib/classify.js";
 
 function value(subject: string, streamName?: string) {
   const r = classify(subject, streamName ? { streamName } : {});
@@ -105,6 +105,47 @@ describe("classify — TAXONOMY.md §4 rules 1-20", () => {
         rule: 6,
       });
     }
+  });
+
+  // E3 migration (PENDIENTES/04-e3-subject.spec.md T01): the three lifecycle
+  // kinds actually published by agent-ai-service move their producer token from
+  // `ai-agent-gateway` to `agent-ai-service`. The classifier learns the new
+  // token AHEAD of the emitter (golden rule 3) and keeps the old one forever —
+  // the case above is the frozen history and must never be relaxed.
+  it("rule 6 — agent-ai-service execution lifecycle (E3 new producer token)", () => {
+    // Subjects spelled out in full (not built from a kind template): these are
+    // wire strings, and the point of the case is that the exact post-E3 subject
+    // classifies identically to its old-token twin.
+    for (const subject of [
+      "evt.acme.agent-ai-service.automation.platform.internal.execution_started.v1",
+      "evt.acme.agent-ai-service.automation.platform.internal.execution_completed.v1",
+      "evt.acme.agent-ai-service.automation.platform.internal.execution_failed.v1",
+    ]) {
+      const c = value(subject);
+      expect(c).toMatchObject({
+        tech: "platform",
+        businessFn: "agent-execution",
+        rule: 6,
+      });
+      expect(c.unknown).toBe(false);
+    }
+  });
+
+  it("rule 6 — execution_requested does NOT move: agent-ai-service token falls to rule 16", () => {
+    // `execution_requested` is published by the gateway itself
+    // (`packages/shared/src/execution-client.ts`) and stays on the
+    // `ai-agent-gateway` token. An `agent-ai-service` execution_requested
+    // subject is therefore NOT a recognized family — it must reach the rule-16
+    // catch-all and alarm, so a future mistaken emitter is visible.
+    const c = value(
+      "evt.acme.agent-ai-service.automation.platform.internal.execution_requested.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "unknown",
+      rule: 16,
+    });
+    expect(c.unknown).toBe(true);
   });
 
   it("rule 7 — agent-admin-service lifecycle", () => {
@@ -311,6 +352,45 @@ describe("classify — TAXONOMY.md §4 rules 1-20", () => {
     // the rule-16 catch-all → unknown, exactly as before this rule existed.
     const c = value(
       "evt.acme.ai-agent-gateway.automation.platform.internal.offline.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "unknown",
+      rule: 16,
+    });
+    expect(c.unknown).toBe(true);
+  });
+
+  // E3 migration (PENDIENTES/04-e3-subject.spec.md T01): the heartbeat subject
+  // stops lying about its producer. Both tokens classify identically, and the
+  // `counted-not-persisted` disposition is unchanged by the move.
+  it("rule 20 — agent-ai-service online.v1 runtime-presence heartbeat (E3 new producer token)", () => {
+    const c = value(
+      "evt.acme.agent-ai-service.automation.platform.internal.online.v1"
+    );
+    expect(c).toMatchObject({
+      tech: "platform",
+      businessFn: "runtime-presence",
+      rule: 20,
+    });
+    expect(c.unknown).toBe(false);
+    expect(SKIP_PERSIST_RULES.has(c.rule)).toBe(true);
+  });
+
+  it("rule 20 — new-token ordering: evaluated before the rule-16 catch-all", () => {
+    const c = value(
+      "evt.acme.agent-ai-service.automation.platform.internal.online.v1"
+    );
+    expect(c.rule).toBe(20);
+    expect(c.rule).not.toBe(16);
+  });
+
+  it("rule 20 — new-token near-miss: kind != online still falls to rule 16", () => {
+    // Widening rule 20 to the `agent-ai-service` token must not widen it to any
+    // OTHER kind under that token: `offline` is neither a rule-6 execution kind
+    // nor `online`, so it stays the rule-16 alarm exactly like its gateway twin.
+    const c = value(
+      "evt.acme.agent-ai-service.automation.platform.internal.offline.v1"
     );
     expect(c).toMatchObject({
       tech: "platform",

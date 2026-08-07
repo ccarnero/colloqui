@@ -57,13 +57,26 @@ const WEBHOOK_INGRESS_CONSUMERS: readonly string[] = ["channel-service"];
 // internal-sync.service.ts:109-155 (durable `adapter-internal-sync`).
 const REGISTRY_CONSUMERS: readonly string[] = ["connector-admin"];
 
-// TAXONOMY.md §5 row 6 — `{agent-admin-service,ai-agent-gateway}.automation.
-// platform.internal.*.v1`. ingress.md:241 + service-bus.md:214,310
+// TAXONOMY.md §5 row 6 — `{agent-admin-service,ai-agent-gateway,agent-ai-service}
+// .automation.platform.internal.*.v1`. ingress.md:241 + service-bus.md:214,310
 // (agent-ai-service `agent-ai-service-consumer`, agent-admin-service `skb-ingestion-worker`).
 const AGENT_AUTOMATION_CONSUMERS: readonly string[] = [
   "agent-ai-service",
   "agent-admin-service",
 ];
+
+// Producer tokens carrying the §5 row 6 automation lifecycle family. The E3
+// migration (PENDIENTES/04-e3-subject.spec.md) moves agent-ai-service's
+// lifecycle + heartbeat events from the `ai-agent-gateway` token to
+// `agent-ai-service`; the facet must resolve to the SAME consumer set under
+// either token, because the durable consumers do not change with the rename
+// (only their subject filters do, T02). The old tokens stay accepted forever —
+// the persisted rows and the frozen golden set carry them.
+const AGENT_AUTOMATION_PRODUCERS = new Set([
+  "agent-admin-service",
+  "ai-agent-gateway",
+  "agent-ai-service",
+]);
 
 // TAXONOMY.md §5 row 7 — `dlq.<tenant>.>` (service-bus.md:93).
 const DLQ_CONSUMERS: readonly string[] = ["usage-aggregator-service"];
@@ -138,9 +151,11 @@ export function consumedBy(subject: string): Result<readonly string[]> {
       return ok(REGISTRY_CONSUMERS);
     }
 
-    // §5 row 6 — agent-admin-service / ai-agent-gateway automation lifecycle.
+    // §5 row 6 — agent-admin-service / ai-agent-gateway / agent-ai-service
+    // automation lifecycle. Kind-agnostic within the family, exactly as before
+    // the E3 migration added the third producer token.
     if (
-      (producer === "agent-admin-service" || producer === "ai-agent-gateway") &&
+      AGENT_AUTOMATION_PRODUCERS.has(producer) &&
       domain === "automation" &&
       provider === "internal"
     ) {

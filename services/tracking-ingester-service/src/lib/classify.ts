@@ -76,12 +76,39 @@ const CHANNEL_WHITELIST = new Set([
 // Kinds that mark an outbound egress lifecycle event (rule 4).
 const EGRESS_KINDS = new Set(["send", "sent", "delivered", "read", "failed"]);
 
-// Kinds that mark an agent-execution lifecycle event (rule 6).
+// Kinds that mark an agent-execution lifecycle event under the ORIGINAL
+// `ai-agent-gateway` producer token (rule 6). Frozen: every event persisted
+// before the E3 migration (PENDIENTES/04-e3-subject.spec.md) rides this token,
+// and so do the captured golden rows (seq 1246/1251/1260/1263/1271/1278/1279/1284).
 const AGENT_EXECUTION_KINDS = new Set([
   "execution_requested",
   "execution_started",
   "execution_completed",
   "execution_failed",
+]);
+
+// The SUBSET of rule-6 kinds whose producer token moves from `ai-agent-gateway`
+// to `agent-ai-service` in the E3 migration (PENDIENTES/04-e3-subject.spec.md
+// T02) — the three lifecycle kinds actually published by agent-ai-service
+// (`execution.handler.ts` / `job-executor.service.ts` `publishStatus`).
+// `execution_requested` is DELIBERATELY absent: it is published by the gateway
+// itself (`packages/shared/src/execution-client.ts`) with
+// `producer: ai-agent-gateway`, subject and envelope already agree, and it does
+// NOT move — an `agent-ai-service` `execution_requested` subject stays
+// unrecognized (rule 16, the alarm).
+const AGENT_EXECUTION_MOVED_KINDS = new Set([
+  "execution_started",
+  "execution_completed",
+  "execution_failed",
+]);
+
+// Producer tokens accepted for the runtime-presence heartbeat (rule 20):
+// `ai-agent-gateway` is the historical token (the lie recorded as DRIFT.md item
+// 10) and `agent-ai-service` is the post-E3 truth. Both are accepted forever —
+// the persisted history and the frozen golden set carry the old one.
+const RUNTIME_PRESENCE_PRODUCERS = new Set([
+  "ai-agent-gateway",
+  "agent-ai-service",
 ]);
 
 // Kinds that mark the connector-invoke async transport pair (rule 21).
@@ -138,8 +165,8 @@ export const UNKNOWN_RULES: ReadonlySet<number> = new Set([16, 17, 18]);
 
 // Rules whose disposition is `counted-not-persisted` (TAXONOMY.md §4 note): the
 // message IS classified and counted (an OTel counter keeps it visible) but NO row
-// is inserted. Rule 20 (ai-agent-gateway `online.v1` runtime-presence heartbeats)
-// is the first such rule — a per-tenant liveness signal published every ~15s, not
+// is inserted. Rule 20 (`online.v1` runtime-presence heartbeats, under either
+// producer token — see the rule branch) is the first such rule — a per-tenant liveness signal published every ~15s, not
 // business traffic worth persisting. Exported as the SINGLE SOURCE OF TRUTH for
 // the disposition so the T07 pipeline and consumer edge test membership here
 // rather than hard-coding rule numbers.
@@ -218,13 +245,26 @@ export function classify(
       return ok(classified(tech, "channel-processing", 5));
     }
 
-    // Rule 6 — ai-agent-gateway execution lifecycle. TAXONOMY.md §4 rule 6.
+    // Rule 6 — agent execution lifecycle, DUAL producer token. TAXONOMY.md §4
+    // rule 6.
+    //
+    // `ai-agent-gateway` = history: every lifecycle event published before the
+    // E3 migration (PENDIENTES/04-e3-subject.spec.md) rides that token, and the
+    // 92-event golden set is frozen on it, so it is accepted FOREVER.
+    // `agent-ai-service` = post-E3 truth: the three moving kinds
+    // (`execution_started/completed/failed`) are published by agent-ai-service,
+    // whose subject token was lying with the gateway's name. Golden rule 3
+    // (TAXONOMY.md §6, rule-21 precedent): the classifier learns the new token
+    // BEFORE the emitter flips (T02), so no event is ever unclassified in
+    // flight. `execution_requested` stays gateway-only — see
+    // AGENT_EXECUTION_MOVED_KINDS.
     if (
-      producer === "ai-agent-gateway" &&
       domain === "automation" &&
       channel === "platform" &&
       provider === "internal" &&
-      AGENT_EXECUTION_KINDS.has(kind)
+      ((producer === "ai-agent-gateway" && AGENT_EXECUTION_KINDS.has(kind)) ||
+        (producer === "agent-ai-service" &&
+          AGENT_EXECUTION_MOVED_KINDS.has(kind)))
     ) {
       return ok(classified("platform", "agent-execution", 6));
     }
@@ -405,21 +445,28 @@ export function classify(
       return ok(classified("platform", "workflow-execution", 19));
     }
 
-    // Rule 20 — ai-agent-gateway `online.v1` runtime-presence heartbeat. A
+    // Rule 20 — `online.v1` runtime-presence heartbeat, DUAL producer token. A
     // per-tenant liveness signal (published every ~15s by agent-ai-service's
     // HeartbeatService, `services/agent-ai-service/src/modules/heartbeat/
     // heartbeat.service.ts:91`), NOT business traffic. Disposition
     // `counted-not-persisted` (TAXONOMY.md §4 note + SKIP_PERSIST_RULES): counted
-    // via an OTel metric, no row inserted. Evaluated BEFORE the rule-16 catch-all
-    // — which would otherwise tag it `unknown` and alarm — exactly like rule 19.
-    // The subject's producer token is `ai-agent-gateway` but the publisher is
-    // agent-ai-service — a producer-token drift tracked as DRIFT.md item 10,
-    // analogous to DRIFT.md item 9 (agent-memory envelope.producer drift). The
+    // via an OTel metric, no row inserted — UNCHANGED by the token move.
+    // Evaluated BEFORE the rule-16 catch-all — which would otherwise tag it
+    // `unknown` and alarm — exactly like rule 19.
+    // Historically the subject's producer token was `ai-agent-gateway` while the
+    // publisher was agent-ai-service — the producer-token drift tracked as
+    // DRIFT.md item 10, analogous to DRIFT.md item 9 (agent-memory
+    // envelope.producer drift). The E3 migration
+    // (PENDIENTES/04-e3-subject.spec.md) corrects the subject to
+    // `agent-ai-service`; both tokens are accepted here (same dual-token
+    // reasoning as rule 6 above: the old token is frozen in the persisted
+    // history and in the golden set — seq 1249/1255/1256/1267/1288-1307 — and
+    // the new one lands ahead of the T02 emitter per golden rule 3). The
     // heartbeat's other non-canonical traits (no `data.payload_inline`, a
-    // `{name,version}` transport) are DRIFT.md item 5.
+    // `{name,version}` transport) are DRIFT.md item 5 and are untouched here.
     // TAXONOMY.md §4 rule 20.
     if (
-      producer === "ai-agent-gateway" &&
+      RUNTIME_PRESENCE_PRODUCERS.has(producer) &&
       domain === "automation" &&
       channel === "platform" &&
       provider === "internal" &&

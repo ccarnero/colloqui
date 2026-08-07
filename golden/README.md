@@ -26,7 +26,11 @@ recorded in `DRIFT.md`.
   kinds, landed WITH the emitter — see addendum below) + 2 synthetic events
   (seq 1330-1331, added by `manual-loops/connectors/connection-call-inspector.md`
   T05 to cover the `mcp_call_completed`/`llm_call_completed` kinds, landed
-  WITH the T03/T04 emitters — see addendum below), 92 total. Each file
+  WITH the T03/T04 emitters — see addendum below) + 4 synthetic events (seq
+  1332-1335, added by `PENDIENTES/04-e3-subject.spec.md` T01 to cover the
+  `execution_started`/`execution_completed`/`execution_failed`/`online` kinds
+  under the NEW `agent-ai-service` producer token, ahead of the T02 emitter per
+  golden rule 3 — see addendum below), 96 total. Each file
   is a wrapper object: `{ stream, seq, received, subject, headers, envelope
   }`. File name encodes provenance: `<STREAM>-seq<N>.json`.
 - `labeled.tsv` — pre-labels produced by applying the classification rules in
@@ -49,7 +53,8 @@ recorded in `DRIFT.md`.
   5 synthetic declarative-provisioning T04 events (seq 1322–1326, see addendum
   below) + 3 synthetic declarative-provisioning T05 events (seq 1327–1329, see
   addendum below) + 2 synthetic connection-call-inspector T05 events (seq
-  1330–1331, see addendum below).
+  1330–1331, see addendum below) + 4 synthetic E3-subject T01 events (seq
+  1332–1335, see addendum below).
 - **`GATEWAY_AUDIT`** — 2 events.
 - 13 correlation chains, all formally closed by `correlation_id` + `causation_id`,
   plus 2 standalone connection-call-inspector roots (seq 1330, seq 1331, each a
@@ -62,7 +67,11 @@ recorded in `DRIFT.md`.
   seq 1325–1326 failed run), plus 2 synthetic declarative-provisioning secrets
   chains (seq 1327 standalone `secret_written` root, seq 1328 a `secret_resolved`
   sibling reusing the seq1322 apply-run's correlation, seq 1329 a standalone
-  `secret_access_denied` chain).
+  `secret_access_denied` chain), plus 1 synthetic E3-subject execution chain
+  (seq 1332 `execution_started` → seq 1333 `execution_completed`) and 1
+  standalone E3-subject failed-execution root (seq 1334). The E3 heartbeat row
+  (seq 1335) is a standalone beat with its own correlation, exactly like the
+  24 captured `online.v1` rows.
 
 ## `labeled.tsv` column contract
 
@@ -85,6 +94,38 @@ These labels were generated mechanically from the `TAXONOMY.md` rule table.
 **`labeled.tsv` becomes the classifier's golden truth ONLY after user correction.**
 All 82 rows carry HIGH confidence; rows with a non-empty `notes` column are the ones
 most likely to need a human decision.
+
+## Addendum (2026-08-07) — E3 subject-fix T01 synthetic rows
+
+`PENDIENTES/04-e3-subject.spec.md` T01 teaches the classifier the NEW producer
+token of the agent-ai-service publishers BEFORE the wire flips (T02) — golden
+rule 3 in its original form (rule + golden + classifier ahead of the emitter,
+same pattern as the connector-invoke-api T04 addendum below). Subject token 2
+is the producer routing key, and the three `publishStatus` lifecycle kinds
+(`execution_started`/`execution_completed`/`execution_failed`) plus the
+`online.v1` heartbeat were riding `ai-agent-gateway` while agent-ai-service
+published them (`DOCS/archive/audits/DOCS-TRUTH-LEDGER.md` E3; `DRIFT.md`
+item 10 for the heartbeat). Rules 6 and 20 now accept BOTH tokens: the
+`ai-agent-gateway` token is FROZEN history (the 92 previously audited rows —
+including the 8 captured lifecycle rows and the 24 captured heartbeat rows —
+keep their labels untouched) and `agent-ai-service` is the post-E3 truth.
+4 rows (seq 1332-1335) were added by hand, following the exact shape of the
+captured old-token rows they twin: seq1332 `execution_started` (synthetic
+chain root — correlation_id = own id, causation null, depth 0) → seq1333
+`execution_completed` (causation = seq1332's envelope id, correlation
+inherited, depth 1); seq1334 `execution_failed` is a second, standalone
+execution root (depth 0) and is the ONLY golden coverage of that kind — no
+execution failed during the 2026-07-09 capture window; seq1335 is an
+`online.v1` heartbeat that preserves the live non-canonical envelope shape
+verbatim (no `data.payload_inline`, `transport = {name,version}`, UUID
+`idempotencykey`, empty `accountid` — `DRIFT.md` item 5, untouched by this
+migration). All four carry the SAME `tech`/`business_fn`/`rule` as their
+old-token twins (rule 6 `platform`/`agent-execution`, rule 20
+`platform`/`runtime-presence` with the unchanged `counted-not-persisted`
+disposition). `execution_requested` is deliberately ABSENT: it is published by
+the gateway itself and does NOT move, so an `agent-ai-service`
+`execution_requested` subject stays the rule-16 alarm. See `TAXONOMY.md` §4
+rules 6/20.
 
 ## Addendum (2026-07-28) — connection-call-inspector T05 synthetic rows
 

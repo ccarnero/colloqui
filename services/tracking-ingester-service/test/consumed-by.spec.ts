@@ -72,6 +72,25 @@ describe("consumedBy — TAXONOMY.md §5 facet", () => {
     ).toEqual(["agent-ai-service", "agent-admin-service"]);
   });
 
+  // E3 migration (PENDIENTES/04-e3-subject.spec.md T01): the lifecycle and
+  // heartbeat events move to the `agent-ai-service` producer token. The durable
+  // consumers do not change with the rename, so the facet must resolve to the
+  // SAME set as the gateway-token rows above (which stay valid forever — the
+  // persisted history rides them).
+  it("§5 row 6 — agent-ai-service automation (E3 token) → agent-ai + agent-admin", () => {
+    for (const subject of [
+      "evt.acme.agent-ai-service.automation.platform.internal.execution_started.v1",
+      "evt.acme.agent-ai-service.automation.platform.internal.execution_completed.v1",
+      "evt.acme.agent-ai-service.automation.platform.internal.execution_failed.v1",
+      "evt.acme.agent-ai-service.automation.platform.internal.online.v1",
+    ]) {
+      expect(value(subject)).toEqual([
+        "agent-ai-service",
+        "agent-admin-service",
+      ]);
+    }
+  });
+
   it("§5 row 7 — dlq.<tenant>.> → usage-aggregator-service", () => {
     expect(
       value(

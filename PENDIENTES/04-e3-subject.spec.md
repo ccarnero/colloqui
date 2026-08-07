@@ -301,7 +301,7 @@ rg -n "pre-existing inconsistency" DOCS/architecture/runtime-streaming.md
 
 ## Progress
 
-- [ ] T01 — tracking-ingester dual-token rules + synthetic goldens + TAXONOMY rows
+- [x] T01 — tracking-ingester dual-token rules + synthetic goldens + TAXONOMY rows (2026-08-07, gates green, 2× APPROVED first attempt)
 - [ ] T02 — wire flip: constants, publishers, consumers, tests, e2e script
 - [ ] T03 — docs truth sweep (runtime-streaming, DRIFT item 10, TAXONOMY prose, guides)
 

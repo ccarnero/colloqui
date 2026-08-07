@@ -48,8 +48,8 @@ function loadGolden(): GoldenRow[] {
 describe("classify — golden gate (golden/labeled.tsv)", () => {
   const rows = loadGolden();
 
-  it("parses 92 labeled data rows", () => {
-    expect(rows.length).toBe(92);
+  it("parses 96 labeled data rows", () => {
+    expect(rows.length).toBe(96);
   });
 
   it("classifies (tech, business_fn, rule) with >= 0.90 accuracy", () => {

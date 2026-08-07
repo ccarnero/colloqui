@@ -1,0 +1,45 @@
+{
+  "stream": "INGRESS-ACME",
+  "seq": 1334,
+  "received": "2026-08-07 00:00:10.000000000",
+  "subject": "evt.acme.agent-ai-service.automation.platform.internal.execution_failed.v1",
+  "headers": {},
+  "envelope": {
+    "specversion": "1.0",
+    "id": "82880af2-0ec7-44af-ba89-e7267a69fb48",
+    "source": "agent-ai-service",
+    "type": "io.yoizen.platform.runtime.execution_failed.v1",
+    "resource": "execution/exec-seq1334",
+    "time": "2026-08-07T00:00:10.000Z",
+    "traceid": "9ce68bfc-cd1c-4ccc-9773-58595bd6aca3",
+    "causation_id": null,
+    "correlation_id": "82880af2-0ec7-44af-ba89-e7267a69fb48",
+    "tenant": "acme",
+    "producer": "agent-ai-service",
+    "domain": "automation",
+    "channel": "platform",
+    "provider": "internal",
+    "accountid": "agent-ai-service",
+    "idempotencykey": "sha256:execution-failed-1334",
+    "transport": {
+      "method": "agent",
+      "protocol": "internal",
+      "agent_id": "agent-ai-service",
+      "depth": 0
+    },
+    "data": {
+      "received_at": "2026-08-07T00:00:10.000Z",
+      "payload_inline": true,
+      "payload_ref": null,
+      "payload_bytes": 172,
+      "payload_checksum": "sha256:execution-failed-1334",
+      "payload": {
+        "executionId": "exec-seq1334",
+        "agentId": "eb0db541-8cd8-4cd8-aaaf-c3532be3e508",
+        "tenantId": "acme",
+        "state": "failed",
+        "error": "llm provider timeout after 30000ms"
+      }
+    }
+  }
+}
