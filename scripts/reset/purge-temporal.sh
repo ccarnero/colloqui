@@ -270,17 +270,25 @@ Examples:
   # Wipe and DON'T touch task_queue_user_data (preserve versioning rules):
   ./scripts/reset/purge-temporal.sh --keep-task-queues
 
-  # Legacy single-cluster topology (visibility still on postgres-temporal-1):
+  # Pin the CURRENT collapsed layout explicitly (visibility lives in the
+  # 'temporal_visibility' DB on postgres-temporal-1 since the split was
+  # reverted). Rarely needed: resolve_visibility_target finds it on its own.
   ./scripts/reset/purge-temporal.sh --vis-pg-pod=postgres-temporal-1
 
 Behavior:
-  purge   Captures current replica count for each Temporal role
-          Deployment (frontend, history, matching, worker), scales all
-          of them to 0, waits for every pod to terminate, runs one
-          TRUNCATE statement per DB: workflow-state tables on the
-          'temporal' DB ('postgres-temporal-1') and
-          'executions_visibility' on 'temporal_visibility'
-          ('postgres-temporal-visibility-1'), then scales each role
+  purge   Captures the current replica count of every DETECTED Temporal
+          Deployment — today that is the single 'temporal'
+          'temporalio/auto-setup' Deployment this repo runs (the 4-role
+          HA deployment was reverted); the 4-role HA set (frontend,
+          history, matching, worker) is still handled when all four
+          exist. Scales all of them to 0, waits for every pod to
+          terminate, runs one TRUNCATE statement per DB: workflow-state
+          tables on the 'temporal' DB ('postgres-temporal-1') and
+          'executions_visibility' on 'temporal_visibility', on whichever
+          pod resolve_visibility_target picked — the --vis-pg-pod
+          default 'postgres-temporal-visibility-1', else the
+          workflow-state primary, and the stage is SKIPPED when the
+          relation is on neither. Then scales each detected Deployment
           back to its prior replica count and waits for Ready.
           Namespaces, schema_version, and cluster_metadata on both
           clusters are NEVER touched, so the schema bootstrap Job
@@ -383,7 +391,7 @@ ensure_vis_pg_pod_exists() {
     fi
     err "Visibility Postgres pod not found: ${NAMESPACE}/${VIS_PG_POD}"
     err "  Hint: pass --vis-pg-pod=postgres-temporal-1 for legacy"
-    err "        single-cluster setups; see runbooks/temporal-visibility-split.md."
+    err "        single-cluster setups; see DOCS/archive/runbooks/temporal-visibility-split.md."
     exit 2
   fi
 }

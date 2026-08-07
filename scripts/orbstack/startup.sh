@@ -40,7 +40,7 @@ while [[ $# -gt 0 ]]; do
     --no-bootstrap) DO_BOOTSTRAP=0; shift ;;
     --rebuild)      DO_REBUILD=1; shift ;;
     --no-e2e)       DO_E2E=0; shift ;;
-    -h|--help)      sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help)      sed -n '2,26p' "$0"; exit 0 ;;
     *) echo "Unknown flag: $1 (try --help)" >&2; exit 1 ;;
   esac
 done

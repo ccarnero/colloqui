@@ -53,7 +53,7 @@ step() { echo -e "${CYAN}[STEP]${NC}  $*"; }
 
 MIN_KUSTOMIZE="5.7.0"
 
-usage() { sed -n '3,52p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '3,44p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # ── version compare: returns 0 if $1 >= $2 (dotted numeric) ───────────────────
 ver_ge() {

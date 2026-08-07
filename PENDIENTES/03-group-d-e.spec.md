@@ -163,7 +163,24 @@ bash scripts/checks/doc-code-guards.sh
     describe the OLD behaviour" — stale the moment this lands;
     `dev-mode.md:115` understates connector-runtime (1 Deployment listed,
     dev-mode.sh emits 3).
-- [ ] T02 Group E — script strings + E32 verification
+- [x] T02 Group E — script strings + E32 verification
+  - Done 2026-08-07, 1 attempt, 2× APPROVED. E30: 3 rangos de sed exactos al
+    cierre de cada banner. E31: half-obsolete (el `log` ya estaba fixeado por
+    `983e6c10`; quedaba el `err` — y el LEDGER citaba mal la ruta:
+    `DOCS/runbooks/archive/` no existe, la real es `DOCS/archive/runbooks/`).
+    E35: 3 lugares del heredoc a la realidad single-node. E32: medio obsoleto —
+    el nombre K6c→G6c sí se renombró pero el mensaje seguía diciendo
+    `ROW_FILES`; fixeado a `row_files_for`.
+  - FOLLOW-UPS (reviewer-flagged): 3 referencias vivas al path muerto
+    `temporal-visibility-split.md` fuera del scope de E31
+    (`DOCS/architecture/infrastructure.md:45`,
+    `infrastructure/base/postgres/postgres-temporal-visibility-cluster.yaml:18`,
+    `infrastructure/base/postgres/secret.yaml:61`); párrafo `counts` del
+    heredoc con la misma afirmación stale (fuera de los 3 lugares de E35);
+    artefacto preexistente de backticks en heredoc sin quotear
+    (`purge-temporal.sh:295` renderiza `()` vacío);
+    `manual-loops/architecture/docs-consistency.md:46` aún dice "K6c
+    ROW_FILES".
 - [ ] T03 rule-5 leftovers (README translation + GROWTH-PLAN)
 
 ## Out of scope (explicit)

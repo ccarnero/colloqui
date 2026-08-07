@@ -65,7 +65,7 @@ ASSUME_YES="false"
 DRY_RUN="false"
 NO_CACHE=""
 
-usage() { sed -n '3,40p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '3,35p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 while (( $# > 0 )); do
   case "$1" in

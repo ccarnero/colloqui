@@ -179,7 +179,7 @@ g6c_autoscaling() {
     local files
     files=$(row_files_for "$name")
     if [[ -z "$files" ]]; then
-      fail "$guard: doc row '$name' has no known knative/services/base/*.yaml mapping in this guard (update ROW_FILES)"
+      fail "$guard: doc row '$name' has no known knative/services/base/*.yaml mapping in this guard (update row_files_for)"
       row_ok=0
       continue
     fi
