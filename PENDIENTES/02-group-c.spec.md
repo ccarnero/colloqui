@@ -278,6 +278,8 @@ task summary.)
     `YoizenclawTenantConnectionManager` unresolved in SystemVariables/
     ConfigFiles/etc. test modules. Candidate register entry; same class as
     Group B's E10 (suites that never run green).
+    **DEBT CLOSED 2026-08-07** by `09-hallazgos-group-c.spec.md`
+    T01c/T01d/T01a/T01b — full suite now 868 pass / 0 fail.
   - FOLLOW-UPS (reviewer-flagged, non-blocking): comment at
     `skb-query.service.ts:331-333` still says "byte-identical" (values, not
     text); `security.md:196` "Layers 2-5 all operate on LLM output" stale

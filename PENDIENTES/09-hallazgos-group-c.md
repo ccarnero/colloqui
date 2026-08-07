@@ -1,11 +1,19 @@
 # 9 · Hallazgos emergentes de la corrida Group C (2026-08-06)
 
 Class: register
-Summary: Tres hallazgos que surgieron ejecutando `02-group-c.spec.md` (T01–T03, commits `1f4244af`/`b33fde25`/`deb140bb`). Reportados por reviewers/gates bajo la regla de scope discipline — nada de esto se parchó en esa corrida. Evidencia completa en el Progress del spec. Estado: H1 y H3 abiertos; **H2 cerrado 2026-08-07** (eliminación completa de `python_code`).
+Summary: Tres hallazgos que surgieron ejecutando `02-group-c.spec.md` (T01–T03, commits `1f4244af`/`b33fde25`/`deb140bb`). Estado: **los tres CERRADOS 2026-08-07** — H2 por eliminación directa de `python_code`; H1 y H3 por el loop de `09-hallazgos-group-c.spec.md` (5/5 tareas, incl. el bug de producto T01d que H1 escondía). Este archivo queda como registro histórico.
 
 ---
 
-## H1 · agent-admin-service: 14 suites de integración/e2e rotas en el commit base
+## H1 · agent-admin-service: 14 suites de integración/e2e rotas en el commit base — **CERRADO 2026-08-07**
+
+> Resuelto por el loop de `09-hallazgos-group-c.spec.md` (T01c/T01d/T01a/T01b):
+> suite completa en **868 pass / 0 fail**. El rot tenía 5 capas (no solo el
+> token de DI) y escondía: 18 tests fantasma de features inexistentes
+> (retirados por ruling, contrato rescatado a
+> `DOCS/agents/credentials-security-contract.md`) y un bug de producto real
+> — pérdida de datos por `enableImplicitConversion` en `agents.dto.ts`
+> (T01d, `d137ebb9`). El detalle de abajo queda como registro histórico.
 
 El gate G1 del loop lo expuso: `bun test` en `services/agent-admin-service` da
 **743 pass / 14 fail en el commit base** — las mismas 14 fallas con y sin los
@@ -56,7 +64,14 @@ la fila del doc y el valor en el allowlist del lint (`jobs-fixture.spec.ts`).
 Solo un payload artesanal puede alcanzarlo hoy — que falle validación, no que
 "complete".
 
-## H3 · Las alertas de consumer-lag cubren 4 de 13 durables reales
+## H3 · Las alertas de consumer-lag cubren 4 de 13 durables reales — **CERRADO 2026-08-07**
+
+> Resuelto por T02 del loop (`717cd660`): patrón invertido — sin allow-list,
+> todo consumer alerta por defecto, lista de exclusión vacía documentada; el
+> guard G15 de `doc-code-guards.sh` deriva el universo de durables del código
+> (22 nombres, no 13 — el conteo de abajo subestimaba) y convierte nombres
+> muertos en falla de CI. Verificado en vivo vía `/api/v1/rules`. El detalle
+> de abajo queda como registro histórico.
 
 Tras T03 (borrar los 2 filtros muertos), los exprs de `nats-consumer-lag`
 (`alerts.yaml:383,401`) quedaron honestos pero cortos: cubren
