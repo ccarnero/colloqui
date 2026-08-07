@@ -1,99 +1,55 @@
-import "../setup-env";
 import {
-  describe,
-  it,
-  expect,
-  beforeAll,
   afterAll,
+  beforeAll,
   beforeEach,
-  mock,
+  describe,
+  expect,
+  it,
 } from "bun:test";
-import { Test } from "@nestjs/testing";
-import type { INestApplication } from "@nestjs/common";
+import type { NestFastifyApplication } from "@nestjs/platform-fastify";
+import { TENANT_HEADER } from "@yoizen/shared";
 import request from "supertest";
 import { AgentsModule } from "../../src/modules/agents/agents.module";
-import { TenantConnectionManager } from "@yoizen/database";
+import { AGENTS_REPOSITORY } from "../../src/modules/agents/agents.repository.interface";
 import { LAZY_NATS, NatsPublisher } from "../../src/providers/nats.provider";
-import { TENANT_HEADER } from "@yoizen/shared";
-
-// Mock implementations for integration tests
-const createMockTenantConnectionManager = () => {
-  const pools = new Map();
-
-  return {
-    getConnection: (tenantId: string) => {
-      if (!pools.has(tenantId)) {
-        // Return a mock SQL connection
-        pools.set(tenantId, {
-          unsafe: (value: string) => value,
-          json: (value: unknown) => JSON.stringify(value),
-        });
-      }
-      return pools.get(tenantId);
-    },
-    closeAll: async () => {
-      pools.clear();
-    },
-  };
-};
+import { YoizenclawTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
+import {
+  createIntegrationApp,
+  createIntegrationLazyNats,
+  createIntegrationTenantConnectionManager,
+} from "./harness";
+import { createInMemoryAgentsRepository } from "./in-memory-repositories";
 
 const createMockNatsPublisher = () => ({
   publishAgentPublished: async () => null,
   publishAgentUnpublished: async () => null,
 });
 
-const createMockLazyNats = () => ({
-  getConnection: mock(() =>
-    Promise.resolve({
-      publish: mock(() => Promise.resolve()),
-      request: mock(() =>
-        Promise.resolve({
-          data: Buffer.from(
-            JSON.stringify({
-              data: {
-                payload: {
-                  response: "integration-chat-reply",
-                  tool_calls: [],
-                },
-              },
-            }),
-          ),
-        }),
-      ),
-    } as import("nats").NatsConnection),
-  ),
-});
-
 describe("Agents Integration Tests", () => {
-  let app: INestApplication;
-  let mockConnectionManager: ReturnType<
-    typeof createMockTenantConnectionManager
-  >;
+  let app: NestFastifyApplication;
   let mockNatsPublisher: ReturnType<typeof createMockNatsPublisher>;
-  let mockLazyNats: ReturnType<typeof createMockLazyNats>;
   const TENANT_ID = "test-tenant-123";
 
   beforeAll(async () => {
-    mockConnectionManager = createMockTenantConnectionManager();
     mockNatsPublisher = createMockNatsPublisher();
-    mockLazyNats = createMockLazyNats();
 
-    const module = await Test.createTestingModule({
+    app = await createIntegrationApp({
       imports: [AgentsModule],
-      providers: [{ provide: LAZY_NATS, useValue: mockLazyNats }],
-    })
-      .overrideProvider(TenantConnectionManager)
-      .useValue(mockConnectionManager)
-      .overrideProvider(NatsPublisher)
-      .useValue(mockNatsPublisher)
-      .compile();
-
-    app = module.createNestApplication();
-    await app.init();
+      globals: [
+        { provide: NatsPublisher, useValue: mockNatsPublisher },
+        { provide: LAZY_NATS, useValue: createIntegrationLazyNats() },
+        {
+          provide: YoizenclawTenantConnectionManager,
+          useValue: createIntegrationTenantConnectionManager(),
+        },
+      ],
+      overrides: [
+        { token: AGENTS_REPOSITORY, value: createInMemoryAgentsRepository() },
+      ],
+    });
   });
 
   afterAll(async () => {
-    await mockConnectionManager.closeAll();
     await app.close();
   });
 

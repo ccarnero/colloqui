@@ -1,69 +1,65 @@
 import {
-  describe,
-  it,
-  expect,
-  beforeAll,
   afterAll,
+  beforeAll,
   beforeEach,
+  describe,
+  expect,
+  it,
 } from "bun:test";
-import { Test } from "@nestjs/testing";
-import type { INestApplication } from "@nestjs/common";
-import request from "supertest";
-import { JobsModule } from "../../src/modules/jobs/jobs.module";
-import { TenantConnectionManager } from "@yoizen/database";
-import { NatsPublisher } from "../../src/providers/nats.provider";
+import type { NestFastifyApplication } from "@nestjs/platform-fastify";
 import { TENANT_HEADER } from "@yoizen/shared";
-
-const createMockTenantConnectionManager = () => {
-  const pools = new Map();
-
-  return {
-    getConnection: (tenantId: string) => {
-      if (!pools.has(tenantId)) {
-        pools.set(tenantId, {
-          unsafe: (value: string) => value,
-          json: (value: unknown) => JSON.stringify(value),
-        });
-      }
-      return pools.get(tenantId);
-    },
-    closeAll: async () => {
-      pools.clear();
-    },
-  };
-};
+import request from "supertest";
+import { JOB_EXECUTIONS_REPOSITORY } from "../../src/modules/jobs/job-executions.repository.interface";
+import { JobsModule } from "../../src/modules/jobs/jobs.module";
+import { JOBS_REPOSITORY } from "../../src/modules/jobs/jobs.repository.interface";
+import { LAZY_NATS, NatsPublisher } from "../../src/providers/nats.provider";
+import { YoizenclawTenantConnectionManager } from "../../src/providers/tenant-connection-manager";
+import {
+  createIntegrationApp,
+  createIntegrationLazyNats,
+  createIntegrationTenantConnectionManager,
+} from "./harness";
+import { createInMemoryJobsBackend } from "./in-memory-repositories";
 
 const createMockNatsPublisher = () => ({
   publishJobTrigger: async () => null,
 });
 
+/**
+ * `CreateJobDto.agent_id` is `@IsUUID()`, and so are the `agent_id`/`job_id`
+ * list filters. The suite used to send `"agent-1"` / `"job-1"`, which only
+ * survived because the app was built without the production `ValidationPipe`.
+ */
+const AGENT_ID = "3f1a6b0e-6a5f-4a3a-9a2d-1c5d0b7e9f11";
+const OTHER_JOB_ID = "8c2b7d10-4e6f-4b8c-9d1e-2a3b4c5d6e7f";
+
 describe("Jobs Integration Tests", () => {
-  let app: INestApplication;
-  let mockConnectionManager: ReturnType<
-    typeof createMockTenantConnectionManager
-  >;
+  let app: NestFastifyApplication;
   let mockNatsPublisher: ReturnType<typeof createMockNatsPublisher>;
   const TENANT_ID = "test-tenant-123";
 
   beforeAll(async () => {
-    mockConnectionManager = createMockTenantConnectionManager();
     mockNatsPublisher = createMockNatsPublisher();
+    const repositories = createInMemoryJobsBackend();
 
-    const module = await Test.createTestingModule({
+    app = await createIntegrationApp({
       imports: [JobsModule],
-    })
-      .overrideProvider(TenantConnectionManager)
-      .useValue(mockConnectionManager)
-      .overrideProvider(NatsPublisher)
-      .useValue(mockNatsPublisher)
-      .compile();
-
-    app = module.createNestApplication();
-    await app.init();
+      globals: [
+        { provide: NatsPublisher, useValue: mockNatsPublisher },
+        { provide: LAZY_NATS, useValue: createIntegrationLazyNats() },
+        {
+          provide: YoizenclawTenantConnectionManager,
+          useValue: createIntegrationTenantConnectionManager(),
+        },
+      ],
+      overrides: [
+        { token: JOBS_REPOSITORY, value: repositories.jobs },
+        { token: JOB_EXECUTIONS_REPOSITORY, value: repositories.executions },
+      ],
+    });
   });
 
   afterAll(async () => {
-    await mockConnectionManager.closeAll();
     await app.close();
   });
 
@@ -75,7 +71,7 @@ describe("Jobs Integration Tests", () => {
     it("should create a new job", async () => {
       const jobData = {
         name: "Test Job",
-        agent_id: "agent-1",
+        agent_id: AGENT_ID,
         schedule: "0 */6 * * *",
         payload: { key: "value" },
         is_active: true,
@@ -111,7 +107,7 @@ describe("Jobs Integration Tests", () => {
     it("should require tenant header", async () => {
       const jobData = {
         name: "Test Job",
-        agent_id: "agent-1",
+        agent_id: AGENT_ID,
         schedule: "0 */6 * * *",
       };
 
@@ -124,7 +120,7 @@ describe("Jobs Integration Tests", () => {
     it("should create job with interval schedule", async () => {
       const jobData = {
         name: "Interval Job",
-        agent_id: "agent-1",
+        agent_id: AGENT_ID,
         schedule: "interval:30",
         payload: {},
       };
@@ -153,7 +149,7 @@ describe("Jobs Integration Tests", () => {
 
     it("should filter by agent_id", async () => {
       const response = await request(app.getHttpServer())
-        .get("/admin/jobs?agent_id=agent-1")
+        .get(`/admin/jobs?agent_id=${AGENT_ID}`)
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
@@ -177,7 +173,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Test Job",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "0 */6 * * *",
         })
         .expect(201);
@@ -208,7 +204,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Original Name",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "0 */6 * * *",
         })
         .expect(201);
@@ -244,7 +240,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Job to Delete",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "0 */6 * * *",
         })
         .expect(201);
@@ -277,7 +273,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Job to Enable",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "0 */6 * * *",
           is_active: false,
         })
@@ -308,7 +304,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Job to Disable",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "0 */6 * * *",
           is_active: true,
         })
@@ -339,7 +335,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Job to Run",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "0 */6 * * *",
           is_active: true,
         })
@@ -364,7 +360,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Inactive Job",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "0 */6 * * *",
           is_active: false,
         })
@@ -393,7 +389,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Job to Trigger",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "0 */6 * * *",
           is_active: true,
           payload: { default: "value" },
@@ -422,7 +418,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Job to Trigger",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "0 */6 * * *",
           is_active: true,
         })
@@ -445,7 +441,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Inactive Job",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "0 */6 * * *",
           is_active: false,
         })
@@ -475,7 +471,7 @@ describe("Jobs Integration Tests", () => {
 
     it("should filter by job_id", async () => {
       const response = await request(app.getHttpServer())
-        .get("/admin/jobs/executions?job_id=job-1")
+        .get(`/admin/jobs/executions?job_id=${OTHER_JOB_ID}`)
         .set(TENANT_HEADER, TENANT_ID)
         .expect(200);
 
@@ -500,7 +496,7 @@ describe("Jobs Integration Tests", () => {
         .set(TENANT_HEADER, TENANT_ID)
         .send({
           name: "Lifecycle Job",
-          agent_id: "agent-1",
+          agent_id: AGENT_ID,
           schedule: "interval:60",
           payload: { key: "value" },
         })

@@ -393,7 +393,23 @@ cd services/agent-admin-service && bunx tsc -p tsconfig.build.json --noEmit
     signature-parity fix); ValidationPipe options are parity-by-copy —
     extracting the options object from packages/observability would kill the
     duplication; one pgvector container per spec file (pre-existing).
-- [ ] T01b integration suites via in-memory repo fake (bun test → 0 fail)
+- [x] T01b integration suites via in-memory repo fake (bun test → 0 fail)
+  - Done 2026-08-07, 1 attempt, 2× APPROVED. Full suite **868 pass / 17 skip
+    / 0 fail** — the 14-failure debt from `02-group-c.spec.md` is CLOSED.
+    Fakes at the repository-token seam honoring the I*Repository interfaces;
+    global doubles module (ProvidersModule is @Global — overrideProvider
+    can't reach its tokens); Fastify + production ValidationPipe; throwing
+    doubles for unreached paths (honesty by design). Reviewer-endorsed
+    deviation: jobs fixtures moved to valid UUIDs (@IsUUID + now-real pipe;
+    the old strings only passed because the old harness had no pipe).
+    Standalone + full-suite green (order-independent).
+  - FOLLOW-UPS (non-blocking): executions fake yields `undefined` where SQL
+    LEFT JOIN yields `null` for orphaned job_name (interface says
+    `job_name?: string`; consider `?? null`); ValidationPipe options now
+    copied in 3 places (extract to packages/observability someday);
+    `postgres-fragment-bugs.integration.spec.ts` self-skips without
+    `TEST_POSTGRES_URL` (the 17 skips — real-Postgres coverage silently off
+    by default); in-memory stores are per-file, not per-test.
 
 <!-- Progress convention: entries grow into a changelog as tasks complete —
 findings, human-approved design changes, FOLLOW-UPS sub-lists. New tasks are
