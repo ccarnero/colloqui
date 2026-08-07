@@ -25,6 +25,8 @@ workflow. Nada de eso está acá — esto es solo lo que **no** se hizo.
 | 6 | Cobertura e2e restante | `mcpCall`, lo único sin cubrir | [`06-e2e-restante.md`](06-e2e-restante.md) |
 | 7 | Verificación pendiente | Lo que falta correr/mirar | [`07-verificacion.md`](07-verificacion.md) |
 | 8 | Manifest gap — `defaultCache` | Paridad declarativa UI/SDK ↔ manifiesto | [`08-manifest-defaultcache-gap.md`](08-manifest-defaultcache-gap.md) |
+| 9 | Hallazgos de la corrida Group C | 14 suites DI-rotas, alertas 4/13 (H2 `python_code` cerrado 08-07) | [`09-hallazgos-group-c.md`](09-hallazgos-group-c.md) |
+| 10 | Regla bash 3.2 → AGENTS.md | Constitución oral; huérfano de Group B | [`10-bash32-en-agents-md.md`](10-bash32-en-agents-md.md) |
 
 ---
 

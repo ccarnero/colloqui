@@ -295,7 +295,12 @@ task summary.)
     to `action_type: "python_code"` would pass the fixture lint yet no-op at
     runtime (`function-action.service.ts:23-32` returns `{supported: false}`
     and the execution still reports completed — silent no-op success, reported
-    as adjacent smell); `DOCS/archive/audits/DOCS-TRUTH-LEDGER.md:947-952`
+    as adjacent smell) — **RESOLVED 2026-08-07** (user ruling, post-loop):
+    `python_code` removed entirely (executor case, stub, doc row, fixture
+    enum, lint allowlist); regression pinned in
+    `agent-ai-service/test/unit/function-action.service.spec.ts`; see
+    `PENDIENTES/09-hallazgos-group-c.md` H2 (CERRADO);
+    `DOCS/archive/audits/DOCS-TRUTH-LEDGER.md:947-952`
     still lists the old drift as a live finding (frozen archive, left as-is);
     `test/unit/jobs/` is the first subdir among flat jobs specs.
 - [x] T03 E5 remove dead consumer filters from nats-consumer-lag alerts
