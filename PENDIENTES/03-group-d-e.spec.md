@@ -181,7 +181,17 @@ bash scripts/checks/doc-code-guards.sh
     (`purge-temporal.sh:295` renderiza `()` vacío);
     `manual-loops/architecture/docs-consistency.md:46` aún dice "K6c
     ROW_FILES".
-- [ ] T03 rule-5 leftovers (README translation + GROWTH-PLAN)
+- [x] T03 rule-5 leftovers (README translation + GROWTH-PLAN)
+  - Done 2026-08-07, 1 attempt, 2× APPROVED. README traducido 1:1 (10
+    headings, 3 fenced blocks, 4 tablas — bloques de comandos byte-idénticos;
+    reviewers verificaron las claims técnicas contra el código del demo).
+    Judgment call endorsed: las respuestas verificadas del bot se tradujeron
+    CON preámbulo que lo declara (los mensajes que tipea el presentador
+    quedan en español verbatim — son inputs). GROWTH-PLAN: solo la suite
+    retirada fuera de la línea.
+  - FOLLOW-UPS (cosméticos): parenthetical auto-referencial del header ahora
+    lee raro en inglés; "the own login credentials" calco en :159; "Two
+    capabilities" seguido de 3 bullets (preexistente en el original).
 
 ## Out of scope (explicit)
 

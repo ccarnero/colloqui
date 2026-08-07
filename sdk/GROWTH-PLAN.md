@@ -81,7 +81,7 @@ The old `sdk/samples` tier's top-level `README.md` claimed every sample depends 
 
 - `scripts/e2e/http-workflow.sh` — live-cluster end-to-end covering the SDK's exact happy path: login → channel account cleanup/create → workflow create → webhook ingest → execution verification.
 - `scripts/smoke-test.sh` — preflight readiness of 17 Knative services + 8 worker deployments.
-- Per-service `test/unit`, and e2e/integration suites in several services (agent-admin-service has agents/multi-tenancy/credentials-security/NATS e2e).
+- Per-service `test/unit`, and e2e/integration suites in several services (agent-admin-service has agents/multi-tenancy/NATS e2e).
 
 ---
 
