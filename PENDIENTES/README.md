@@ -19,7 +19,7 @@ workflow. Nada de eso está acá — esto es solo lo que **no** se hizo.
 |---|---|---|---|
 | 1 | Group B — 13 bugs reales | Cosas rotas en producción hoy | [`01-bugs-group-b.md`](01-bugs-group-b.md) |
 | 2 | Group C — 3 tickets | Datos/config muertos o mentirosos | [`02-group-c.md`](02-group-c.md) |
-| 3 | Group D+E — comentarios y strings | Documentación de registro que miente | [`03-group-d-e.md`](03-group-d-e.md) |
+| 3 | Group D+E — comentarios y strings | **CERRADO 08-07** (spec 3/3 + rule-5) | [`03-group-d-e.md`](03-group-d-e.md) |
 | 4 | E3 — subject inconsistente | Ticket de fix acordado | [`04-e3-subject.md`](04-e3-subject.md) |
 | 5 | Deuda de plataforma | Huecos estructurales encontrados | [`05-deuda-plataforma.md`](05-deuda-plataforma.md) |
 | 6 | Cobertura e2e restante | `mcpCall`, lo único sin cubrir | [`06-e2e-restante.md`](06-e2e-restante.md) |

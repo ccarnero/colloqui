@@ -1,4 +1,11 @@
-# 3 · Group D+E — comentarios y strings que mienten
+# 3 · Group D+E — comentarios y strings que mienten — **CERRADO 2026-08-07**
+
+> Resuelto por el loop de `03-group-d-e.spec.md` (3/3 tareas, commits
+> `0047e13b`/`f6ebdbfc`/`983bb728`): los 8 de Group D + los 3 de Group E
+> fixeados (E31 medio obsoleto, E32 medio obsoleto — nombre renombrado,
+> mensaje no), más los dos huérfanos de rule-5 (README del demo CRM traducido,
+> GROWTH-PLAN). Follow-ups menores en el Progress del spec. Registro
+> histórico abajo.
 
 Class: register
 Summary: Catorce correcciones de texto dentro de archivos de código y scripts; sin cambio de comportamiento, agrupables en dos commits.
