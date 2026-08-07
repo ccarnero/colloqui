@@ -38,6 +38,7 @@ export class CreateAgentDto {
 
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   channels?: unknown[];
 
   @IsArray()
@@ -47,10 +48,12 @@ export class CreateAgentDto {
 
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   input_variables?: unknown[];
 
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   output_variables?: unknown[];
 }
 
@@ -85,6 +88,7 @@ export class UpdateAgentDto {
 
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   channels?: unknown[];
 
   @IsOptional()
@@ -103,10 +107,12 @@ export class UpdateAgentDto {
 
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   input_variables?: unknown[];
 
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   output_variables?: unknown[];
 }
 

@@ -36,6 +36,15 @@ durable is born monitored, and dead names can never silently return.
    nothing else. The security contract they encoded is rescued to a doc
    before deletion.
 5. **Run order (human-approved 2026-08-07)**: T02 → T01c → T01a → T01b.
+6. **T01d authorized (user, 2026-08-07)**: the agents-DTO implicit-conversion
+   data loss surfaced by T01a's first real run of `POST /admin/agents` is
+   fixed as its own product task — `@Type(() => Object)` on the six untyped
+   object-array fields of `agents.dto.ts` (Create + Update:
+   `channels`, `input_variables`, `output_variables`). T01a's red
+   create-agent e2e test is the regression guard; T01d commits BEFORE T01a
+   (fix first, then the harness whose gate it turns green). The shared
+   `enableImplicitConversion` trap in other services is registered as a
+   finding, NOT patched here.
 
 ## Prior art (validated 2026-08-07 — REUSE, do not duplicate)
 
@@ -354,6 +363,19 @@ cd services/agent-admin-service && bunx tsc -p tsconfig.build.json --noEmit
     phantom route symbols until reindex; multi-tenancy's "Tenant B cannot
     modify Tenant A agent" test is a no-op (builds app, asserts nothing) —
     T01a/T01b territory.
+- [x] T01d agents.dto.ts @Type fix (added 2026-08-07 after T01a exposed live
+  data loss — ruling 6; committed before T01a)
+  - Done 2026-08-07, 1 attempt, 2× APPROVED. Six `@Type(() => Object)` on
+    Create/Update × channels/input_variables/output_variables, leveled to the
+    `tools` pattern. TDD: new `agents.dto.transform.spec.ts` (8 tests,
+    production pipe options, generic sweep auto-discovering untyped
+    object-array fields) written red-first; mutation-proven by the
+    orchestrator (decorator removed → 4 fail naming the field → restored).
+    Full suite 802/7 → 811/6. G4: agent-admin-service rebuilt+redeployed.
+  - PLATFORM FINDING (registered, NOT patched — scope): the same
+    `enableImplicitConversion` + untyped-object-array trap exists potentially
+    in every service using `withValidationPipe: true` → candidate register
+    entry for a platform-wide sweep.
 - [ ] T01a repair e2e suites: health + agents + T01c survivors
 - [ ] T01b integration suites via in-memory repo fake (bun test → 0 fail)
 
