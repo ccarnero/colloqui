@@ -1,6 +1,10 @@
 # BLOCKED
 
-## PENDIENTES/09-hallazgos-group-c.spec.md · T01 — 2026-08-07
+## PENDIENTES/09-hallazgos-group-c.spec.md · T01 — 2026-08-07 — **RESOLVED 2026-08-07**
+
+> Re-scope approved by the user (T01a/T01b/T01c) and credentials/channels
+> ruled Option B: retire the phantom tests (SPEC ruling 4). The entry below
+> stays as the diagnostic record.
 
 - **Attempts**: 1 (implementer STOPPED per the SPEC's own rule: "a repaired
   suite exposes a real product bug too large for one attempt → STOP").

@@ -20,11 +20,22 @@ durable is born monitored, and dead names can never silently return.
 
 1. **H1**: REPAIR the suites, do not delete or skip them. The mock-based
    design of the integration suites is their established character — keep it;
-   this is DI-token retargeting, not a rewrite.
+   this is DI-token retargeting, not a rewrite. **Amended 2026-08-07 after the
+   T01 block**: repair applies to tests of features that EXIST; see ruling 4
+   for the phantom suites, and the T01a/T01b/T01c re-scope (human-approved
+   2026-08-07).
 2. **H3**: INVERT the alert pattern — broad match with an exclusion list, per
    the register's ticket shape. Do not return to a hand-enumerated allow-list.
 3. Scope discipline: fix exactly the registered finding. Adjacent smells found
    while fixing get REPORTED in the task summary, never patched.
+4. **Credentials/channels ruling (user, 2026-08-07 — Option B): RETIRE the
+   phantom tests.** `/admin/credentials` and `/admin/channels` are not this
+   service's features and are not being built here. The 18 tests exercising
+   them are formally retired (T01c) — this ruling is the explicit sanction
+   that unlocks the "never delete tests" constraint for EXACTLY those tests,
+   nothing else. The security contract they encoded is rescued to a doc
+   before deletion.
+5. **Run order (human-approved 2026-08-07)**: T02 → T01c → T01a → T01b.
 
 ## Prior art (validated 2026-08-07 — REUSE, do not duplicate)
 
@@ -82,18 +93,27 @@ bash -n scripts/checks/doc-code-guards.sh
 
 Gate rules (self-contained):
 
-- PRECONDITION (before task 1): `git status --porcelain` empty.
-- T01 does not run G3; T02 does not run G1/G2 unless its diff touches
-  agent-admin-service.
-- From T01 onward, `bun test` in agent-admin-service must exit with **0 fail**
-  — no pre-existing-failure discount exists anymore.
+- PRECONDITION (before each task): `git status --porcelain` empty.
+- T02 does not run G1/G2 unless its diff touches agent-admin-service; the
+  T01x tasks do not run G3.
+- **0-fail staging (re-scope 2026-08-07)**: the `bun test` **0 fail** endgame
+  is T01b's Accept. Interim tasks (T01c, T01a) must STRICTLY REDUCE the
+  full-suite fail count and never introduce a new failure — record the
+  before/after counts in each task summary.
 - A G4 failure is a failed attempt like any other gate.
 
 ---
 
 ## Task queue
 
-### T01 — H1: repair the 14 DI-rotted integration/e2e suites of agent-admin-service
+### T01 — RE-SCOPED 2026-08-07 (human-approved) into T01c/T01a/T01b below
+
+> Kept for provenance. The single-task form was BLOCKED (see `BLOCKED.md`):
+> its `0 fail` Accept contained a product decision no implementer could make.
+> Ruling 4 resolved it; the body below remains the evidence base the three
+> subtasks cite. Run order per ruling 5: T02 → T01c → T01a → T01b.
+
+#### Original body (evidence, still valid)
 
 `cd services/agent-admin-service && bun test` fails 14 tests across the
 integration and e2e suites ON THE BASE COMMIT — NestJS cannot build the test
@@ -184,20 +204,126 @@ bash scripts/checks/doc-code-guards.sh
 cluster proof — apply, restart, `/api/v1/rules` shows the inverted matcher —
 is this task's G4, quoted in the task summary.)
 
+### T01c — retire the phantom credentials/channels tests (ruling 4)
+
+Added 2026-08-07 after the T01 block (human-approved re-scope). USER RULING
+(Option B, 2026-08-07): `/admin/credentials` and `/admin/channels` are not
+this service's features — the tests exercising them are formally retired.
+This ruling is the EXPLICIT SANCTION overriding the "never delete tests"
+constraint for exactly these tests. Surgical scope — one file dies, two get
+edited:
+
+- **Delete** `test/e2e/credentials-security.e2e.spec.ts` entirely — its 13
+  tests are 100% phantom (`/admin/credentials` CRUD + rotation + a
+  `credential.rotated` event `NatsPublisher` does not define).
+- **Edit** `test/e2e/multi-tenancy.e2e.spec.ts` — remove ONLY the tests
+  hitting `/admin/credentials` (:266) and `/admin/channels` (:311); every
+  other test stays byte-identical (they are repaired later, in T01a/T01b —
+  do NOT touch them even if red).
+- **Edit** `test/e2e/nats-events.e2e.spec.ts` — remove ONLY the
+  credential-related tests (create/update/rotate); the rest stays
+  byte-identical.
+- **Rescue the contract BEFORE deleting**: new doc
+  `DOCS/agents/credentials-security-contract.md` recording what the retired
+  suite encoded — the `value` field never appears in ANY response (list,
+  single, create, update), rotation emits an event, accepted credential
+  types — plus the ruling (Option B, 2026-08-07) and a pointer to this SPEC.
+  If credentials ever gets built (here or elsewhere), that doc is its
+  ready-made security spec.
+- Record before/after full-suite fail counts in the task summary (gate rule:
+  strict reduction, no new failures).
+
+**Accept**
+```
+test ! -f services/agent-admin-service/test/e2e/credentials-security.e2e.spec.ts
+rg -rn "admin/credentials|admin/channels" services/agent-admin-service/test ; test $? -eq 1
+rg -n "value" DOCS/agents/credentials-security-contract.md
+cd services/agent-admin-service && bunx tsc -p tsconfig.build.json --noEmit
+cd services/agent-admin-service && bun test 2>&1 | tail -4
+```
+(Last command is evidence for the fail-count reduction, not a 0-fail gate.)
+
+### T01a — repair the repairable e2e suites (health + agents + the T01c survivors)
+
+Added 2026-08-07 after the T01 block (human-approved re-scope). Repairs
+layers 1-4 of the rot in `test/e2e/` — the attempt already PROVED this
+recipe on `health` (10 pass standalone before the protocol revert):
+
+- **DI token**: overrides target `TenantConnectionManager`
+  (`@yoizen/database`) but modules inject `YoizenclawTenantConnectionManager`
+  (`src/providers/tenant-connection-manager.ts:8`) — retarget, and audit
+  sibling overrides (`LAZY_NATS`, `NatsPublisher`) for the same rot.
+- **Eager NATS**: `jetStreamManagerProvider` dials the broker at `app.init()`
+  (`src/providers/nats.provider.ts:175-185`) — override `LAZY_NATS`.
+- **HTTP platform**: suites call `createNestApplication()` (Express); the
+  service is Fastify. Precedent:
+  `services/agent-memory-service/test/e2e/agent-tools.controller.e2e-spec.ts:172,180`.
+- **Testcontainers**: default wait strategy hangs; bun rejects
+  `beforeAll(fn, ms)`. Repo pattern: `setDefaultTimeout` +
+  `Wait.forLogMessage` (`services/connector-admin/test/integration/setup.ts:112-118`).
+  Docker IS available — let real containers run, do not stub them.
+- **Schema drift**: `test/e2e/setup.ts` `SCHEMA_SQL` predates
+  `knowledge_base_ids`, `input_variables`, `output_variables`,
+  `enabled_tools`, `agent_versions` — align with the canonical
+  `initAgentAdminTenantSchema`, and pin the e2e engine to postgres explicitly
+  (do not rely on `test/setup-env.ts`'s mongo default).
+- Scope: `e2e/health`, `e2e/agents`, and the surviving tests of
+  `e2e/multi-tenancy` + `e2e/nats-events`. ValidationPipe parity with
+  production (`packages/observability/src/bootstrap-fastify.ts:45-51`) where
+  a suite asserts 400s. Zero assertion changes. A suite failing on a REAL
+  product bug once it builds → STOP and report.
+- KNOWN ISSUE to solve, not dodge: `bun test` runs all files in ONE process
+  and `STORAGE_ENGINE` binds at import time (`providers.module.ts:24`) — the
+  e2e fix must coexist with the mongo-pinned integration suites in a full
+  `bun test` run (isolate via module-registry hygiene, per-file bootstrap, or
+  whatever the codebase supports — prove it with the full-suite run).
+
+**Accept**
+```
+cd services/agent-admin-service && bun test test/e2e 2>&1 | rg " 0 fail"
+cd services/agent-admin-service && bunx tsc -p tsconfig.build.json --noEmit
+cd services/agent-admin-service && bun test 2>&1 | tail -4
+```
+(Full-suite count must show only the integration failures remaining — strict
+reduction vs T01c's count, no new failures.)
+
+### T01b — repair the integration suites with an in-memory persistence fake
+
+Added 2026-08-07 after the T01 block (human-approved re-scope). The endgame:
+`test/integration/{agents,config-files,jobs}` (57 tests). Their mock "SQL
+connection" (`{unsafe: (v) => v, json: JSON.stringify}`) cannot back a real
+repository — `sql.unsafe("INSERT ...")` returning the SQL string breaks every
+create/read assertion once modules build.
+
+- Build the fake at the **repository-token seam** (engine-agnostic, the
+  cheapest honest seam — user decision 1 keeps the mock-based character):
+  override the repository providers with in-memory implementations honoring
+  the `IJobsRepository` / agents / config-files interfaces.
+- ValidationPipe parity with production
+  (`packages/observability/src/bootstrap-fastify.ts:45-51`) — the suites
+  assert 400s from `forbidNonWhitelisted`.
+- Zero assertion changes. A REAL product bug surfaced by a finally-running
+  suite → STOP and report.
+- This task closes the queue: the 14-failure debt recorded in
+  `02-group-c.spec.md` Progress dies here.
+
+**Accept**
+```
+cd services/agent-admin-service && bun test
+cd services/agent-admin-service && bun test 2>&1 | rg " 0 fail"
+cd services/agent-admin-service && bunx tsc -p tsconfig.build.json --noEmit
+```
+
 ---
 
 ## Progress
 
-- [ ] T01 H1 repair the 14 DI-rotted suites (bun test → 0 fail) —
-  **BLOCKED 2026-08-07** (see `BLOCKED.md`): the DI token is layer 1 of 5;
-  three e2e suites test `/admin/credentials` / `/admin/channels`, modules that
-  DO NOT EXIST in `src` — green requires a product ruling (implement vs
-  retire), out of loop scope. Attempt's working repair of `e2e/health`
-  (10 pass standalone) reverted per protocol. Pending human decisions:
-  approve the T01a/T01b/T01c re-scope in `BLOCKED.md`, and rule on
-  credentials/channels.
-- [ ] T02 H3 invert lag-alert pattern + durable guard — NOT RUN (loop stopped
-  at T01 per protocol; runnable independently once the loop restarts).
+- [~] T01 — RE-SCOPED 2026-08-07 into T01c/T01a/T01b (human-approved; ruling
+  4 resolved the block — see `BLOCKED.md`, entry closed). Not run as-is.
+- [ ] T02 H3 invert lag-alert pattern + durable guard (runs FIRST per ruling 5)
+- [ ] T01c retire phantom credentials/channels tests (ruling 4, Option B)
+- [ ] T01a repair e2e suites: health + agents + T01c survivors
+- [ ] T01b integration suites via in-memory repo fake (bun test → 0 fail)
 
 <!-- Progress convention: entries grow into a changelog as tasks complete —
 findings, human-approved design changes, FOLLOW-UPS sub-lists. New tasks are
