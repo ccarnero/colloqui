@@ -1129,6 +1129,28 @@ g15_alert_consumer_names() {
   [[ "$ok" -eq 1 ]] && pass "$guard: all $checked consumer name(s) in $alerts_file matchers are real durables (of $durable_count declared)"
 }
 
+# G16 — bash 3.2 compliance (AGENTS.md universal rule 9, user ruling 2026-08-07).
+# Repo shell scripts must run on macOS /bin/bash (3.2): no mapfile/readarray,
+# no associative arrays (declare -A / typeset -A). `case` inside $() is also
+# banned by the rule but has no reliable grep signature — reviewers own that one.
+# Scans tracked *.sh files at repo root and under scripts/.
+g16_bash32_compliance() {
+  local guard="G16(bash32-compliance)"
+  local ok=1 scanned=0 f= hits=
+
+  while IFS= read -r f; do
+    [[ -f "$f" ]] || continue
+    scanned=$((scanned + 1))
+    hits="$(rg -n --no-heading '^[^#]*\b(mapfile|readarray)\b|^[^#]*\b(declare|typeset)[[:space:]]+-[a-zA-Z]*A' "$f" || true)"
+    if [[ -n "$hits" ]]; then
+      fail "$guard: $f uses bash 4+ features (bash 3.2 is the repo baseline — AGENTS.md rule 9): $hits"
+      ok=0
+    fi
+  done <<<"$(git ls-files '*.sh' 'scripts/**/*.sh')"
+
+  [[ "$ok" -eq 1 ]] && pass "$guard: $scanned shell script(s) are bash 3.2 clean"
+}
+
 main() {
   g6a_service_inventory
   g6b_no_scaledobject
@@ -1147,6 +1169,7 @@ main() {
   g13_doc_paths_resolve
   g14_no_new_hex_colours
   g15_alert_consumer_names
+  g16_bash32_compliance
 
   echo
   if [[ "$FAILURES" -eq 0 ]]; then

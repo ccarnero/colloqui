@@ -1,4 +1,10 @@
-# 10 · La regla bash 3.2 no está en AGENTS.md
+# 10 · La regla bash 3.2 no está en AGENTS.md — **CERRADO 2026-08-07**
+
+> Ruling del usuario (Opción 1 + guard): baseline 3.2 formalizado como regla
+> universal 9 de AGENTS.md; guard G16 en `doc-code-guards.sh` (probado con
+> mutación: `mapfile` plantado → FAIL nombrando archivo y línea). Racional
+> registrado: equipo mixto macOS/Linux — 3.2 es el único subset que corre
+> nativo en ambos sin setup. El detalle de abajo queda como registro.
 
 Class: register
 Summary: Huérfano de la corrida Group B (declarado "separate ticket" en el Out of scope de `01-bugs-group-b.spec.md`, nunca ticketeado). La regla existe y se aplica, pero vive solo en comentarios dispersos de scripts.

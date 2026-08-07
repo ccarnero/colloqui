@@ -48,6 +48,14 @@ All non-trivial changes go through the **manual-loop system**:
 8. Reuse before rewrite: if a symbol, schema, or helper exists in
    `packages/shared` (or another shared package), import it. Never redefine
    an envelope, subject, or event shape locally.
+9. Shell scripts target **bash 3.2** (macOS `/bin/bash`; the team runs macOS
+   and Linux, and 3.2 syntax is the subset that runs natively on both with
+   zero setup). Forbidden: `mapfile`/`readarray`, associative arrays
+   (`declare -A`), `case` inside `$()`. Canonical patterns:
+   `scripts/reset/purge-temporal.sh` (while-read over herestrings),
+   `rebuild-changed.sh`. Enforced by G16 in
+   `scripts/checks/doc-code-guards.sh`. (User ruling 2026-08-07, Option 1 —
+   see `PENDIENTES/10-bash32-en-agents-md.md`.)
 
 ## Binding styles per surface
 

@@ -36,7 +36,11 @@ Cosmético, no rompe nada. Preexistente.
 
 ## TODOs de arquitectura (pedidos por Christian)
 
-### Dar de baja el canal Instagram/Meta
+### Dar de baja el canal Instagram/Meta — **APROBADO 2026-08-07 (ruling D3)**
+
+> El usuario confirmó la baja. Pendiente de ejecución: spec estilo E11
+> (remoción sancionada), Fase 3 del plan de PENDIENTES. Nota de secuencia:
+> ejecutar ANTES de agregar `provider` al schema de manifiestos (Fase 4).
 
 Marcado como "viejo" y a borrar en un esfuerzo aparte. **Verificado antes de
 registrarlo:** no es código prematuro — `InstagramProvider` está registrado en

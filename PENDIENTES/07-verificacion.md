@@ -64,11 +64,13 @@ después reemplazado por el script `reset-and-verify.sh`).
 
 ---
 
-## Sin resolver: PR a main
+## PR a main — **RESUELTO 2026-08-07 (ruling D1)**
 
-La memoria del proyecto dice que PR-to-main está **abandonado para siempre** y
-que `feature/versioning-and-sdk` es "el nuevo main". Pero esta sesión trabajó
-sobre `feature/fix-docs-codigo-manda`, que son dos ramas distintas.
+Ruling del usuario: **se sigue en `feature/fix-docs-codigo-manda`, y esta rama
+manda sobre `feature/versioning-and-sdk`**. No hay PR-to-main; esta es la
+línea principal de trabajo y la otra rama se subordina/absorbe cuando toque
+integrar. (Contexto histórico abajo, ya no accionable.)
 
-**Nadie definió cómo se integran.** Vale la pena decidirlo antes de que las
-ramas divergan más.
+La memoria del proyecto decía que PR-to-main está abandonado y que
+`feature/versioning-and-sdk` era "el nuevo main"; esta sesión trabajó sobre
+`feature/fix-docs-codigo-manda` — el ruling de arriba resuelve la ambigüedad.
