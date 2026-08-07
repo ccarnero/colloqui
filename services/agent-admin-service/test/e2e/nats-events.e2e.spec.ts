@@ -28,8 +28,6 @@ import {
 const AGENT_PUBLISHED_TYPE = "io.yoizen.platform.admin.agent.published.v1";
 const AGENT_UNPUBLISHED_TYPE =
   "io.yoizen.platform.admin.agent.unpublished.v1";
-const CREDENTIAL_ROTATED_TYPE =
-  "io.yoizen.platform.admin.credential.rotated.v1";
 const RUNTIME_CONFIG_SYNC_TYPE =
   "io.yoizen.platform.runtime.config.synced.v1";
 const JOB_TRIGGER_TYPE = "io.yoizen.platform.admin.job.triggered.v1";
@@ -238,52 +236,6 @@ describe("NATS Events E2E Tests", () => {
     });
   });
 
-  describe("Credential Rotated Events", () => {
-    it("should emit credential.rotated event when rotating credential", async () => {
-      const [credential] = await tenant.sql`
-        INSERT INTO credentials (name, type, value)
-        VALUES ('Rotatable Credential', 'api_key', 'old-value')
-        RETURNING id, type;
-      `;
-
-      await request(app.getHttpServer())
-        .put(`/admin/credentials/${credential.id}/rotate`)
-        .set(TENANT_HEADER, tenant.id)
-        .send({
-          new_value: "new-rotated-value",
-        })
-        .expect(200);
-
-      const event = getLastEventByType(context, "credential.rotated");
-      expect(event).toBeDefined();
-      expect(event!.type).toBe(CREDENTIAL_ROTATED_TYPE);
-      expect(event!.payload.credentialId).toBe(credential.id);
-      expect(event!.payload.type).toBe("api_key");
-      expect(event!.payload).toHaveProperty("rotatedAt");
-      expect(event!.metadata.tenantId).toBe(tenant.id);
-    });
-
-    it("should emit credential.rotated event when updating credential value", async () => {
-      const [credential] = await tenant.sql`
-        INSERT INTO credentials (name, type, value)
-        VALUES ('Updatable Credential', 'oauth', 'original-token')
-        RETURNING id;
-      `;
-
-      await request(app.getHttpServer())
-        .put(`/admin/credentials/${credential.id}`)
-        .set(TENANT_HEADER, tenant.id)
-        .send({
-          value: "updated-token-value",
-        })
-        .expect(200);
-
-      const event = getLastEventByType(context, "credential.rotated");
-      expect(event).toBeDefined();
-      expect(event!.type).toBe(CREDENTIAL_ROTATED_TYPE);
-    });
-  });
-
   describe("Runtime Config Sync Events", () => {
     it("should emit runtime.config.sync event when deploying config files", async () => {
       // Crear algunos config files
@@ -369,72 +321,6 @@ describe("NATS Events E2E Tests", () => {
       expect(event).toBeDefined();
       expect(event!.type).toBe(JOB_TRIGGER_TYPE);
       expect(event!.payload.jobId).toBe(job.id);
-    });
-  });
-
-  describe("Multiple Event Scenarios", () => {
-    it("should emit multiple events during complex workflow", async () => {
-      // 1. Crear agent
-      const createResponse = await request(app.getHttpServer())
-        .post("/admin/agents")
-        .set(TENANT_HEADER, tenant.id)
-        .send({
-          name: "Complex Workflow Agent",
-          system_prompt: "Prompt",
-        })
-        .expect(201);
-
-      const agentId = createResponse.body.id;
-      const initialEventCount = context.natsEvents.length;
-
-      // 2. Publicar agent (evento 1)
-      await request(app.getHttpServer())
-        .post(`/admin/agents/${agentId}/publish`)
-        .set(TENANT_HEADER, tenant.id)
-        .expect(200);
-
-      // 3. Crear credential
-      const credentialResponse = await request(app.getHttpServer())
-        .post("/admin/credentials")
-        .set(TENANT_HEADER, tenant.id)
-        .send({
-          name: "Test Credential",
-          type: "api_key",
-          value: "secret",
-        })
-        .expect(201);
-
-      const credentialId = credentialResponse.body.id;
-
-      // 4. Rotar credential (evento 2)
-      await request(app.getHttpServer())
-        .put(`/admin/credentials/${credentialId}/rotate`)
-        .set(TENANT_HEADER, tenant.id)
-        .send({
-          new_value: "new-secret",
-        })
-        .expect(200);
-
-      // Verificar que se emitieron todos los eventos esperados
-      const publishEvents = getEventsByType(context, "agent.published");
-      const rotateEvents = getEventsByType(context, "credential.rotated");
-
-      expect(publishEvents.length).toBeGreaterThanOrEqual(1);
-      expect(rotateEvents.length).toBeGreaterThanOrEqual(1);
-
-      // Verificar que cada evento tiene la estructura correcta
-      for (const event of context.natsEvents.slice(initialEventCount)) {
-        expect(event).toHaveProperty("specversion");
-        expect(event).toHaveProperty("subject");
-        expect(event).toHaveProperty("type");
-        expect(event).toHaveProperty("resource");
-        expect(event).toHaveProperty("data");
-        expect(event.data).toHaveProperty("payload");
-        expect(event).toHaveProperty("metadata");
-        expect(event.metadata).toHaveProperty("tenantId");
-        expect(event.metadata).toHaveProperty("timestamp");
-        expect(event.metadata).toHaveProperty("source");
-      }
     });
   });
 });

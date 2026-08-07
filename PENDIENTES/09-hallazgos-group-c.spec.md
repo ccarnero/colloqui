@@ -340,7 +340,20 @@ cd services/agent-admin-service && bunx tsc -p tsconfig.build.json --noEmit
     are env-overridable (guard validates compiled defaults only); no promtool
     in CI (PromQL validity unchecked beyond kustomize build); alerts.yaml:391
     comment says "services/" where guard scans services/+packages/ (cosmetic).
-- [ ] T01c retire phantom credentials/channels tests (ruling 4, Option B)
+- [x] T01c retire phantom credentials/channels tests (ruling 4, Option B)
+  - Done 2026-08-07, 2 attempts (attempt 2 = doc fix: C6 had invented the
+    literal `x-tenant-id`; real `TENANT_HEADER` is `x-yoizen-tenant`). 18
+    tests retired (13 + 2 + 3, incl. the mixed-workflow test removed whole —
+    reviewer-endorsed: it exercised the phantom API), contract rescued to
+    `DOCS/agents/credentials-security-contract.md` (RECORD). Fail count
+    14 → 12, survivors byte-identical.
+  - FOLLOW-UPS (non-blocking): `sdk/GROWTH-PLAN.md:84` still lists the
+    retired suite (stale, follow-up docs task); `test/e2e/setup.ts` still
+    creates/truncates `credentials`/`channels` tables (dead schema — T01a
+    touches that file and may clean it if in scope); codegraph index carries
+    phantom route symbols until reindex; multi-tenancy's "Tenant B cannot
+    modify Tenant A agent" test is a no-op (builds app, asserts nothing) —
+    T01a/T01b territory.
 - [ ] T01a repair e2e suites: health + agents + T01c survivors
 - [ ] T01b integration suites via in-memory repo fake (bun test → 0 fail)
 
