@@ -1,9 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 
-type BuiltinFunction = (
-  ...args: unknown[]
-) => Promise<Record<string, unknown>>;
+type BuiltinFunction = (...args: unknown[]) => Promise<Record<string, unknown>>;
 
 @Injectable()
 export class FunctionActionService {
@@ -16,20 +14,9 @@ export class FunctionActionService {
 
   async execute(
     functionName: string,
-    parameters: Record<string, unknown> = {},
+    parameters: Record<string, unknown> = {}
   ): Promise<Record<string, unknown>> {
     this.logger.log(`[function-action] Calling function: '${functionName}'`);
-
-    if (functionName === "python_code") {
-      this.logger.warn(
-        `[function-action] 'python_code' action is NOT supported in TypeScript runtime. ` +
-          `Use 'llm_call', 'webhook', or 'function' action types instead.`,
-      );
-      return {
-        supported: false,
-        message: "python_code action is not supported in TypeScript runtime",
-      };
-    }
 
     const func = this.functions.get(functionName);
     if (!func) {
@@ -38,7 +25,7 @@ export class FunctionActionService {
 
     const result = await func(parameters);
     this.logger.log(
-      `[function-action] '${functionName}' executed successfully`,
+      `[function-action] '${functionName}' executed successfully`
     );
 
     return { result };
@@ -59,9 +46,11 @@ export class FunctionActionService {
 
   private registerDefaults(): void {
     this.functions.set("cleanup_old_conversations", async (params) => {
-      const retentionDays = Number((params as Record<string, unknown>).retention_days ?? 30);
+      const retentionDays = Number(
+        (params as Record<string, unknown>).retention_days ?? 30
+      );
       this.logger.log(
-        `[function-action] cleanup_old_conversations: retention=${retentionDays} days`,
+        `[function-action] cleanup_old_conversations: retention=${retentionDays} days`
       );
       return { deleted_count: 0 };
     });
@@ -73,7 +62,9 @@ export class FunctionActionService {
     }));
 
     this.functions.set("export_data", async (params) => {
-      const formatType = String((params as Record<string, unknown>).format_type ?? "json");
+      const formatType = String(
+        (params as Record<string, unknown>).format_type ?? "json"
+      );
       return { format: formatType, location: "/tmp/export.json" };
     });
 

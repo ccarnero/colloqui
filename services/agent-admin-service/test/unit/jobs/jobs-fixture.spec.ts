@@ -18,7 +18,7 @@ const FIXTURE_PATH = join(import.meta.dir, "../../../data/jobs.yaml");
 /**
  * Action types the executor dispatches on.
  * Duplicated on purpose from
- * `services/agent-ai-service/src/modules/job-executor/job-executor.service.ts:71-116`
+ * `services/agent-ai-service/src/modules/job-executor/job-executor.service.ts` (executeJob switch)
  * (anything outside this list hits `default:` → `Unknown action type` →
  * `execution_failed`). Cross-service duplication is accepted here because this
  * is a fixture lint, not production code — the contract stays in the executor.
@@ -27,7 +27,6 @@ const EXECUTOR_ACTION_TYPES = [
   "llm_call",
   "webhook",
   "function",
-  "python_code",
   "agent_task",
 ] as const;
 

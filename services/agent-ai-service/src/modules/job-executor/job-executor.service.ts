@@ -98,11 +98,6 @@ export class JobExecutorService {
             )),
           };
           break;
-        case "python_code":
-          result = {
-            ...(await this.functionAction.execute("python_code", {})),
-          };
-          break;
         case "agent_task":
           return this.handleAgentTask(
             tenantId,

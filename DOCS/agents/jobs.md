@@ -91,7 +91,6 @@ The `payload` object is passed verbatim as `eventPayload` in the NATS envelope. 
 | `llm_call` | `LlmActionService` |
 | `webhook` | `WebhookActionService` |
 | `function` | `FunctionActionService` |
-| `python_code` | `FunctionActionService` (stub) |
 | `agent_task` | `AgentTaskService` |
 | _(missing/unknown)_ | Error — `execution_failed` published |
 

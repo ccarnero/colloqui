@@ -2,7 +2,7 @@
 # Shapes enforced by test/unit/jobs/jobs-fixture.spec.ts:
 #   - `is_active` (IJob), never `enabled`
 #   - `schedule`: "once" | "<seconds>" | "interval:<minutes>" | cron
-#   - `payload.action_type`: llm_call | webhook | function | python_code | agent_task
+#   - `payload.action_type`: llm_call | webhook | function | agent_task
 jobs:
   - id: job-metrics-snapshot
     name: "Metrics Snapshot"
