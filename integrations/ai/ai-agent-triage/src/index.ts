@@ -141,10 +141,11 @@ async function main(): Promise<void> {
   );
 
   console.log(
-    "[run] sent — check Telegram. Each message produces one triage summary like:"
+    "[run] sent — check Telegram. Each message produces one triage summary in one of the two shapes `route` builds:"
   );
   console.log(
-    '[run]   "🎧 Triage — priority: urgent | sentiment: negative | intent: refund"'
+    '[run]   "🚨 ESCALATION — priority: urgent | sentiment: negative | intent: refund"\n' +
+      '[run]   "✅ Triage — priority: normal | sentiment: neutral | intent: shipping"'
   );
   console.log(
     "[run]   followed by the one-line summary and the original text."

@@ -28,23 +28,29 @@ spec:
   # field-for-field, and its `stageEnsureRoute()` route
   # (pathPrefix/methods/isPublic/stripPrefix).
   #
-  # ESCALATION (documented deviation, NOT approximated — see this batch's
-  # report): the deleted setup.ts also declared ONE env var,
-  # `envVars: { YOIZEN_SAMPLE: "hosted-services-api" }`. `serviceSchema.env`
-  # (packages/shared/src/provisioning/manifest.schema.ts) has NO plain-value
-  # field — only `{name, secretRef}` — AND
-  # `registry-services-writer.ts`'s `checkEnvSupport()` fails loud on ANY
-  # non-empty `env` array, secretRef or not (a still-open restriction from
-  # `declarative-provisioning.md` T04 that this SPEC's T05 did not lift even
-  # though it touched this exact schema section for the sibling scaling
-  # fields). This ONE env var is therefore DROPPED, not expressed — `env` is
-  # omitted entirely below rather than declared and left to fail apply. It is
-  # a non-functional debug marker (read by nothing in the workflow or the
-  # echo-server image), so dropping it does not change the sample's
-  # observable behavior, but it IS a genuine end-state gap: flagged for human
-  # ruling on lifting `checkEnvSupport`'s empty-only restriction now that a
-  # secretRef-bearing env var COULD resolve through the T05 broker the same
-  # way connector/channel secrets do.
+  # HISTORICAL NOTE (env vars — the old gap is CLOSED): the deleted setup.ts
+  # also declared ONE env var,
+  # `envVars: { YOIZEN_SAMPLE: "hosted-services-api" }`. When this sample was
+  # migrated, `serviceSchema.env` had no plain-value field (only
+  # `{name, secretRef}`) and `registry-services-writer.ts`'s
+  # `checkEnvSupport()` failed loud on ANY non-empty `env` array, so the
+  # marker was DROPPED rather than approximated.
+  #
+  # Both halves of that restriction are gone: `checkEnvSupport()` no longer
+  # exists anywhere under `services/`, and `serviceSchema.env`
+  # (packages/shared/src/provisioning/manifest.schema.ts) now takes
+  # `{name, value}` where `value` is a plain string, `{secretRef}`,
+  # `{connectorRef}`, or a connector-endpoint ref (`serviceEnvValueSchema`) —
+  # widened by manual-loops/provisioning-manifest-gaps-2.md T05 (round 1,
+  # plain strings only) and provisioning-manifest-gaps-4.md T01 (round 2, the
+  # three ref shapes), each resolved by that writer's `buildEnvVars()`. The
+  # sibling ../../ai/ai-call-center-supervisor/manifest.yaml already ships
+  # `env: [{ name: YOIZEN_SAMPLE, value: ai-call-center-supervisor }]`.
+  #
+  # This manifest still omits the marker for ONE reason: it is a
+  # non-functional debug marker read by nothing in the workflow or the
+  # echo-server image, so declaring it would demonstrate nothing. See
+  # README.md's "Historical note (env vars — the old gap is CLOSED)".
   # ---------------------------------------------------------------------------
   services:
     - name: sample-echo

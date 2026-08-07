@@ -47,8 +47,9 @@ export interface StructuredKbContainersClient {
    * `POST /admin/structured-kb/containers/:id/query` — translates a
    * natural-language `query` into SQL via an LLM and runs it against the
    * container's schema (rate-limited downstream: 30 req/min per tenant).
-   * As of 2026-07-05 this gateway route 404s on the dev cluster (fix not
-   * yet deployed/hot-reloaded) — see `types.ts`.
+   * The gateway route is live on the dev cluster; a container with no
+   * ingested schema still fails downstream on the NL->SQL translation
+   * itself — see `types.ts`.
    */
   query(
     id: string,

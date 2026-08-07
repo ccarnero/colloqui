@@ -21,11 +21,14 @@
  * downstream by `agent-admin-service`'s `agents.controller.ts`
  * (`revertToPublished` / `listMemoryProposals` / `approveMemoryProposal` /
  * `rejectMemoryProposal`, `MemoryProposalListResponseDto` /
- * `MemoryProposalActionResponseDto` in `agents.dto.ts`). As of 2026-07-05
- * this gateway wiring exists in source but the dev cluster's running pod
- * still 404s (`revert`) / mis-routes `memory-proposals` as an agent id (400
- * "uuid is expected") — the fix is not yet hot-reloaded/deployed. See
- * `revert()` / `listMemoryProposals()` / `approveMemoryProposal()` /
+ * `MemoryProposalActionResponseDto` in `agents.dto.ts`). The wiring is
+ * live: `sdk/test/e2e/agents.e2e.ts` calls `listMemoryProposals()` against
+ * the dev cluster (returns a `proposals` array — no longer mis-routed as an
+ * agent id) and `revert()` (returns the agent — no longer a 404).
+ * `approveMemoryProposal()` / `rejectMemoryProposal()` are NOT exercised by
+ * the e2e suite: they need a PROPOSED proposal that the suite never creates,
+ * so only their sibling routes are proven live. See `revert()` /
+ * `listMemoryProposals()` / `approveMemoryProposal()` /
  * `rejectMemoryProposal()`.
  *
  * Do not confuse this with the gateway's `admin/memories` resource

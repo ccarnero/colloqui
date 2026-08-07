@@ -28,9 +28,9 @@ export interface ConfigFilesClient {
   getByPath(path: string, opts?: ConfigFilesCallOptions): Promise<ConfigFile>;
   /**
    * `PUT /admin/config-files` — create-or-update a single config file keyed
-   * by `path`. As of 2026-07-05 the dev cluster's running pod still rejects
-   * the fixed `{name,path,content,format}` shape (fix not yet
-   * deployed/hot-reloaded) — see `types.ts`.
+   * by `path`. The fixed `{name,path,content,format}` shape is live on the
+   * dev cluster and covered by `test/e2e/admin-final.e2e.ts` — see
+   * `types.ts`.
    */
   upsert(
     input: UpsertConfigFileInput,
@@ -38,8 +38,8 @@ export interface ConfigFilesClient {
   ): Promise<ConfigFile>;
   /**
    * `POST /admin/config-files/deploy` — `deletePaths` removes files from
-   * the runtime config set as part of the deploy. See `types.ts` for
-   * live-deploy status.
+   * the runtime config set as part of the deploy. Live on the dev cluster
+   * and covered by `test/e2e/admin-final.e2e.ts` — see `types.ts`.
    */
   deploy(
     input?: DeployConfigFilesInput,

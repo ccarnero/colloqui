@@ -150,7 +150,19 @@ bash scripts/checks/doc-code-guards.sh
 
 ## Progress
 
-- [ ] T01 Group D — eight lying comments/headers
+- [x] T01 Group D — eight lying comments/headers
+  - Done 2026-08-07, 1 attempt, 2× APPROVED. 8/8 lies verified against code
+    and fixed (none was stale-register). 16 files, text-only (the one
+    executable-line edit is E19's console.log string, explicitly allowed).
+    Typechecks green: sdk, provisioning-service, packages/database.
+  - FOLLOW-UPS (reviewer-flagged adjacent smells, same lie-class, one file
+    over — candidates for the register): `desired-fields-of-resource.ts:76-78`
+    still claims a "graceful fallback to serviceComparable" that
+    `comparable-fields.ts:593-597` says no longer exists;
+    `hosted-services-api/README.md:64-68` says the E20/E22 texts "still
+    describe the OLD behaviour" — stale the moment this lands;
+    `dev-mode.md:115` understates connector-runtime (1 Deployment listed,
+    dev-mode.sh emits 3).
 - [ ] T02 Group E — script strings + E32 verification
 - [ ] T03 rule-5 leftovers (README translation + GROWTH-PLAN)
 

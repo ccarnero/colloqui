@@ -117,9 +117,7 @@ Original: <the customer's message>
 ```
 
 The `🚨` arm fires whenever `priority` is `high`/`urgent` OR `sentiment` is `negative`; everything
-else takes the `✅` default arm. (`src/index.ts`'s own closing log line still prints a `🎧 Triage —
-priority: urgent …` sample that no branch can emit — tracked as ledger escalation **E19**; the two
-shapes above are what the workflow actually sends.)
+else takes the `✅` default arm. `src/index.ts`'s closing log line prints these same two shapes.
 
 ## Environment (run.sh overrides only — provisioning is manifest-driven)
 

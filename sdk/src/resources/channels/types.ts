@@ -24,10 +24,10 @@
  * `GET /channels/usage/summary` (24h rolling summary, `usage.service.ts`
  * `getUsageSummary`) is now proxied by the gateway's `ChannelsController`
  * (`@Get("usage/summary")`, declared before `@Get("usage/totals")` so Nest
- * matches it before the more specific sibling route). As of 2026-07-05 this
- * gateway route exists in source but the dev cluster's running pod still
- * 404s ("Cannot GET /api/channels/usage/summary") — the fix is not yet
- * hot-reloaded/deployed. See `usageSummary()`.
+ * matches it before the more specific sibling route). The route is live:
+ * `sdk/test/e2e/channels.e2e.ts` calls `usageSummary()` against the dev
+ * cluster and asserts the aggregate shape (`windowHours === 24`, a
+ * `byChannel` array, a numeric `total.ingress`). See `usageSummary()`.
  */
 
 export type Channel = "whatsapp" | "instagram" | "telegram" | "http";

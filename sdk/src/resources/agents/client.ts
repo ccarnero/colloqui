@@ -92,25 +92,26 @@ export interface AgentsClient {
   ): Promise<Agent>;
   /**
    * `POST /admin/agents/:id/revert` — discards the current draft and
-   * restores the agent's config from its last published snapshot. As of
-   * 2026-07-05 this route 404s on the dev cluster (fix not yet
-   * deployed/hot-reloaded) — see `types.ts`.
+   * restores the agent's config from its last published snapshot. Live on
+   * the dev cluster and covered by `test/e2e/agents.e2e.ts` — see
+   * `types.ts`.
    */
   revert(id: string, opts?: AgentCallOptions): Promise<Agent>;
   /**
-   * `GET /admin/agents/memory-proposals`. As of 2026-07-05 the dev
-   * cluster's gateway mis-routes `memory-proposals` as an agent id (400) —
-   * see `types.ts`.
+   * `GET /admin/agents/memory-proposals`. Live on the dev cluster and
+   * covered by `test/e2e/agents.e2e.ts` — the gateway declares this route
+   * before `:id`, so it is no longer mis-routed as an agent id. See
+   * `types.ts`.
    */
   listMemoryProposals(
     opts?: AgentCallOptions
   ): Promise<ListAgentMemoryProposalsResult>;
-  /** `POST /admin/agents/memory-proposals/:id/approve`. See `types.ts` for live-deploy status. */
+  /** `POST /admin/agents/memory-proposals/:id/approve`. Not exercised by the e2e suite — see `types.ts`. */
   approveMemoryProposal(
     id: string,
     opts?: AgentCallOptions
   ): Promise<AgentMemoryProposalActionResult>;
-  /** `POST /admin/agents/memory-proposals/:id/reject`. See `types.ts` for live-deploy status. */
+  /** `POST /admin/agents/memory-proposals/:id/reject`. Not exercised by the e2e suite — see `types.ts`. */
   rejectMemoryProposal(
     id: string,
     opts?: AgentCallOptions

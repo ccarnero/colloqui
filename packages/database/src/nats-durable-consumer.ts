@@ -111,16 +111,17 @@ function buildBackoffNanos(backoffMs: readonly number[]): number[] {
  *
  * When the durable already exists on the server, this function does
  * NOT silently skip: it compares the mutable fields (`ack_wait`,
- * `max_deliver`, `max_ack_pending`, `description`) against the desired
- * config and issues `jsm.consumers.update(...)` if they drift. This
- * makes defaults in this file actually reach running clusters without
- * requiring a manual delete/recreate cycle — a must after we shipped
- * a too-low `ack_wait` value that caused silent duplicate processing.
+ * `max_deliver`, `max_ack_pending`, `backoff`, `description`) against
+ * the desired config and issues `jsm.consumers.update(...)` if they
+ * drift. This makes defaults in this file actually reach running
+ * clusters without requiring a manual delete/recreate cycle — a must
+ * after we shipped a too-low `ack_wait` value that caused silent
+ * duplicate processing.
  *
- * Immutable fields (filter, ack/deliver/replay policies, backoff,
- * deliver_group) are not reconciled — the server rejects changes to
- * those. If one of them drifts the operator must delete and recreate
- * the durable.
+ * Fields that are NOT reconciled (filter subjects, ack/deliver/replay
+ * policies, deliver_group) are left as-is — the server rejects changes
+ * to those. If one of them drifts the operator must delete and
+ * recreate the durable.
  *
  * The function caches successful ensures in an in-memory `Map` so that
  * subsequent calls for the same `(stream, durableName)` are O(1).

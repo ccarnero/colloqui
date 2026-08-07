@@ -92,8 +92,8 @@ export interface ChannelsClient {
   listUsageTotals(params: ListUsageTotalsParams): Paginated<UsageTotalsRow>;
   /**
    * `GET /channels/usage/summary` — 24h rolling total + per-channel
-   * breakdown. As of 2026-07-05 this gateway route 404s on the dev cluster
-   * (fix not yet deployed/hot-reloaded) — see `types.ts`.
+   * breakdown. The gateway route is live on the dev cluster and covered by
+   * `test/e2e/channels.e2e.ts` — see `types.ts`.
    */
   usageSummary(opts?: ChannelCallOptions): Promise<UsageSummary>;
 }

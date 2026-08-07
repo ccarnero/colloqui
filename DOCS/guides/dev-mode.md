@@ -105,6 +105,7 @@ All targets use `oven/bun:1.3.14-slim` (Debian/glibc). The deps PVC is installed
 | `agent-ai-service` | `agent-ai-service` | — | `src/main.ts` |
 | `agent-scheduler-service` | `agent-scheduler-service` | — | `src/main.ts` |
 | `ai-agent-gateway` | `ai-agent-gateway` | — | `src/main.ts` |
+| `provisioning-service` | `provisioning-service` | — | `src/main.ts` |
 | `audit-service` | `audit-service-api` | `audit-service-worker` | `src/main.ts` |
 | `channel-service` | `channel-service-api` | `channel-service-worker` | `src/main.ts` |
 | `connector-admin` | `connector-admin-api` | `connector-admin-worker` | `src/main.ts` |
@@ -112,6 +113,7 @@ All targets use `oven/bun:1.3.14-slim` (Debian/glibc). The deps PVC is installed
 | `agent-admin-service` | `agent-admin-service` | `agent-admin-service-worker` | `src/main.ts` |
 | `workflow-service` | `workflow-service-api` | `workflow-service-worker`, `workflow-worker` | `src/main.ts` / `src/temporal/worker.ts` |
 | `connector-runtime` | — | `connector-runtime` | `src/worker.ts` |
+| `tracking-ingester-service` | — | `tracking-ingester-worker` | `src/main.ts` |
 | `admin-console` | ❌ not supported | — | — |
 
 The `workflow-worker` deployment (Temporal worker) uses `src/temporal/worker.ts` as its entry point, which differs from the other workflow-service targets.

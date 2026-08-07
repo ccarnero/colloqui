@@ -19,11 +19,10 @@
  * `name`/`format`, which could never satisfy both the gateway's
  * `forbidNonWhitelisted: true` validation AND the downstream's required
  * `name`/`format` fields at once — every call 400'd one side or the other).
- * `upsert()` is typed here against the FIXED gateway DTO. As of 2026-07-05
- * this fix exists in gateway source but the dev cluster's running pod still
- * rejects the fixed shape (400 "property name/path/content/format should
- * not exist") — the fix is not yet hot-reloaded/deployed. Verified live
- * 2026-07-05.
+ * `upsert()` is typed here against the FIXED gateway DTO, which is live on
+ * the dev cluster: `sdk/test/e2e/admin-final.e2e.ts` upserts a
+ * `{ name, path, content, format }` file and asserts the returned `path`
+ * and `format` — no more 400 "property ... should not exist".
  *
  * `POST /admin/config-files/deploy` — the gateway's `DeployConfigFilesDto`
  * was fixed to match the downstream shape: only `deletePaths?: string[]`
@@ -32,9 +31,9 @@
  * which the downstream `deploy()` handler reads, while `deletePaths` — the
  * only field downstream actually uses — was stripped before reaching the
  * proxy). `deploy()` now accepts `deletePaths` and forwards it as-is. This
- * fix is also pending deploy to the dev cluster as of 2026-07-05 (not
- * independently probed live; assumed pending given `upsert()`'s confirmed
- * not-live status on the same controller/pod).
+ * fix is live too: the same `admin-final.e2e.ts` case calls
+ * `deploy({ deletePaths: [path] })` right after the upsert and asserts the
+ * returned `files` array.
  */
 
 export type ConfigFileFormatInput = "yaml" | "json";
@@ -42,7 +41,7 @@ export type ConfigFileFormatInput = "yaml" | "json";
 /**
  * `PUT /admin/config-files` body — matches the FIXED gateway
  * `UpsertConfigFileDto` (single file, create-or-update keyed by `path`).
- * See `types.ts` header for live-deploy status.
+ * See the header of this file for the gateway-side contract it mirrors.
  */
 export interface UpsertConfigFileInput {
   /** Max length enforced gateway-side. */
@@ -56,7 +55,8 @@ export interface UpsertConfigFileInput {
 /**
  * `POST /admin/config-files/deploy` body — matches the FIXED gateway
  * `DeployConfigFilesDto` (mirrors the downstream shape exactly: only
- * `deletePaths`). See `types.ts` header for live-deploy status.
+ * `deletePaths`). See the header of this file for the gateway-side
+ * contract it mirrors.
  */
 export interface DeployConfigFilesInput {
   /** Paths to remove from the runtime config set as part of this deploy. */

@@ -32,14 +32,19 @@
  * script depends on postgres/mongodb/ioredis/nats/@yoizen/database,
  * added to the root package.json devDependencies alongside this file).
  *
- * Required env vars — no defaults. Missing any of these aborts before
- * any connection is opened, listing every missing name at once:
+ * Required env vars — no defaults, exactly the ten names in `REQUIRED_ENV`
+ * below. Missing any of these aborts before any connection is opened,
+ * listing every missing name at once:
  *   NATS_URL
  *   POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB
  *   TENANT_POSTGRES_SHARED_HOST TENANT_POSTGRES_SHARED_PORT
+ *   REDIS_HOST REDIS_PORT
+ *
+ * Optional STAGE (Mongo — `MONGO_STAGE_ENV`) — this dev cluster is
+ * Postgres-only, so the whole Mongo stage is skipped, with a logged reason,
+ * if any of these seven are unset. Not defaulted, never required:
  *   MONGO_HOST MONGO_PORT MONGO_USER MONGO_PASSWORD MONGO_DB
  *   TENANT_MONGO_SHARED_HOST TENANT_MONGO_SHARED_PORT
- *   REDIS_HOST REDIS_PORT
  *
  * Optional (per-tenant Postgres/Mongo shared-cluster credentials — these
  * legitimately fall back to the catalog credentials/tenant role-name

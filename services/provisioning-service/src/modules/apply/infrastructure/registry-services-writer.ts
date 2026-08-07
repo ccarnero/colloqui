@@ -47,17 +47,32 @@
 // and a secretRef binding name is a NAME, never the resolved secret value —
 // keeping parity with every other credential-adjacent writer in this loop.
 //
-// COMPARABLE LIMITATION (documented, not a bug): `comparable-fields.ts`'s
-// `serviceComparable` projects env var NAMES only (never values — even a
-// plain value can be quasi-sensitive config, same names-only reasoning as
-// T04's systemVariables, and it keeps parity). Consequence: adding/removing
-// an env NAME produces an `update` verdict and this writer re-sends the full
-// `envVars` map; a VALUE-only change (same name, changed value) produces NO
-// diff at plan time, so this writer is never invoked for that change and the
-// live env var is NOT reconciled until some OTHER field on the service also
-// changes. This mirrors the T02-endpoints cache-exclusion precedent: an
-// accepted, explicitly documented limitation, not a defect to silently work
-// around.
+// WHAT THE PLANNER COMPARES (current comparator — the envNames-only
+// `serviceComparable` this block used to describe is NO LONGER the source of
+// the service env diff): `build-manifest-plan.ts`'s `kind === "service"`
+// branch projects BOTH sides through `comparable-fields.ts`'s
+// `serviceEnvMechanismComparable` (added by
+// `manual-loops/demos/crm-support-telegram.md` T04's "STALE-STATE MASKING"
+// findings), which emits one `{ name, mechanism, value?, secretKeyRef? }`
+// entry per env var. Consequences for this writer:
+//   - a VALUE-only change IS detected: for a declared literal the desired
+//     side always carries `value`, while the live side echoes `value` ONLY
+//     when it is byte-for-byte identical to the declared one and otherwise
+//     omits the key — so the missing key alone yields an honest `update` and
+//     this writer IS invoked (no more "not reconciled until some other field
+//     changes").
+//   - a MECHANISM regression is detected too: a var the manifest declares as
+//     `{ secretRef }` whose live value has drifted to a bare string projects
+//     `mechanism: "plain"` against the desired `"secretKeyRef"` — the
+//     original incident shape.
+//   - the LIVE side never echoes a value it cannot prove safe (differing
+//     literal, secretKeyRef mismatch, or an undeclared live-only var), so
+//     detection costs no secret exposure.
+//   - only genuinely unresolvable declared shapes (an endpoint ref, or a
+//     `connectorRef` with no plan-time id) degrade to a mechanism-only entry,
+//     and only for THAT entry — never the whole service.
+// `serviceComparable` still supplies this service's NON-env fields
+// (routes/scaling), which `serviceEnvMechanismComparable` reuses.
 //
 // T05 (manual-loops/provisioning-manifest-gaps.md, gap 5): scaling fields
 // (`port`/`minScale`/`maxScale`/`concurrencyTarget`) are ALL optional and

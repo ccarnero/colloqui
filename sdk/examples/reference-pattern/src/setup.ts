@@ -44,7 +44,10 @@ function fail(message: string): never {
 
 // ----- Configuration (override via env) -------------------------------------
 // YOIZEN_BASE_URL, YOIZEN_HOST_HEADER, YOIZEN_TENANT, YOIZEN_EMAIL,
-// YOIZEN_PASSWORD are all exported by resolve-env.sh (see ../setup.sh).
+// YOIZEN_PASSWORD are all exported by ../setup.sh's own inlined
+// dev-environment resolver — this tier (sdk/examples) must not depend on
+// integrations/lib, so setup.sh inlines that resolver verbatim instead of
+// sourcing integrations/lib/resolve-env.sh; there is no resolve-env.sh here.
 // Only script-specific vars are read here.
 
 const WORKFLOW_NAME = process.env.BRIDGE_WORKFLOW_NAME ?? "http-bridge";

@@ -17,9 +17,11 @@
  * sliding window; translates a natural-language `query` into SQL via an LLM,
  * `SKBQueryService.query`) is now proxied by the gateway's
  * `AdminStructuredKBController` (`@Post("containers/:id/query")`, body typed
- * as `QueryStructuredKbDto`). As of 2026-07-05 this gateway route exists in
- * source but the dev cluster's running pod still 404s ("Cannot POST
- * .../query") — the fix is not yet hot-reloaded/deployed. See
+ * as `QueryStructuredKbDto`). The route is live: the e2e suite
+ * (`sdk/test/e2e/admin-final.e2e.ts`) asserts `containers.query()` does NOT
+ * reject with `NotFoundError` against the dev cluster (a freshly created
+ * container has no ingested schema, so the NL->SQL translation itself still
+ * fails — a business-state error, not a routing gap). See
  * `containers.query()`.
  *
  * `POST /admin/structured-kb/containers/:id/files`
