@@ -320,7 +320,26 @@ cd services/agent-admin-service && bunx tsc -p tsconfig.build.json --noEmit
 
 - [~] T01 — RE-SCOPED 2026-08-07 into T01c/T01a/T01b (human-approved; ruling
   4 resolved the block — see `BLOCKED.md`, entry closed). Not run as-is.
-- [ ] T02 H3 invert lag-alert pattern + durable guard (runs FIRST per ruling 5)
+- [x] T02 H3 invert lag-alert pattern + durable guard (ran FIRST per ruling 5)
+  - Done 2026-08-07, 1 attempt, 2× APPROVED. Exprs inverted to matcher-less
+    (`jetstream_consumer_num_pending > 500` / `..._ack_pending > 200`),
+    exclusion list starts EMPTY; new G15 guard derives the durable universe
+    from code (22 names, 4 declaration shapes, services/ + packages/) and
+    fails on any dead name in a matcher. G4 cluster proof: CM applied,
+    Prometheus restarted, `/api/v1/rules` shows both alerts with zero
+    consumer_name matchers; G15 live-proven to fail on `ghost-consumer`.
+  - ORCHESTRATION INCIDENT (recorded): during the live G15 proof the
+    orchestrator ran `git checkout -- alerts.yaml`, wiping the implementer's
+    uncommitted edit; recovered byte-exact from the implementer's scratchpad
+    backup (idempotent `kubectl apply` → "unchanged" proved parity). Rule for
+    future live-proofs on uncommitted trees: `cp` backup + restore, never
+    `git checkout`.
+  - FINDINGS (reviewer/implementer, non-blocking): register's "13 durables"
+    undercounts — 22 declared names (context-dependent counts, both true);
+    `channel-processor` const possibly dead; usage-aggregator durable names
+    are env-overridable (guard validates compiled defaults only); no promtool
+    in CI (PromQL validity unchecked beyond kustomize build); alerts.yaml:391
+    comment says "services/" where guard scans services/+packages/ (cosmetic).
 - [ ] T01c retire phantom credentials/channels tests (ruling 4, Option B)
 - [ ] T01a repair e2e suites: health + agents + T01c survivors
 - [ ] T01b integration suites via in-memory repo fake (bun test → 0 fail)

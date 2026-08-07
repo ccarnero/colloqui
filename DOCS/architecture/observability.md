@@ -224,13 +224,20 @@ Alerts are defined in `infrastructure/base/observability/prometheus/alerts.yaml`
 
 ### 4.2 Group `nats-consumer-lag` — Consumer Backpressure
 
-Monitored consumers: `workflow-triggers`, `channel-webhook-ingress`, `auto-reply`,
-`channel-egress`.
+Monitored consumers: **all** JetStream consumers, by default. The matcher is
+inverted — there is no allow-list to keep in sync, so a new durable is monitored
+the moment it registers. A durable whose lag is by-design is excluded with a
+`consumer_name!~"..."` matcher on both expressions, listed here with its reason.
+Exclusions today: **none**.
+
+Every literal name used in a `consumer_name` matcher must be a real durable
+declared in the code — enforced by guard `G15` in
+`scripts/checks/doc-code-guards.sh`.
 
 | Alert | Condition | Severity |
 |---|---|---|
-| `NatsConsumerPendingHigh` | `jetstream_consumer_num_pending{consumer_name=~"workflow-triggers\|channel-webhook-ingress\|auto-reply\|channel-egress"} > 500` for 2m | **warning** |
-| `NatsConsumerAckPendingHigh` | `jetstream_consumer_num_ack_pending{...same filter...} > 200` for 5m | **warning** |
+| `NatsConsumerPendingHigh` | `jetstream_consumer_num_pending > 500` for 2m | **warning** |
+| `NatsConsumerAckPendingHigh` | `jetstream_consumer_num_ack_pending > 200` for 5m | **warning** |
 
 ### 4.3 Group `nats` — Infrastructure Health
 

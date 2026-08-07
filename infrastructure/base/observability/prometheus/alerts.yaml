@@ -376,12 +376,24 @@ data:
           # where shard-imbalance between roles is not applicable.
 
       - name: nats-consumer-lag
+        # INVERTED MATCHER: both alerts below fire for EVERY JetStream consumer.
+        # They used to carry a `consumer_name=~"..."` allow-list that named 4 of
+        # the platform's 13 real durables, so every durable added after that list
+        # was written was born UNMONITORED.
+        #
+        # To silence a durable whose lag is by-design, add an exclusion matcher
+        # to the exprs below — `jetstream_consumer_num_pending{consumer_name!~"a|b"}`
+        # — and name each excluded durable plus its reason right here.
+        # Exclusions today: NONE. No durable on this platform is expected to run
+        # a standing backlog.
+        #
+        # Every literal name used in a `consumer_name` matcher in this file must
+        # be a real durable declared under services/ — enforced by guard G15 in
+        # scripts/checks/doc-code-guards.sh, so a dead name in an exclusion list
+        # fails CI instead of silently un-monitoring nothing.
         rules:
           - alert: NatsConsumerPendingHigh
-            expr: >
-              jetstream_consumer_num_pending{
-                consumer_name=~"workflow-triggers|channel-webhook-ingress|auto-reply|channel-egress"
-              } > 500
+            expr: jetstream_consumer_num_pending > 500
             for: 2m
             labels:
               severity: warning
@@ -396,10 +408,7 @@ data:
                 downstream service health.
 
           - alert: NatsConsumerAckPendingHigh
-            expr: >
-              jetstream_consumer_num_ack_pending{
-                consumer_name=~"workflow-triggers|channel-webhook-ingress|auto-reply|channel-egress"
-              } > 200
+            expr: jetstream_consumer_num_ack_pending > 200
             for: 5m
             labels:
               severity: warning

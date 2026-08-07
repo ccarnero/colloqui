@@ -34,6 +34,10 @@
 #   G14       no NEW hard-coded hex colour literals in added lines under
 #             services/admin-console. Added by T10 (D32), ratchet-scoped to
 #             `git diff` so the 58 grandfathered files are not re-checked.
+#   G15       every literal consumer name written into a `consumer_name`
+#             matcher in the Prometheus alerts is a real durable declared in
+#             the code. Added by the docs-code-manda loop's T02, together with
+#             the inversion of the nats-consumer-lag allow-list.
 #
 # Usage:
 #   scripts/checks/doc-code-guards.sh          # run all guards
@@ -989,6 +993,142 @@ g14_no_new_hex_colours() {
   pass "$guard: no new hard-coded hex colours in the working diff"
 }
 
+# ---------------------------------------------------------------------------
+# G15 — Every consumer name written into an alert matcher is a real durable.
+#
+# Drift class: alert filters that name consumers nobody registers. The
+# `nats-consumer-lag` group used to carry a
+# `consumer_name=~"workflow-triggers|channel-webhook-ingress|auto-reply|channel-egress"`
+# ALLOW-LIST: 4 names against the platform's 13 real durables, so every durable
+# added after the list was written was born UNMONITORED, and nothing would have
+# complained if one of the 4 had been renamed or deleted either. The matcher is
+# now INVERTED (alert on every consumer, subtract explicit exclusions), and this
+# guard is what keeps the inversion honest: the moment somebody adds a
+# `consumer_name!~"..."` exclusion, every literal name in it must resolve to a
+# real durable declaration in the code, or CI fails. A typo'd or stale exclusion
+# name silences nothing and hides nothing — it just rots.
+#
+# WHAT IS SCANNED — only the parsed `expr:` values of every rule, pulled out of
+# the ConfigMap's embedded `alerts.yml` block scalar with yq. Comments and
+# annotations are therefore out of scope BY CONSTRUCTION: the syntax example in
+# the nats-consumer-lag group comment and the `{{ $labels.consumer_name }}`
+# templates in every annotation can never be mistaken for a live matcher.
+#
+# CLEAN-PASS CASE — with the exclusion list empty there is no consumer_name
+# matcher at all, and the guard passes. It still runs its discovery first, so a
+# broken discovery pattern fails loudly today rather than the day someone adds
+# the first exclusion.
+#
+# THE DURABLE UNIVERSE — discovered from the code (never hardcoded), in four
+# declaration shapes found in this repo:
+#   1. `durableName: "<name>"`                      inline at the registration
+#   2. `const …DURABLE…/…CONSUMER_NAME… = "<name>"` hoisted constant
+#   3. `process.env.…DURABLE… ?? "<name>"`          env-overridable default
+#      (services/usage-aggregator-service/src/config.ts)
+#   4. const …DURABLE… = `${SOME_PREFIX}suffix`     composed name; the prefix
+#      constant is resolved from its own declaration
+#      (services/tracking-ingester-service/src/lib/consume-events.ts)
+# `packages/` is scanned alongside `services/`: two real durables
+# (`tenant-provisioner`, `gateway-audit-writer`) are declared as shared
+# constants in packages/shared and consumed by a service, and treating them as
+# unknown would make the guard reject a legitimate exclusion.
+#
+# A matcher token that is itself a regex (e.g. `trk-.*`) cannot be compared with
+# a declaration; it is reported as skipped rather than silently accepted.
+# ---------------------------------------------------------------------------
+g15_alert_consumer_names() {
+  local guard="G15(alert-consumer-names)"
+  local alerts_file="infrastructure/base/observability/prometheus/alerts.yaml"
+  local ok=1
+
+  if [[ ! -f "$alerts_file" ]]; then
+    fail "$guard: $alerts_file does not exist"
+    return
+  fi
+
+  # --- the durable universe, discovered from the code --------------------
+  # `_PREFIX` constants are dropped: `TRK_DURABLE_PREFIX = "trk-"` is a
+  # fragment, not a durable; its composed names come from shape 4 below.
+  local literal_durables
+  literal_durables=$(rg --no-filename -o --type ts -g '!*.spec.ts' \
+      -e 'durableName[[:space:]]*:[[:space:]]*"[^"]+"' \
+      -e 'const[[:space:]]+[A-Za-z0-9_]*(DURABLE|CONSUMER_NAME)[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*"[^"]+"' \
+      -e 'process\.env\.[A-Z0-9_]*DURABLE[A-Z0-9_]*[[:space:]]*\?\?[[:space:]]*"[^"]+"' \
+      services packages 2>/dev/null \
+    | rg -v '_PREFIX' \
+    | sed -E 's/.*"([^"]+)".*/\1/' || true)
+
+  # Shape 4 — composed names: resolve `${PREFIX}` from the prefix constant.
+  local composed="" tmpl prefix_var suffix prefix_val
+  while IFS= read -r tmpl; do
+    [[ -z "$tmpl" ]] && continue
+    prefix_var=$(echo "$tmpl" | sed -E 's/.*\$\{([A-Za-z0-9_]+)\}.*/\1/')
+    suffix=$(echo "$tmpl" | sed -E 's/.*\$\{[A-Za-z0-9_]+\}([^`]*)`.*/\1/')
+    prefix_val=$(rg --no-filename -o --type ts \
+        "const[[:space:]]+${prefix_var}[[:space:]]*=[[:space:]]*\"[^\"]+\"" \
+        services packages 2>/dev/null \
+      | sed -E 's/.*"([^"]+)".*/\1/' | head -1)
+    if [[ -z "$prefix_val" ]]; then
+      note "$guard: composed durable '$tmpl' references \$$prefix_var, whose declaration was not found — that durable's real name cannot be checked"
+      continue
+    fi
+    composed="$composed${prefix_val}${suffix}
+"
+  done <<<"$(rg --no-filename -o --type ts -g '!*.spec.ts' \
+      'const[[:space:]]+[A-Za-z0-9_]*DURABLE[A-Za-z0-9_]*[[:space:]]*=[[:space:]]*`[^`]+`' \
+      services packages 2>/dev/null || true)"
+
+  local durables
+  durables=$(printf '%s\n%s\n' "$literal_durables" "$composed" | rg '\S' | sort -u)
+
+  if [[ -z "$durables" ]]; then
+    fail "$guard: discovered no durable-consumer declarations under services/ or packages/ — the discovery patterns in $0 broke (durableName:/DURABLE_NAME/CONSUMER_NAME were renamed?)"
+    return
+  fi
+  local durable_count
+  durable_count=$(echo "$durables" | rg -c '\S')
+
+  # --- consumer_name matchers written into the alert expressions ---------
+  local exprs matchers names
+  exprs=$(yq '.data."alerts.yml"' "$alerts_file" 2>/dev/null | yq '.groups[].rules[].expr' 2>/dev/null)
+  if [[ -z "$exprs" ]]; then
+    fail "$guard: could not read any rule expr out of $alerts_file — the ConfigMap layout changed (data.\"alerts.yml\" / groups[].rules[].expr), update $0"
+    return
+  fi
+
+  matchers=$(echo "$exprs" \
+    | rg -o 'consumer_name[[:space:]]*(=~|!~|!=|=)[[:space:]]*"[^"]*"' || true)
+
+  if [[ -z "$matchers" ]]; then
+    pass "$guard: no consumer_name matcher in $alerts_file — every JetStream consumer is alerted on (inverted pattern, no exclusions); $durable_count durable declarations known"
+    return
+  fi
+
+  names=$(echo "$matchers" \
+    | sed -E 's/.*"([^"]*)".*/\1/' \
+    | tr '|' '\n' \
+    | sed -E 's/^[[:space:]]+|[[:space:]]+$//g' \
+    | rg '\S' | sort -u || true)
+
+  local checked=0
+  local n
+  while IFS= read -r n; do
+    [[ -z "$n" ]] && continue
+    case "$n" in
+      *[.*+?\(\)\[\]\{\}^\$\\]*)
+        note "$guard: matcher token '$n' is a regex, not a literal consumer name — not checked against a declaration"
+        continue ;;
+    esac
+    checked=$((checked + 1))
+    if ! grep -qx "$n" <<<"$durables"; then
+      fail "$guard: $alerts_file filters on consumer_name '$n', which is not declared as a durable anywhere under services/ or packages/ — a dead name in an alert matcher monitors (or excludes) nothing. Real durables: $(echo "$durables" | tr '\n' ' ')"
+      ok=0
+    fi
+  done <<<"$names"
+
+  [[ "$ok" -eq 1 ]] && pass "$guard: all $checked consumer name(s) in $alerts_file matchers are real durables (of $durable_count declared)"
+}
+
 main() {
   g6a_service_inventory
   g6b_no_scaledobject
@@ -1006,6 +1146,7 @@ main() {
   g12_class_banner
   g13_doc_paths_resolve
   g14_no_new_hex_colours
+  g15_alert_consumer_names
 
   echo
   if [[ "$FAILURES" -eq 0 ]]; then
