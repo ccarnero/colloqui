@@ -1,4 +1,5 @@
-import { IsString, IsIn, IsOptional, IsArray } from "class-validator";
+import { Type } from "class-transformer";
+import { IsArray, IsIn, IsOptional, IsString } from "class-validator";
 
 export class SendMessageDto {
   @IsString()
@@ -21,6 +22,7 @@ export class SendMessageDto {
 
   @IsOptional()
   @IsArray()
+  @Type(() => Object)
   templateComponents?: Record<string, unknown>[];
 
   @IsOptional()

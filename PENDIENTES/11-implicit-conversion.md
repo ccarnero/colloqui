@@ -59,7 +59,14 @@ servicio vía la constante `KNOWN_MANGLED_FIELDS` de
 `test/unit/dto.transform.spec.ts`, para no commitear un test rojo. Ningún
 código de producto fue tocado: esperan ruling de Christian.
 
-### H1 · api-gateway — `CreateAgentDto` / `UpdateAgentDto` (ALTO)
+**Estado post-ruling (2026-08-08, User decision 4 de la spec):** T03 arregló
+H1, H2, H3, H5 y H6 (camino 1 de la recomendación, el puntual). Sus entradas de
+`KNOWN_MANGLED_FIELDS` desaparecieron — el barrido los cubre ahora sin
+exclusión — y cada uno tiene además un test de regresión explícito que
+reproduce el payload de este registro. H4 queda **latente** (DTO muerto,
+sigue excluido) y H7 queda **parkeado** para su propia ronda de diseño.
+
+### ~~H1 · api-gateway — `CreateAgentDto` / `UpdateAgentDto` (ALTO)~~ RESUELTO por T03
 
 - Archivo: `services/api-gateway/src/modules/admin/admin.dto.ts`
 - Campos: `CreateAgentDto.channels`, `CreateAgentDto.input_variables`,
@@ -73,9 +80,13 @@ código de producto fue tocado: esperan ruling de Christian.
   campos), api-gateway sólo recibió el parche en `tools`. Todo alta/edición de
   agente que pase por `POST/PATCH /api/admin/agents` pierde canales y variables
   de entrada/salida antes de llegar a agent-admin — silenciosamente, con 2xx.
-- Fix candidato (no aplicado): `@Type(() => Object)` en los cuatro campos.
+- ~~Fix candidato (no aplicado): `@Type(() => Object)` en los cuatro campos.~~
+  **APLICADO por T03**: `@Type(() => Object)` en los cuatro campos, calcado de
+  cómo ya estaba decorado `tools` en el mismo archivo. Regresión explícita en
+  `services/api-gateway/test/unit/admin.dto.transform.spec.ts` (payload IN de
+  este registro, byte-for-byte) + el barrido lo cubre sin exclusión.
 
-### H2 · api-gateway — `SendChannelMessageBodyDto.templateComponents` (ALTO)
+### ~~H2 · api-gateway — `SendChannelMessageBodyDto.templateComponents` (ALTO)~~ RESUELTO por T03
 
 - Archivo: `services/api-gateway/src/modules/channels/channels-gateway.dto.ts:137`
 - Campo: `templateComponents?: Record<string, unknown>[]` con `@IsArray()` solo.
@@ -86,8 +97,11 @@ código de producto fue tocado: esperan ruling de Christian.
   `POST /api/channels/:accountId/messages`: los `components` (parámetros del
   template) llegan vacíos a channel-service → Meta rechaza el envío o manda la
   plantilla sin variables. Ruta usada por el producto.
+- **Fix aplicado por T03**: `@Type(() => Object)` en `templateComponents`.
+  Regresión explícita en
+  `services/api-gateway/test/unit/channels-gateway.dto.transform.spec.ts`.
 
-### H3 · channel-service — `SendMessageDto.templateComponents` (ALTO)
+### ~~H3 · channel-service — `SendMessageDto.templateComponents` (ALTO)~~ RESUELTO por T03
 
 - Archivo: `services/channel-service/src/modules/egress/egress.dto.ts:24`
 - Mismo campo, mismo defecto, un salto más abajo
@@ -97,8 +111,11 @@ código de producto fue tocado: esperan ruling de Christian.
   - OUT `…,"templateComponents":[[]]}`
 - Impacto estimado: aunque se arregle H2, el egress directo a channel-service
   sigue perdiendo los componentes. Los dos DTOs necesitan el mismo fix.
+- **Fix aplicado por T03**: `@Type(() => Object)` en `templateComponents`
+  (los dos DTOs, H2 y H3, quedaron parchados juntos). Regresión explícita en
+  `services/channel-service/test/unit/egress.dto.transform.spec.ts`.
 
-### H4 · api-gateway — `WebhookInboundBodyDto.entry` (LATENTE, no vivo)
+### H4 · api-gateway — `WebhookInboundBodyDto.entry` (LATENTE, no vivo — sigue abierto)
 
 - Archivo: `services/api-gateway/src/modules/channels/webhooks-gateway.dto.ts`
 - Campo: `entry?: unknown[]` con `@IsArray()` solo.
@@ -111,8 +128,12 @@ código de producto fue tocado: esperan ruling de Christian.
   (`api-gateway/OPENAPI-TODO.md`). Pero si alguien "mejora" el controller
   atándole el DTO, **todo webhook entrante de Meta/WhatsApp perdería `entry`**.
   Trampa cargada.
+- Estado: **no arreglado a propósito** (User decision 4 de la spec: DTO muerto,
+  queda report-only). Sigue excluido vía `KNOWN_MANGLED_FIELDS` en
+  `services/api-gateway/test/unit/dto.transform.spec.ts` — es la única entrada
+  que queda en todo el repo.
 
-### H5 · api-gateway — `QueryStructuredKbDto.categories` (BAJO)
+### ~~H5 · api-gateway — `QueryStructuredKbDto.categories` (BAJO)~~ RESUELTO por T03
 
 - Archivo: `services/api-gateway/src/modules/admin/admin.dto.ts:572`
 - Campo declarado `categories?: string[]` con `@IsArray()` solo.
@@ -120,17 +141,23 @@ código de producto fue tocado: esperan ruling de Christian.
   destruye si el cliente manda objetos (`[{"name":"tarifas"}]` → `[[]]`).
 - Impacto estimado: bajo. El DTO acepta cualquier array (no valida elementos),
   así que la corrupción es alcanzable por un cliente mal implementado y llega
-  como `[[]]` en vez de un 400. Fix barato: `@IsString({ each: true })`.
+  como `[[]]` en vez de un 400. ~~Fix barato: `@IsString({ each: true })`.~~
+  **APLICADO por T03**: `@IsString({ each: true })`. El payload de objetos
+  ahora corta con 400 nombrando `categories`; `["tarifas"]` sigue pasando
+  intacto. Regresión explícita en
+  `services/api-gateway/test/unit/admin.dto.transform.spec.ts`.
 
-### H6 · agent-admin-service — `UploadSKBFileDto.categories` (BAJO)
+### ~~H6 · agent-admin-service — `UploadSKBFileDto.categories` (BAJO)~~ RESUELTO por T03
 
 - Archivo: `services/agent-admin-service/src/modules/structured-kb/dto/upload-skb-file.dto.ts`
 - Mismo caso que H5 (`categories?: string[]`, `@IsArray()` solo), usado por
   `ContainersController` `@Body() dto: UploadSKBFileDto`.
 - Reproducción: `["tarifas"]` sobrevive; `[{"name":"tarifas"}]` → `[[]]`.
 - Impacto estimado: bajo, mismo razonamiento y mismo fix que H5.
+- **Fix aplicado por T03**: `@IsString({ each: true })`. Regresión explícita en
+  `services/agent-admin-service/test/unit/structured-kb/upload-skb-file.dto.transform.spec.ts`.
 
-### H7 · Workarounds vivos que existen POR esta trampa (ALTO como deuda)
+### H7 · Workarounds vivos que existen POR esta trampa (ALTO como deuda — PARKEADO)
 
 No son bugs: son código de producto que ya evita el pipe porque la conversión
 implícita corrompe. Se registran porque son la evidencia de que la opción está
@@ -145,10 +172,15 @@ costando caro, y porque desaparecerían si se resuelve la causa raíz.
   `receive` (`:54`) y `receiveInstance` (`:73`) usan `request.rawBody` (Buffer,
   `:88`) en lugar del `WebhookInboundBodyDto` de H4.
 - Consecuencia: esas rutas quedan **sin validación de entrada** en el gateway.
+- Estado: **PARKEADO** por User decision 4 de
+  `11-implicit-conversion.spec.md` — matar `enableImplicitConversion` a nivel
+  plataforma es su propia ronda de diseño. T03 **no tocó** ninguno de los dos
+  workarounds de raw body.
 
-### Recomendación para el ruling (no ejecutada)
+### Recomendación para el ruling (RULED 2026-08-08)
 
-Dos caminos, excluyentes:
+Dos caminos, excluyentes. **Elegido: el camino 1** (User decision 4 de la
+spec), ejecutado por T03. El camino 2 queda parkeado junto con H7:
 
 1. **Puntual**: `@Type(() => Object)` en H1/H2/H3 y `@IsString({ each: true })`
    en H5/H6. Barato, pero la trampa sigue armada para el próximo DTO.
@@ -161,4 +193,6 @@ Dos caminos, excluyentes:
 
 Los tests de barrido (`services/*/test/unit/dto.transform.spec.ts`) quedan como
 pin permanente: cualquiera de los dos caminos se valida sacando el campo de
-`KNOWN_MANGLED_FIELDS` y viendo el test pasar.
+`KNOWN_MANGLED_FIELDS` y viendo el test pasar. Eso ya pasó con H1/H2/H3/H5/H6
+en T03 — sus exclusiones fueron borradas y los barridos siguen verdes; sólo
+sobrevive la exclusión de H4.

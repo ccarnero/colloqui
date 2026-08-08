@@ -100,6 +100,7 @@ export class CreateAgentDto {
   @ApiPropertyOptional({ type: [Object] })
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   channels?: unknown[];
 
   @ApiPropertyOptional({ type: [String] })
@@ -110,10 +111,12 @@ export class CreateAgentDto {
   @ApiPropertyOptional({ type: [Object] })
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   input_variables?: unknown[];
   @ApiPropertyOptional({ type: [Object] })
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   output_variables?: unknown[];
 }
 
@@ -150,6 +153,7 @@ export class UpdateAgentDto {
   @ApiPropertyOptional({ type: [Object] })
   @IsArray()
   @IsOptional()
+  @Type(() => Object)
   channels?: unknown[];
 
   @ApiPropertyOptional()
@@ -569,6 +573,7 @@ export class QueryStructuredKbDto {
   @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @IsOptional()
+  @IsString({ each: true })
   categories?: string[];
 
   @ApiPropertyOptional({ minimum: 1, maximum: 1000 })

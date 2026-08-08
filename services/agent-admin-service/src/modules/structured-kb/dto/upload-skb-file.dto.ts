@@ -14,6 +14,7 @@ export class UploadSKBFileDto {
 
   @IsArray()
   @IsOptional()
+  @IsString({ each: true })
   categories?: string[];
 
   @IsString()

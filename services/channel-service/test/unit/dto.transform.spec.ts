@@ -73,15 +73,14 @@ const DTO_MODULES: Record<string, unknown>[] = [
 const PAYLOAD_OVERRIDES: Record<string, Record<string, unknown>> = {};
 
 /**
- * Fields this service is KNOWN to mangle under implicit conversion. They are
- * recorded as findings in `PENDIENTES/11-implicit-conversion.md` §"Hallazgos
- * del barrido T02" and excluded from the probe so the GREEN subset stays
- * pinned while the user rules on the product fix. Keyed by DTO class name.
+ * Fields this service is KNOWN to mangle under implicit conversion, excluded
+ * from the probe so the GREEN subset stays pinned. EMPTY since T03 fixed the
+ * only finding this service had (H3 — `SendMessageDto.templateComponents`, see
+ * `PENDIENTES/11-implicit-conversion.md`): the whole DTO surface is pinned now.
+ * Adding an entry here means shipping a known-broken field — register it first.
+ * Keyed by DTO class name.
  */
-const KNOWN_MANGLED_FIELDS: Record<string, readonly string[]> = {
-  /** H3 — WhatsApp template `components` reach the provider as `[[]]`. */
-  SendMessageDto: ["templateComponents"],
-};
+const KNOWN_MANGLED_FIELDS: Record<string, readonly string[]> = {};
 
 /** Validators that pin a property to a scalar/array shape the generator knows. */
 const SCALAR_VALIDATORS: readonly string[] = [

@@ -27,7 +27,7 @@ workflow. Nada de eso está acá — esto es solo lo que **no** se hizo.
 | 8 | Manifest gap — `defaultCache` | Paridad declarativa UI/SDK ↔ manifiesto | [`08-manifest-defaultcache-gap.md`](08-manifest-defaultcache-gap.md) |
 | 9 | Hallazgos de la corrida Group C | **CERRADO 08-07** (H1+H2+H3; spec 5/5, suite 868/0) | [`09-hallazgos-group-c.md`](09-hallazgos-group-c.md) |
 | 10 | Regla bash 3.2 → AGENTS.md | Constitución oral; huérfano de Group B | [`10-bash32-en-agents-md.md`](10-bash32-en-agents-md.md) |
-| 11 | ValidationPipe: copias + trampa implicit-conversion | Hallazgo de plataforma de 09-T01d; spec listo | [`11-implicit-conversion.md`](11-implicit-conversion.md) |
+| 11 | ValidationPipe: copias + trampa implicit-conversion | Spec 3/3 corrido 08-08; queda H4 latente + H7 parkeado (ronda de diseño) | [`11-implicit-conversion.md`](11-implicit-conversion.md) |
 
 ---
 

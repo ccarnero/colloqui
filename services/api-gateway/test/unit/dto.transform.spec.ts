@@ -86,20 +86,13 @@ const PAYLOAD_OVERRIDES: Record<string, Record<string, unknown>> = {
 };
 
 /**
- * Fields this service is KNOWN to mangle under implicit conversion. They are
- * recorded as findings in `PENDIENTES/11-implicit-conversion.md` §"Hallazgos
- * del barrido T02" and excluded from the probe so the GREEN subset stays
- * pinned while the user rules on the product fix. Keyed by DTO class name.
+ * Fields this service is KNOWN to mangle under implicit conversion, excluded
+ * from the probe so the GREEN subset stays pinned. T03 fixed H1/H2/H5 (their
+ * DTOs are probed again, plus explicit regression specs); only the LATENT H4
+ * survives here — see `PENDIENTES/11-implicit-conversion.md`. Keyed by DTO
+ * class name.
  */
 const KNOWN_MANGLED_FIELDS: Record<string, readonly string[]> = {
-  /** H1 — agent channels/variables reach agent-admin as `[[]]`. */
-  CreateAgentDto: ["channels", "input_variables", "output_variables"],
-  /** H1 — same defect on the update path. */
-  UpdateAgentDto: ["channels"],
-  /** H5 — declared `string[]`, so only object elements are destroyed. */
-  QueryStructuredKbDto: ["categories"],
-  /** H2 — WhatsApp template `components` reach channel-service as `[[]]`. */
-  SendChannelMessageBodyDto: ["templateComponents"],
   /** H4 — latent: the class is not wired to any `@Body()` today. */
   WebhookInboundBodyDto: ["entry"],
 };

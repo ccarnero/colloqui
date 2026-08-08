@@ -37,6 +37,10 @@ of this queue.
    sanctioned code changes in T02 are new test files.
 3. Scope discipline: adjacent smells get REPORTED in the task summary, never
    patched.
+4. **H1-H7 ruling (2026-08-08)**: fix H1, H2, H3, H5, H6 now (task T03, added
+   post-ruling). H7 — killing `enableImplicitConversion` platform-wide — is
+   PARKED for its own design round; do NOT touch the raw-body workarounds. H4
+   stays report-only (dead DTO).
 
 ## Prior art (validated 2026-08-08 — REUSE, do not duplicate)
 
@@ -184,12 +188,53 @@ rg -n "enableImplicitConversion" services/*/test --glob '!node_modules'
 # ^ expected: zero hits.
 ```
 
+### T03 — fix H1, H2, H3, H5, H6 (post-ruling task, User decision 4)
+
+Product-code fixes, one per finding, following the T01d precedent
+(`services/agent-admin-service/src/modules/admin` got `@Type(() => Object)`
+on its object-array fields in register 09):
+
+1. **H1** — `services/api-gateway/src/modules/admin/admin.dto.ts`:
+   `@Type(() => Object)` on `CreateAgentDto.channels`,
+   `CreateAgentDto.input_variables`, `CreateAgentDto.output_variables`,
+   `UpdateAgentDto.channels` (mirror exactly how `tools` is decorated in the
+   same file).
+2. **H2** — `services/api-gateway/src/modules/channels/channels-gateway.dto.ts`
+   `SendChannelMessageBodyDto.templateComponents`: `@Type(() => Object)`.
+3. **H3** — `services/channel-service/src/modules/egress/egress.dto.ts`
+   `SendMessageDto.templateComponents`: same fix.
+4. **H5** — `services/api-gateway/src/modules/admin/admin.dto.ts`
+   `QueryStructuredKbDto.categories`: `@IsString({ each: true })`.
+5. **H6** — `services/agent-admin-service/.../upload-skb-file.dto.ts`
+   `UploadSKBFileDto.categories`: `@IsString({ each: true })`.
+6. Per fixed finding: REMOVE its `KNOWN_MANGLED_FIELDS` entry from the
+   service's `dto.transform.spec.ts` (the auto-discovery spec becomes the
+   pin), AND add one explicit regression test per bug reproducing the
+   register's IN payload and asserting the previously-mangled field survives
+   (H5/H6: assert object elements now 400 instead of `[[]]`).
+7. Update register 11: mark H1/H2/H3/H5/H6 resolved (strike-through +
+   commits), leave H4 latent and H7 parked with a pointer to the ruling.
+8. DO NOT touch: the raw-body workarounds (H7 parked), `WebhookInboundBodyDto`
+   (H4), `enableImplicitConversion` itself.
+
+**Accept** (after gates green):
+
+```
+rg -n "KNOWN_MANGLED_FIELDS" services/api-gateway/test/unit/dto.transform.spec.ts services/channel-service/test/unit/dto.transform.spec.ts services/agent-admin-service/test/unit/dto.transform.spec.ts -A4
+# ^ expected: only the H4 entry remains (api-gateway WebhookInboundBodyDto.entry); H1/H2/H3/H5/H6 entries gone.
+```
+
+Gates for T03: G0; `bun run test:unit` + `bun run build` for api-gateway,
+channel-service, agent-admin-service; COMMIT GATE: full `bun test` for
+agent-admin-service and channel-service.
+
 ---
 
 ## Progress
 
 - [x] T01 — options constant extracted, 4 copies replaced (or api-gateway divergence reported), parity pinned (2026-08-08, gates + G5 full suite green, 2× APPROVED on attempt 2 — round-1 objections: one new Spanish JSDoc line, incomplete smell report; both fixed. api-gateway verdict: byte-equivalent → imports the constant. Findings for T02: three more inline copies in api-gateway/ai-agent-gateway unit tests (now in register §1); observability index not Bun-importable (telemetry OTLP chain); workflows.controller.ts:47 live implicit-conversion workaround)
-- [x] T02 — sweep rolled out: green services pinned, findings registered, loop STOPPED for ruling (2026-08-08, gates green, 2× APPROVED first attempt. Population 15: 11 pinned with dto.transform.spec.ts, 4 no-DTO-surface. Findings H1-H7 in the register — H1/H2/H3 are live product bugs, H7 confirms two unvalidated gateway route families. Ruling pending.)
+- [x] T02 — sweep rolled out: green services pinned, findings registered, loop STOPPED for ruling (2026-08-08, gates green, 2× APPROVED first attempt. Population 15: 11 pinned with dto.transform.spec.ts, 4 no-DTO-surface. Findings H1-H7 in the register — H1/H2/H3 are live product bugs, H7 confirms two unvalidated gateway route families. RULED 2026-08-08 → User decision 4, T03 added.)
+- [x] T03 — H1/H2/H3/H5/H6 fixed with regression tests, sweep exclusions removed, register updated (2026-08-08, gates + full-suite commit gates green, 2× APPROVED first attempt, red-first + 2 mutation proofs. Remaining open: H4 latent, H7 parked → future design round. Rebuild: api-gateway, channel-service, agent-admin-service)
 
 ## Post-queue (operator, outside the loop)
 

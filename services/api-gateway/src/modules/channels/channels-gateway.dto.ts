@@ -134,6 +134,7 @@ export class SendChannelMessageBodyDto {
 
   @IsOptional()
   @IsArray()
+  @Type(() => Object)
   templateComponents?: Record<string, unknown>[];
 
   @IsOptional()
