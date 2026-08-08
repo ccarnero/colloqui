@@ -1,4 +1,15 @@
-# 4 · E3 — subject inconsistente en `ExecutionHandler`
+# 4 · E3 — subject inconsistente en `ExecutionHandler` — **CERRADO 2026-08-08**
+
+> Resuelto por el loop de `04-e3-subject.spec.md` (3/3 tareas, commits
+> `931d16dd`/`a3bd82c0`/`1b338261`): los subjects de lifecycle
+> (`execution_started/completed/failed`) y el heartbeat `online.v1` pasaron a
+> `evt.{tenant}.agent-ai-service...` (el producer real, cierra DRIFT item 10);
+> `execution_requested` queda en el gateway porque ahí el producer es correcto.
+> Verificado en vivo 2026-08-08: seis servicios redeployados, durables
+> `ai-agent-gateway-results` + `execution-audit` recreados con los filtros
+> nuevos, e2e `long-agent-execution.sh` verde de punta a punta (requested=1
+> bajo el gateway, completed=1 bajo agent-ai-service, cero redeliveries).
+> Registro histórico abajo.
 
 Class: register
 Summary: Ticket acordado para corregir el subject que `publishStatus` usa, que no coincide con el productor declarado en el propio envelope.
