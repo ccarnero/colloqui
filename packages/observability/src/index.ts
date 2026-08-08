@@ -54,6 +54,10 @@ export {
 } from "./bootstrap-fastify";
 
 export {
+  PRODUCTION_VALIDATION_PIPE_OPTIONS,
+} from "./validation-pipe-options";
+
+export {
   bootstrapWorkerApp,
   registerWorkerShutdownHandler,
   runNestWorkerServiceMain,

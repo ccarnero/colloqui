@@ -14,12 +14,22 @@ genérico que auto-descubre campos vulnerables
 ## Lo que queda abierto
 
 1. **Opciones copiadas** (paridad-por-copia, se desincronizan solas):
-   - Producción canónica: `packages/observability/src/bootstrap-fastify.ts:47-53`
-     y `bootstrap-split-service.ts` (mismas opciones inline).
-   - Producción DIVERGENTE-o-igual (a verificar): `services/api-gateway/src/main.ts:58`
-     arma su propio pipe inline.
-   - Tests que copian para tener paridad: `services/agent-admin-service/test/e2e/setup.ts:434`,
-     `test/integration/harness.ts:163`, `test/unit/agents.dto.transform.spec.ts:30`.
+   - ~~Producción canónica: `bootstrap-fastify.ts:47-53`~~ **RESUELTO por T01**:
+     constante `PRODUCTION_VALIDATION_PIPE_OPTIONS` en
+     `packages/observability/src/validation-pipe-options.ts`, pinneada por test
+     de paridad. (`bootstrap-split-service.ts` nunca tuvo copia inline — solo
+     reenvía `withValidationPipe`; error del registro original.)
+   - ~~api-gateway `src/main.ts:58` pipe propio~~ **RESUELTO por T01**: era
+     byte-idéntico, ahora importa la constante.
+   - ~~Los 3 tests de agent-admin que copiaban para paridad~~ **RESUELTO por
+     T01**: importan la constante.
+   - Copias que T01 NO tocó (fuera de su alcance; las levanta el barrido T02):
+     `services/api-gateway/test/unit/gateway-validation-pipe.http.spec.ts:54`,
+     `services/api-gateway/test/unit/runtime-execution-metadata.spec.ts:44` y
+     `services/ai-agent-gateway/test/unit/executions-metadata-dto.spec.ts:43`
+     arman su propio pipe con las opciones inline, byte-idénticas a las
+     canónicas. Deben importar `PRODUCTION_VALIDATION_PIPE_OPTIONS` de
+     `@yoizen/observability` como ya hacen los tres de agent-admin.
 2. **La misma trampa puede existir en cualquiera de los ~17 servicios** que
    pasan `withValidationPipe: true` al bootstrap compartido (lista por
    `rg -l withValidationPipe services`). Nadie la barrió.

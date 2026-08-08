@@ -43,8 +43,9 @@ of this queue.
 - `packages/observability/src/bootstrap-fastify.ts:45-55` — the canonical
   production pipe construction inside `runNestFastifyServiceMain`
   (`withValidationPipe` flag at `:15`).
-- `packages/observability/src/bootstrap-split-service.ts` — the split-service
-  bootstrap with the same inline options.
+- `packages/observability/src/bootstrap-split-service.ts` — CORRECTED during
+  T01: it has NO inline copy; it forwards `withValidationPipe` to
+  `bootstrapFastifyApp` and consumes the options transitively.
 - `services/api-gateway/src/main.ts:58` — api-gateway's OWN production pipe
   (it does not use the shared bootstrap's flag). Whether its options are
   byte-equivalent to the canonical ones is UNKNOWN — T01 must diff them and
@@ -187,7 +188,7 @@ rg -n "enableImplicitConversion" services/*/test --glob '!node_modules'
 
 ## Progress
 
-- [ ] T01 — options constant extracted, 4 copies replaced (or api-gateway divergence reported), parity pinned
+- [x] T01 — options constant extracted, 4 copies replaced (or api-gateway divergence reported), parity pinned (2026-08-08, gates + G5 full suite green, 2× APPROVED on attempt 2 — round-1 objections: one new Spanish JSDoc line, incomplete smell report; both fixed. api-gateway verdict: byte-equivalent → imports the constant. Findings for T02: three more inline copies in api-gateway/ai-agent-gateway unit tests (now in register §1); observability index not Bun-importable (telemetry OTLP chain); workflows.controller.ts:47 live implicit-conversion workaround)
 - [ ] T02 — sweep rolled out: green services pinned, findings registered, loop STOPPED for ruling
 
 ## Post-queue (operator, outside the loop)

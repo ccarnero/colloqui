@@ -7,6 +7,7 @@ import {
 import { PinoLoggerService } from "./logger";
 import { registerHttpMetricsHooks } from "./http-metrics";
 import { shutdownTelemetry } from "./telemetry";
+import { PRODUCTION_VALIDATION_PIPE_OPTIONS } from "./validation-pipe-options";
 
 export interface IBootstrapFastifyOptions {
   serviceName: string;
@@ -43,16 +44,14 @@ export async function bootstrapFastifyApp(
   );
 
   if (options.withValidationPipe) {
-    app.useGlobalPipes(
-      new ValidationPipe({
-        whitelist: true,
-        forbidNonWhitelisted: true,
-        transform: true,
-        transformOptions: {
-          enableImplicitConversion: true,
-        },
-      }),
+    // A FRESH pipe instance per boot, built from the single shared options
+    // object: the OPTIONS are shared platform-wide, the pipe INSTANCE never is.
+    logger.log(
+      `Registering global ValidationPipe from PRODUCTION_VALIDATION_PIPE_OPTIONS: ${JSON.stringify(
+        PRODUCTION_VALIDATION_PIPE_OPTIONS,
+      )}`,
     );
+    app.useGlobalPipes(new ValidationPipe(PRODUCTION_VALIDATION_PIPE_OPTIONS));
   }
 
   const fastify = app.getHttpAdapter().getInstance();

@@ -8,6 +8,7 @@ import {
 } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
 import type { Sql } from "@yoizen/database";
+import { PRODUCTION_VALIDATION_PIPE_OPTIONS } from "@yoizen/observability";
 import {
   AGENT_ADMIN_AGENT_PUBLISHED,
   AGENT_ADMIN_AGENT_UNPUBLISHED,
@@ -406,8 +407,8 @@ export function createMockLazyNats(): Record<string, unknown> {
 /**
  * Levanta el `AppModule` completo tal como lo hace producción:
  * `bootstrapSplitService` -> `bootstrapFastifyApp` = FastifyAdapter +
- * `ValidationPipe` con `whitelist`/`forbidNonWhitelisted`/`transform`/
- * `enableImplicitConversion` (packages/observability/src/bootstrap-fastify.ts).
+ * a `ValidationPipe` built from `PRODUCTION_VALIDATION_PIPE_OPTIONS`
+ * (`@yoizen/observability`) — the very options object production boots with.
  * Con `createNestApplication()` a secas se levantaba Express sin pipes, así que
  * ninguna aserción de 400 medía lo que corre en producción.
  */
@@ -430,16 +431,10 @@ export async function createE2eApp(options: {
   const app = module.createNestApplication<NestFastifyApplication>(
     new FastifyAdapter()
   );
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    })
-  );
+  // Parity with production: the SAME options object the service boots with
+  // (`packages/observability/src/validation-pipe-options.ts`). A hand-copied
+  // literal here would let the pipe under test drift from the pipe that runs.
+  app.useGlobalPipes(new ValidationPipe(PRODUCTION_VALIDATION_PIPE_OPTIONS));
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   return app;

@@ -21,7 +21,13 @@ export interface IBootstrapSplitServiceOptions {
   baseServiceName: string;
   module: unknown;
   port: number;
-  /** Forwarded to bootstrapFastifyApp when SERVICE_MODE=api. */
+  /**
+   * Forwarded to bootstrapFastifyApp when SERVICE_MODE=api. `withValidationPipe`
+   * is a flag only: the api path builds its global pipe inside
+   * `bootstrapFastifyApp` from the shared `PRODUCTION_VALIDATION_PIPE_OPTIONS`
+   * constant (`./validation-pipe-options`), so split services never carry — and
+   * must never reintroduce — their own copy of the options.
+   */
   apiOptions?: Pick<
     IBootstrapFastifyOptions,
     "withValidationPipe" | "fastifyAdapterOptions" | "nestApplicationOptions"

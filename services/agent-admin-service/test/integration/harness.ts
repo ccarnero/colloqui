@@ -12,6 +12,7 @@ import {
   type NestFastifyApplication,
 } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
+import { PRODUCTION_VALIDATION_PIPE_OPTIONS } from "@yoizen/observability";
 import type { NatsConnection, Subscription } from "nats";
 
 /**
@@ -134,11 +135,10 @@ export interface IIntegrationAppOptions {
 }
 
 /**
- * Builds the app the way production does: FastifyAdapter (not Express) plus the
- * `ValidationPipe` configured in `packages/observability/src/bootstrap-fastify.ts`
- * (`whitelist` / `forbidNonWhitelisted` / `transform` /
- * `enableImplicitConversion`). Without it the suites' 400 assertions measured
- * nothing.
+ * Builds the app the way production does: FastifyAdapter (not Express) plus a
+ * `ValidationPipe` built from `PRODUCTION_VALIDATION_PIPE_OPTIONS`
+ * (`@yoizen/observability`) — the very options object production boots with.
+ * Without it the suites' 400 assertions measured nothing.
  */
 export async function createIntegrationApp(
   options: IIntegrationAppOptions
@@ -159,16 +159,9 @@ export async function createIntegrationApp(
   const app = module.createNestApplication<NestFastifyApplication>(
     new FastifyAdapter()
   );
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    })
-  );
+  // Parity with production: the SAME options object the service boots with
+  // (`packages/observability/src/validation-pipe-options.ts`), never a copy.
+  app.useGlobalPipes(new ValidationPipe(PRODUCTION_VALIDATION_PIPE_OPTIONS));
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   return app;

@@ -61,6 +61,33 @@ await bootstrapSplitService({ baseServiceName, module, port, apiOptions });
 It returns a discriminated union `{ mode: "api" | "worker", app }` so callers
 can introspect the mode.
 
+### The global ValidationPipe options
+
+`PRODUCTION_VALIDATION_PIPE_OPTIONS` (`src/validation-pipe-options.ts`) is THE
+platform-wide `ValidationPipe` contract — `whitelist`,
+`forbidNonWhitelisted`, `transform` and
+`transformOptions.enableImplicitConversion`, all `true`:
+
+```ts
+app.useGlobalPipes(new ValidationPipe(PRODUCTION_VALIDATION_PIPE_OPTIONS));
+```
+
+`bootstrapFastifyApp` builds the global pipe from it whenever
+`withValidationPipe` is set (so every `bootstrapSplitService` api pod inherits
+it), and `api-gateway` — which boots its own pipe rather than using the flag —
+imports the same object.
+
+**Test harnesses must import it too, never copy it.** `enableImplicitConversion`
+mangles DTO fields whose reflected `design:type` is `Array` and that carry no
+`@Type(...)`: class-transformer coerces every element with
+`plainToClass(Array, element)`, so object elements collapse to `[]`. Agent-admin
+shipped that bug to production while its harnesses — which built pipes with
+default options — stayed green (registers `PENDIENTES/09-hallazgos-group-c.md`
+and `PENDIENTES/11-implicit-conversion.md`). The options are shared; a pipe
+INSTANCE never is — construct a fresh one per app.
+`test/unit/validation-pipe-options.spec.ts` pins the shape, so any edit to it is
+a visible, wire-adjacent change.
+
 ### Mode resolution
 
 `serviceMode()` (`src/runtime-mode.ts:29-34`) reads `SERVICE_MODE` **once** and
@@ -135,9 +162,9 @@ The package reads exactly four (`rg -o 'process\.env\.[A-Z_0-9]+' packages/obser
 
 ## Testing
 
-`test/unit/` holds the package's only suite today
-(`nats-consumer-metrics.spec.ts`); `package.json` declares no `scripts` block at
-all, so run it with your usual Bun invocation, e.g.:
+`test/unit/` holds the package's suites (`nats-consumer-metrics.spec.ts`,
+`validation-pipe-options.spec.ts`); `package.json` declares no `scripts` block
+at all, so run them with your usual Bun invocation, e.g.:
 
 ```bash
 bun test packages/observability/test/unit

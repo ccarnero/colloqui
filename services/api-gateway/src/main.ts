@@ -15,6 +15,7 @@ import {
   createPinoLogger,
   getActiveTraceId,
   PinoLoggerService,
+  PRODUCTION_VALIDATION_PIPE_OPTIONS,
   registerHttpMetricsHooks,
   shutdownTelemetry,
   trace,
@@ -54,16 +55,11 @@ function isHealthPath(path: string): boolean {
 }
 
 function configureGlobalMiddleware(app: NestFastifyApplication): void {
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    })
-  );
+  // api-gateway boots its own pipe instead of the shared bootstrap's
+  // `withValidationPipe` flag, but the OPTIONS are the platform-wide ones —
+  // byte-identical to the inline object this used to carry (register
+  // PENDIENTES/11-implicit-conversion.md, T01). Fresh instance, shared options.
+  app.useGlobalPipes(new ValidationPipe(PRODUCTION_VALIDATION_PIPE_OPTIONS));
 
   app.enableCors({
     origin: gatewayConfig.corsOrigin,

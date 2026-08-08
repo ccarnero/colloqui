@@ -2,6 +2,7 @@ import "../setup-env";
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { type ArgumentMetadata, ValidationPipe } from "@nestjs/common";
+import { PRODUCTION_VALIDATION_PIPE_OPTIONS } from "@yoizen/observability";
 // Deep import of class-transformer's metadata storage — the same entry point
 // `@nestjs/mapped-types` uses to inspect `@Type()` declarations.
 import { defaultMetadataStorage } from "class-transformer/cjs/storage";
@@ -14,8 +15,9 @@ import {
 // ---------------------------------------------------------------------------
 // Regression guard for the implicit-conversion data loss on agent DTOs.
 //
-// The global pipe runs with `transformOptions.enableImplicitConversion: true`
-// (packages/observability/src/bootstrap-fastify.ts:45-51). With implicit
+// The global pipe runs with implicit conversion enabled — see the
+// `transformOptions` of `PRODUCTION_VALIDATION_PIPE_OPTIONS`
+// (`@yoizen/observability`). With implicit
 // conversion on, an `unknown[]` property whose reflected design:type is `Array`
 // and that carries NO `@Type(() => Object)` is coerced element-by-element via
 // `plainToClass(Array, element)` — every object element collapses to `[]`.
@@ -26,15 +28,12 @@ import {
 // untyped object-array field added later fails here immediately.
 // ---------------------------------------------------------------------------
 
-/** Copied verbatim from packages/observability/src/bootstrap-fastify.ts:45-51. */
-const productionPipe = new ValidationPipe({
-  whitelist: true,
-  forbidNonWhitelisted: true,
-  transform: true,
-  transformOptions: {
-    enableImplicitConversion: true,
-  },
-});
+/**
+ * THE production options object, imported — not copied — from
+ * `@yoizen/observability`, so this suite can never validate a pipe the service
+ * does not actually run.
+ */
+const productionPipe = new ValidationPipe(PRODUCTION_VALIDATION_PIPE_OPTIONS);
 
 const bodyMetadata = (metatype: new () => unknown): ArgumentMetadata => ({
   type: "body",
