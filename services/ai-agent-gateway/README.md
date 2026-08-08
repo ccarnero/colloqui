@@ -97,18 +97,28 @@ interesting one. Its guarantees, in order of the code:
 
 One durable consumer, `ai-agent-gateway-results`
 (`executions.service.ts:61`), reconciling tenant streams matching `/^INGRESS-/`
-(`:62`) across three filter subjects (`:63-67`):
+(`:62`) across three filter subjects (`RESULT_SUBJECTS`, `:77-81`; rationale and
+the operational note in the doc comment at `:63-76`):
 
 ```
-evt.*.ai-agent-gateway.automation.platform.internal.execution_started.v1
-evt.*.ai-agent-gateway.automation.platform.internal.execution_completed.v1
-evt.*.ai-agent-gateway.automation.platform.internal.execution_failed.v1
+evt.*.agent-ai-service.automation.platform.internal.execution_started.v1
+evt.*.agent-ai-service.automation.platform.internal.execution_completed.v1
+evt.*.agent-ai-service.automation.platform.internal.execution_failed.v1
 ```
+
+The producer token is `agent-ai-service`, not this service: the gateway only
+*reads* these three kinds — `agent-ai-service`'s `publishStatus` emits them. The
+filters moved off the `ai-agent-gateway` token on 2026-08-07
+(`PENDIENTES/04-e3-subject.spec.md`, commits 931d16dd + a3bd82c0). Operational
+note: `MultiTenantConsumerManager` does not reconcile `filterSubjects` on an
+existing durable, so the `ai-agent-gateway-results` durable must be deleted on
+every `INGRESS-<tenant>` stream after the redeploy that ships this change, or it
+keeps its stale filter and projects nothing.
 
 The handler projects each status into Redis (`handleResultMessage`,
-`:379-411`). On a `completed` status it threads the ENVELOPE's own id and causal
+`:393-425`). On a `completed` status it threads the ENVELOPE's own id and causal
 depth into the persisted status as `completedEventId` / `completedEventDepth`
-(`:400-409`) — the envelope carrying the completed status IS the
+(`:414-423`) — the envelope carrying the completed status IS the
 `execution_completed` bus event, and workflow-service cites that id as
 `causation_id` for whatever it publishes after the agent call.
 

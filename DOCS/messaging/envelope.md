@@ -84,7 +84,7 @@ Every message published to the bus **must** be serialized as the following envel
 | `causation_id` | string \| null | ID of the event that caused this one. `null` only for root events. |
 | `correlation_id` | string | Groups the entire chain end-to-end. Defaults are producer-specific: `api-gateway` and `createChannelEnvelope()` self-correlate when no value is passed, while shared `buildEventEnvelope()` currently falls back to a fresh UUID unless `correlationId` is passed explicitly. `deriveEnvelope()` copies it unchanged. |
 | `tenant` | string | Tenant ID. |
-| `producer` | string | Service that publishes. Active producers: `api-gateway` (`WebhookIngressEnvelope`), `channel-service` (`CHANNEL_PRODUCER`), `registry-service` (`REGISTRY_PRODUCER`), `agent-admin-service` (`AGENT_ADMIN_PRODUCER`), `agent-memory-service` (`AGENT_MEMORY_PRODUCER`), `agent-scheduler-service` (`AGENT_SCHEDULER_PRODUCER`), `ai-agent-gateway` (`AI_AGENT_GATEWAY_PRODUCER`, via `execution-client.ts`), plus four services that do **not** use a `@yoizen/shared` constant: `agent-ai-service`, `connector-runtime` and `workflow-service` inline the string literal at each publish site, while `provisioning-service` declares a file-local `const PRODUCER` in `apply-events.publisher.ts` and `secret-audit.publisher.ts`. |
+| `producer` | string | Service that publishes. Active producers: `api-gateway` (`WebhookIngressEnvelope`), `channel-service` (`CHANNEL_PRODUCER`), `registry-service` (`REGISTRY_PRODUCER`), `agent-admin-service` (`AGENT_ADMIN_PRODUCER`), `agent-ai-service` (`AGENT_AI_PRODUCER`, since the 2026-08-07 E3 migration — see the note below), `agent-memory-service` (`AGENT_MEMORY_PRODUCER`), `agent-scheduler-service` (`AGENT_SCHEDULER_PRODUCER`), `ai-agent-gateway` (`AI_AGENT_GATEWAY_PRODUCER`, via `execution-client.ts`), plus three services that do **not** use a `@yoizen/shared` constant: `connector-runtime` and `workflow-service` inline the string literal at each publish site, while `provisioning-service` declares a file-local `const PRODUCER` in `apply-events.publisher.ts` and `secret-audit.publisher.ts`. |
 | `domain` | string | Business domain. Examples: `messaging`, `automation`, `platform`. |
 | `channel` | string | Channel. Examples: `whatsapp`, `telegram`, `platform`. |
 | `provider` | string | Provider. Examples: `meta`, `telegram`, `internal`. |
@@ -92,6 +92,26 @@ Every message published to the bus **must** be serialized as the following envel
 | `idempotencykey` | string | `sha256:` + hex(sha256(canonical_json(rawPayload))). Must be deterministic. |
 | `transport` | object | See §4. |
 | `data` | object | See §5. |
+
+#### Producer constants — `agent-ai-service` moved (E3, 2026-08-07)
+
+`agent-ai-service` used to belong to the inline-literal group above. The E3
+subject migration (`PENDIENTES/04-e3-subject.spec.md`, commits 931d16dd +
+a3bd82c0) gave it `AGENT_AI_PRODUCER = "agent-ai-service"` and an
+`AGENT_AI_SUBJECT_PREFIX` built from it, so its subject token and its
+`producer` field are projected from ONE constant and cannot disagree — the same
+shape that closed the `agent-memory-service` drift (`DRIFT.md` item 9). It is
+used at every bus publish site: `execution.handler.ts` and
+`job-executor.service.ts` (`publishStatus`, both branches) and
+`heartbeat.service.ts`.
+
+One literal survives, deliberately out of this contract's scope: the ephemeral
+runtime-token envelope in `execution.handler.ts` still writes
+`producer: "agent-ai-service"` inline. That path publishes on the `rt.`
+namespace, which carries no producer subject token at all (see
+`DOCS/architecture/runtime-streaming.md` §1.1), so there is nothing for it to
+disagree with. The service therefore appears in both the constant list above and
+in a literal-string census of the source — that is expected, not drift.
 
 #### The two `type` shapes (E1, ruled 2026-08-04)
 

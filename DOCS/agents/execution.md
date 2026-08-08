@@ -14,20 +14,22 @@ The path is asynchronous over JetStream and uses Redis as execution state storag
 | `workflow-service` (`executeAgentCall` activity) | Submits and waits for agent execution; runs on the `workflow-orchestrator` task queue |
 | `YoizenClawExecutionClient` (`packages/shared/src/execution-client.ts`) | Publishes `execution_requested.v1` to JetStream, subscribes to lifecycle events via core NATS, persists status in Redis |
 | `agent-ai-service` (`MultiTenantConsumerService` + `MessageRouterService`) | Consumes `execution_requested` from `INGRESS-<tenant>` (durable `agent-ai-service-consumer`), runs agent via `ExecutionHandler`, publishes `execution_started/completed/failed` events |
-| `ai-agent-gateway` | API-facing execution submit/get/stream service and durable status projector; lifecycle events use `ai-agent-gateway` as producer token |
+| `ai-agent-gateway` | API-facing execution submit/get/stream service and durable status projector; publishes `execution_requested` under its own producer token, reads the three result kinds |
 | `NATS JetStream` (`INGRESS-<tenant>`) | Durable transport for request and lifecycle events |
 | `Redis` | Stores pending and result status records keyed by `<tenant>:<prefix><executionId>` |
 
 ## Subject Patterns
 
-All lifecycle events use the `ai-agent-gateway` producer token regardless of which service publishes them:
+Each lifecycle event carries the producer token of the service that actually publishes it — the request comes from the gateway, the three results from `agent-ai-service`:
 
-| Event | Subject Pattern |
-|---|---|
-| requested | `evt.<tenant>.ai-agent-gateway.automation.platform.internal.execution_requested.v1` |
-| started | `evt.<tenant>.ai-agent-gateway.automation.platform.internal.execution_started.v1` |
-| completed | `evt.<tenant>.ai-agent-gateway.automation.platform.internal.execution_completed.v1` |
-| failed | `evt.<tenant>.ai-agent-gateway.automation.platform.internal.execution_failed.v1` |
+| Event | Publisher | Subject Pattern |
+|---|---|---|
+| requested | `ai-agent-gateway` (`YoizenClawExecutionClient`) | `evt.<tenant>.ai-agent-gateway.automation.platform.internal.execution_requested.v1` |
+| started | `agent-ai-service` | `evt.<tenant>.agent-ai-service.automation.platform.internal.execution_started.v1` |
+| completed | `agent-ai-service` | `evt.<tenant>.agent-ai-service.automation.platform.internal.execution_completed.v1` |
+| failed | `agent-ai-service` | `evt.<tenant>.agent-ai-service.automation.platform.internal.execution_failed.v1` |
+
+Until 2026-08-07 all four rode the `ai-agent-gateway` token regardless of publisher; the E3 migration (`PENDIENTES/04-e3-subject.spec.md`, commits 931d16dd + a3bd82c0) split them so subject token 2 names the real publisher. Readers of stored history must still accept the old token — `TAXONOMY.md` rule 6 classifies both.
 
 The `YoizenClawExecutionClient` subscribes to `started`, `completed`, and `failed` on core NATS (not durable JetStream) for real-time result delivery. The `ai-agent-gateway` projector also binds a durable consumer to persist terminal state in Redis for late-joiners and retries.
 

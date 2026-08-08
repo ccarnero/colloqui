@@ -232,3 +232,50 @@ Seven closed, three open.
   `evt.${tenantId}.ai-agent-gateway.automation.platform.internal.online.v1`
   while the publishing service is `agent-ai-service`.
 
+## Code-fix log (E3 subject migration, 2026-08-07)
+
+Same append-only rule: no finding text above is altered, including the
+"Still reproducing (checked, unchanged)" list of the 2026-08-03 log — that list
+was true on its date. This pass closes **item 10**. Of the ten findings, eight
+are now closed (1, 2, 3, 4, 6, 7, 9, 10); items **5 and 8** still reproduce.
+
+10. **`online.v1` heartbeat subject producer token vs actual publisher — FIXED
+    in code (E3, `PENDIENTES/04-e3-subject.spec.md`, commits 931d16dd +
+    a3bd82c0).** The subject is no longer built inline in
+    `heartbeat.service.ts`: it comes from the shared constant `AGENT_AI_ONLINE`
+    = `evt.{tenant}.agent-ai-service.automation.platform.internal.online.v1`,
+    itself derived from `AGENT_AI_SUBJECT_PREFIX` /
+    `AGENT_AI_PRODUCER = "agent-ai-service"`
+    (`packages/shared/src/constants.ts`), and the heartbeat envelope sets
+    `producer: AGENT_AI_PRODUCER` from that same constant — so the subject
+    token and the envelope field are projected from one source and can no
+    longer disagree, exactly the shape that closed item 9. The same commit
+    moved the three execution lifecycle kinds
+    (`AGENT_AI_EXECUTION_STARTED/COMPLETED/FAILED`) for the same reason;
+    `execution_requested` stayed on `AI_AGENT_GATEWAY_EXECUTION_REQUESTED`
+    because the gateway really is its publisher, so no drift ever existed
+    there. Item 10's own "directly analogous to item 9" note therefore now
+    reads as history on both sides: both analogues are closed, by the same
+    build-the-subject-from-the-identity-constant fix.
+    Pinned by `packages/shared/src/__tests__/agent-admin.constants.test.ts`
+    (wire-string pins) and
+    `services/agent-ai-service/test/unit/heartbeat.service.spec.ts`.
+    Frozen history is unaffected: the persisted rows and the 24 golden
+    heartbeat rows (seq 1249, 1255, 1256, 1267, 1288–1307) keep the
+    `ai-agent-gateway` token, and `TAXONOMY.md` rule 20 accepts BOTH tokens
+    forever (rule 6 likewise, for the lifecycle kinds).
+
+**Still reproducing after this pass (re-checked 2026-08-07):**
+
+- **Item 5 — `online.v1` heartbeat `idempotencykey` and `transport` shape.**
+  Unchanged by E3, which moved only the subject and the `producer` field:
+  `services/agent-ai-service/src/modules/heartbeat/heartbeat.service.ts` still
+  sets `idempotencykey: crypto.randomUUID()` (no `sha256:` prefix) and still
+  publishes `transport: { name: "nats", version: "1.0" }` instead of
+  `{ method, protocol }`. The item's trailing note about the heartbeat family
+  is still accurate for those two traits; only its producer-token half (item
+  10) is closed. The live-evidence sentences in the 2026-07-09 blocks that
+  quote the old `evt.acme.ai-agent-gateway…online.v1` subject remain correct as
+  dated observations of that capture.
+- **Item 8 — stage-1 `resource` format.** Untouched by E3, unchanged.
+

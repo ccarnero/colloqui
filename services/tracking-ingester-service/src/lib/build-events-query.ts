@@ -39,10 +39,18 @@
 //     T05, decision 7) with NO code change, since those are ordinary
 //     `envelope.resource` values set at publish time, same as `adapter/<id>`.
 //   - EXCEPTION — `resource=agent/<agentId>` (T05, needed by T10's "Recent
-//     executions" panel): agent-execution events (TAXONOMY.md §4 rule 6,
-//     `evt.*.ai-agent-gateway.automation.platform.internal.execution_*.v1`)
-//     do NOT carry an `agent/<agentId>`-shaped `envelope.resource` — the
-//     emitter (out of scope for this ingester-only task) sets
+//     executions" panel): agent-execution events (TAXONOMY.md §4 rule 6, a
+//     DUAL-token family since the E3 migration —
+//     `evt.*.ai-agent-gateway.automation.platform.internal.execution_requested.v1`
+//     from the gateway plus the frozen pre-2026-08-07 history of the other
+//     three kinds, and
+//     `evt.*.agent-ai-service.automation.platform.internal.execution_*.v1`
+//     for started/completed/failed since then; see
+//     `PENDIENTES/04-e3-subject.spec.md`) do NOT carry an
+//     `agent/<agentId>`-shaped `envelope.resource`. The alias below is
+//     TOKEN-AGNOSTIC and unaffected by the move: it never matches on the
+//     subject, only on the payload's `agentId` field, which both tokens
+//     carry identically. The emitter (out of scope for this ingester-only task) sets
 //     `resource: "execution/<executionId>"` (verified against
 //     `golden/raw/INGRESS-ACME-seq1245.json` / `-seq1251.json`), addressable
 //     by execution, not by agent. Rather than block T10 on an emitter change

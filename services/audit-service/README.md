@@ -36,7 +36,7 @@ via `MultiTenantConsumerManager`, each with `runnerOptions.concurrency = 16`
 |---|---|---|
 | `audit-events` | `evt.*.*.platform.>` (`CANONICAL_AUDIT_PATTERN`) | `src/modules/audit/audit.service.ts:47-51`, `:68-76` |
 | `channel-audit` | `CHANNEL_AUDIT_SUBJECT_PATTERN` = `evt.*.channel-service.messaging.>` (`packages/shared/src/channel.constants.ts`) | `src/modules/channel-audit/channel-audit.service.ts:49-51`, `:68-76` |
-| `execution-audit` | the three `ai-agent-gateway` execution lifecycle subjects, tenant-wildcarded (`src/modules/execution-audit/execution-audit.service.ts:55-59`) | `execution-audit.service.ts:43-45`, `:75-84` |
+| `execution-audit` | the three `agent-ai-service` execution lifecycle subjects, tenant-wildcarded (`src/modules/execution-audit/execution-audit.service.ts:61-65`) — on the `ai-agent-gateway` token until the 2026-08-07 E3 migration (`PENDIENTES/04-e3-subject.spec.md`, rationale in the doc comment at `:47-60`), so the durable's `filterSubjects` must be recreated after that redeploy | `execution-audit.service.ts:43-45`, `:81-89` |
 
 **Why `execution-audit` exists as a separate consumer**: the canonical
 `audit-events` filter only matches `evt.*.*.platform.>`, and execution lifecycle

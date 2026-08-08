@@ -114,7 +114,7 @@ sequenceDiagram
     TGA-->>CH: 200 OK
 ```
 
-Note: `YoizenClawExecutionClient` uses `ai-agent-gateway` as the envelope producer token (`evt.<tenant>.ai-agent-gateway.automation.platform.internal.*`). There is no HTTP hop to ai-agent-gateway; the client publishes directly to JetStream and subscribes to lifecycle events on core NATS.
+Note: `YoizenClawExecutionClient` publishes `execution_requested` under the `ai-agent-gateway` producer token (`evt.<tenant>.ai-agent-gateway.automation.platform.internal.execution_requested.v1`) and subscribes to the three result kinds under the `agent-ai-service` token (`evt.<tenant>.agent-ai-service.automation.platform.internal.execution_{started,completed,failed}.v1` — split from the gateway family on 2026-08-07, `PENDIENTES/04-e3-subject.spec.md`). There is no HTTP hop to ai-agent-gateway; the client publishes directly to JetStream and subscribes to lifecycle events on core NATS.
 
 ## Key Subjects in This Flow
 

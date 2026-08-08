@@ -228,34 +228,46 @@ sequenceDiagram
     AG->>AG: enforceDepthLimit(depth=1, max=5) → ok
     AG->>AG: execute agent
     AG->>AG: deriveEnvelope(depth=2)
-    AG-->>JS: publish evt.<t>.ai-agent-gateway.automation.platform.internal.execution_started.v1
+    AG-->>JS: publish evt.<t>.agent-ai-service.automation.platform.internal.execution_started.v1
 ```
 
 ---
 
 ## 5. Agent Lifecycle Events (As-Built)
 
-The agent execution lifecycle travels on the `ai-agent-gateway` **subject
-family**, declared as constants in `packages/shared/src/constants.ts` over
-`AI_AGENT_GATEWAY_SUBJECT_PREFIX`:
+The agent execution lifecycle spans **two** subject families, each named after
+the service that really publishes it. Both are declared as constants in
+`packages/shared/src/constants.ts`, built from the producer identity constant so
+the subject token and the envelope `producer` field cannot disagree:
 
 | Event | Constant | Subject template |
 |-------|----------|-----------------|
-| `execution_started` | `AI_AGENT_GATEWAY_EXECUTION_STARTED` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_started.v1` |
-| `execution_completed` | `AI_AGENT_GATEWAY_EXECUTION_COMPLETED` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_completed.v1` |
-| `execution_failed` | `AI_AGENT_GATEWAY_EXECUTION_FAILED` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_failed.v1` |
+| `execution_requested` | `AI_AGENT_GATEWAY_EXECUTION_REQUESTED` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_requested.v1` |
+| `execution_started` | `AGENT_AI_EXECUTION_STARTED` | `evt.{tenant}.agent-ai-service.automation.platform.internal.execution_started.v1` |
+| `execution_completed` | `AGENT_AI_EXECUTION_COMPLETED` | `evt.{tenant}.agent-ai-service.automation.platform.internal.execution_completed.v1` |
+| `execution_failed` | `AGENT_AI_EXECUTION_FAILED` | `evt.{tenant}.agent-ai-service.automation.platform.internal.execution_failed.v1` |
 
-The subject family is named after `ai-agent-gateway`, but the **publisher is
-`agent-ai-service`**: `ExecutionHandler.publishStatus`
-(`services/agent-ai-service/src/nats-handlers/execution.handler.ts`) composes
-`evt.<tenant>.ai-agent-gateway.automation.platform.internal.<kind>.v1` and
-publishes an envelope whose own `producer` field says `agent-ai-service` and
-whose `type` is `io.yoizen.platform.runtime.<kind>.v1`. `ai-agent-gateway` only
-**reads** these subjects: `ExecutionsService.streamExecutionEvents` relays them
-to SSE, and `YoizenClawExecutionClient` awaits them as
-`EXECUTION_RESULT_EVENT_SUBJECTS`. `ai-agent-gateway` publishes the *request*
-side of the flow (`AI_AGENT_GATEWAY_EXECUTION_REQUESTED` via
+The **publisher of the three results is `agent-ai-service`**:
+`ExecutionHandler.publishStatus`
+(`services/agent-ai-service/src/nats-handlers/execution.handler.ts`) and the
+job-executor's twin `publishStatus`
+(`src/modules/job-executor/job-executor.service.ts`) resolve
+`AGENT_AI_EXECUTION_*` with `buildPlatformSubject` and publish an envelope whose
+own `producer` field says `agent-ai-service` and whose `type` is
+`io.yoizen.platform.runtime.<kind>.v1`. `ai-agent-gateway` only **reads** these
+subjects: `ExecutionsService.streamExecutionEvents` relays them to SSE, and
+`YoizenClawExecutionClient` awaits them as `EXECUTION_RESULT_EVENT_SUBJECTS`.
+`ai-agent-gateway` publishes the *request* side of the flow
+(`AI_AGENT_GATEWAY_EXECUTION_REQUESTED` via
 `YoizenClawExecutionClient.submitExecution`), not the lifecycle results.
+
+> Until 2026-08-07 all four kinds rode the `ai-agent-gateway` producer token,
+> so the three results named a service that did not publish them while their
+> envelopes said `agent-ai-service`. The E3 migration
+> (`PENDIENTES/04-e3-subject.spec.md`, commits 931d16dd + a3bd82c0) moved them;
+> `execution_requested` did not move, because the gateway really is its
+> publisher. Persisted history keeps the old token: `TAXONOMY.md` rule 6
+> classifies BOTH tokens, forever.
 
 This is not the only lifecycle on the bus: `workflow-service` publishes its own
 `evt.<tenant>.workflow-service.workflow.internal.native.execution_started.v1`

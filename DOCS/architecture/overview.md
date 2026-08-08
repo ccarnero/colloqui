@@ -710,7 +710,8 @@ Provides type-safe constants and interfaces consumed by all services.
 | `WORKFLOW_DEFAULT_TIMEOUT_MS` | `600_000` (10 min) | Workflow Service |
 | `GATEWAY_AUDIT_*` | gateway audit stream/subject/consumer constants | API Gateway, Audit Service |
 | `AGENT_ADMIN_*` (subject prefix + per-event helpers) | `evt.{tenant}.agent-admin-service.automation.platform.internal.*` | Agent Admin Service / Runtime / Runtime Gateway |
-| `AI_AGENT_GATEWAY_*` (`evt.{tenant}.ai-agent-gateway.automation.platform.internal.*`) | execution lifecycle subjects | AI Agent Gateway / Workflow Service |
+| `AI_AGENT_GATEWAY_*` (`evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_requested.v1`) | the execution REQUEST subject — the gateway publishes it | AI Agent Gateway / Workflow Service |
+| `AGENT_AI_*` (`evt.{tenant}.agent-ai-service.automation.platform.internal.*`) | the execution lifecycle RESULT subjects (`execution_started` / `execution_completed` / `execution_failed`) and the `online.v1` presence heartbeat — agent-ai-service publishes them; split off the gateway family by the E3 migration (2026-08-07, `PENDIENTES/04-e3-subject.spec.md`) so the subject names its real publisher | Agent AI Service (producer); AI Agent Gateway, Audit Service, Agent Admin Service, Workflow Service (consumers) |
 
 ### Core Interfaces
 

@@ -29,6 +29,16 @@ re-deriving decisions.
 > `runtime.controller.ts`, and `packages/shared` carries
 > `buildRuntimeStreamSubject` + `runtime-stream.interfaces.ts`. Read §1 onward
 > for the as-built shape; keep this section only to understand what changed.
+>
+> The subject and constant names below are frozen at their 2026-07-05 values
+> too. On **2026-08-07** the E3 migration
+> (`PENDIENTES/04-e3-subject.spec.md`, commits 931d16dd + a3bd82c0) moved the
+> `execution_started/completed/failed` lifecycle family — and the `online.v1`
+> heartbeat — off the `ai-agent-gateway` producer token onto
+> `agent-ai-service`, renaming the constants to
+> `AGENT_AI_EXECUTION_STARTED/COMPLETED/FAILED`. `execution_requested` did NOT
+> move: the gateway really does publish it, so
+> `AI_AGENT_GATEWAY_EXECUTION_REQUESTED` is unchanged.
 
 Traced from source (verified 2026-07-05):
 
@@ -54,7 +64,8 @@ Traced from source (verified 2026-07-05):
   - `submitExecution()` → `YoizenClawExecutionClient.submitExecution` (publishes
     `execution_requested` to JetStream `INGRESS-<tenant>`).
   - `streamExecutionEvents()` subscribes **core NATS** (`nc.subscribe`, ephemeral)
-    to `AI_AGENT_GATEWAY_EXECUTION_STARTED/COMPLETED/FAILED` via
+    to what are today `AGENT_AI_EXECUTION_STARTED/COMPLETED/FAILED` (then named
+    `AI_AGENT_GATEWAY_EXECUTION_*`; renamed 2026-08-07, see the banner) via
     `src/utils/nats-stream-observable.util.ts` (`createNatsMultiSubjectObservable`)
     and maps to RxJS `MessageEvent`. **This is the reuse anchor for the token relay.**
   - A durable `MultiTenantConsumerManager` projects the same lifecycle events to
@@ -65,7 +76,8 @@ Traced from source (verified 2026-07-05):
   (**buffered, non-streaming**) → `publishStatus()` emits
   `execution_started/completed/failed` to
   `evt.<tenant>.ai-agent-gateway.automation.platform.internal.<kind>.v1`
-  (JetStream). Streaming primitives already exist but are unused by this path:
+  (JetStream — the producer token became `agent-ai-service` on 2026-08-07, see
+  the banner). Streaming primitives already exist but are unused by this path:
   - `chat.service.generateStream()` → `llm-executor.service.streamTextRaw()`
     returns `{ textStream: AsyncIterable<string>, usage, provider, model }`
     (AI SDK `streamText().textStream`). **This is the token source.**
@@ -133,12 +145,21 @@ Built with `buildEventEnvelope` (root) or `deriveEnvelope` from the incoming
 | `idempotencykey` | `computeIdempotencyKey(payload)` — kept for `isCompliantEnvelope`, but core NATS does **not** dedup; it is not load-bearing here |
 | `correlation_id` | the execution's correlation id (== `executionId` unless a `conversationId` was passed) |
 
-> Producer-token note: the existing lifecycle code publishes with subject
-> producer segment `ai-agent-gateway` while `envelope.producer` is
-> `agent-ai-service` (`execution.handler.ts` vs `constants.ts`). That is a
-> pre-existing inconsistency in the `evt.` path. The new `rt.` subjects avoid it
-> because they carry no producer segment; we set `envelope.producer` honestly to
-> the real publisher.
+> Producer-token note (updated 2026-08-07). When this design was written the
+> lifecycle code published with subject producer segment `ai-agent-gateway`
+> while `envelope.producer` was `agent-ai-service` (`execution.handler.ts` vs
+> `constants.ts`) — an inconsistency in the `evt.` path, and one of the reasons
+> the `rt.` namespace was defined without a producer segment. That
+> inconsistency is **RESOLVED**: E3 (`PENDIENTES/04-e3-subject.spec.md`,
+> commits 931d16dd + a3bd82c0) moved every agent-ai-service publish — the three
+> lifecycle kinds and the `online.v1` heartbeat — onto
+> `evt.{tenant}.agent-ai-service.automation.platform.internal.<kind>.v1`, so
+> subject token 2 and `envelope.producer` now agree on the `evt.` path as well.
+> The `rt.` rationale therefore stands on the JetStream-capture argument of
+> §1.1 alone (no stream binds `rt.`), plus the structural property that a
+> subject with no producer segment cannot disagree with `envelope.producer` by
+> construction — it no longer works around a live drift, because there is none.
+> On both paths we set `envelope.producer` honestly to the real publisher.
 
 ### 1.3 Token payload (`data.payload`)
 
@@ -158,8 +179,15 @@ interleaving token and lifecycle streams.
 
 ### 1.4 Lifecycle events — unchanged
 
-`execution_started/completed/failed` keep their current subjects and JetStream
-retention (`execution.handler.ts` `publishStatus`). `completed` already carries
+`execution_started/completed/failed` are unchanged **by this design**: same
+JetStream retention, same payload, same `publishStatus`
+(`execution.handler.ts`). Their subjects did move later — E3 (2026-08-07,
+`PENDIENTES/04-e3-subject.spec.md`) renamed the family to
+`evt.{tenant}.agent-ai-service.automation.platform.internal.<kind>.v1`
+(`AGENT_AI_EXECUTION_STARTED/COMPLETED/FAILED`) so the subject stops naming a
+service that does not publish it — but that is a rename inside the `evt.`
+taxonomy, not a change to the streaming contract described here. `completed`
+already carries
 `usage`, `costUsd`, `toolCalls`, `model`, `provider` — the SDK's terminal event.
 
 ---
@@ -361,7 +389,7 @@ by `executionId` + `seq` as the resume cursor — designed for later, not built 
   1. `const executionId = randomUUID()`.
   2. Build a merged core-NATS subscription over
      `rt.<t>.exec.<id>.token|tool_call|tool_result` **and**
-     `AI_AGENT_GATEWAY_EXECUTION_STARTED/COMPLETED/FAILED` (filtered by `executionId`),
+     `AGENT_AI_EXECUTION_STARTED/COMPLETED/FAILED` (filtered by `executionId`),
      reusing/extending `createNatsMultiSubjectObservable`
      (`utils/nats-stream-observable.util.ts`).
   3. `submitExecution(tenantId, { …dto, stream: true }, { requestedBy, executionId, correlationId })`.
