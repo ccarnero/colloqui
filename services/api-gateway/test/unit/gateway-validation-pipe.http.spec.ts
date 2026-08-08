@@ -6,6 +6,7 @@ import {
   type NestFastifyApplication,
 } from "@nestjs/platform-fastify";
 import { Test } from "@nestjs/testing";
+import { PRODUCTION_VALIDATION_PIPE_OPTIONS } from "@yoizen/observability";
 import { AdminAgentsController } from "../../src/modules/admin/admin-agents.controller";
 import { AdminJobsController } from "../../src/modules/admin/admin-jobs.controller";
 import { AdminProxyService } from "../../src/modules/admin/admin-proxy.service";
@@ -50,14 +51,10 @@ async function bootApp(
   const app = moduleRef.createNestApplication<NestFastifyApplication>(
     new FastifyAdapter()
   );
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: { enableImplicitConversion: true },
-    })
-  );
+  // THE production options, imported — not copied — from
+  // `@yoizen/observability` (register 11, T01/T02): a copied object is a test
+  // that validates a pipe the gateway does not actually run.
+  app.useGlobalPipes(new ValidationPipe(PRODUCTION_VALIDATION_PIPE_OPTIONS));
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
   return app;
