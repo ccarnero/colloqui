@@ -1,7 +1,12 @@
 import { Inject, Injectable } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
 import {
+  AGENT_AI_EXECUTION_COMPLETED,
+  AGENT_AI_EXECUTION_FAILED,
+  AGENT_AI_EXECUTION_STARTED,
+  AGENT_AI_PRODUCER,
   buildEventEnvelope,
+  buildPlatformSubject,
   deriveEnvelope,
   type EventEnvelope,
 } from "@yoizen/shared";
@@ -26,6 +31,27 @@ export interface JobExecutionResult {
   readonly result?: Record<string, unknown>;
   readonly error?: string;
 }
+
+/** The three execution lifecycle events this service reports. */
+type ExecutionStatusKind =
+  | "execution_started"
+  | "execution_completed"
+  | "execution_failed";
+
+/**
+ * Lifecycle kind -> shared subject template.
+ *
+ * Same family, same constants and same reasoning as
+ * `nats-handlers/execution.handler.ts`: token 2 of the subject is the producer
+ * routing key and it now says `agent-ai-service`, matching the envelope this
+ * method stamps (2026-08-07, `PENDIENTES/04-e3-subject.spec.md` / E3). It used
+ * to be a hardcoded `ai-agent-gateway` literal.
+ */
+const EXECUTION_STATUS_SUBJECTS: Record<ExecutionStatusKind, string> = {
+  execution_started: AGENT_AI_EXECUTION_STARTED,
+  execution_completed: AGENT_AI_EXECUTION_COMPLETED,
+  execution_failed: AGENT_AI_EXECUTION_FAILED,
+};
 
 @Injectable()
 export class JobExecutorService {
@@ -244,7 +270,7 @@ export class JobExecutorService {
 
   private async publishStatus(
     tenantId: string,
-    kind: string,
+    kind: ExecutionStatusKind,
     data: Record<string, unknown>,
     incoming?: EventEnvelope
   ): Promise<void> {
@@ -255,6 +281,12 @@ export class JobExecutorService {
             type: `io.yoizen.platform.runtime.${kind}.v1`,
             source: `agent-ai-service/execution/${data.executionId ?? "unknown"}`,
             resource: `execution/${data.executionId ?? "unknown"}`,
+            // Without this override `deriveEnvelope` inherits the REQUESTER's
+            // producer (`ai-agent-gateway`) — the envelope would credit the
+            // caller for an event this service produced. Overridden at the
+            // call site so the shared inheritance semantics stay untouched
+            // (E3, PENDIENTES/04-e3-subject.spec.md).
+            producer: AGENT_AI_PRODUCER,
             payload: data,
           })
         : buildEventEnvelope({
@@ -262,7 +294,7 @@ export class JobExecutorService {
             source: `agent-ai-service/execution/${data.executionId ?? "unknown"}`,
             resource: `execution/${data.executionId ?? "unknown"}`,
             tenant: tenantId,
-            producer: "agent-ai-service",
+            producer: AGENT_AI_PRODUCER,
             domain: "automation",
             channel: "platform",
             provider: "internal",
@@ -270,7 +302,13 @@ export class JobExecutorService {
             payload: data,
           });
 
-      const subject = `evt.${tenantId}.ai-agent-gateway.automation.platform.internal.${kind}.v1`;
+      const subject = buildPlatformSubject(
+        EXECUTION_STATUS_SUBJECTS[kind],
+        tenantId
+      );
+      this.logger.debug(
+        `[job-executor] Publishing ${kind} on '${subject}' (producer='${AGENT_AI_PRODUCER}')`
+      );
       this.nc.publish(subject, JSON.stringify(event));
     } catch (pubError) {
       this.logger.warn(`[job-executor] Failed to publish ${kind}: ${pubError}`);

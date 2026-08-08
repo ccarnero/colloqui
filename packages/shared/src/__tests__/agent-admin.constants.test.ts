@@ -14,10 +14,13 @@ import {
   AGENT_ADMIN_SKB_FILE_INGESTION,
   AGENT_ADMIN_SKILL_CHANGED,
   AGENT_ADMIN_SUBJECT_PREFIX,
-  AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
-  AI_AGENT_GATEWAY_EXECUTION_FAILED,
+  AGENT_AI_EXECUTION_COMPLETED,
+  AGENT_AI_EXECUTION_FAILED,
+  AGENT_AI_EXECUTION_STARTED,
+  AGENT_AI_ONLINE,
+  AGENT_AI_PRODUCER,
+  AGENT_AI_SUBJECT_PREFIX,
   AI_AGENT_GATEWAY_EXECUTION_REQUESTED,
-  AI_AGENT_GATEWAY_EXECUTION_STARTED,
   AI_AGENT_GATEWAY_SUBJECT_PREFIX,
   SCHEDULER_HEARTBEAT,
   SCHEDULER_SUBJECT_PREFIX,
@@ -124,21 +127,70 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
 
   test("ai-agent-gateway execution subjects keep their exact wire strings", () => {
     // Renamed from PLATFORM_EXECUTION_* on the same date, same reason.
+    // `execution_requested` is the only member left: it is the one subject of
+    // the family the gateway really publishes (`execution-client.ts`), so its
+    // token 2 and its envelope `producer` agree. The other three moved to the
+    // agent-ai-service family on 2026-08-07 — see the test below.
     const prefix = "evt.{tenant}.ai-agent-gateway.automation.platform.internal";
 
     expect(AI_AGENT_GATEWAY_SUBJECT_PREFIX).toBe(prefix);
     expect(AI_AGENT_GATEWAY_EXECUTION_REQUESTED).toBe(
       `${prefix}.execution_requested.v1`
     );
-    expect(AI_AGENT_GATEWAY_EXECUTION_STARTED).toBe(
-      `${prefix}.execution_started.v1`
-    );
-    expect(AI_AGENT_GATEWAY_EXECUTION_COMPLETED).toBe(
+  });
+
+  /**
+   * WIRE CHANGE, not a rename (PENDIENTES/04-e3-subject.spec.md / E3,
+   * 2026-08-07). agent-ai-service publishes the execution lifecycle and the
+   * runtime-presence heartbeat, but token 2 — the producer routing key —
+   * said `ai-agent-gateway` while the same messages' envelopes said
+   * `agent-ai-service`. The subject moved to match the real producer.
+   *
+   * Pinned against literals, not against the prefix constant they are built
+   * from, so a future edit to `AGENT_AI_SUBJECT_PREFIX` cannot silently
+   * re-route live traffic (the assertion would be circular otherwise).
+   */
+  test("agent-ai-service execution subjects carry the real producer token", () => {
+    const prefix = "evt.{tenant}.agent-ai-service.automation.platform.internal";
+
+    expect(AGENT_AI_PRODUCER).toBe("agent-ai-service");
+    expect(AGENT_AI_SUBJECT_PREFIX).toBe(prefix);
+    expect(AGENT_AI_EXECUTION_STARTED).toBe(`${prefix}.execution_started.v1`);
+    expect(AGENT_AI_EXECUTION_COMPLETED).toBe(
       `${prefix}.execution_completed.v1`
     );
-    expect(AI_AGENT_GATEWAY_EXECUTION_FAILED).toBe(
-      `${prefix}.execution_failed.v1`
-    );
+    expect(AGENT_AI_EXECUTION_FAILED).toBe(`${prefix}.execution_failed.v1`);
+    expect(AGENT_AI_ONLINE).toBe(`${prefix}.online.v1`);
+  });
+
+  test("every agent-ai subject is a canonical 8-token subject whose token 2 is the producer", () => {
+    // The invariant the move exists to restore: subject token 2 == the
+    // envelope `producer` the publishers stamp (AGENTS.md subject grammar).
+    for (const subject of [
+      AGENT_AI_EXECUTION_STARTED,
+      AGENT_AI_EXECUTION_COMPLETED,
+      AGENT_AI_EXECUTION_FAILED,
+      AGENT_AI_ONLINE,
+    ]) {
+      const tokens = subject.split(".");
+      expect(tokens.length).toBe(8);
+      expect(tokens[2]).toBe(AGENT_AI_PRODUCER);
+      expect(subject.startsWith(AGENT_AI_SUBJECT_PREFIX)).toBe(true);
+    }
+  });
+
+  test("the old gateway-token lifecycle identifiers are gone from the public surface", () => {
+    // Assembled, never written out — same trick as the PLATFORM_* sweep
+    // above: the E3 accept criteria grep the tree for these names.
+    const movedNames = [
+      ["AI", "AGENT", "GATEWAY", "EXECUTION", "STARTED"].join("_"),
+      ["AI", "AGENT", "GATEWAY", "EXECUTION", "COMPLETED"].join("_"),
+      ["AI", "AGENT", "GATEWAY", "EXECUTION", "FAILED"].join("_"),
+    ];
+
+    for (const name of movedNames) {
+      expect(name in shared).toBe(false);
+    }
   });
 
   test("scheduler heartbeat keeps its exact wire string", () => {
@@ -161,7 +213,8 @@ describe("agent-admin constants (renamed from PLATFORM_*, values unchanged)", ()
   test("AGENT_ADMIN_ONLINE is gone — dead subject, not renamed", () => {
     // Removed 2026-08-01 (envelope-drift open decision 4): no publisher or
     // consumer in any service ever used it; agent-ai's runtime-presence
-    // heartbeat publishes `online.v1` on the ai-agent-gateway family instead.
+    // heartbeat publishes `online.v1` — `AGENT_AI_ONLINE`, on the
+    // agent-ai-service family since 2026-08-07 (E3).
     expect("AGENT_ADMIN_ONLINE" in shared).toBe(false);
   });
 

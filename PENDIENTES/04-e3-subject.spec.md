@@ -302,7 +302,7 @@ rg -n "pre-existing inconsistency" DOCS/architecture/runtime-streaming.md
 ## Progress
 
 - [x] T01 — tracking-ingester dual-token rules + synthetic goldens + TAXONOMY rows (2026-08-07, gates green, 2× APPROVED first attempt)
-- [ ] T02 — wire flip: constants, publishers, consumers, tests, e2e script
+- [x] T02 — wire flip: constants, publishers, consumers, tests, e2e script (2026-08-07, gates + G8 full suites green, 2× APPROVED first attempt; durable finding: filterSubjects NOT reconciled — operator must delete `ai-agent-gateway-results` + `execution-audit` durables on every INGRESS-<tenant> stream after redeploy)
 - [ ] T03 — docs truth sweep (runtime-streaming, DRIFT item 10, TAXONOMY prose, guides)
 
 ## Post-queue (operator, outside the loop)

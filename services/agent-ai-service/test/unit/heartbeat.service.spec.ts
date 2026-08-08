@@ -177,13 +177,27 @@ describe("HeartbeatService", () => {
       expect(mockJs.publish).toHaveBeenCalledTimes(3);
     });
 
+    // WIRE CHANGE 2026-08-07 (PENDIENTES/04-e3-subject.spec.md / E3, closing
+    // DRIFT.md item 10): token 2 is the producer routing key and this service
+    // is the producer — the subject said `ai-agent-gateway` while the envelope
+    // below already said `agent-ai-service`.
     it("should publish using the correct NATS subject format", async () => {
       service.markTenantActive("my-tenant");
       await (service as any).publishHeartbeats();
       const [subject] = mockJs.publish.mock.calls[0];
       expect(subject).toBe(
-        "evt.my-tenant.ai-agent-gateway.automation.platform.internal.online.v1"
+        "evt.my-tenant.agent-ai-service.automation.platform.internal.online.v1"
       );
+    });
+
+    it("names the same producer on the subject and in the envelope", async () => {
+      service.markTenantActive("my-tenant");
+      await (service as any).publishHeartbeats();
+      const [subject, raw] = mockJs.publish.mock.calls[0];
+      const env = JSON.parse(raw as string);
+
+      expect((subject as string).split(".")[2]).toBe(env.producer);
+      expect(env.producer).toBe("agent-ai-service");
     });
 
     it("should include all required CloudEvent envelope fields", async () => {

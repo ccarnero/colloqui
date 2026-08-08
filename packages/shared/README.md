@@ -200,8 +200,14 @@ Platform events use subject templates (call `buildPlatformSubject(template, tena
 |---|---|
 | `AGENT_ADMIN_CONFIG_SYNC` | `evt.{tenant}.agent-admin-service.automation.platform.internal.config_sync.v1` |
 | `AI_AGENT_GATEWAY_EXECUTION_REQUESTED` | `evt.{tenant}.ai-agent-gateway.automation.platform.internal.execution_requested.v1` |
-| `AI_AGENT_GATEWAY_EXECUTION_STARTED / COMPLETED / FAILED` | same prefix, `execution_started/completed/failed.v1` |
+| `AGENT_AI_EXECUTION_STARTED / COMPLETED / FAILED` | `evt.{tenant}.agent-ai-service.automation.platform.internal.execution_started/completed/failed.v1` |
+| `AGENT_AI_ONLINE` | `evt.{tenant}.agent-ai-service.automation.platform.internal.online.v1` |
 | `AGENT_ADMIN_CHAT_RESPOND`, `AGENT_ADMIN_AGENT_OUTBOUND`, `AGENT_ADMIN_EXECUTION_STATUS`, etc. | `evt.{tenant}.agent-admin-service.automation.platform.internal.<kind>.v1` |
+
+> The four `AGENT_AI_*` subjects rode the `ai-agent-gateway` producer token
+> until 2026-08-07 (`PENDIENTES/04-e3-subject.spec.md` / E3) even though
+> agent-ai-service is the publisher. `execution_requested` stayed on the
+> gateway family because the gateway really does publish it.
 
 ## Temporal Task Queue Constants (`constants.ts`)
 

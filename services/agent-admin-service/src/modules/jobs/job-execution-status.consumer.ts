@@ -1,13 +1,26 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
-import type { NatsConnection, Subscription } from "nats";
 import {
-  JOB_EXECUTIONS_REPOSITORY,
-  type IJobExecutionsRepository,
-} from "./job-executions.repository.interface";
+  Inject,
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
+import {
+  AGENT_AI_EXECUTION_COMPLETED,
+  AGENT_AI_EXECUTION_FAILED,
+  buildPlatformSubject,
+} from "@yoizen/shared";
+import type { NatsConnection, Subscription } from "nats";
 import { LAZY_NATS } from "../../providers/nats.provider";
+import {
+  type IJobExecutionsRepository,
+  JOB_EXECUTIONS_REPOSITORY,
+} from "./job-executions.repository.interface";
 
 @Injectable()
-export class JobExecutionStatusConsumer implements OnModuleInit, OnModuleDestroy {
+export class JobExecutionStatusConsumer
+  implements OnModuleInit, OnModuleDestroy
+{
   private readonly logger = new Logger(JobExecutionStatusConsumer.name);
   private subscriptions: Subscription[] = [];
   private stopped = false;
@@ -36,10 +49,17 @@ export class JobExecutionStatusConsumer implements OnModuleInit, OnModuleDestroy
 
       // NATS wildcards are token-boundary: `*`/`>` replace entire tokens between dots.
       // `execution_>` is a literal string, not a wildcard — it never matches `execution_failed`.
-      // We need separate subscriptions for each event kind.
+      // We need separate subscriptions for each event kind, so the `*` only ever
+      // stands in for the whole tenant token of the shared subject templates.
+      //
+      // The templates carry the `agent-ai-service` producer token since
+      // 2026-08-07 (PENDIENTES/04-e3-subject.spec.md / E3) — agent-ai-service
+      // publishes the execution lifecycle; ai-agent-gateway only requests it.
+      // Imported from `@yoizen/shared` (they were hardcoded here) so a future
+      // subject change reaches this consumer with the publisher.
       const subjects = [
-        "evt.*.ai-agent-gateway.automation.platform.internal.execution_completed.v1",
-        "evt.*.ai-agent-gateway.automation.platform.internal.execution_failed.v1",
+        buildPlatformSubject(AGENT_AI_EXECUTION_COMPLETED, "*"),
+        buildPlatformSubject(AGENT_AI_EXECUTION_FAILED, "*"),
       ];
 
       for (const subject of subjects) {
@@ -51,7 +71,9 @@ export class JobExecutionStatusConsumer implements OnModuleInit, OnModuleDestroy
         // Process messages asynchronously per subscription
         (async () => {
           for await (const msg of sub) {
-            if (this.stopped) break;
+            if (this.stopped) {
+              break;
+            }
 
             try {
               await this.handleMessage(msg.subject, msg.data.toString());
@@ -70,19 +92,24 @@ export class JobExecutionStatusConsumer implements OnModuleInit, OnModuleDestroy
     const envelope = JSON.parse(rawData) as Record<string, unknown>;
 
     // Unwrap EventEnvelope — actual payload is at envelope.data.payload
-    const envelopeData = envelope["data"] as Record<string, unknown> | undefined;
-    const data = (envelopeData?.["payload"] as Record<string, unknown>) ?? envelope;
+    const envelopeData = envelope["data"] as
+      | Record<string, unknown>
+      | undefined;
+    const data =
+      (envelopeData?.["payload"] as Record<string, unknown>) ?? envelope;
 
-    // Extract tenant from subject: evt.{tenant}.ai-agent-gateway...
+    // Extract tenant from subject: evt.{tenant}.agent-ai-service...
     const tenantId = subject.split(".")[1];
 
-    // Extract kind from subject: evt.{tenant}.ai-agent-gateway...{kind}.v1
+    // Extract kind from subject: evt.{tenant}.agent-ai-service...{kind}.v1
     const parts = subject.split(".");
     const kind = parts[parts.length - 2]; // execution_completed or execution_failed
 
     const executionId = data.executionId as string;
     if (!executionId) {
-      this.logger.warn(`[JobExecutionStatusConsumer] Missing executionId in message on ${subject}`);
+      this.logger.warn(
+        `[JobExecutionStatusConsumer] Missing executionId in message on ${subject}`
+      );
       return;
     }
 
@@ -92,7 +119,7 @@ export class JobExecutionStatusConsumer implements OnModuleInit, OnModuleDestroy
         executionId,
         "completed",
         (data.result as Record<string, unknown>) ?? null,
-        null,
+        null
       );
       this.logger.log(`Execution ${executionId} marked as completed`);
     } else if (kind === "execution_failed") {
@@ -101,7 +128,9 @@ export class JobExecutionStatusConsumer implements OnModuleInit, OnModuleDestroy
         executionId,
         "failed",
         null,
-        (data.error as string) ?? (data.errorMessage as string) ?? "Unknown error",
+        (data.error as string) ??
+          (data.errorMessage as string) ??
+          "Unknown error"
       );
       this.logger.log(`Execution ${executionId} marked as failed`);
     }

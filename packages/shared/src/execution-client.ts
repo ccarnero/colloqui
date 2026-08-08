@@ -7,17 +7,17 @@ import {
   type Subscription,
 } from "nats";
 import {
+  AGENT_AI_EXECUTION_COMPLETED,
+  AGENT_AI_EXECUTION_FAILED,
+  AGENT_AI_EXECUTION_STARTED,
+  AI_AGENT_GATEWAY_EXECUTION_REQUESTED,
   AI_AGENT_GATEWAY_PRODUCER,
+  AUTOMATION_DOMAIN,
   buildPlatformSubject,
   buildRuntimeStreamSubject,
   PENDING_KEY_PREFIX,
   PENDING_TTL,
   PLATFORM_CHANNEL,
-  AUTOMATION_DOMAIN,
-  AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
-  AI_AGENT_GATEWAY_EXECUTION_FAILED,
-  AI_AGENT_GATEWAY_EXECUTION_REQUESTED,
-  AI_AGENT_GATEWAY_EXECUTION_STARTED,
   PLATFORM_PROVIDER,
   RESULT_KEY_PREFIX,
   RESULT_TTL,
@@ -37,10 +37,16 @@ import type {
 } from "./execution.interfaces";
 import type { RuntimeCancelPayload } from "./runtime-stream.interfaces";
 
+/**
+ * The lifecycle subjects `waitForExecutionResult` listens on. They carry the
+ * `agent-ai-service` producer token since 2026-08-07
+ * (PENDIENTES/04-e3-subject.spec.md / E3) — this client SUBMITS executions
+ * (`execution_requested`, gateway-produced) but the runtime answers.
+ */
 const EXECUTION_RESULT_EVENT_SUBJECTS = [
-  AI_AGENT_GATEWAY_EXECUTION_STARTED,
-  AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
-  AI_AGENT_GATEWAY_EXECUTION_FAILED,
+  AGENT_AI_EXECUTION_STARTED,
+  AGENT_AI_EXECUTION_COMPLETED,
+  AGENT_AI_EXECUTION_FAILED,
 ] as const;
 
 function buildStatusKey(tenantId: string, executionId: string): string {

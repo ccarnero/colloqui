@@ -1315,10 +1315,15 @@ stage_verify_agent_run_chain() {
   # The chain also contains the WORKFLOW's own execution_started/completed
   # pair (producer `workflow-service`, T02 of manual-loops/
   # workflow-step-events.md), so the count is scoped by producer:
-  # `ai-agent-gateway` is the producer of the agent-runtime lifecycle events
+  # `agent-ai-service` is the producer of the agent-runtime lifecycle events
   # (execution.handler.ts publishes on
-  # evt.<tenant>.ai-agent-gateway.automation.platform.internal.*) — verified
-  # live against tracking.tracked_events.
+  # evt.<tenant>.agent-ai-service.automation.platform.internal.*, and the
+  # envelope `producer` says the same since PENDIENTES/04-e3-subject.spec.md /
+  # E3, 2026-08-07 — before that both the subject token and this filter said
+  # `ai-agent-gateway`, which the runtime never was).
+  #
+  # `execution_requested` IS still `ai-agent-gateway`: the gateway really does
+  # publish it (packages/shared/src/execution-client.ts), so it did not move.
   #
   # `execution_requested` is counted too: a Temporal activity retry would
   # re-submit and (outside JetStream's 2-minute duplicate window) produce a
@@ -1351,9 +1356,9 @@ stage_verify_agent_run_chain() {
     status="$(api_status_code "$combined")"
     body="$(api_status_body "$combined")"
     if [[ "$status" == "200" ]]; then
-      completed_count="$(echo "$body" | jq '[.events[]? | select(.kind == "execution_completed" and .producer == "ai-agent-gateway")] | length')"
+      completed_count="$(echo "$body" | jq '[.events[]? | select(.kind == "execution_completed" and .producer == "agent-ai-service")] | length')"
       requested_count="$(echo "$body" | jq '[.events[]? | select(.kind == "execution_requested" and .producer == "ai-agent-gateway")] | length')"
-      failed_count="$(echo "$body" | jq '[.events[]? | select(.kind == "execution_failed" and .producer == "ai-agent-gateway")] | length')"
+      failed_count="$(echo "$body" | jq '[.events[]? | select(.kind == "execution_failed" and .producer == "agent-ai-service")] | length')"
       if [[ "$completed_count" == "1" ]]; then
         log "Chain ${AGENT_RUN_CORRELATION_ID}: agent execution_requested=${requested_count} execution_completed=${completed_count} execution_failed=${failed_count} (total events $(echo "$body" | jq '.events | length'))"
         if [[ "$requested_count" != "1" ]]; then

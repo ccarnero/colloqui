@@ -187,7 +187,10 @@ describe("trace-visualization E2E (T8) — dev stack", () => {
         offsetMs: 150,
       }),
       envelope(5, {
-        subject: `evt.${tenant}.ai-agent-gateway.automation.platform.internal.execution_started.v1`,
+        // Post-E3 producer token (PENDIENTES/04-e3-subject.spec.md):
+        // agent-ai-service publishes the lifecycle; the gateway only requests
+        // it (fixture 2 above keeps the gateway token for that reason).
+        subject: `evt.${tenant}.agent-ai-service.automation.platform.internal.execution_started.v1`,
         causationOf: 2,
         payload: { call_id: callId },
         offsetMs: 200,
@@ -207,7 +210,7 @@ describe("trace-visualization E2E (T8) — dev stack", () => {
         offsetMs: 300,
       }),
       envelope(7, {
-        subject: `evt.${tenant}.ai-agent-gateway.automation.platform.internal.execution_completed.v1`,
+        subject: `evt.${tenant}.agent-ai-service.automation.platform.internal.execution_completed.v1`,
         causationOf: 5,
         payload: { call_id: callId },
         // 5000ms after the pair's start (index 5) so duration_ms is clearly > 0.

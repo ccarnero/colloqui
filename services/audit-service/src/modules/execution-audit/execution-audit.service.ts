@@ -18,10 +18,10 @@ import {
   startNatsConsumerSpan,
 } from "@yoizen/observability";
 import {
+  AGENT_AI_EXECUTION_COMPLETED,
+  AGENT_AI_EXECUTION_FAILED,
+  AGENT_AI_EXECUTION_STARTED,
   type EventEnvelope,
-  AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
-  AI_AGENT_GATEWAY_EXECUTION_FAILED,
-  AI_AGENT_GATEWAY_EXECUTION_STARTED,
 } from "@yoizen/shared";
 import type { JetStreamClient, JetStreamManager, JsMsg } from "nats";
 import type {
@@ -51,11 +51,17 @@ const HANDLER_CONCURRENCY = 16;
  * matches `evt.*.*.platform.>` — the `automation` domain used by these
  * subjects falls outside that pattern, which is exactly the audit blind spot
  * this dedicated consumer closes.
+ *
+ * The producer token of these three subjects moved from `ai-agent-gateway` to
+ * `agent-ai-service` on 2026-08-07 (`PENDIENTES/04-e3-subject.spec.md` / E3) —
+ * the runtime that publishes them. `ensureDurableConsumer` does NOT reconcile
+ * `filter_subjects` on an existing durable, so the `execution-audit` durables
+ * created before that date must be deleted once for the new filter to apply.
  */
 const EXECUTION_LIFECYCLE_SUBJECTS = [
-  AI_AGENT_GATEWAY_EXECUTION_STARTED,
-  AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
-  AI_AGENT_GATEWAY_EXECUTION_FAILED,
+  AGENT_AI_EXECUTION_STARTED,
+  AGENT_AI_EXECUTION_COMPLETED,
+  AGENT_AI_EXECUTION_FAILED,
 ].map((template) => template.replace("{tenant}", "*"));
 
 @Injectable()

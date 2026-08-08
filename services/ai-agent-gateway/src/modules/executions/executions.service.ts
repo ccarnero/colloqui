@@ -16,11 +16,11 @@ import {
 } from "@yoizen/database";
 import { PinoLoggerService } from "@yoizen/observability";
 import {
+  AGENT_AI_EXECUTION_COMPLETED,
+  AGENT_AI_EXECUTION_FAILED,
+  AGENT_AI_EXECUTION_STARTED,
   buildPlatformSubject,
   buildRuntimeStreamSubject,
-  AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
-  AI_AGENT_GATEWAY_EXECUTION_FAILED,
-  AI_AGENT_GATEWAY_EXECUTION_STARTED,
   RUNTIME_TOKEN,
   RUNTIME_TOOL_CALL,
   RUNTIME_TOOL_RESULT,
@@ -60,11 +60,25 @@ const STREAM_RELAY_MAX_BUFFERED_BYTES = 256 * 1024;
 
 const DURABLE_NAME = "ai-agent-gateway-results";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
+/**
+ * Cross-tenant filter of the `ai-agent-gateway-results` durable: one `*`
+ * wildcard in the tenant position of each shared lifecycle template.
+ *
+ * The templates moved to the `agent-ai-service` producer token on 2026-08-07
+ * (`PENDIENTES/04-e3-subject.spec.md` / E3): this gateway CONSUMES the
+ * lifecycle, agent-ai-service publishes it. Built from the shared constants
+ * instead of hardcoded literals so publisher and filter cannot drift.
+ *
+ * OPERATIONAL NOTE: `ensureDurableConsumer` reconciles ack/backoff fields but
+ * NOT `filter_subjects`, so durables created before this change keep the old
+ * filter until an operator deletes them (they are then recreated on the next
+ * reconcile tick).
+ */
 const RESULT_SUBJECTS = [
-  "evt.*.ai-agent-gateway.automation.platform.internal.execution_started.v1",
-  "evt.*.ai-agent-gateway.automation.platform.internal.execution_completed.v1",
-  "evt.*.ai-agent-gateway.automation.platform.internal.execution_failed.v1",
-] as const;
+  AGENT_AI_EXECUTION_STARTED,
+  AGENT_AI_EXECUTION_COMPLETED,
+  AGENT_AI_EXECUTION_FAILED,
+].map((template) => buildPlatformSubject(template, "*"));
 
 @Injectable()
 export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
@@ -164,9 +178,9 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
 
   streamExecutionEvents(tenantId: string): Observable<MessageEvent> {
     const subjects = [
-      AI_AGENT_GATEWAY_EXECUTION_STARTED,
-      AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
-      AI_AGENT_GATEWAY_EXECUTION_FAILED,
+      AGENT_AI_EXECUTION_STARTED,
+      AGENT_AI_EXECUTION_COMPLETED,
+      AGENT_AI_EXECUTION_FAILED,
     ].map((template) => template.replace("{tenant}", tenantId));
 
     return createNatsMultiSubjectObservable(this.nc, subjects, (msg) => {
@@ -291,9 +305,9 @@ export class ExecutionsService implements OnModuleInit, OnModuleDestroy {
       //    events, relayed here via core NATS subscribe — same pattern as
       //    streamExecutionEvents()).
       const lifecycleSubjects = [
-        AI_AGENT_GATEWAY_EXECUTION_STARTED,
-        AI_AGENT_GATEWAY_EXECUTION_COMPLETED,
-        AI_AGENT_GATEWAY_EXECUTION_FAILED,
+        AGENT_AI_EXECUTION_STARTED,
+        AGENT_AI_EXECUTION_COMPLETED,
+        AGENT_AI_EXECUTION_FAILED,
       ].map((template) => buildPlatformSubject(template, tenantId));
 
       for (const subject of lifecycleSubjects) {

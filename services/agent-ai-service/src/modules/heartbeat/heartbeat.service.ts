@@ -5,6 +5,11 @@ import {
   OnModuleInit,
 } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
+import {
+  AGENT_AI_ONLINE,
+  AGENT_AI_PRODUCER,
+  buildPlatformSubject,
+} from "@yoizen/shared";
 import type { JetStreamClient } from "nats";
 import { JETSTREAM } from "../../providers/nats.provider";
 
@@ -74,7 +79,12 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
       causation_id: null,
       correlation_id: crypto.randomUUID(),
       tenant: "",
-      producer: "agent-ai-service",
+      // Body and subject must name the SAME producer — `AGENT_AI_ONLINE`
+      // below is built from this exact constant, so the pair cannot drift
+      // (2026-08-07, PENDIENTES/04-e3-subject.spec.md / E3, closing
+      // DRIFT.md item 10). The subject used to say `ai-agent-gateway` while
+      // this field already said `agent-ai-service`.
+      producer: AGENT_AI_PRODUCER,
       domain: "automation",
       channel: "platform",
       provider: "internal",
@@ -93,8 +103,11 @@ export class HeartbeatService implements OnModuleInit, OnModuleDestroy {
 
     for (const tenantId of tenants) {
       try {
-        const subject = `evt.${tenantId}.ai-agent-gateway.automation.platform.internal.online.v1`;
+        const subject = buildPlatformSubject(AGENT_AI_ONLINE, tenantId);
         const msg = { ...envelope, tenant: tenantId, id: crypto.randomUUID() };
+        this.logger.debug(
+          `[heartbeat] Publishing online for tenant '${tenantId}' on '${subject}'`
+        );
         this.js.publish(subject, JSON.stringify(msg));
       } catch (error) {
         this.logger.warn(

@@ -126,8 +126,9 @@ export const AGENT_ADMIN_JOB_TRIGGER = `${AGENT_ADMIN_SUBJECT_PREFIX}.job_trigge
 export const AGENT_ADMIN_CHAT_RESPOND = `${AGENT_ADMIN_SUBJECT_PREFIX}.chat_respond.v1`;
 // `AGENT_ADMIN_ONLINE` (`…online.v1`) was removed 2026-08-01 (envelope-drift
 // open decision 4): no publisher or consumer ever existed in any service.
-// Runtime presence heartbeats are agent-ai's `online.v1` on the
-// ai-agent-gateway family instead.
+// Runtime presence heartbeats are agent-ai's `online.v1` — `AGENT_AI_ONLINE`
+// on the agent-ai-service family below (it rode the ai-agent-gateway family
+// until 2026-08-07, see PENDIENTES/04-e3-subject.spec.md / E3).
 export const AGENT_ADMIN_AGENT_OUTBOUND = `${AGENT_ADMIN_SUBJECT_PREFIX}.agent_outbound.v1`;
 export const AGENT_ADMIN_EXECUTION_STATUS = `${AGENT_ADMIN_SUBJECT_PREFIX}.execution_status.v1`;
 export const AGENT_ADMIN_AGENT_PUBLISHED = `${AGENT_ADMIN_SUBJECT_PREFIX}.agent_published.v1`;
@@ -171,14 +172,49 @@ export const AGENT_MEMORY_EXPIRED = `${AGENT_MEMORY_SUBJECT_PREFIX}.memory_expir
  * post-loop item 2): same mis-naming as agent-admin's — a `PLATFORM_` prefix
  * over values that name one service. Pure rename, values byte-identical,
  * pinned by `src/__tests__/agent-admin.constants.test.ts`.
+ *
+ * HISTORICAL NOTE (2026-08-07, PENDIENTES/04-e3-subject.spec.md / E3): this
+ * family used to hold THREE more members —
+ * `AI_AGENT_GATEWAY_EXECUTION_STARTED/COMPLETED/FAILED`. They named subjects
+ * the gateway never published: agent-ai-service emits the whole execution
+ * lifecycle, so subject token 2 (the producer routing key, AGENTS.md subject
+ * grammar) lied. They now live below as
+ * `AGENT_AI_EXECUTION_STARTED/COMPLETED/FAILED` on the `agent-ai-service`
+ * family — a REAL wire change, not a rename. `execution_requested` stays here
+ * because the gateway genuinely publishes it (`execution-client.ts`), so its
+ * subject and envelope already agree.
  */
 export const AI_AGENT_GATEWAY_PRODUCER = "ai-agent-gateway";
 export const AI_AGENT_GATEWAY_SUBJECT_PREFIX =
   "evt.{tenant}.ai-agent-gateway.automation.platform.internal";
 export const AI_AGENT_GATEWAY_EXECUTION_REQUESTED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_requested.v1`;
-export const AI_AGENT_GATEWAY_EXECUTION_STARTED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_started.v1`;
-export const AI_AGENT_GATEWAY_EXECUTION_COMPLETED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_completed.v1`;
-export const AI_AGENT_GATEWAY_EXECUTION_FAILED = `${AI_AGENT_GATEWAY_SUBJECT_PREFIX}.execution_failed.v1`;
+
+/**
+ * agent-ai-service's identity and subject family — the agent runtime that
+ * actually executes agents and reports on them.
+ *
+ * Created 2026-08-07 (PENDIENTES/04-e3-subject.spec.md / E3, closing
+ * `DRIFT.md` items 5 and 10). Until then agent-ai-service published its three
+ * execution lifecycle events and its runtime-presence heartbeat under the
+ * `ai-agent-gateway` producer token, while the envelopes of the same messages
+ * said `agent-ai-service` — subject and body contradicted each other in
+ * opposite directions on the two publish branches.
+ *
+ * The prefix is BUILT from the identity constants (agent-memory / scheduler
+ * pattern) so the envelope's producer/domain/channel/provider fields and the
+ * subject tokens cannot disagree again.
+ *
+ * WIRE CHANGE, not a rename: tracking-ingester classifies BOTH tokens (T01,
+ * TAXONOMY.md §4 rules 6 and 20) because the persisted history and the golden
+ * set are frozen under the old one.
+ */
+export const AGENT_AI_PRODUCER = "agent-ai-service";
+export const AGENT_AI_SUBJECT_PREFIX = `evt.{tenant}.${AGENT_AI_PRODUCER}.${AUTOMATION_DOMAIN}.${PLATFORM_CHANNEL}.${PLATFORM_PROVIDER}`;
+export const AGENT_AI_EXECUTION_STARTED = `${AGENT_AI_SUBJECT_PREFIX}.execution_started.v1`;
+export const AGENT_AI_EXECUTION_COMPLETED = `${AGENT_AI_SUBJECT_PREFIX}.execution_completed.v1`;
+export const AGENT_AI_EXECUTION_FAILED = `${AGENT_AI_SUBJECT_PREFIX}.execution_failed.v1`;
+/** Runtime-presence heartbeat (`HeartbeatService`), `DRIFT.md` item 10. */
+export const AGENT_AI_ONLINE = `${AGENT_AI_SUBJECT_PREFIX}.online.v1`;
 
 /**
  * agent-scheduler-service's subject family. `SCHEDULER_HEARTBEAT` was

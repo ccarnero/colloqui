@@ -2,7 +2,12 @@ import { Inject, Injectable, type OnModuleInit } from "@nestjs/common";
 import { NATS_CONNECTION } from "@yoizen/database";
 import { PinoLoggerService } from "@yoizen/observability";
 import {
+  AGENT_AI_EXECUTION_COMPLETED,
+  AGENT_AI_EXECUTION_FAILED,
+  AGENT_AI_EXECUTION_STARTED,
+  AGENT_AI_PRODUCER,
   buildEventEnvelope,
+  buildPlatformSubject,
   buildRuntimeStreamSubject,
   deriveEnvelope,
   type EventEnvelope,
@@ -18,6 +23,29 @@ import type { ChatRequest } from "../modules/chat/chat.dto";
 import { ChatService } from "../modules/chat/chat.service";
 import { JETSTREAM } from "../providers/nats.provider";
 import { resolveTestDelayMs, waitTestDelay } from "./test-delay";
+
+/** The three execution lifecycle events this handler reports. */
+type ExecutionStatusKind =
+  | "execution_started"
+  | "execution_completed"
+  | "execution_failed";
+
+/**
+ * Lifecycle kind -> shared subject template.
+ *
+ * These subjects carry the `agent-ai-service` producer token (token 2 of the
+ * subject grammar) since 2026-08-07 —
+ * `PENDIENTES/04-e3-subject.spec.md` / E3. Until then the subject was built
+ * from a hardcoded `ai-agent-gateway` literal here while the envelope said
+ * `agent-ai-service`: the gateway only REQUESTS executions, this service runs
+ * them. Going through `@yoizen/shared` means the constants (and the consumers
+ * that import them) can never drift from what is published again.
+ */
+const EXECUTION_STATUS_SUBJECTS: Record<ExecutionStatusKind, string> = {
+  execution_started: AGENT_AI_EXECUTION_STARTED,
+  execution_completed: AGENT_AI_EXECUTION_COMPLETED,
+  execution_failed: AGENT_AI_EXECUTION_FAILED,
+};
 
 @Injectable()
 export class ExecutionHandler implements OnModuleInit {
@@ -387,7 +415,7 @@ export class ExecutionHandler implements OnModuleInit {
 
   private async publishStatus(
     tenantId: string,
-    kind: string,
+    kind: ExecutionStatusKind,
     data: Record<string, unknown>,
     incoming?: EventEnvelope
   ): Promise<void> {
@@ -398,6 +426,13 @@ export class ExecutionHandler implements OnModuleInit {
             type: `io.yoizen.platform.runtime.${kind}.v1`,
             source: `agent-ai-service/execution/${data.executionId ?? "unknown"}`,
             resource: `execution/${data.executionId ?? "unknown"}`,
+            // `deriveEnvelope` inherits `producer` from the incoming request
+            // (`ai-agent-gateway`) unless it is overridden — which made this
+            // branch report the requester as the producer of OUR event. The
+            // override is applied here, at the call site, so the generic
+            // inheritance semantics in `@yoizen/shared` stay untouched (E3,
+            // PENDIENTES/04-e3-subject.spec.md).
+            producer: AGENT_AI_PRODUCER,
             payload: data,
           })
         : buildEventEnvelope({
@@ -405,7 +440,7 @@ export class ExecutionHandler implements OnModuleInit {
             source: `agent-ai-service/execution/${data.executionId ?? "unknown"}`,
             resource: `execution/${data.executionId ?? "unknown"}`,
             tenant: tenantId,
-            producer: "agent-ai-service",
+            producer: AGENT_AI_PRODUCER,
             domain: "automation",
             channel: "platform",
             provider: "internal",
@@ -413,7 +448,13 @@ export class ExecutionHandler implements OnModuleInit {
             payload: data,
           });
 
-      const subject = `evt.${tenantId}.ai-agent-gateway.automation.platform.internal.${kind}.v1`;
+      const subject = buildPlatformSubject(
+        EXECUTION_STATUS_SUBJECTS[kind],
+        tenantId
+      );
+      this.logger.debug(
+        `[execution] Publishing ${kind} on '${subject}' (producer='${AGENT_AI_PRODUCER}')`
+      );
       this.js.publish(subject, JSON.stringify(event));
     } catch (pubError) {
       this.logger.warn(`[execution] Failed to publish ${kind}: ${pubError}`);
