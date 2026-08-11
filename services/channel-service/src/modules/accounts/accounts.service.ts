@@ -1,24 +1,22 @@
-import {
-  BadRequestException,
-  Inject,
-  Injectable,
-  NotFoundException,
-} from "@nestjs/common";
-import type { Channel, ChannelAccount, ChannelProvider } from "@yoizen/shared";
+import { Inject, Injectable } from "@nestjs/common";
 import { PinoLoggerService } from "@yoizen/observability";
+import type { Channel, ChannelAccount, ChannelProvider } from "@yoizen/shared";
 import { channelServiceConfig } from "../../config";
-import {
-  exchangeForLongLivedToken,
-  type ITokenExchangeResult,
-} from "../../providers/meta/meta-token";
 import { TelegramProvider } from "../../providers/telegram/telegram.provider";
 import {
   ACCOUNTS_REPOSITORY,
   type IAccountRow,
-  type IAccountUpdatePatch,
   type IAccountsRepository,
+  type IAccountUpdatePatch,
 } from "./accounts.repository.interface";
 
+/**
+ * Row → `ChannelAccount`. The Meta-only columns (`phone_number_id`,
+ * `waba_id`, `ig_user_id`, `app_id`, `verify_token`) are no longer surfaced:
+ * no surviving channel writes or reads them and the columns themselves are
+ * dropped with the contract shrink. `app_secret` stays — Telegram and Http
+ * use it as their webhook verification secret.
+ */
 function mapRow(row: IAccountRow, tenantId: string): ChannelAccount {
   return {
     id: row.id,
@@ -27,14 +25,9 @@ function mapRow(row: IAccountRow, tenantId: string): ChannelAccount {
     provider: row.provider as ChannelProvider,
     name: row.name,
     externalId: row.external_id,
-    phoneNumberId: row.phone_number_id ?? undefined,
-    wabaId: row.waba_id ?? undefined,
-    igUserId: row.ig_user_id ?? undefined,
     telegramBotToken: row.telegram_bot_token ?? undefined,
     accessToken: row.access_token,
-    appId: row.app_id ?? undefined,
     appSecret: row.app_secret ?? undefined,
-    verifyToken: row.verify_token ?? undefined,
     isActive: row.is_active,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -53,12 +46,15 @@ export class AccountsService {
 
   async create(
     tenantId: string,
-    data: Omit<ChannelAccount, "id" | "tenantId" | "createdAt" | "updatedAt">,
+    data: Omit<ChannelAccount, "id" | "tenantId" | "createdAt" | "updatedAt">
   ): Promise<ChannelAccount> {
     const id = crypto.randomUUID();
 
     let appSecret = data.appSecret ?? null;
-    if ((data.channel === "telegram" || data.channel === "http") && !appSecret) {
+    if (
+      (data.channel === "telegram" || data.channel === "http") &&
+      !appSecret
+    ) {
       appSecret = crypto.randomUUID().replace(/-/g, "");
     }
 
@@ -86,11 +82,11 @@ export class AccountsService {
 
   async listActive(
     tenantId: string,
-    channel: Channel,
+    channel: Channel
   ): Promise<ChannelAccount[]> {
     const rows = await this.accountsRepository.listActiveByChannel(
       tenantId,
-      channel,
+      channel
     );
 
     return rows.map((r) => mapRow(r, tenantId));
@@ -98,23 +94,9 @@ export class AccountsService {
 
   async findById(
     tenantId: string,
-    accountId: string,
+    accountId: string
   ): Promise<ChannelAccount | null> {
     const rows = await this.accountsRepository.findById(tenantId, accountId);
-
-    return rows.length > 0 ? mapRow(rows[0], tenantId) : null;
-  }
-
-  async findByVerifyToken(
-    tenantId: string,
-    channel: Channel,
-    verifyToken: string,
-  ): Promise<ChannelAccount | null> {
-    const rows = await this.accountsRepository.findByVerifyToken(
-      tenantId,
-      channel,
-      verifyToken,
-    );
 
     return rows.length > 0 ? mapRow(rows[0], tenantId) : null;
   }
@@ -123,24 +105,22 @@ export class AccountsService {
     tenantId: string,
     accountId: string,
     data: Partial<
-      Pick<
-        ChannelAccount,
-        | "name"
-        | "accessToken"
-        | "appId"
-        | "appSecret"
-        | "verifyToken"
-        | "isActive"
-      >
-    >,
+      Pick<ChannelAccount, "name" | "accessToken" | "appSecret" | "isActive">
+    >
   ): Promise<ChannelAccount | null> {
     const patch: IAccountUpdatePatch = {};
-    if (data.name !== undefined) patch.name = data.name;
-    if (data.accessToken !== undefined) patch.accessToken = data.accessToken;
-    if (data.appId !== undefined) patch.appId = data.appId;
-    if (data.appSecret !== undefined) patch.appSecret = data.appSecret;
-    if (data.verifyToken !== undefined) patch.verifyToken = data.verifyToken;
-    if (data.isActive !== undefined) patch.isActive = data.isActive;
+    if (data.name !== undefined) {
+      patch.name = data.name;
+    }
+    if (data.accessToken !== undefined) {
+      patch.accessToken = data.accessToken;
+    }
+    if (data.appSecret !== undefined) {
+      patch.appSecret = data.appSecret;
+    }
+    if (data.isActive !== undefined) {
+      patch.isActive = data.isActive;
+    }
 
     if (Object.keys(patch).length === 0) {
       return this.findById(tenantId, accountId);
@@ -149,7 +129,7 @@ export class AccountsService {
     const rows = await this.accountsRepository.updateAccount(
       tenantId,
       accountId,
-      patch,
+      patch
     );
 
     return rows.length > 0 ? mapRow(rows[0], tenantId) : null;
@@ -158,60 +138,14 @@ export class AccountsService {
   async remove(tenantId: string, accountId: string): Promise<boolean> {
     const result = await this.accountsRepository.deleteAccount(
       tenantId,
-      accountId,
+      accountId
     );
 
     return result.count > 0;
   }
 
-  /**
-   * Exchanges the current Meta access token for a long-lived one (~60 days)
-   * and persists it on the account.
-   *
-   * @param tenantId  Tenant owning the account.
-   * @param accountId Account whose token should be refreshed.
-   * @returns The exchange result including the (masked) new token and expiry.
-   */
-  async refreshMetaToken(
-    tenantId: string,
-    accountId: string,
-  ): Promise<ITokenExchangeResult> {
-    const account = await this.findById(tenantId, accountId);
-    if (!account) {
-      throw new NotFoundException("Account not found");
-    }
-
-    if (account.provider !== "meta") {
-      throw new BadRequestException(
-        "Token refresh is only supported for Meta (WhatsApp/Instagram) accounts",
-      );
-    }
-
-    if (!account.appId || !account.appSecret) {
-      throw new BadRequestException(
-        "Meta App ID and App Secret are required for token refresh",
-      );
-    }
-
-    const result = await exchangeForLongLivedToken({
-      currentToken: account.accessToken,
-      appId: account.appId,
-      appSecret: account.appSecret,
-    });
-
-    await this.update(tenantId, accountId, {
-      accessToken: result.accessToken,
-    });
-
-    this.logger.log(
-      `Meta token refreshed for account=${accountId}, expires_in=${result.expiresIn}s`,
-    );
-
-    return result;
-  }
-
   private async registerTelegramWebhook(
-    account: ChannelAccount,
+    account: ChannelAccount
   ): Promise<void> {
     const botToken = account.telegramBotToken ?? account.accessToken;
     const baseUrl = channelServiceConfig.channelServicePublicUrl;
@@ -221,21 +155,21 @@ export class AccountsService {
       const result = await this.telegramProvider.registerWebhook(
         botToken,
         webhookUrl,
-        account.appSecret ?? "",
+        account.appSecret ?? ""
       );
 
       if (result.ok) {
         this.logger.log(
-          `Telegram webhook registered for account=${account.id}`,
+          `Telegram webhook registered for account=${account.id}`
         );
       } else {
         this.logger.warn(
-          `Telegram webhook registration failed for account=${account.id}: ${result.description}`,
+          `Telegram webhook registration failed for account=${account.id}: ${result.description}`
         );
       }
     } catch (err) {
       this.logger.error(
-        `Telegram webhook registration error: ${err instanceof Error ? err.message : err}`,
+        `Telegram webhook registration error: ${err instanceof Error ? err.message : err}`
       );
     }
   }

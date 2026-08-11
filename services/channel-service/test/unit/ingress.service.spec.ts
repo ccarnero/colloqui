@@ -23,8 +23,8 @@ const LARGE_TEXT = "x".repeat(270_000);
 
 const BASE_OPTIONS = {
   tenantId: "tenant-a",
-  channel: "whatsapp" as const,
-  provider: "meta" as const,
+  channel: "telegram" as const,
+  provider: "telegram" as const,
   accountId: "acc-1",
 };
 
@@ -282,8 +282,8 @@ describe("IngressService — claim-check path (threshold = 256 KB)", () => {
       { headers: { get: (k: string) => string | undefined } },
     ];
 
-    // Subject must be for tenant-a / whatsapp / meta / received
-    expect(publishedSubject).toMatch(/tenant-a.*whatsapp.*meta.*received/);
+    // Subject must be for tenant-a / telegram / telegram / received
+    expect(publishedSubject).toMatch(/tenant-a.*telegram.*telegram.*received/);
 
     // Slim envelope must be compliant
     const slim = JSON.parse(new TextDecoder().decode(slimBytes));

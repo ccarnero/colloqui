@@ -41,13 +41,13 @@ describe("UsageService", () => {
       to: "2026-04-23T00:00:00Z",
       bucket: "day",
       accountId: "acct-1",
-      channel: "whatsapp",
+      channel: "telegram",
       direction: "ingress",
     });
     const args = repo.getBuckets.mock.calls[0]![0]!;
     expect(args.bucket).toBe("day");
     expect(args.accountId).toBe("acct-1");
-    expect(args.channel).toBe("whatsapp");
+    expect(args.channel).toBe("telegram");
     expect(args.direction).toBe("ingress");
   });
 

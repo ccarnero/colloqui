@@ -4,9 +4,6 @@ import { Test } from "@nestjs/testing";
 import { ChannelRouter } from "../../src/providers/channel-router";
 import { E2eTestsProvider } from "../../src/providers/e2e-tests/e2e-tests.provider";
 import { HttpProvider } from "../../src/providers/http/http.provider";
-import { InstagramProvider } from "../../src/providers/meta/instagram/instagram.provider";
-import { ProviderRegistry } from "../../src/providers/meta/provider-registry";
-import { WhatsAppProvider } from "../../src/providers/meta/whatsapp/whatsapp.provider";
 import { TelegramProvider } from "../../src/providers/telegram/telegram.provider";
 
 describe("ChannelRouter", () => {
@@ -16,9 +13,6 @@ describe("ChannelRouter", () => {
     const moduleRef = await Test.createTestingModule({
       providers: [
         ChannelRouter,
-        ProviderRegistry,
-        WhatsAppProvider,
-        InstagramProvider,
         TelegramProvider,
         HttpProvider,
         E2eTestsProvider,
@@ -27,10 +21,15 @@ describe("ChannelRouter", () => {
     router = moduleRef.get(ChannelRouter);
   });
 
-  it("resolves Meta and Telegram providers", () => {
-    expect(router.get("whatsapp")).toBeDefined();
-    expect(router.get("instagram")).toBeDefined();
+  it("resolves the telegram provider", () => {
     expect(router.get("telegram")).toBeDefined();
+  });
+
+  it("resolves nothing for a decommissioned channel token", () => {
+    // The Meta family is gone: a token the router no longer registers must
+    // resolve to `undefined` (the ingress path turns that into
+    // `unsupported_channel`), never to a leftover provider.
+    expect(router.get("slack" as never)).toBeUndefined();
   });
 
   it("resolves the http provider", () => {

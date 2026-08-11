@@ -23,8 +23,8 @@ describe("Channel message flow services", () => {
 
       await ingress.processInbound({
         tenantId: "tenant-a",
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         accountId: "acc-1",
         messages: [
           {
@@ -113,7 +113,7 @@ describe("Channel message flow services", () => {
       const rule = await service.createRule({
         tenantId: "tenant-a",
         accountId: "acc-1",
-        channel: "whatsapp",
+        channel: "telegram",
         triggerPattern: "hello",
         replyText: "Hi there",
       });

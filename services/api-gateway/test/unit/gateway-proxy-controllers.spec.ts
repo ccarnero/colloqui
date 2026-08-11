@@ -1,9 +1,8 @@
 import "reflect-metadata";
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { WebhooksController } from "../../src/modules/channels/webhooks.controller";
 import { WebhookIngressPublisherService } from "../../src/modules/channels/webhook-ingress-publisher.service";
-import { WebhookVerifyRpcClient } from "../../src/modules/channels/webhook-verify-rpc.client";
+import { WebhooksController } from "../../src/modules/channels/webhooks.controller";
 import { DashboardController } from "../../src/modules/dashboard/dashboard.controller";
 import { DashboardProxyService } from "../../src/modules/dashboard/dashboard-proxy.service";
 import { ProxyController } from "../../src/modules/proxy/proxy.controller";
@@ -12,35 +11,40 @@ import { ProxyProxyService } from "../../src/modules/proxy/proxy-proxy.service";
 describe("Gateway proxy controllers", () => {
   describe("WebhooksController", () => {
     let controller: WebhooksController;
-    let verifyClient: ReturnType<typeof mock>;
+    let publishWebhook: ReturnType<typeof mock>;
 
     beforeEach(async () => {
-      verifyClient = { verify: mock(() => Promise.resolve("ok")) };
+      publishWebhook = mock(() => Promise.resolve());
       const moduleRef = await Test.createTestingModule({
         controllers: [WebhooksController],
         providers: [
-          { provide: WebhookIngressPublisherService, useValue: { publishWebhook: mock() } },
-          { provide: WebhookVerifyRpcClient, useValue: verifyClient },
+          {
+            provide: WebhookIngressPublisherService,
+            useValue: { publishWebhook },
+          },
         ],
       }).compile();
       controller = moduleRef.get(WebhooksController);
     });
 
-    it("verify forwards to verify RPC client", async () => {
-      await controller.verify("whatsapp", "t1", {
-        "hub.mode": "subscribe",
-        "hub.verify_token": "tok",
-        "hub.challenge": "ch",
-      } as never);
-      expect(verifyClient.verify).toHaveBeenCalledWith({
-        tenantId: "t1",
-        channel: "whatsapp",
-        query: {
-          "hub.mode": "subscribe",
-          "hub.verify_token": "tok",
-          "hub.challenge": "ch",
-        },
-      });
+    it("receive forwards the raw body to the ingress publisher", async () => {
+      const rawBody = Buffer.from('{"update_id":1}', "utf8");
+      const request = {
+        rawBody,
+        headers: { "x-telegram-bot-api-secret-token": "tok" },
+        body: { update_id: 1 },
+      };
+
+      const out = await controller.receive("telegram", "t1", request as never);
+
+      expect(out).toEqual({ status: "accepted" });
+      expect(publishWebhook).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenantId: "t1",
+          channel: "telegram",
+          rawBody,
+        })
+      );
     });
   });
 

@@ -11,7 +11,7 @@ import { SendMessageDto } from "../../src/modules/egress/egress.dto";
 // `SendMessageDto.templateComponents` carried `@IsArray()` only over
 // `Record<string, unknown>[]`. Under the production pipe's implicit conversion,
 // class-transformer coerces every element via `plainToClass(Array, element)`,
-// so the WhatsApp template components reached `EgressController` as `[[]]` —
+// so the template components reached `EgressController` as `[[]]` —
 // the same defect as H2 one hop below, reachable by any direct egress call even
 // after the gateway DTO is fixed. `@Type(() => Object)` stops the element-wise
 // coercion.

@@ -165,7 +165,7 @@ describe("StreamsService", () => {
     const js = makeJs([
       {
         seq: 42,
-        subject: "ingress.whatsapp.received",
+        subject: "ingress.telegram.received",
         data: new TextEncoder().encode(JSON.stringify({ hello: "world" })),
       },
     ]);
@@ -174,7 +174,7 @@ describe("StreamsService", () => {
     const out = await service.getMessages(
       "tenant-1",
       "ingress",
-      "ingress.whatsapp.*",
+      "ingress.telegram.*",
       10,
     );
     expect(out).toHaveLength(1);
@@ -186,7 +186,7 @@ describe("StreamsService", () => {
     }).mock.calls;
     expect(addCalls).toHaveLength(1);
     const cfg = addCalls[0]![1] as { filter_subject?: string };
-    expect(cfg.filter_subject).toBe("ingress.whatsapp.*");
+    expect(cfg.filter_subject).toBe("ingress.telegram.*");
     await new Promise((r) => setTimeout(r, 0));
     expect(deleted[0]![0]).toBe("INGRESS-TENANT-1");
   });
@@ -362,7 +362,7 @@ describe("StreamsService", () => {
     await service.getMessages(
       "tenant-1",
       "ingress",
-      "ingress.whatsapp.*",
+      "ingress.telegram.*",
       5,
       "tail",
     );
@@ -375,6 +375,6 @@ describe("StreamsService", () => {
       filter_subject?: string;
     };
     expect(cfg.deliver_policy).toBe("by_start_sequence");
-    expect(cfg.filter_subject).toBe("ingress.whatsapp.*");
+    expect(cfg.filter_subject).toBe("ingress.telegram.*");
   });
 });

@@ -1,28 +1,27 @@
 import {
-  Controller,
-  Get,
-  Post,
-  Patch,
-  Delete,
-  Param,
-  Query,
   Body,
+  Controller,
+  Delete,
+  Get,
   Headers,
   HttpCode,
   HttpStatus,
   NotFoundException,
+  Param,
+  Patch,
+  Post,
+  Query,
 } from "@nestjs/common";
 import type { Channel } from "@yoizen/shared";
 import { TENANT_HEADER } from "@yoizen/shared";
-import { AccountsService } from "./accounts.service";
 import {
   CreateAccountDto,
   ListAccountsQueryDto,
-  type RefreshTokenResponseDto,
   UpdateAccountDto,
 } from "./accounts.dto";
+import { AccountsService } from "./accounts.service";
 
-/** CRUD for channel accounts (WhatsApp, Instagram, Telegram). */
+/** CRUD for channel accounts (Telegram, Http, E2e-tests). */
 @Controller("channels/accounts")
 export class AccountsController {
   constructor(private readonly accounts: AccountsService) {}
@@ -31,24 +30,21 @@ export class AccountsController {
   @HttpCode(HttpStatus.CREATED)
   async create(
     @Headers(TENANT_HEADER) tenantId: string,
-    @Body() dto: CreateAccountDto,
+    @Body() dto: CreateAccountDto
   ) {
-    const provider =
-      dto.provider ?? (dto.channel === "telegram" ? "telegram" : "meta");
+    // Every surviving channel is served by its own single-channel provider,
+    // so the provider defaults to the channel itself — no silent fallback to
+    // the decommissioned family provider that used to absorb two channels.
+    const provider = dto.provider ?? dto.channel;
 
     return this.accounts.create(tenantId, {
       channel: dto.channel,
       provider,
       name: dto.name,
       externalId: dto.externalId,
-      phoneNumberId: dto.phoneNumberId,
-      wabaId: dto.wabaId,
-      igUserId: dto.igUserId,
       telegramBotToken: dto.telegramBotToken,
       accessToken: dto.accessToken,
-      appId: dto.appId,
       appSecret: dto.appSecret,
-      verifyToken: dto.verifyToken,
       isActive: dto.isActive ?? true,
     });
   }
@@ -62,7 +58,7 @@ export class AccountsController {
   @Get()
   async list(
     @Headers(TENANT_HEADER) tenantId: string,
-    @Query() query: ListAccountsQueryDto,
+    @Query() query: ListAccountsQueryDto
   ) {
     return this.accounts.list(tenantId, query.channel as Channel | undefined);
   }
@@ -70,7 +66,9 @@ export class AccountsController {
   @Get(":id")
   async get(@Headers(TENANT_HEADER) tenantId: string, @Param("id") id: string) {
     const account = await this.accounts.findById(tenantId, id);
-    if (!account) throw new NotFoundException("Account not found");
+    if (!account) {
+      throw new NotFoundException("Account not found");
+    }
     return account;
   }
 
@@ -78,46 +76,24 @@ export class AccountsController {
   async update(
     @Headers(TENANT_HEADER) tenantId: string,
     @Param("id") id: string,
-    @Body() dto: UpdateAccountDto,
+    @Body() dto: UpdateAccountDto
   ) {
     const account = await this.accounts.update(tenantId, id, dto);
-    if (!account) throw new NotFoundException("Account not found");
+    if (!account) {
+      throw new NotFoundException("Account not found");
+    }
     return account;
-  }
-
-  /**
-   * Exchanges the current Meta access token for a long-lived one (~60 days).
-   *
-   * @param tenantId Resolved from `x-yoizen-tenant`.
-   * @param id       Account ID whose token should be refreshed.
-   * @returns The new token metadata (token is masked in response).
-   */
-  @Post(":id/refresh-token")
-  async refreshToken(
-    @Headers(TENANT_HEADER) tenantId: string,
-    @Param("id") id: string,
-  ): Promise<RefreshTokenResponseDto> {
-    const result = await this.accounts.refreshMetaToken(tenantId, id);
-
-    const masked =
-      result.accessToken.length > 12
-        ? `${result.accessToken.slice(0, 6)}..${result.accessToken.slice(-4)}`
-        : "***";
-
-    return {
-      accessToken: masked,
-      tokenType: result.tokenType,
-      expiresIn: result.expiresIn,
-    };
   }
 
   @Delete(":id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async remove(
     @Headers(TENANT_HEADER) tenantId: string,
-    @Param("id") id: string,
+    @Param("id") id: string
   ) {
     const deleted = await this.accounts.remove(tenantId, id);
-    if (!deleted) throw new NotFoundException("Account not found");
+    if (!deleted) {
+      throw new NotFoundException("Account not found");
+    }
   }
 }

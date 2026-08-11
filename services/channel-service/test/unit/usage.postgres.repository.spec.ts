@@ -44,7 +44,7 @@ function makeConnections(
 describe("UsagePostgresRepository.getSummary", () => {
   it("dedicated tier: counts rows from raw channel_events instead of SUM(events)", async () => {
     const { sql, calls } = makeSqlUnsafe([
-      { channel: "whatsapp", direction: "ingress", events: "12" },
+      { channel: "telegram", direction: "ingress", events: "12" },
     ]);
     const repo = new UsagePostgresRepository(makeConnections(sql));
 
@@ -57,13 +57,13 @@ describe("UsagePostgresRepository.getSummary", () => {
     expect(query).toContain("FROM channel_events");
     expect(query).not.toMatch(/FROM channel_events_(hourly|daily)/);
     expect(rows).toEqual([
-      { channel: "whatsapp", direction: "ingress", events: 12 },
+      { channel: "telegram", direction: "ingress", events: 12 },
     ]);
   });
 
   it("shared tier: counts rows from raw channel_events scoped by tenant_id", async () => {
     const { sql, calls } = makeSqlUnsafe([
-      { channel: "instagram", direction: "egress", events: "3" },
+      { channel: "http", direction: "egress", events: "3" },
     ]);
     const repo = new UsagePostgresRepository(
       makeConnections(sql, SharedTenantDatabaseMode.SingleDatabase)
@@ -78,7 +78,7 @@ describe("UsagePostgresRepository.getSummary", () => {
     expect(query).toContain("WHERE tenant_id = $1");
     expect(params).toEqual(["tenant-2"]);
     expect(rows).toEqual([
-      { channel: "instagram", direction: "egress", events: 3 },
+      { channel: "http", direction: "egress", events: 3 },
     ]);
   });
 });

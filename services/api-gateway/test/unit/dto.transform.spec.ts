@@ -353,7 +353,6 @@ const EXPECTED_DTO_CLASSES: readonly string[] = [
   "UsageQueryGatewayDto",
   "UsageTotalsQueryGatewayDto",
   "WebhookInboundBodyDto",
-  "WebhookVerificationQueryDto",
 ];
 
 /**

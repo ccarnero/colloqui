@@ -1,11 +1,11 @@
 import { Inject, Injectable } from "@nestjs/common";
-import type { TenantConnectionManager, Sql } from "@yoizen/database";
+import type { Sql, TenantConnectionManager } from "@yoizen/database";
 import type { Channel } from "@yoizen/shared";
 import { ChannelTenantConnectionManager } from "../../providers/channel-tenant-connection-manager";
 import type {
   IAccountRow,
-  IAccountUpdatePatch,
   IAccountsRepository,
+  IAccountUpdatePatch,
   IInsertAccountParams,
 } from "./accounts.repository.interface";
 
@@ -43,7 +43,7 @@ export class AccountsPostgresRepository implements IAccountsRepository {
 
   async listByTenant(
     tenantId: string,
-    channel?: Channel,
+    channel?: Channel
   ): Promise<IAccountRow[]> {
     const sql = await this.sqlFor(tenantId);
     return channel
@@ -60,7 +60,7 @@ export class AccountsPostgresRepository implements IAccountsRepository {
 
   async listActiveByChannel(
     tenantId: string,
-    channel: Channel,
+    channel: Channel
   ): Promise<IAccountRow[]> {
     const sql = await this.sqlFor(tenantId);
     return sql<IAccountRow[]>`
@@ -71,29 +71,11 @@ export class AccountsPostgresRepository implements IAccountsRepository {
     `;
   }
 
-  async findById(
-    tenantId: string,
-    accountId: string,
-  ): Promise<IAccountRow[]> {
+  async findById(tenantId: string, accountId: string): Promise<IAccountRow[]> {
     const sql = await this.sqlFor(tenantId);
     return sql<IAccountRow[]>`
       SELECT * FROM channel_accounts
       WHERE id = ${accountId}
-      LIMIT 1
-    `;
-  }
-
-  async findByVerifyToken(
-    tenantId: string,
-    channel: Channel,
-    verifyToken: string,
-  ): Promise<IAccountRow[]> {
-    const sql = await this.sqlFor(tenantId);
-    return sql<IAccountRow[]>`
-      SELECT * FROM channel_accounts
-      WHERE channel = ${channel}
-        AND verify_token = ${verifyToken}
-        AND is_active = true
       LIMIT 1
     `;
   }
@@ -104,7 +86,7 @@ export class AccountsPostgresRepository implements IAccountsRepository {
   async updateAccount(
     tenantId: string,
     accountId: string,
-    data: IAccountUpdatePatch,
+    data: IAccountUpdatePatch
   ): Promise<IAccountRow[]> {
     const sets: string[] = [];
     const values: unknown[] = [];
@@ -159,7 +141,7 @@ export class AccountsPostgresRepository implements IAccountsRepository {
 
   async deleteAccount(
     tenantId: string,
-    accountId: string,
+    accountId: string
   ): Promise<{ count: number }> {
     const sql = await this.sqlFor(tenantId);
     return sql`

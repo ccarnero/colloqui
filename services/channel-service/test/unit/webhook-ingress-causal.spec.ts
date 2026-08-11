@@ -15,8 +15,8 @@ describe("webhook causal chain threading", () => {
     // The consumer extracts: correlationId="C", causationId="W", depth=(0)+1=1
     const envelope = createChannelEnvelope({
       tenantId: "tenant-1",
-      channel: "whatsapp",
-      provider: "meta",
+      channel: "telegram",
+      provider: "telegram",
       kind: "received",
       message: baseMessage,
       accountId: "acc-1",
@@ -39,8 +39,8 @@ describe("webhook causal chain threading", () => {
 
     const envelope = createChannelEnvelope({
       tenantId: "tenant-1",
-      channel: "whatsapp",
-      provider: "meta",
+      channel: "telegram",
+      provider: "telegram",
       kind: "received",
       message: baseMessage,
       accountId: "acc-1",
@@ -56,8 +56,8 @@ describe("webhook causal chain threading", () => {
     // Non-webhook caller omits causal fields entirely
     const envelope = createChannelEnvelope({
       tenantId: "tenant-1",
-      channel: "whatsapp",
-      provider: "meta",
+      channel: "telegram",
+      provider: "telegram",
       kind: "received",
       message: baseMessage,
       accountId: "acc-1",

@@ -1,17 +1,17 @@
 # Channel Service
 
 Class: descriptive
-Summary: Everything a tenant's messaging channels need: account CRUD and token refresh, webhook ingress, egress sends, auto-reply, and the provider implementations behind them.
+Summary: Everything a tenant's messaging channels need: account CRUD, webhook ingress, egress sends, auto-reply, and the provider implementations behind them.
 
-Owns everything a tenant's messaging channels need: channel **accounts** (CRUD +
-token refresh), **ingress** (inbound provider messages → canonical JetStream
-events), **egress** (outbound sends, HTTP and command-driven), **auto-reply**
-rules, and **usage** reads off the billing time-series tier.
+Owns everything a tenant's messaging channels need: channel **accounts** (CRUD),
+**ingress** (inbound provider messages → canonical JetStream events), **egress**
+(outbound sends, HTTP and command-driven), **auto-reply** rules, and **usage**
+reads off the billing time-series tier.
 
 Supported channels are whatever `ChannelRouter` has a provider for
-(`src/providers/channel-router.ts:18-34`): `whatsapp` and `instagram` via the
-Meta `ProviderRegistry` (`src/providers/meta/provider-registry.ts:10-15`), plus
-`telegram` and `http`.
+(`src/providers/channel-router.ts:18-28`): `telegram`, `http` and the
+outbound-only `e2e-tests` sink. There is no provider family registry — each
+channel registers its own provider directly.
 
 Runs as two processes from one image, selected by `SERVICE_MODE`
 (`src/main.ts:10-21`, `bootstrapSplitService`).
@@ -42,7 +42,6 @@ consumes nothing:
 | Webhook ingress consumer | `src/modules/webhooks/webhook-ingress-consumer.service.ts:61-80` | ensure-only |
 | Auto-reply dispatcher | `src/modules/auto-reply/auto-reply.service.ts:81-121` | ensure-only |
 | Egress send-command consumer | `src/modules/egress/send-command-consumer.service.ts:96-117` | ensure-only |
-| Webhook-verify RPC server | `src/modules/webhooks/webhook-verify-rpc.server.ts:33` | returns early, never subscribes |
 
 ## Contracts
 
@@ -55,12 +54,11 @@ rather than being rejected with a `400`. `/health` takes no tenant.
 
 | Method | Path | Source |
 |---|---|---|
-| `POST` | `/channels/accounts` | `src/modules/accounts/accounts.controller.ts:30-32` |
-| `GET` | `/channels/accounts` | `accounts.controller.ts:62-63` |
-| `GET` | `/channels/accounts/:id` | `accounts.controller.ts:70-71` |
-| `PATCH` | `/channels/accounts/:id` | `accounts.controller.ts:77-78` |
-| `POST` | `/channels/accounts/:id/refresh-token` | `accounts.controller.ts:95-96` |
-| `DELETE` | `/channels/accounts/:id` | `accounts.controller.ts:114-116` |
+| `POST` | `/channels/accounts` | `src/modules/accounts/accounts.controller.ts:29-31` |
+| `GET` | `/channels/accounts` | `accounts.controller.ts:58-59` |
+| `GET` | `/channels/accounts/:id` | `accounts.controller.ts:66-67` |
+| `PATCH` | `/channels/accounts/:id` | `accounts.controller.ts:75-76` |
+| `DELETE` | `/channels/accounts/:id` | `accounts.controller.ts:88-90` |
 | `POST` | `/channels/auto-reply` | `src/modules/auto-reply/auto-reply.controller.ts:26-28` |
 | `GET` | `/channels/auto-reply` | `auto-reply.controller.ts:41-42` |
 | `DELETE` | `/channels/auto-reply/:id` | `auto-reply.controller.ts:49-51` |
@@ -86,10 +84,12 @@ Every consumer reconciles tenant streams matching `/^INGRESS-/` via
 | `auto-reply` (`auto-reply.service.ts:50`) | `evt.*.channel-service.messaging.*.*.received.v1` (built at `auto-reply.service.ts:99`) | Match rules, send the reply |
 | `channel-egress` (`send-command-consumer.service.ts:38`) | `evt.*.channel-service.messaging.*.*.send.v1` (`CHANNEL_SEND_SUBJECT_PATTERN`, `channel.constants.ts:35-36`) | Execute outbound send commands (e.g. workflow-service `channelSend`) |
 
-Plus a request/reply server on `rpc.channel-service.webhook.verify.v1`
-(`WEBHOOK_VERIFY_RPC_SUBJECT`, `channel.constants.ts:42-43`) answering
-api-gateway's Meta `hub.challenge` verification
-(`src/modules/webhooks/webhook-verify-rpc.server.ts`).
+There is no webhook-verify request/reply server any more: the `hub.challenge`
+GET verification handshake was Meta's, and it was removed end-to-end with the
+Meta provider family (the api-gateway `GET /api/webhooks/:channel/:tenantId`
+route went with it). `WEBHOOK_VERIFY_RPC_SUBJECT` in
+`packages/shared/src/channel.constants.ts` is now unused and dies with the
+contract shrink.
 
 The webhook ingress handler runs with a concurrency of 32 by default,
 overridable via `WEBHOOK_INGRESS_HANDLER_CONCURRENCY`
@@ -143,7 +143,7 @@ column — the database is the boundary.
 
 | Variable | Default | Description |
 |---|---|---|
-| `SERVICE_MODE` | `api` | `api` or `worker`; gates all four NATS components (see the split table above) |
+| `SERVICE_MODE` | `api` | `api` or `worker`; gates all three NATS components (see the split table above) |
 | `PORT` | `3000` | HTTP port (`src/config.ts:17-19`) |
 | `DB_ENGINE` | `postgres` | Storage engine: `postgres` or `mongo`; falls back to `STORAGE_ENGINE`, throws on any other value (`packages/database/src/engine.ts:13-23`, read at `src/config.ts:20-22`) |
 | `PLATFORM_ENVIRONMENT` | `dev` | Feeds every in-cluster default hostname (`src/config.ts:4`) |

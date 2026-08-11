@@ -1,24 +1,20 @@
 import {
   BadRequestException,
   Controller,
-  Get,
-  Post,
-  Param,
-  Query,
-  Req,
   HttpCode,
   HttpStatus,
+  Param,
+  Post,
   type RawBodyRequest,
+  Req,
 } from "@nestjs/common";
-import type { FastifyRequest } from "fastify";
+import { ApiTags } from "@nestjs/swagger";
 import type { Channel } from "@yoizen/shared";
-import type { IYoizenRequest } from "../../types/yoizen-request";
+import type { FastifyRequest } from "fastify";
 import { Public } from "../../decorators/public.decorator";
 import { SkipTenant } from "../../decorators/skip-tenant.decorator";
-import { WebhookVerificationQueryDto } from "./webhooks-gateway.dto";
+import type { IYoizenRequest } from "../../types/yoizen-request";
 import { WebhookIngressPublisherService } from "./webhook-ingress-publisher.service";
-import { WebhookVerifyRpcClient } from "./webhook-verify-rpc.client";
-import { ApiTags } from "@nestjs/swagger";
 
 /**
  * Webhook endpoints are public (no JWT, no tenant guard).
@@ -27,25 +23,7 @@ import { ApiTags } from "@nestjs/swagger";
 @ApiTags("webhooks")
 @Controller("webhooks")
 export class WebhooksController {
-  constructor(
-    private readonly publisher: WebhookIngressPublisherService,
-    private readonly verifyClient: WebhookVerifyRpcClient,
-  ) {}
-
-  @Get(":channel/:tenantId")
-  @Public()
-  @SkipTenant()
-  async verify(
-    @Param("channel") channel: string,
-    @Param("tenantId") tenantId: string,
-    @Query() query: WebhookVerificationQueryDto,
-  ): Promise<string> {
-    return this.verifyClient.verify({
-      tenantId,
-      channel,
-      query,
-    });
-  }
+  constructor(private readonly publisher: WebhookIngressPublisherService) {}
 
   @Post(":channel/:tenantId")
   @Public()
@@ -54,7 +32,7 @@ export class WebhooksController {
   async receive(
     @Param("channel") channel: string,
     @Param("tenantId") tenantId: string,
-    @Req() request: RawBodyRequest<FastifyRequest>,
+    @Req() request: RawBodyRequest<FastifyRequest>
   ): Promise<{ status: string }> {
     return this.ingest(channel, tenantId, undefined, request);
   }
@@ -74,7 +52,7 @@ export class WebhooksController {
     @Param("channel") channel: string,
     @Param("tenantId") tenantId: string,
     @Param("instance") instance: string,
-    @Req() request: RawBodyRequest<FastifyRequest>,
+    @Req() request: RawBodyRequest<FastifyRequest>
   ): Promise<{ status: string }> {
     return this.ingest(channel, tenantId, instance, request);
   }
@@ -83,11 +61,11 @@ export class WebhooksController {
     channel: string,
     tenantId: string,
     instance: string | undefined,
-    request: RawBodyRequest<FastifyRequest>,
+    request: RawBodyRequest<FastifyRequest>
   ): Promise<{ status: string }> {
     if (!Buffer.isBuffer(request.rawBody) || request.rawBody.length === 0) {
       throw new BadRequestException(
-        "Missing raw request body for webhook ingress",
+        "Missing raw request body for webhook ingress"
       );
     }
 

@@ -9,8 +9,8 @@ function accountDoc(overrides: Record<string, unknown> = {}) {
   const now = new Date("2020-01-01T00:00:00.000Z");
   return {
     _id: "acc-1",
-    channel: "whatsapp",
-    provider: "meta",
+    channel: "telegram",
+    provider: "telegram",
     name: "Primary",
     external_id: "ext-1",
     phone_number_id: null,
@@ -51,8 +51,8 @@ describe("AccountsMongoRepository", () => {
       id: "acc-1",
       tenantId: "tenant-a",
       data: {
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         name: "Primary",
         externalId: "ext-1",
         phoneNumberId: null,
@@ -92,9 +92,9 @@ describe("AccountsMongoRepository", () => {
     }).compile();
 
     const repo = moduleRef.get(AccountsMongoRepository);
-    const rows = await repo.listByTenant("tenant-a", "whatsapp");
+    const rows = await repo.listByTenant("tenant-a", "telegram");
     expect(rows).toHaveLength(1);
-    expect(find).toHaveBeenCalledWith({ channel: "whatsapp" });
+    expect(find).toHaveBeenCalledWith({ channel: "telegram" });
   });
 
   it("updateAccount applies patch via findOneAndUpdate", async () => {

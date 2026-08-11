@@ -33,12 +33,12 @@ describe("SendCommandConsumerService", () => {
   }
 
   const CANONICAL_SEND_SUBJECT =
-    "evt.acme.channel-service.messaging.whatsapp.meta.send.v1";
+    "evt.acme.channel-service.messaging.telegram.telegram.send.v1";
 
   const baseEnvelope = {
     id: "cmd-1",
     specversion: "1.0",
-    type: "io.yoizen.messaging.whatsapp.meta.send.v1",
+    type: "io.yoizen.messaging.telegram.telegram.send.v1",
     source: "workflow-service/channel-send",
     time: new Date().toISOString(),
     datacontenttype: "application/json",
@@ -51,10 +51,10 @@ describe("SendCommandConsumerService", () => {
     },
     tenantId: "acme",
     tenant: "acme",
-    channel: "whatsapp",
-    provider: "meta",
+    channel: "telegram",
+    provider: "telegram",
     kind: "send",
-    idempotencyKey: "sha256:acme_whatsapp_send",
+    idempotencyKey: "sha256:acme_telegram_send",
     correlation_id: "corr-1",
     transport: { method: "stream", protocol: "internal", depth: 2 },
   };

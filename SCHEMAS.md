@@ -41,7 +41,7 @@ asset). No schema was created, copied, or modified as part of producing this doc
 |---|---|---|---|---|
 | `WebhookIngressEnvelope` | `packages/shared/src/webhook.interfaces.ts:44` | `Omit<EventEnvelope, "accountid">` narrowed to `producer:"api-gateway"`, `domain:"messaging"`, `provider:"webhook"`, `kind:"webhook_received"` — the pre-signature-verification envelope | `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.service.ts` | TS discriminated type alias (compile-time only) |
 | `IWebhookIngressData` | `webhook.interfaces.ts:15` | Extends `EventData` with `raw_body_b64`, filtered `headers`, optional `instance` | `WebhookIngressEnvelope` | TS interface (compile-time only) |
-| `IWebhookVerifyRequest` / `IWebhookVerifyResponse` | `webhook.interfaces.ts:4-13` | RPC request/response for webhook token verification (NATS request/reply, not a bus envelope) | `WebhookVerifyRpcClient` (api-gateway), `webhook-verify-rpc.server.ts` (channel-service) | TS interface/type (compile-time only) |
+| `IWebhookVerifyRequest` / `IWebhookVerifyResponse` | `webhook.interfaces.ts:4-13` | RPC request/response for webhook token verification (NATS request/reply, not a bus envelope) | NONE — the `hub.challenge` verify path was Meta-only and was removed end-to-end with the Meta provider family; these types are dead pending the contract shrink | TS interface/type (compile-time only) |
 
 ## 4. Claim-check (`packages/database`)
 

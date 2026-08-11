@@ -5,8 +5,8 @@ describe("createChannelEnvelope", () => {
   it("builds envelope with idempotency and subject", () => {
     const env = createChannelEnvelope({
       tenantId: "tenant-a",
-      channel: "whatsapp",
-      provider: "meta",
+      channel: "telegram",
+      provider: "telegram",
       kind: "received",
       message: {
         messageId: "m1",
@@ -19,7 +19,7 @@ describe("createChannelEnvelope", () => {
       accountId: "acc-1",
     });
     expect(env.tenant).toBe("tenant-a");
-    expect(env.channel).toBe("whatsapp");
+    expect(env.channel).toBe("telegram");
     expect(env.kind).toBe("received");
     expect(env.producer).toBe("channel-service");
     expect(env.domain).toBe("messaging");
@@ -38,8 +38,8 @@ describe("createChannelEnvelope", () => {
   it("produces deterministic idempotencyKey for identical raw payloads", () => {
     const base = {
       tenantId: "t1",
-      channel: "whatsapp" as const,
-      provider: "meta" as const,
+      channel: "telegram" as const,
+      provider: "telegram" as const,
       kind: "received" as const,
       accountId: "acc-1",
       message: {
@@ -71,8 +71,8 @@ describe("createChannelEnvelope", () => {
   describe("webhook header allowlist placement", () => {
     const baseOptions = {
       tenantId: "tenant-a",
-      channel: "whatsapp" as const,
-      provider: "meta" as const,
+      channel: "telegram" as const,
+      provider: "telegram" as const,
       kind: "received" as const,
       accountId: "acc-1",
       message: {

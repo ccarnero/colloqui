@@ -15,47 +15,6 @@ type IAccountWithSecret = Awaited<
   ReturnType<AccountsService["listActive"]>
 >[number];
 
-function extractMetaPhoneNumberId(
-  body: Record<string, unknown>
-): string | undefined {
-  const entry = body.entry;
-  if (!Array.isArray(entry) || entry.length === 0) {
-    return undefined;
-  }
-  const first = entry[0] as Record<string, unknown>;
-  const changes = first.changes;
-  if (!Array.isArray(changes) || changes.length === 0) {
-    return undefined;
-  }
-  const value = (
-    changes[0] as { value?: { metadata?: { phone_number_id?: string } } }
-  )?.value;
-  return value?.metadata?.phone_number_id;
-}
-
-/** Best-effort Instagram business account id from Graph webhook JSON. */
-function extractInstagramBusinessIdHint(
-  body: Record<string, unknown>
-): string | undefined {
-  const entry = body.entry;
-  if (!Array.isArray(entry) || entry.length === 0) {
-    return undefined;
-  }
-  for (const ent of entry) {
-    const e = ent as Record<string, unknown>;
-    const messaging = e.messaging;
-    if (Array.isArray(messaging)) {
-      for (const m of messaging) {
-        const mid = (m as { recipient?: { id?: string } })?.recipient?.id;
-        if (typeof mid === "string") {
-          return mid;
-        }
-      }
-    }
-  }
-  return undefined;
-}
-
 @Injectable()
 export class WebhookIngressService {
   private readonly logger = new PinoLoggerService(WebhookIngressService.name);
@@ -124,7 +83,6 @@ export class WebhookIngressService {
       channel: channelType,
       tenantId,
       activeAccounts,
-      body,
       instance,
     });
     if ("status" in resolution) {
@@ -160,15 +118,16 @@ export class WebhookIngressService {
   }
 
   /**
-   * Picks the account for ingress: verifies HMAC when a signature header is
-   * present; disambiguates multiple Meta accounts via payload metadata.
+   * Picks the account for ingress: the signature header is the ONLY signal
+   * that identifies which account delivered the update (the payload of every
+   * surviving channel carries no account id), so a missing/empty secret is
+   * treated as `signature_mismatch` — never a silent fallback to the first
+   * active account, which would be a spoofing vector.
    *
-   * For Telegram and Http, the signature header is the ONLY signal that
-   * identifies which account delivered the update (the payload carries no
-   * account id), so a missing/empty secret is treated as `signature_mismatch`
-   * to avoid silent routing to the first active account (which would also
-   * be a spoofing vector). WhatsApp/Instagram keep the legacy fallback
-   * because they can disambiguate via `phone_number_id` / `ig_user_id`.
+   * The legacy first-active-account fallback and the payload-metadata
+   * disambiguation (`phone_number_id` / `ig_user_id`) went away with the Meta
+   * provider family: no surviving channel can identify an account from the
+   * body, so an ambiguous verification is a rejection.
    */
   private resolveAccount(options: {
     provider: IChannelProvider;
@@ -177,11 +136,10 @@ export class WebhookIngressService {
     channel: Channel;
     tenantId: string;
     activeAccounts: IAccountWithSecret[];
-    body: Record<string, unknown>;
     /** Account `externalId` from the instance-addressed ingress URL, if any. */
     instance?: string;
   }): { account: IAccountWithSecret } | { status: string } {
-    const { provider, rawBody, signature, channel, tenantId, body, instance } =
+    const { provider, rawBody, signature, channel, tenantId, instance } =
       options;
 
     /**
@@ -207,14 +165,11 @@ export class WebhookIngressService {
     }
 
     if (!signature) {
-      if (channel === "telegram" || channel === "http") {
-        webhookVerificationFailures.add(1, { channel, tenant: tenantId });
-        this.logger.warn(
-          `${channel} webhook rejected: missing ${provider.signatureHeader} (tenant=${tenantId})`
-        );
-        return { status: "signature_mismatch" };
-      }
-      return { account: activeAccounts[0] };
+      webhookVerificationFailures.add(1, { channel, tenant: tenantId });
+      this.logger.warn(
+        `${channel} webhook rejected: missing ${provider.signatureHeader ?? "signature header"} (tenant=${tenantId})`
+      );
+      return { status: "signature_mismatch" };
     }
 
     const verified = activeAccounts.filter((account) => {
@@ -235,26 +190,6 @@ export class WebhookIngressService {
 
     if (verified.length === 1) {
       return { account: verified[0] };
-    }
-
-    if (channel === "whatsapp") {
-      const phoneId = extractMetaPhoneNumberId(body);
-      if (phoneId) {
-        const match = verified.find((a) => a.phoneNumberId === phoneId);
-        if (match) {
-          return { account: match };
-        }
-      }
-    }
-
-    if (channel === "instagram") {
-      const igFromBody = extractInstagramBusinessIdHint(body);
-      if (igFromBody) {
-        const match = verified.find((a) => a.igUserId === igFromBody);
-        if (match) {
-          return { account: match };
-        }
-      }
     }
 
     webhookVerificationFailures.add(1, { channel, tenant: tenantId });

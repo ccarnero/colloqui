@@ -1,14 +1,14 @@
 import type { FactoryProvider } from "@nestjs/common";
 import type { RedisLike } from "@yoizen/database";
 import {
+  createCircuitBreakerMetrics,
+  PinoLoggerService,
+} from "@yoizen/observability";
+import {
   DistributedCircuitBreaker,
   type IBreakerConfig,
   type ICircuitBreakerRedis,
 } from "@yoizen/shared";
-import {
-  PinoLoggerService,
-  createCircuitBreakerMetrics,
-} from "@yoizen/observability";
 import { REDIS_CLIENT } from "../../providers/redis.provider";
 
 export const EGRESS_BREAKER = "CHANNEL_SERVICE_EGRESS_BREAKER";
@@ -31,9 +31,7 @@ export const EGRESS_BREAKER = "CHANNEL_SERVICE_EGRESS_BREAKER";
  */
 function adaptIoredis(redis: RedisLike): ICircuitBreakerRedis {
   const cluster = redis as RedisLike & {
-    nodes?: (
-      role: "master" | "slave" | "all",
-    ) => Array<{
+    nodes?: (role: "master" | "slave" | "all") => Array<{
       script(op: "LOAD", source: string): Promise<string>;
     }>;
   };
@@ -52,9 +50,9 @@ function adaptIoredis(redis: RedisLike): ICircuitBreakerRedis {
           // master returns the same SHA. Fire in parallel and pick
           // any one — they MUST agree.
           const shas = await Promise.all(
-            masters.map((node) =>
-              node.script("LOAD", source) as Promise<string>,
-            ),
+            masters.map(
+              (node) => node.script("LOAD", source) as Promise<string>
+            )
           );
           return shas[0];
         }
@@ -70,7 +68,7 @@ function adaptIoredis(redis: RedisLike): ICircuitBreakerRedis {
  * Egress breaker configuration.
  *
  * Scoped at (tenant, provider) — NOT (tenant, account) — because a
- * provider outage (WhatsApp Cloud API down, Telegram Bot API 5xx
+ * provider outage (Telegram Bot API 5xx, an Http channel target down
  * storm) affects every account under that tenant uniformly.
  * Opening per-account would require N × threshold failures before
  * any account's traffic gets protected, which defeats the purpose.
@@ -113,14 +111,14 @@ export const egressBreakerProvider: FactoryProvider<DistributedCircuitBreaker> =
         adaptIoredis(redis),
         EGRESS_BREAKER_CONFIG,
         logger,
-        createCircuitBreakerMetrics("channel-service"),
+        createCircuitBreakerMetrics("channel-service")
       );
       void breaker
         .scriptLoad()
         .catch((err) =>
           logger.warn(
-            `egress breaker scriptLoad failed (will retry on use): ${String(err)}`,
-          ),
+            `egress breaker scriptLoad failed (will retry on use): ${String(err)}`
+          )
         );
       return breaker;
     },

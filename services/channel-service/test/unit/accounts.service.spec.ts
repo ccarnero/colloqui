@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, mock } from "bun:test";
+import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import { AccountsService } from "../../src/modules/accounts/accounts.service";
-import { ACCOUNTS_REPOSITORY } from "../../src/modules/accounts/accounts.repository.interface";
 import { AccountsMongoRepository } from "../../src/modules/accounts/accounts.mongo.repository";
+import { ACCOUNTS_REPOSITORY } from "../../src/modules/accounts/accounts.repository.interface";
+import { AccountsService } from "../../src/modules/accounts/accounts.service";
 import { ChannelTenantConnectionManager } from "../../src/providers/channel-tenant-connection-manager";
 import { TelegramProvider } from "../../src/providers/telegram/telegram.provider";
 import { makeFakeTenantMongoConnections, makeMockDb } from "../make-mongo-mock";
@@ -11,18 +11,13 @@ function accountDoc(overrides: Record<string, unknown> = {}) {
   const now = new Date("2020-01-01T00:00:00.000Z");
   return {
     _id: "acc-1",
-    channel: "whatsapp",
-    provider: "meta",
+    channel: "telegram",
+    provider: "telegram",
     name: "Primary",
     external_id: "ext-1",
-    phone_number_id: null,
-    waba_id: null,
-    ig_user_id: null,
     telegram_bot_token: null,
     access_token: "token",
-    app_id: null,
     app_secret: null,
-    verify_token: null,
     is_active: true,
     created_at: now,
     updated_at: now,
@@ -55,19 +50,19 @@ describe("AccountsService", () => {
   });
 
   describe("create", () => {
-    it("inserts WhatsApp account without Telegram webhook", async () => {
+    it("inserts a non-Telegram account without registering a Telegram webhook", async () => {
       const insertOne = mock(async () => ({ acknowledged: true }));
       const db = makeMockDb({ channel_accounts: { insertOne } });
       const service = await compile(db);
       const acc = await service.create("tenant-a", {
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "e2e-tests",
+        provider: "e2e-tests",
         name: "Primary",
         externalId: "ext-1",
         accessToken: "token",
         isActive: true,
       });
-      expect(acc.channel).toBe("whatsapp");
+      expect(acc.channel).toBe("e2e-tests");
       expect(registerWebhook).not.toHaveBeenCalled();
     });
 
@@ -155,7 +150,7 @@ describe("AccountsService", () => {
   describe("update", () => {
     it("applies patch and returns row", async () => {
       const findOneAndUpdate = mock(async () =>
-        accountDoc({ name: "Renamed" }),
+        accountDoc({ name: "Renamed" })
       );
       const db = makeMockDb({ channel_accounts: { findOneAndUpdate } });
       const service = await compile(db);

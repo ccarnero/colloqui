@@ -18,15 +18,15 @@ import { randomUUID } from "crypto";
  * WHY IT EXISTS. `EgressService` only publishes the `sent.v1` envelope inside
  * its `if (result.success)` branch — a provider failure records a metric and a
  * circuit-breaker failure and emits nothing. Before this provider, no channel
- * could reach that branch under test: `http` fails by design, and WhatsApp,
- * Instagram and Telegram all need live third-party credentials. So the entire
- * egress publish path was structurally untestable, which is exactly why
- * `tracking.tracked_events` held zero `sent` rows.
+ * could reach that branch under test: `http` fails by design and Telegram
+ * needs live third-party credentials. So the entire egress publish path was
+ * structurally untestable, which is exactly why `tracking.tracked_events`
+ * held zero `sent` rows.
  *
  * WHAT IT DOES NOT DO. It is a sink: the message is accepted, counted as sent
  * and discarded — nothing is delivered anywhere. Every step AFTER the provider
  * returns (the `shadowPublish` envelope, the subject, the causal chain, the
- * breaker's success path) is the SAME code WhatsApp and Telegram run, so what
+ * breaker's success path) is the SAME code Telegram and Http run, so what
  * the suite exercises is the real egress path rather than a stand-in for it.
  * What it deliberately does NOT prove is third-party delivery.
  *

@@ -12,8 +12,8 @@ function createAccount(
   return {
     id: overrides.id ?? "a1",
     tenantId: overrides.tenantId ?? "t1",
-    channel: overrides.channel ?? "whatsapp",
-    provider: overrides.provider ?? "meta",
+    channel: overrides.channel ?? "telegram",
+    provider: overrides.provider ?? "telegram",
     name: overrides.name ?? "Primary",
     externalId: overrides.externalId ?? "ext-1",
     accessToken: overrides.accessToken ?? "token",
@@ -21,8 +21,6 @@ function createAccount(
     isActive: overrides.isActive ?? true,
     createdAt: overrides.createdAt ?? "2026-01-01T00:00:00.000Z",
     updatedAt: overrides.updatedAt ?? "2026-01-01T00:00:00.000Z",
-    ...(overrides.phoneNumberId && { phoneNumberId: overrides.phoneNumberId }),
-    ...(overrides.igUserId && { igUserId: overrides.igUserId }),
     ...(overrides.telegramBotToken && {
       telegramBotToken: overrides.telegramBotToken,
     }),
@@ -50,7 +48,7 @@ async function flushImmediate(): Promise<void> {
 describe("WebhookIngressService", () => {
   let service: WebhookIngressService;
   let mockProvider: {
-    provider: "meta" | "telegram";
+    provider: "telegram" | "http";
     signatureHeader: string;
     parseWebhook: ReturnType<typeof mock>;
     verifySignature: ReturnType<typeof mock>;
@@ -61,8 +59,8 @@ describe("WebhookIngressService", () => {
 
   beforeEach(async () => {
     mockProvider = {
-      provider: "meta",
-      signatureHeader: "x-hub-signature-256",
+      provider: "telegram",
+      signatureHeader: "x-telegram-bot-api-secret-token",
       parseWebhook: mock(() => []),
       verifySignature: mock(() => true),
     };
@@ -89,10 +87,10 @@ describe("WebhookIngressService", () => {
   it("returns no_messages when parse yields none", async () => {
     const raw = Buffer.from("{}", "utf8");
     const out = await service.processEnvelope(
-      "whatsapp",
+      "telegram",
       "t1",
       raw,
-      { "x-hub-signature-256": "sha256=aa" },
+      { "x-telegram-bot-api-secret-token": "secret" },
       {}
     );
     expect(out.status).toBe("no_messages");
@@ -274,100 +272,33 @@ describe("WebhookIngressService", () => {
     expect(out.status).toBe("unknown_instance");
   });
 
-  it("disambiguates WhatsApp accounts by phone_number_id when multiple verify", async () => {
-    const inbound = createInboundMessage({ text: "hello" });
-    mockProvider.parseWebhook.mockReturnValue([inbound]);
-    mockProvider.verifySignature.mockReturnValue(true);
-    mockAccounts.listActive.mockResolvedValue([
-      createAccount({
-        id: "wa-1",
-        channel: "whatsapp",
-        provider: "meta",
-        phoneNumberId: "pn-1",
-        appSecret: "shared-secret",
-      }),
-      createAccount({
-        id: "wa-2",
-        channel: "whatsapp",
-        provider: "meta",
-        phoneNumberId: "pn-2",
-        appSecret: "shared-secret",
-      }),
-    ]);
-
-    const out = await service.processEnvelope(
-      "whatsapp",
-      "t1",
-      Buffer.from("{}"),
-      { "x-hub-signature-256": "sha256=ok" },
-      {
-        entry: [
-          {
-            changes: [
-              {
-                value: {
-                  metadata: { phone_number_id: "pn-2" },
-                  messages: [{ text: { body: "hello" } }],
-                },
-              },
-            ],
-          },
-        ],
-      }
-    );
-
-    expect(out.status).toBe("accepted");
-    await flushImmediate();
-    expect(mockIngress.processInbound).toHaveBeenCalledWith({
-      tenantId: "t1",
-      channel: "whatsapp",
-      provider: "meta",
-      accountId: "wa-2",
-      messages: [inbound],
-      // envelope-drift item 3 + 2026-08-01 secret strip: the signature
-      // header authenticated the webhook and is dropped before stage 2.
-      webhookHeaders: {},
-    });
-  });
-
-  it("rejects ambiguous Meta webhooks when it cannot resolve a unique account", async () => {
+  it("rejects webhooks it cannot resolve to a unique account", async () => {
+    // Two accounts share a secret, so both verify. The payload-metadata
+    // disambiguation went away with the Meta family: an ambiguous
+    // verification is now always a rejection, never a guess.
     mockProvider.parseWebhook.mockReturnValue([createInboundMessage()]);
     mockProvider.verifySignature.mockReturnValue(true);
     mockAccounts.listActive.mockResolvedValue([
       createAccount({
-        id: "ig-1",
-        channel: "instagram",
-        provider: "meta",
+        id: "tg-1",
+        channel: "telegram",
+        provider: "telegram",
         appSecret: "shared-secret",
-        igUserId: "ig-1",
       }),
       createAccount({
-        id: "ig-2",
-        channel: "instagram",
-        provider: "meta",
+        id: "tg-2",
+        channel: "telegram",
+        provider: "telegram",
         appSecret: "shared-secret",
-        igUserId: "ig-2",
       }),
     ]);
 
     const out = await service.processEnvelope(
-      "instagram",
+      "telegram",
       "t1",
       Buffer.from("{}"),
-      { "x-hub-signature-256": "sha256=ok" },
-      {
-        entry: [
-          {
-            messaging: [
-              {
-                sender: { id: "user-1" },
-                message: { mid: "mid-1", text: "hello" },
-                timestamp: 123,
-              },
-            ],
-          },
-        ],
-      }
+      { "x-telegram-bot-api-secret-token": "shared-secret" },
+      { message: { text: "hello" } }
     );
 
     expect(out.status).toBe("signature_mismatch");
@@ -375,52 +306,76 @@ describe("WebhookIngressService", () => {
     expect(mockIngress.processInbound).not.toHaveBeenCalled();
   });
 
-  it("keeps single-account behavior when no signature header is present", async () => {
-    const inbound = createInboundMessage({ text: "hello" });
-    mockProvider.parseWebhook.mockReturnValue([inbound]);
+  it("rejects an unsigned webhook even with a single active account", async () => {
+    // Regression pin for the removed Meta legacy fallback: a missing
+    // signature used to route to `activeAccounts[0]`. It must now be
+    // rejected for every channel, single account or not.
+    mockProvider.parseWebhook.mockReturnValue([
+      createInboundMessage({ text: "hello" }),
+    ]);
     mockAccounts.listActive.mockResolvedValue([
-      createAccount({
-        id: "single",
-        channel: "whatsapp",
-        provider: "meta",
-      }),
+      createAccount({ id: "single" }),
     ]);
 
     const out = await service.processEnvelope(
-      "whatsapp",
+      "telegram",
       "t1",
       Buffer.from("{}"),
       {},
-      {
-        entry: [
-          {
-            changes: [
-              {
-                value: {
-                  metadata: { phone_number_id: "pn-1" },
-                  messages: [{ text: { body: "hello" } }],
-                },
-              },
-            ],
-          },
-        ],
-      }
+      { message: { text: "hello" } }
     );
 
-    expect(out.status).toBe("accepted");
+    expect(out.status).toBe("signature_mismatch");
     await flushImmediate();
-    expect(mockIngress.processInbound).toHaveBeenCalledWith({
-      tenantId: "t1",
-      channel: "whatsapp",
-      provider: "meta",
-      accountId: "single",
-      messages: [inbound],
-      // envelope-drift item 3 + 2026-08-01 secret strip: the stage-1
-      // allowlist rides along to `data.headers` after stripSecretHeaders
-      // rebuilds it without the verification-secret subset (empty in, empty
-      // out here).
-      webhookHeaders: {},
-    });
+    expect(mockIngress.processInbound).not.toHaveBeenCalled();
+  });
+
+  it("rejects a webhook when the provider declares no signature header", async () => {
+    // Regression pin for the removed Meta legacy fallback on the other
+    // branch: a provider without `signatureHeader` (the e2e-tests sink)
+    // yields no signature to check, so there is nothing to authenticate
+    // against and the request must be rejected rather than fall back to the
+    // first active account.
+    const sinkProvider = {
+      provider: "e2e-tests",
+      parseWebhook: mock(() => [createInboundMessage({ text: "hello" })]),
+      verifySignature: mock(() => false),
+    };
+    const ingress = { processInbound: mock(() => Promise.resolve()) };
+    const moduleRef = await Test.createTestingModule({
+      providers: [
+        WebhookIngressService,
+        { provide: ChannelRouter, useValue: { get: mock(() => sinkProvider) } },
+        { provide: IngressService, useValue: ingress },
+        {
+          provide: AccountsService,
+          useValue: {
+            listActive: mock(() =>
+              Promise.resolve([
+                createAccount({
+                  id: "sink-1",
+                  channel: "e2e-tests",
+                  provider: "e2e-tests",
+                }),
+              ])
+            ),
+          },
+        },
+      ],
+    }).compile();
+    const svc = moduleRef.get(WebhookIngressService);
+
+    const out = await svc.processEnvelope(
+      "e2e-tests",
+      "t1",
+      Buffer.from("{}"),
+      {},
+      { from: "u", text: "hello" }
+    );
+
+    expect(out.status).toBe("signature_mismatch");
+    await flushImmediate();
+    expect(ingress.processInbound).not.toHaveBeenCalled();
   });
 
   it("rejects Telegram webhook when the signature header is missing", async () => {
@@ -646,58 +601,26 @@ describe("WebhookIngressService", () => {
     );
   });
 
-  it("keeps WhatsApp fallback to first account when signature is absent and multiple accounts exist", async () => {
+  it("rejects an unsigned webhook when multiple accounts are active", async () => {
+    // Second half of the removed-fallback pin: with more than one active
+    // account an unsigned request used to silently pick the first one.
     const inbound = createInboundMessage({ text: "hello" });
     mockProvider.parseWebhook.mockReturnValue([inbound]);
     mockAccounts.listActive.mockResolvedValue([
-      createAccount({
-        id: "wa-1",
-        channel: "whatsapp",
-        provider: "meta",
-        phoneNumberId: "pn-1",
-      }),
-      createAccount({
-        id: "wa-2",
-        channel: "whatsapp",
-        provider: "meta",
-        phoneNumberId: "pn-2",
-      }),
+      createAccount({ id: "tg-1", appSecret: "secret-1" }),
+      createAccount({ id: "tg-2", appSecret: "secret-2" }),
     ]);
 
     const out = await service.processEnvelope(
-      "whatsapp",
+      "telegram",
       "t1",
       Buffer.from("{}"),
       {},
-      {
-        entry: [
-          {
-            changes: [
-              {
-                value: {
-                  metadata: { phone_number_id: "pn-1" },
-                  messages: [{ text: { body: "hello" } }],
-                },
-              },
-            ],
-          },
-        ],
-      }
+      { message: { text: "hello" } }
     );
 
-    expect(out.status).toBe("accepted");
+    expect(out.status).toBe("signature_mismatch");
     await flushImmediate();
-    expect(mockIngress.processInbound).toHaveBeenCalledWith({
-      tenantId: "t1",
-      channel: "whatsapp",
-      provider: "meta",
-      accountId: "wa-1",
-      messages: [inbound],
-      // envelope-drift item 3 + 2026-08-01 secret strip: the stage-1
-      // allowlist rides along to `data.headers` after stripSecretHeaders
-      // rebuilds it without the verification-secret subset (empty in, empty
-      // out here).
-      webhookHeaders: {},
-    });
+    expect(mockIngress.processInbound).not.toHaveBeenCalled();
   });
 });

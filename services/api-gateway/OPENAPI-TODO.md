@@ -17,7 +17,7 @@ blocking this — it just wasn't done in this pass:
 - `src/modules/connectors/connectors.dto.ts` — 6 classes (`HeaderEntryDto`, `CacheStrategyDto`, `CreateEndpointDto`, `CreateAdapterDto`, `UpdateAdapterDto`, `UpdateEndpointDto`)
 - `src/modules/registry/registry.dto.ts` — 5 classes (`RegisterServiceDto`, `UpdateServiceDto`, `StartCanaryDto`, `UpdateCanaryDto`, `CreateRouteDto`)
 - `src/modules/audit/audit-proxy-query.dto.ts` — 2 classes (`QueryAuditEventsProxyDto`, `QueryChannelEventsProxyDto`)
-- `src/modules/channels/webhooks-gateway.dto.ts` — 2 classes (`WebhookVerificationQueryDto`, `WebhookInboundBodyDto`)
+- `src/modules/channels/webhooks-gateway.dto.ts` — 1 class (`WebhookInboundBodyDto`)
 - `src/modules/runtime/runtime.dto.ts` — 2 classes (`ExecutionContextEntryDto`, `CreateExecutionDto`)
 
 Without decoration, Swagger still lists these endpoints and infers a bare

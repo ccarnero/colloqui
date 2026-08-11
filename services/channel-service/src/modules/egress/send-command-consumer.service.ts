@@ -1,34 +1,29 @@
 import {
   Inject,
   Injectable,
-  OnModuleInit,
   OnModuleDestroy,
+  OnModuleInit,
 } from "@nestjs/common";
-import type {
-  JetStreamClient,
-  JetStreamManager,
-  JsMsg,
-  MsgHdrs,
-} from "nats";
-import { headers as natsHeaders } from "nats";
+import { context as otelContext } from "@opentelemetry/api";
 import {
-  PinoLoggerService,
-  logWithEnvelope,
-  startNatsConsumerSpan,
+  type IMultiTenantConsumerConfig,
+  MultiTenantConsumerManager,
+} from "@yoizen/database";
+import {
   createNatsConsumerMetrics,
   isWorkerMode,
+  logWithEnvelope,
+  PinoLoggerService,
   resolveServiceName,
+  startNatsConsumerSpan,
 } from "@yoizen/observability";
+import type { ChannelEnvelope, OutboundMessage } from "@yoizen/shared";
 import {
   CHANNEL_SEND_SUBJECT_PATTERN,
   parseChannelSubject,
 } from "@yoizen/shared";
-import type { ChannelEnvelope, OutboundMessage } from "@yoizen/shared";
-import {
-  MultiTenantConsumerManager,
-  type IMultiTenantConsumerConfig,
-} from "@yoizen/database";
-import { context as otelContext } from "@opentelemetry/api";
+import type { JetStreamClient, JetStreamManager, JsMsg, MsgHdrs } from "nats";
+import { headers as natsHeaders } from "nats";
 import {
   JETSTREAM_MANAGER,
   JETSTREAM_PUBLISHER,
@@ -37,11 +32,11 @@ import { EgressService } from "./egress.service";
 
 const DURABLE_NAME = "channel-egress";
 const TENANT_STREAM_PATTERN = /^INGRESS-/;
-/** Egress does HTTP calls to Telegram/WhatsApp providers — heavily I/O bound. */
+/** Egress does HTTP calls to Telegram/Http providers — heavily I/O bound. */
 const HANDLER_CONCURRENCY = 16;
 /**
  * Lower than the platform default of 5 on purpose. External chat
- * providers (Telegram, WhatsApp) have no client-side idempotency key
+ * providers (Telegram, Http targets) have no client-side idempotency key
  * support, so a redelivered `send` almost always ends up delivering
  * the message again to the end user. Keeping the retry ceiling at 2
  * means "one honest retry, then DLQ" — we trade availability for not
@@ -74,15 +69,15 @@ interface INatsSubMessage {
  * Binds a JetStream durable pull consumer (`channel-egress`) per
  * tenant stream, with queue-group semantics — across N replicas of
  * `channel-service` only one replica consumes each message. This
- * eliminates the 5×duplication of outbound WhatsApp/Telegram
- * messages that `nc.subscribe` produced under multi-replica setups.
+ * eliminates the 5×duplication of outbound messages that
+ * `nc.subscribe` produced under multi-replica setups.
  */
 @Injectable()
 export class SendCommandConsumerService
   implements OnModuleInit, OnModuleDestroy
 {
   private readonly logger = new PinoLoggerService(
-    SendCommandConsumerService.name,
+    SendCommandConsumerService.name
   );
   private manager: MultiTenantConsumerManager | null = null;
 
@@ -110,13 +105,13 @@ export class SendCommandConsumerService
       this.js,
       config,
       (msg: JsMsg) => this.handleJsMessage(msg),
-      this.logger,
+      this.logger
     );
     await this.manager.start();
     this.logger.log(
       ensureOnly
         ? `Pre-created '${DURABLE_NAME}' durable consumer (api mode, ensure-only)`
-        : `Channel egress durable consumer ('${DURABLE_NAME}') started`,
+        : `Channel egress durable consumer ('${DURABLE_NAME}') started`
     );
   }
 
@@ -141,13 +136,17 @@ export class SendCommandConsumerService
 
   private async handleMessage(msg: INatsSubMessage): Promise<void> {
     const parsed = parseChannelSubject(msg.subject);
-    if (!parsed) return;
+    if (!parsed) {
+      return;
+    }
 
     const decoder = new TextDecoder();
     const envelope = JSON.parse(decoder.decode(msg.data)) as ChannelEnvelope;
 
     const tenantId = envelope.tenant;
-    if (!tenantId) return;
+    if (!tenantId) {
+      return;
+    }
 
     const source: Record<string, unknown> =
       (envelope.data?.payload as Record<string, unknown> | null | undefined) ??
@@ -161,7 +160,7 @@ export class SendCommandConsumerService
         envelope,
         "egress.send_command.missing_account",
         "Send command missing accountId",
-        "warn",
+        "warn"
       );
       return;
     }
@@ -183,7 +182,7 @@ export class SendCommandConsumerService
     const { span, context: spanCtx } = startNatsConsumerSpan(
       resolveServiceName("channel-service"),
       msg.subject,
-      incomingHeaders,
+      incomingHeaders
     );
 
     try {
@@ -199,7 +198,7 @@ export class SendCommandConsumerService
             this.logger,
             envelope,
             "egress.send_command.sent",
-            `Sent message to ${outbound.to} via ${accountId}`,
+            `Sent message to ${outbound.to} via ${accountId}`
           );
         } else {
           logWithEnvelope(
@@ -207,7 +206,7 @@ export class SendCommandConsumerService
             envelope,
             "egress.send_command.failed",
             `Send failed for ${accountId}: ${result.error ?? "unknown"}`,
-            "warn",
+            "warn"
           );
           throw new Error(result.error ?? "egress send failed");
         }
@@ -217,4 +216,3 @@ export class SendCommandConsumerService
     }
   }
 }
-

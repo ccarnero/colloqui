@@ -33,14 +33,14 @@ describe("AutoReplyController", () => {
   it("createRule delegates to service", async () => {
     await controller.createRule("tenant-abc", {
       accountId: "a1",
-      channel: "whatsapp",
+      channel: "telegram",
       triggerPattern: "hi",
       replyText: "hello",
     } as never);
     expect(createRule).toHaveBeenCalledWith({
       tenantId: "tenant-abc",
       accountId: "a1",
-      channel: "whatsapp",
+      channel: "telegram",
       triggerPattern: "hi",
       replyText: "hello",
     });

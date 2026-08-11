@@ -67,7 +67,7 @@ describe("UsageMongoRepository", () => {
         _id: {
           bucket: new Date("2026-04-23T09:00:00.000Z"),
           account_id: "acct-1",
-          channel: "whatsapp",
+          channel: "telegram",
           direction: "ingress",
         },
         events: 42,
@@ -90,7 +90,7 @@ describe("UsageMongoRepository", () => {
       {
         bucket: "2026-04-23T09:00:00.000Z",
         accountId: "acct-1",
-        channel: "whatsapp",
+        channel: "telegram",
         direction: "ingress",
         events: 42,
       },
@@ -131,12 +131,12 @@ describe("UsageMongoRepository", () => {
       to: new Date("2026-04-23T00:00:00Z"),
       bucket: "hour",
       accountId: "acct-1",
-      channel: "whatsapp",
+      channel: "telegram",
       direction: "egress",
     });
     const matchStage = calls[0]!.pipeline[0] as { $match: Record<string, unknown> };
     expect(matchStage.$match["meta.account_id"]).toBe("acct-1");
-    expect(matchStage.$match["meta.channel_id"]).toBe("whatsapp");
+    expect(matchStage.$match["meta.channel_id"]).toBe("telegram");
     expect(matchStage.$match.direction).toBe("egress");
   });
 

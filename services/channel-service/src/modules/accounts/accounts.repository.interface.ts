@@ -46,17 +46,18 @@ export interface IAccountRow {
 export interface IAccountsRepository {
   insertAccount(params: IInsertAccountParams): Promise<IAccountRow[]>;
   listByTenant(tenantId: string, channel?: Channel): Promise<IAccountRow[]>;
-  listActiveByChannel(tenantId: string, channel: Channel): Promise<IAccountRow[]>;
-  findById(tenantId: string, accountId: string): Promise<IAccountRow[]>;
-  findByVerifyToken(
+  listActiveByChannel(
     tenantId: string,
-    channel: Channel,
-    verifyToken: string,
+    channel: Channel
   ): Promise<IAccountRow[]>;
+  findById(tenantId: string, accountId: string): Promise<IAccountRow[]>;
   updateAccount(
     tenantId: string,
     accountId: string,
-    data: IAccountUpdatePatch,
+    data: IAccountUpdatePatch
   ): Promise<IAccountRow[]>;
-  deleteAccount(tenantId: string, accountId: string): Promise<{ count: number }>;
+  deleteAccount(
+    tenantId: string,
+    accountId: string
+  ): Promise<{ count: number }>;
 }

@@ -4,8 +4,8 @@ import type { Channel } from "@yoizen/shared";
 import { ChannelTenantConnectionManager } from "../../providers/channel-tenant-connection-manager";
 import type {
   IAccountRow,
-  IAccountUpdatePatch,
   IAccountsRepository,
+  IAccountUpdatePatch,
   IInsertAccountParams,
 } from "./accounts.repository.interface";
 
@@ -29,7 +29,9 @@ interface IChannelAccountDoc {
 }
 
 function toIso(value: unknown): string {
-  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
   return String(value ?? "");
 }
 
@@ -87,15 +89,13 @@ export class AccountsMongoRepository implements IAccountsRepository {
       created_at: now,
       updated_at: now,
     };
-    await db
-      .collection<IChannelAccountDoc>("channel_accounts")
-      .insertOne(doc);
+    await db.collection<IChannelAccountDoc>("channel_accounts").insertOne(doc);
     return [docToRow(doc)];
   }
 
   async listByTenant(
     tenantId: string,
-    channel?: Channel,
+    channel?: Channel
   ): Promise<IAccountRow[]> {
     const db = await this.dbFor(tenantId);
     const filter = channel ? { channel } : {};
@@ -109,7 +109,7 @@ export class AccountsMongoRepository implements IAccountsRepository {
 
   async listActiveByChannel(
     tenantId: string,
-    channel: Channel,
+    channel: Channel
   ): Promise<IAccountRow[]> {
     const db = await this.dbFor(tenantId);
     const docs = await db
@@ -120,26 +120,11 @@ export class AccountsMongoRepository implements IAccountsRepository {
     return docs.map(docToRow);
   }
 
-  async findById(
-    tenantId: string,
-    accountId: string,
-  ): Promise<IAccountRow[]> {
+  async findById(tenantId: string, accountId: string): Promise<IAccountRow[]> {
     const db = await this.dbFor(tenantId);
     const doc = await db
       .collection<IChannelAccountDoc>("channel_accounts")
       .findOne({ _id: accountId });
-    return doc ? [docToRow(doc)] : [];
-  }
-
-  async findByVerifyToken(
-    tenantId: string,
-    channel: Channel,
-    verifyToken: string,
-  ): Promise<IAccountRow[]> {
-    const db = await this.dbFor(tenantId);
-    const doc = await db
-      .collection<IChannelAccountDoc>("channel_accounts")
-      .findOne({ channel, verify_token: verifyToken, is_active: true });
     return doc ? [docToRow(doc)] : [];
   }
 
@@ -149,16 +134,28 @@ export class AccountsMongoRepository implements IAccountsRepository {
   async updateAccount(
     tenantId: string,
     accountId: string,
-    data: IAccountUpdatePatch,
+    data: IAccountUpdatePatch
   ): Promise<IAccountRow[]> {
     const sets: Record<string, unknown> = {};
 
-    if (data.name !== undefined) sets.name = data.name;
-    if (data.accessToken !== undefined) sets.access_token = data.accessToken;
-    if (data.appId !== undefined) sets.app_id = data.appId;
-    if (data.appSecret !== undefined) sets.app_secret = data.appSecret;
-    if (data.verifyToken !== undefined) sets.verify_token = data.verifyToken;
-    if (data.isActive !== undefined) sets.is_active = data.isActive;
+    if (data.name !== undefined) {
+      sets.name = data.name;
+    }
+    if (data.accessToken !== undefined) {
+      sets.access_token = data.accessToken;
+    }
+    if (data.appId !== undefined) {
+      sets.app_id = data.appId;
+    }
+    if (data.appSecret !== undefined) {
+      sets.app_secret = data.appSecret;
+    }
+    if (data.verifyToken !== undefined) {
+      sets.verify_token = data.verifyToken;
+    }
+    if (data.isActive !== undefined) {
+      sets.is_active = data.isActive;
+    }
 
     if (Object.keys(sets).length === 0) {
       return this.findById(tenantId, accountId);
@@ -171,14 +168,14 @@ export class AccountsMongoRepository implements IAccountsRepository {
       .findOneAndUpdate(
         { _id: accountId },
         { $set: sets },
-        { returnDocument: "after" },
+        { returnDocument: "after" }
       );
     return result ? [docToRow(result)] : [];
   }
 
   async deleteAccount(
     tenantId: string,
-    accountId: string,
+    accountId: string
   ): Promise<{ count: number }> {
     const db = await this.dbFor(tenantId);
     const result = await db

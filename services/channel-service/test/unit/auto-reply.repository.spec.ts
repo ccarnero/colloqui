@@ -27,7 +27,7 @@ describe("AutoReplyMongoRepository", () => {
       id: "rule-1",
       tenantId: "tenant-a",
       accountId: "acc-1",
-      channel: "whatsapp",
+      channel: "telegram",
       triggerPattern: "hi",
       replyText: "hello",
     });

@@ -1,4 +1,4 @@
-import { IsString, IsIn, IsOptional } from "class-validator";
+import { IsIn, IsOptional, IsString } from "class-validator";
 
 /** Query for `GET /channels/auto-reply`. */
 export class ListAutoReplyRulesQueryDto {
@@ -11,7 +11,10 @@ export class CreateAutoReplyRuleDto {
   @IsString()
   accountId!: string;
 
-  @IsIn(["whatsapp", "instagram"])
+  // Auto-reply is channel-agnostic at runtime (`AutoReplyService` consumes
+  // `...received.v1` for every channel and answers through `EgressService`),
+  // so the list is simply the surviving channels.
+  @IsIn(["telegram", "http", "e2e-tests"])
   channel!: string;
 
   @IsString()

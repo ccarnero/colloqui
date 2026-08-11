@@ -11,7 +11,6 @@ import * as autoReplyDto from "../../src/modules/auto-reply/auto-reply.dto";
 import * as egressDto from "../../src/modules/egress/egress.dto";
 import * as streamsDto from "../../src/modules/streams/streams.dto";
 import * as usageDto from "../../src/modules/usage/usage.dto";
-import * as metaWebhookVerifyQueryDto from "../../src/modules/webhooks/meta-webhook-verify-query.dto";
 
 // ---------------------------------------------------------------------------
 // implicit-conversion sweep (register `PENDIENTES/11-implicit-conversion.md`,
@@ -62,7 +61,6 @@ const DTO_MODULES: Record<string, unknown>[] = [
   egressDto,
   streamsDto,
   usageDto,
-  metaWebhookVerifyQueryDto,
 ];
 
 /**
@@ -273,7 +271,6 @@ const EXPECTED_DTO_CLASSES: readonly string[] = [
   "CreateAutoReplyRuleDto",
   "ListAccountsQueryDto",
   "ListAutoReplyRulesQueryDto",
-  "MetaWebhookVerifyQueryDto",
   "SendMessageDto",
   "StreamMessagesQueryDto",
   "UpdateAccountDto",

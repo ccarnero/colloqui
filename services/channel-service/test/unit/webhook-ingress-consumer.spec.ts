@@ -21,7 +21,7 @@ describe("WebhookIngressConsumerService", () => {
       id: "evt-1",
       source: "api-gateway/webhooks",
       type: "io.yoizen.messaging.webhook.received.v1",
-      resource: `tenant/${tenant}/channel/whatsapp/provider/webhook`,
+      resource: `tenant/${tenant}/channel/telegram/provider/webhook`,
       time: new Date().toISOString(),
       traceid: "trace-1",
       causation_id: null,
@@ -29,7 +29,7 @@ describe("WebhookIngressConsumerService", () => {
       tenant,
       producer: "api-gateway",
       domain: "messaging",
-      channel: "whatsapp",
+      channel: "telegram",
       provider: "webhook",
       kind: "webhook_received",
       idempotencykey: "sha256:test",
@@ -40,10 +40,10 @@ describe("WebhookIngressConsumerService", () => {
         payload_ref: null,
         payload_bytes: 2,
         payload_checksum: "sha256:test",
-        payload: { object: "whatsapp_business_account" },
+        payload: { object: "telegram_update" },
         raw_body_b64: Buffer.from("{\"object\":\"ok\"}", "utf8").toString("base64"),
         headers: {
-          "x-hub-signature-256": "sha256=abc",
+          "x-telegram-bot-api-secret-token": "secret-1",
         },
       },
     };
@@ -52,7 +52,7 @@ describe("WebhookIngressConsumerService", () => {
   it("forwards valid webhook envelopes to WebhookIngressService", async () => {
     const service = new WebhookIngressConsumerService(jsm, js, webhookIngress);
     const msg = {
-      subject: "evt.t1.api-gateway.messaging.whatsapp.webhook.webhook_received.v1",
+      subject: "evt.t1.api-gateway.messaging.telegram.webhook.webhook_received.v1",
       data: new TextEncoder().encode(JSON.stringify(buildEnvelope("t1"))),
     };
 
@@ -65,12 +65,12 @@ describe("WebhookIngressConsumerService", () => {
     expect(processEnvelope).toHaveBeenCalledTimes(1);
     const [channel, tenantId, rawBody, headers, payload] =
       processEnvelope.mock.calls[0];
-    expect(channel).toBe("whatsapp");
+    expect(channel).toBe("telegram");
     expect(tenantId).toBe("t1");
     expect(Buffer.isBuffer(rawBody)).toBeTrue();
     expect((rawBody as Buffer).toString("utf8")).toBe("{\"object\":\"ok\"}");
-    expect(headers).toEqual({ "x-hub-signature-256": "sha256=abc" });
-    expect(payload).toEqual({ object: "whatsapp_business_account" });
+    expect(headers).toEqual({ "x-telegram-bot-api-secret-token": "secret-1" });
+    expect(payload).toEqual({ object: "telegram_update" });
   });
 
   it("forwards data.instance as the 7th argument to processEnvelope", async () => {
@@ -83,7 +83,7 @@ describe("WebhookIngressConsumerService", () => {
       },
     };
     const msg = {
-      subject: "evt.t1.api-gateway.messaging.whatsapp.webhook.webhook_received.v1",
+      subject: "evt.t1.api-gateway.messaging.telegram.webhook.webhook_received.v1",
       data: new TextEncoder().encode(JSON.stringify(envelopeWithInstance)),
     };
 
@@ -102,7 +102,7 @@ describe("WebhookIngressConsumerService", () => {
   it("ignores non-matching subjects", async () => {
     const service = new WebhookIngressConsumerService(jsm, js, webhookIngress);
     const msg = {
-      subject: "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+      subject: "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
       data: new TextEncoder().encode(JSON.stringify(buildEnvelope("t1"))),
     };
 

@@ -1,33 +1,18 @@
 import {
-  IsOptional,
-  IsString,
   IsArray,
   IsNumber,
   IsObject,
+  IsOptional,
+  IsString,
 } from "class-validator";
 
-/** Meta / WhatsApp webhook verification query (hub.*). */
-export class WebhookVerificationQueryDto {
-  @IsOptional()
-  @IsString()
-  "hub.mode"?: string;
-
-  @IsOptional()
-  @IsString()
-  "hub.verify_token"?: string;
-
-  @IsOptional()
-  @IsString()
-  "hub.challenge"?: string;
-}
-
 /**
- * Passthrough DTO for inbound webhook JSON from all providers (Meta, Telegram).
+ * Passthrough DTO for inbound webhook JSON from all providers (Telegram, Http).
  * Every known top-level field is whitelisted so the global ValidationPipe
  * (forbidNonWhitelisted) does not reject provider-specific payloads.
  */
 export class WebhookInboundBodyDto {
-  /** Meta / WhatsApp */
+  /** Generic envelope-style payloads (`object` + `entry` array). */
   @IsOptional()
   @IsString()
   object?: string;
