@@ -141,8 +141,8 @@ export const gatewayConfig = {
    * `publishTimeoutMs` bounds the `js.publish` ack; on expiry the
    * publisher throws a `ServiceUnavailableException` so the global
    * exception filter returns HTTP 503 + `Retry-After`, prompting
-   * providers (WhatsApp / Telegram / Meta) to retry instead of dropping
-   * the webhook.
+   * providers (Telegram and any generic HTTP caller) to retry instead of
+   * dropping the webhook.
    *
    * `publishInflightCap` caps concurrent in-flight publishes per pod
    * so a backend stall cannot let pending acks grow unbounded.

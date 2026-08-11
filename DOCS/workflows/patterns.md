@@ -466,7 +466,7 @@ POST /workflows
     },
     
     // Step 3: Send message with templated content
-    // Note: `Channel` is one of `whatsapp` | `instagram` | `telegram` | `http`
+    // Note: `Channel` is one of `telegram` | `http` | `e2e-tests`
     // (see `packages/shared/src/channel.interfaces.ts`) — there is no `email`/`sms`
     // channel. `channelSend.args` requires `accountId`, `channel`, `provider`,
     // `to`, `type` (there is no `recipient`/`subject`/`body`).

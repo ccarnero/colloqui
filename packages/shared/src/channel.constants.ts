@@ -44,11 +44,15 @@ export const WEBHOOK_INGRESS_RECEIVED_VERSION = "v1" as const;
 export const WEBHOOK_INGRESS_SUBJECT_FILTER =
   "evt.*.api-gateway.messaging.*.webhook.webhook_received.v1" as const;
 
-/** Allowlist of webhook headers forwarded through the ingress envelope. */
+/**
+ * Allowlist of webhook headers forwarded through the ingress envelope.
+ * Every entry is either a surviving provider's `signatureHeader`
+ * (`WEBHOOK_SECRET_HEADERS`) or a diagnostic header; nothing else crosses
+ * the bridge. Documented in `DOCS/messaging/envelope.md` §4.1 and pinned by
+ * `src/__tests__/doc-locks.constants.test.ts`.
+ */
 export const WEBHOOK_FORWARDED_HEADERS = Object.freeze([
   "content-type",
-  "x-hub-signature-256",
-  "x-hub-signature",
   "x-telegram-bot-api-secret-token",
   "x-http-channel-token",
   "x-request-id",
@@ -67,9 +71,9 @@ export const WEBHOOK_FORWARDED_HEADERS_SET = new Set<string>(
  * are stripped, so stage-2 `data.headers` never carries a verification secret
  * (envelope.md §4.1, decided 2026-08-01).
  *
- * `x-hub-signature-256` / `x-hub-signature` left this subset with the Meta
- * channel decommission: no surviving provider declares them as its
- * `signatureHeader`, so they are no longer anybody's verification secret.
+ * Exactly the `signatureHeader` values declared by the registered providers
+ * (`TelegramProvider`, `HttpProvider`); `E2eTestsProvider` is outbound-only
+ * and declares none.
  */
 export const WEBHOOK_SECRET_HEADERS = Object.freeze([
   "x-telegram-bot-api-secret-token",

@@ -1,16 +1,15 @@
 # channel-service API pod (HTTP). Phase 1.5 split.
 #
-# Hosts the webhook ingress endpoint (called by Telegram/WhatsApp/etc.
-# providers — these post inbound messages and verification challenges
-# over HTTP), the streams admin controller, accounts CRUD, and
+# Hosts the webhook ingress endpoint (called by Telegram and generic HTTP
+# providers — these POST inbound messages over HTTP), the streams admin
+# controller, accounts CRUD, and
 # auto-reply CRUD.
 #
-# Runs `SERVICE_MODE=api` so the four NATS consumer services keep their
+# Runs `SERVICE_MODE=api` so the three NATS consumer services keep their
 # `onModuleInit` no-op:
 #   - WebhookIngressConsumerService (channel-webhook-ingress durable)
 #   - SendCommandConsumerService    (channel-egress durable)
 #   - AutoReplyService              (auto-reply durable + cache)
-#   - WebhookVerifyRpcServer        (NATS RPC server)
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:

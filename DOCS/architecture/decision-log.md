@@ -114,7 +114,7 @@ Points marked **Resolved** are closed in code. All others remain pending.
 
 | Milestone | Scope | Status |
 |---|---|---|
-| M1 | External ingress to the bus as the primary path (WhatsApp, Telegram, etc.) | **Completed** |
+| M1 | External ingress to the bus as the primary path (Telegram, generic HTTP) | **Completed** |
 | M2 | Internal agents publish to the bus via MCP server | Pending |
 | M3 | Platform agents via direct integrations | In progress |
 | M4 | Third-party agents via API gateway + marketplace | Pending |

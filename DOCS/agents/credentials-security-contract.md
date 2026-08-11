@@ -107,11 +107,12 @@ Credentials and channels are per-tenant: a tenant listing `/admin/credentials`
 the `TENANT_HEADER` header from `@yoizen/shared` (`x-yoizen-tenant`) through the
 tenant connection manager — the deleted tests always used the symbol, never a
 literal. The channels list envelope mirrored the credentials one:
-`{ channels: Channel[] }`. The channel `type` values `webchat`, `whatsapp`,
-`telegram`, `slack`, `custom` come from the `CHECK` constraint on `channels.type`
-in the e2e schema (`services/agent-admin-service/test/e2e/setup.ts`), not from
-any deleted assertion — the retired tests only ever inserted `webchat` and
-`whatsapp`.
+`{ channels: Channel[] }`. The allowed channel `type` values came from a `CHECK`
+constraint on `channels.type` in the retired e2e schema, not from any deleted
+assertion; that table went away with the suite, so no such list exists in the
+codebase today (`services/agent-admin-service/test/e2e/setup.ts:72-73`). Whoever
+implements `/admin/channels` picks the list then — the contract only requires
+that it be constrained at the schema level.
 
 ## If credentials get built
 

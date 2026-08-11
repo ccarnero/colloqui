@@ -57,7 +57,7 @@ Apply this skill when creating, consuming or auditing messages on the NATS event
 | I need to generate an event ID | `crypto.randomUUID()` — never a ULID |
 | I need the producer name (channel) | `CHANNEL_PRODUCER` = `"channel-service"` |
 | I need to build the `type` field (channel) | `io.yoizen.messaging.${channel}.${provider}.${kind}.v1` — see `envelope.factory.ts:98` |
-| I need the header allowlist | `WEBHOOK_FORWARDED_HEADERS` in `channel.constants.ts` — 7 entries; the `WEBHOOK_SECRET_HEADERS` subset is stripped before stage two |
+| I need the header allowlist | `WEBHOOK_FORWARDED_HEADERS` in `channel.constants.ts` — 5 entries; the `WEBHOOK_SECRET_HEADERS` subset is stripped before stage two |
 | I need to build a channel subject | `buildChannelSubject(tenant, channel, provider, kind)` from `@yoizen/shared` |
 | I need to build a generic subject | `buildSubject(params)` from `@yoizen/shared/envelope.utils` |
 | I need a root envelope (non-channel) | `buildEventEnvelope(options)` from `@yoizen/shared/envelope.utils` |
@@ -83,8 +83,8 @@ Example of an envelope produced by `channel-service` (stage 2 of the ingress):
   "specversion": "1.0",
   "id": "550e8400-e29b-41d4-a716-446655440000",
   "source": "channel-service/accounts/69bea8cd868e860918359cc7",
-  "type": "io.yoizen.messaging.whatsapp.meta.received.v1",
-  "resource": "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta",
+  "type": "io.yoizen.messaging.telegram.telegram.received.v1",
+  "resource": "tenant/acme/account/69bea8cd868e860918359cc7/channel/telegram/provider/telegram",
   "time": "2026-03-21T15:40:11.382Z",
   "traceid": "4bf92f3577b34da6a3ce929d0e0e4736",
   "causation_id": "b1c2d3e4-0000-0000-0000-000000000001",
@@ -92,8 +92,8 @@ Example of an envelope produced by `channel-service` (stage 2 of the ingress):
   "tenant": "acme",
   "producer": "channel-service",
   "domain": "messaging",
-  "channel": "whatsapp",
-  "provider": "meta",
+  "channel": "telegram",
+  "provider": "telegram",
   "accountid": "69bea8cd868e860918359cc7",
   "idempotencykey": "sha256:a1b2c3d4...",
   "transport": { "method": "webhook", "protocol": "https", "depth": 1 },
@@ -103,7 +103,7 @@ Example of an envelope produced by `channel-service` (stage 2 of the ingress):
     "payload_ref": null,
     "payload_bytes": 512,
     "payload_checksum": "sha256:a1b2c3d4...",
-    "payload": { "messageId": "wamid.xxx", "from": "5491100000000" }
+    "payload": { "messageId": "421", "from": "874591203" }
   }
 }
 ```
@@ -124,8 +124,8 @@ Example of an envelope produced by `channel-service` (stage 2 of the ingress):
 | `tenant` | string | Tenant ID |
 | `producer` | string | Publishing service. Eleven real ones — see Hard Rules for the full list and the census commands |
 | `domain` | string | `messaging`, `automation`, `platform` |
-| `channel` | string | `whatsapp`, `telegram`, `instagram`, `http`, `platform`. The `Channel` type (`channel.interfaces.ts:3`) is `whatsapp \| instagram \| telegram \| http`; `EventEnvelope.channel` is a free `string` (`interfaces.ts:42`) because internal producers use `platform` |
-| `provider` | string | `meta`, `telegram`, `http`, `internal`, `webhook`. `ChannelProvider` (`channel.interfaces.ts:4`) is `meta \| telegram \| http` |
+| `channel` | string | `telegram`, `http`, `e2e-tests`, `platform`. The `Channel` type (`channel.interfaces.ts:17`) is `telegram \| http \| e2e-tests`; `EventEnvelope.channel` is a free `string` (`interfaces.ts:42`) because internal producers use `platform` |
+| `provider` | string | `telegram`, `http`, `e2e-tests`, `internal`, `webhook`. `ChannelProvider` (`channel.interfaces.ts:18`) is `telegram \| http \| e2e-tests` |
 | `accountid` | string | Logical account ID (omitted in `WebhookIngressEnvelope`) |
 | `idempotencykey` | string | `sha256:<hex>(canonicalJson(payload))` |
 | `transport` | EventTransport | See §6 |
@@ -147,8 +147,8 @@ evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>
 | `tenant` | Tenant ID | `acme`, `globex` |
 | `producer` | Publishing service | `channel-service`, `api-gateway`, `agent-admin-service` |
 | `domain` | Business domain | `messaging`, `automation`, `platform` |
-| `channel` | Channel | `whatsapp`, `instagram`, `telegram`, `http`, `platform` |
-| `provider` | Provider | `meta`, `telegram`, `http`, `internal`, `webhook` |
+| `channel` | Channel | `telegram`, `http`, `e2e-tests`, `platform` |
+| `provider` | Provider | `telegram`, `http`, `e2e-tests`, `internal`, `webhook` |
 | `kind` | Event kind | `webhook_received`, `received`, `sent`, `delivered`, `send`, `execution_requested` |
 | `v1` | Version | `v1` |
 
@@ -158,7 +158,7 @@ evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>
 
 ```
 evt.acme.*.messaging.>                                           -- all messaging for tenant acme (any producer)
-evt.acme.channel-service.messaging.whatsapp.>                   -- all whatsapp for tenant acme
+evt.acme.channel-service.messaging.telegram.>                   -- all telegram for tenant acme
 evt.*.channel-service.messaging.>                               -- all messaging, all tenants
 evt.*.api-gateway.messaging.*.webhook.webhook_received.v1       -- all pre-ingress (stage 1)
 evt.*.channel-service.messaging.telegram.*.received.v1          -- all received telegram messages
@@ -265,12 +265,10 @@ The `data` field (type `EventData` in `packages/shared/src/interfaces.ts`):
 
 ### 8. Headers Allowlist (Webhook)
 
-`WEBHOOK_FORWARDED_HEADERS` constant in `packages/shared/src/channel.constants.ts` — 7 entries:
+`WEBHOOK_FORWARDED_HEADERS` constant in `packages/shared/src/channel.constants.ts` — 5 entries:
 
 ```
 content-type
-x-hub-signature-256
-x-hub-signature
 x-telegram-bot-api-secret-token
 x-http-channel-token
 x-request-id
@@ -279,11 +277,11 @@ user-agent
 
 An O(1) lookup is available as `WEBHOOK_FORWARDED_HEADERS_SET` (a Set). Every other header must be discarded.
 
-The four signature/token entries form `WEBHOOK_SECRET_HEADERS` (same file):
-they exist so channel-service can verify the webhook, and are stripped after
-the signature check (since 2026-08-01). Stage-1 `data.headers` may carry all
-seven; stage-2 `data.headers` can only carry `content-type`, `x-request-id`
-and `user-agent`.
+The two token entries form `WEBHOOK_SECRET_HEADERS` (same file) — the
+`signatureHeader` of each registered provider: they exist so channel-service
+can verify the webhook, and are stripped after the signature check (since
+2026-08-01). Stage-1 `data.headers` may carry all five; stage-2 `data.headers`
+can only carry `content-type`, `x-request-id` and `user-agent`.
 
 ### 9. Idempotency
 

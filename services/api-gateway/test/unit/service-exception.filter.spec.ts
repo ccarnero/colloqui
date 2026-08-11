@@ -73,7 +73,7 @@ describe("ServiceExceptionFilter", () => {
   /**
    * Post-mortem (`post-mortem/POST-MORTEM.md` §P1.2): the publish
    * timeout path must end up as a 503 + `Retry-After` so providers
-   * (WhatsApp / Telegram / Meta) trigger their own retry instead of
+   * (Telegram, generic HTTP callers) trigger their own retry instead of
    * dropping the webhook. The filter is the only place we can set the
    * header without leaking knowledge of HTTP into the publisher.
    */

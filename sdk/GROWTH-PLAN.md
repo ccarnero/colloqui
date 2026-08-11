@@ -61,7 +61,7 @@ Scope: evolve `sdk/` (`@yoizen/http-sdk` v0.1.0) into a full platform SDK coveri
   - `admin/jobs` (CRUD, enable/disable/run/trigger, executions)
   - `admin/knowledge-bases` (+ `:kbId/documents`: upload, upload-file, reingest, chunks)
   - `admin/mcp-servers`, `admin/skills`, `admin/system-variables`, `admin/structured-kb` (+ containers, query), `admin/memories`, `admin/config-files`, `admin/templates`, `admin/tools`, `admin/adapters`, `admin/runtime/status`
-  - `channels` (accounts CRUD + refresh-token, `:accountId/messages`, auto-reply, streams, usage)
+  - `channels` (accounts CRUD, `:accountId/messages`, auto-reply, streams, usage)
   - `webhooks` (`:channel/:tenantId[/:instance]` ingestion)
   - `connectors` (CRUD, usage, `:id/endpoints` CRUD)
   - `registry` (services CRUD, revisions, canary + promote/rollback, routes)
@@ -148,7 +148,7 @@ Implement in this order (driven by real sample usage):
 
 1. **workflows** — CRUD, `summary`, `execute`, `executions`, `executions/counts`, per-execution get.
 2. **agents** (`admin/agents`) — CRUD, publish/unpublish/revert, versions + rollback, tools/mcp-servers patches. **runtime** — `executions` create/get + SSE streaming as an async iterator of events (needs its own design; not request/response).
-3. **channels** — accounts CRUD + refresh-token, send message, auto-reply, streams, usage. **webhooks** — generalize the existing ingest adapter to any channel (`:channel/:tenantId[/:instance]`).
+3. **channels** — accounts CRUD, send message, auto-reply, streams, usage. **webhooks** — generalize the existing ingest adapter to any channel (`:channel/:tenantId[/:instance]`).
 4. **knowledgeBases** (+ documents: upload, upload-file, reingest, chunks), **skills**, **systemVariables**, **mcpServers**.
 5. **connectors** (+ endpoints), **registry** (services, revisions, canary + promote/rollback, routes).
 6. **auth admin** (users, clients, tenant-users, tenant-roles, public-routes), **tenants**, **audit**, **jobs**, **memories**, **structuredKb**, **configFiles**, **dashboard**.

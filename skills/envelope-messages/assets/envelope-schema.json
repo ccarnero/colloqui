@@ -9,19 +9,19 @@
   ],
   "definitions": {
     "Channel": {
-      "$comment": "packages/shared/src/channel.interfaces.ts:3 — type Channel.",
+      "$comment": "packages/shared/src/channel.interfaces.ts:17 — type Channel.",
       "type": "string",
-      "enum": ["whatsapp", "instagram", "telegram", "http"],
-      "description": "Logical communication channel. The `http` channel is implemented (generic HTTP channel, authenticated with the x-http-channel-token header from WEBHOOK_FORWARDED_HEADERS)."
+      "enum": ["telegram", "http", "e2e-tests"],
+      "description": "Logical communication channel. `http` is inbound-only (generic JSON webhook authenticated with the x-http-channel-token header from WEBHOOK_FORWARDED_HEADERS); `e2e-tests` is an outbound-only sink that exists so the automated suite can exercise the egress publish path."
     },
     "ChannelProvider": {
-      "$comment": "packages/shared/src/channel.interfaces.ts:4 — type ChannelProvider.",
+      "$comment": "packages/shared/src/channel.interfaces.ts:18 — type ChannelProvider.",
       "type": "string",
-      "enum": ["meta", "telegram", "http"],
-      "description": "Infrastructure provider backing a Channel."
+      "enum": ["telegram", "http", "e2e-tests"],
+      "description": "Infrastructure provider backing a Channel. One provider per channel today, so the two tokens coincide."
     },
     "MessageKind": {
-      "$comment": "packages/shared/src/channel.interfaces.ts:5-11 — type MessageKind.",
+      "$comment": "packages/shared/src/channel.interfaces.ts:19-25 — type MessageKind.",
       "type": "string",
       "enum": ["received", "sent", "delivered", "read", "failed", "send"],
       "description": "Channel message kind. Note `webhook_received` is NOT here — it is exclusive to WebhookIngressEnvelope."
@@ -51,13 +51,13 @@
         "type": {
           "type": "string",
           "description": "Reverse-domain event type: io.yoizen.<domain>.<channel>.<provider>.<kind>.v1 (DOCS/messaging/envelope.md:77). Stage-1 receipts obey it as of 2026-07-31 (envelope-drift T05): api-gateway builds io.yoizen.messaging.<channel>.webhook.webhook_received.v1 through services/api-gateway/src/modules/channels/webhook-ingress-type.ts. HISTORICAL — stage-1 envelopes published before that date carry the channel-less io.yoizen.messaging.webhook.received.v1 (6 dot-separated segments against the current 7, counting io.yoizen as a two-segment prefix) and are still in the tracking store, so readers must accept both.",
-          "examples": ["io.yoizen.messaging.whatsapp.meta.received.v1"]
+          "examples": ["io.yoizen.messaging.telegram.telegram.received.v1"]
         },
         "resource": {
           "type": "string",
           "description": "Resource this event applies to",
           "examples": [
-            "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta"
+            "tenant/acme/account/69bea8cd868e860918359cc7/channel/telegram/provider/telegram"
           ]
         },
         "time": {
@@ -94,13 +94,13 @@
         },
         "channel": {
           "type": "string",
-          "description": "Logical communication channel. EventEnvelope declares this as a free `string` (interfaces.ts:42) because internal producers use non-channel values such as \"platform\"; ChannelEnvelope narrows it to Channel (whatsapp | instagram | telegram | http, channel.interfaces.ts:3,23).",
-          "examples": ["whatsapp", "telegram", "instagram", "http", "platform"]
+          "description": "Logical communication channel. EventEnvelope declares this as a free `string` (interfaces.ts:42) because internal producers use non-channel values such as \"platform\"; ChannelEnvelope narrows it to Channel (telegram | http | e2e-tests, channel.interfaces.ts:17,55).",
+          "examples": ["telegram", "http", "e2e-tests", "platform"]
         },
         "provider": {
           "type": "string",
-          "description": "Infrastructure provider. EventEnvelope declares a free `string` (interfaces.ts:43); ChannelEnvelope narrows it to ChannelProvider (channel.interfaces.ts:4,24).",
-          "examples": ["meta", "telegram", "http", "internal", "webhook"]
+          "description": "Infrastructure provider. EventEnvelope declares a free `string` (interfaces.ts:43); ChannelEnvelope narrows it to ChannelProvider (channel.interfaces.ts:18,56).",
+          "examples": ["telegram", "http", "e2e-tests", "internal", "webhook"]
         },
         "idempotencykey": {
           "type": "string",

@@ -26,9 +26,9 @@
  *   evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>
  *
  * Examples:
- *   evt.acme.channel-service.messaging.whatsapp.meta.received.v1
+ *   evt.acme.channel-service.messaging.telegram.telegram.received.v1
  *   evt.acme.api-gateway.messaging.telegram.webhook.webhook_received.v1
- *   evt.acme.channel-service.messaging.whatsapp.meta.send.v1
+ *   evt.acme.channel-service.messaging.telegram.telegram.send.v1
  */
 
 export {}; // Module marker — no runtime exports; see files referenced above.

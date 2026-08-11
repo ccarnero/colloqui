@@ -38,7 +38,7 @@ The shell uses top header sections plus a left sub-nav, not the older role-filte
 | Top section | Landing | Sub-nav pages |
 | --- | --- | --- |
 | Overview | `/dashboard` | Dashboard, Analytics |
-| Channels | `/channels` | WhatsApp, Telegram, HTTP |
+| Channels | `/channels` | Telegram, HTTP |
 | Connections | `/connections` | Overview, HTTP, MCP, Hosted services |
 | AI | `/ai` | Agents, Playground, Memories, Skills, Knowledge Bases, System Variables |
 | Processes | `/processes` | Workflows, Schedules, Trace |

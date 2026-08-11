@@ -151,7 +151,7 @@ providers as opaque 500s (the reasoning is recorded in the doc comment above
 
 | Setting | Env var | Default | Effect |
 |---|---|---|---|
-| Publish ack timeout | `WEBHOOK_PUBLISH_TIMEOUT_MS` | `10000` | On expiry the publisher raises `ServiceUnavailableException`, so the filter answers **503 + `Retry-After`** and WhatsApp/Telegram/Meta RETRY instead of dropping the webhook (`gatewayConfig.webhook.publishTimeoutMs`) |
+| Publish ack timeout | `WEBHOOK_PUBLISH_TIMEOUT_MS` | `10000` | On expiry the publisher raises `ServiceUnavailableException`, so the filter answers **503 + `Retry-After`** and Telegram (or any generic HTTP caller) RETRIES instead of dropping the webhook (`gatewayConfig.webhook.publishTimeoutMs`) |
 | In-flight cap | `WEBHOOK_PUBLISH_INFLIGHT_CAP` | `200` | Bounds concurrent publishes per pod so a backend stall cannot grow pending acks without limit (`gatewayConfig.webhook.publishInflightCap`) |
 
 Both are parsed by `positiveIntEnv` (`gateway.config.ts`), which falls back to

@@ -194,7 +194,7 @@ scripts/checks/doc-code-guards.sh -v    # verbose: also prints PASS lines
 | Folder | Contents |
 |--------|----------|
 | [`messaging/`](./messaging/) | Messaging layer — service bus topology, envelope contract, claim-check, ingress bridge |
-| [`channels/`](./channels/) | Channel integration — Telegram sequence, channel-service pipeline, Instagram, Meta provider pattern |
+| [`channels/`](./channels/) | Channel integration — Telegram sequence, channel-service pipeline (ingress, auto-reply, egress) |
 | [`agents/`](./agents/) | Agent runtime — execution flow, long-running executions (`agents/long-running-executions.md`), adapter tools, memory management (`agents/memory.md`), scheduled jobs (`agents/jobs.md`) |
 
 ### Service READMEs

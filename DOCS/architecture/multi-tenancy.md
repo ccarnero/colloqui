@@ -173,18 +173,18 @@ tenant is extracted directly from the path parameter:
 
 ```
 POST /api/webhooks/:channel/:tenantId
-GET  /api/webhooks/:channel/:tenantId   ← hub.challenge verification
+POST /api/webhooks/:channel/:tenantId/:instance   ← instance-addressed ingress
 ```
 
 Example:
 ```
-POST /api/webhooks/whatsapp/acme
-  → channel  = "whatsapp"
+POST /api/webhooks/telegram/acme
+  → channel  = "telegram"
   → tenantId = "acme"
 ```
 
-Meta (WhatsApp/Instagram) cannot include arbitrary headers or subdomains, so the tenant is
-placed in the path.
+An external provider cannot be told to include arbitrary headers or to call a per-tenant
+subdomain — Telegram only takes a webhook URL — so the tenant is placed in the path.
 
 Source file: `services/api-gateway/src/modules/channels/webhooks.controller.ts`
 
@@ -304,18 +304,13 @@ Defined in `packages/shared/src/channel.interfaces.ts`:
 interface ChannelAccount {
   id: string;
   tenantId: string;
-  channel: Channel;           // "whatsapp" | "instagram" | "telegram" | "http"
-  provider: ChannelProvider;  // "meta" | "telegram" | "http"
+  channel: Channel;           // "telegram" | "http" | "e2e-tests"
+  provider: ChannelProvider;  // "telegram" | "http" | "e2e-tests"
   name: string;
   externalId: string;
-  phoneNumberId?: string;     // WhatsApp: phone_number_id from Meta
-  wabaId?: string;            // WhatsApp: WABA ID
-  igUserId?: string;          // Instagram: IG professional account ID
   telegramBotToken?: string;  // Telegram: bot token
   accessToken: string;
-  appId?: string;
-  appSecret?: string;
-  verifyToken?: string;
+  appSecret?: string;         // webhook verification secret (Telegram / http token)
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

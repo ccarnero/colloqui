@@ -103,7 +103,7 @@ export class WebhookIngressPublisherService {
     /**
      * `accountid` is deliberately absent: at this stage of the pipeline
      * the webhook request has not been signature-verified yet, and the
-     * provider-level account (`whatsapp_business_id`, telegram bot id,
+     * provider-level account (telegram bot id, http channel token owner,
      * etc.) has not been mapped to a `Channel Account` row. Populating
      * it with a placeholder (e.g. `tenantId`) would poison downstream
      * aggregations that group by `account_id` — billing in particular.

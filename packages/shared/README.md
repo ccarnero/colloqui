@@ -32,7 +32,7 @@ src/
 ├── envelope.utils.ts               # canonicalJson, computeIdempotencyKey, buildSubject, parseSubject,
 │                                   #   deriveEnvelope, buildEventEnvelope, isCompliantEnvelope,
 │                                   #   MAX_DEPTH_BY_CATEGORY, DepthExceededError
-├── webhook.interfaces.ts           # WebhookIngressEnvelope, IWebhookIngressData, IWebhookVerifyRequest/Response
+├── webhook.interfaces.ts           # WebhookIngressEnvelope, IWebhookIngressData
 │
 │── NATS / stream topology
 ├── constants.ts                    # Platform-level constants: DLQ stream, Redis keys, tenant header,

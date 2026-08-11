@@ -82,7 +82,7 @@ flowchart LR
 | Service | Layer | Role |
 |---|---|---|
 | `api-gateway` | Platform | External HTTP entry, auth enforcement, service proxying, webhook ingress entry |
-| `channel-service` | Platform | Channel ingress/egress orchestration (WhatsApp, Instagram, Telegram, generic HTTP), normalized message events |
+| `channel-service` | Platform | Channel ingress/egress orchestration (Telegram, generic HTTP, the `e2e-tests` sink), normalized message events |
 | `audit-service` | Platform | Durable event audit persistence to tenant PostgreSQL |
 | `usage-aggregator-service` | Platform | Cross-stream usage aggregation for tenant analytics |
 | `tracking-ingester-service` | Platform | Durable event tracking: consumes every bus event into `tracking.tracked_events` (taxonomy classification, causal chains, payload lifecycle) and serves the trace/chain/run read APIs |

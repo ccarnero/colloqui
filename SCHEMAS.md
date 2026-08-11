@@ -39,9 +39,8 @@ asset). No schema was created, copied, or modified as part of producing this doc
 
 | Symbol | File | Covers | Consumers | Kind |
 |---|---|---|---|---|
-| `WebhookIngressEnvelope` | `packages/shared/src/webhook.interfaces.ts:44` | `Omit<EventEnvelope, "accountid">` narrowed to `producer:"api-gateway"`, `domain:"messaging"`, `provider:"webhook"`, `kind:"webhook_received"` — the pre-signature-verification envelope | `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.service.ts` | TS discriminated type alias (compile-time only) |
-| `IWebhookIngressData` | `webhook.interfaces.ts:15` | Extends `EventData` with `raw_body_b64`, filtered `headers`, optional `instance` | `WebhookIngressEnvelope` | TS interface (compile-time only) |
-| `IWebhookVerifyRequest` / `IWebhookVerifyResponse` | `webhook.interfaces.ts:4-13` | RPC request/response for webhook token verification (NATS request/reply, not a bus envelope) | NONE — the `hub.challenge` verify path was Meta-only and was removed end-to-end with the Meta provider family; these types are dead pending the contract shrink | TS interface/type (compile-time only) |
+| `WebhookIngressEnvelope` | `packages/shared/src/webhook.interfaces.ts:33` | `Omit<EventEnvelope, "accountid">` narrowed to `producer:"api-gateway"`, `domain:"messaging"`, `provider:"webhook"`, `kind:"webhook_received"` — the pre-signature-verification envelope | `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.service.ts` | TS discriminated type alias (compile-time only) |
+| `IWebhookIngressData` | `webhook.interfaces.ts:4` | Extends `EventData` with `raw_body_b64`, filtered `headers`, optional `instance` | `WebhookIngressEnvelope` | TS interface (compile-time only) |
 
 ## 4. Claim-check (`packages/database`)
 
@@ -292,7 +291,7 @@ The following gaps would need to be filled for a Bun-based message-tracking inge
 2. **Runtime validator for `ChannelEnvelope` (channel/provider/kind enums).**
    What: narrows the above with `channel`/`provider`/`kind` enum checks against `Channel`/`ChannelProvider`/`MessageKind`.
    Where: same module as #1, or `packages/shared/src/channel.schema.ts`.
-   Why: today nothing checks that an incoming envelope's `channel` is actually one of `"whatsapp"|"instagram"|"telegram"|"http"` at runtime — `usage-aggregator`'s parser reads `channel` as `string` and passes it through unchecked.
+   Why: today nothing checks that an incoming envelope's `channel` is actually one of `"telegram"|"http"|"e2e-tests"` at runtime — `usage-aggregator`'s parser reads `channel` as `string` and passes it through unchecked.
 
 3. **Runtime validator for `WebhookIngressEnvelope`.**
    What: validates the stage-1 envelope shape (`Omit<EventEnvelope,"accountid">` + `IWebhookIngressData`), distinguishing it from a canonical `ChannelEnvelope` for a tracker that needs to display both stages.

@@ -130,8 +130,6 @@ reaches the main bus without a verified signature.
 ```
 WEBHOOK_FORWARDED_HEADERS = [
   "content-type",
-  "x-hub-signature-256",
-  "x-hub-signature",
   "x-telegram-bot-api-secret-token",
   "x-http-channel-token",
   "x-request-id",
@@ -139,7 +137,7 @@ WEBHOOK_FORWARDED_HEADERS = [
 ]
 ```
 
-The four signature/token entries are verification secrets
+The two token entries are verification secrets
 (`WEBHOOK_SECRET_HEADERS`): forwarded to `channel-service` for the signature
 check, then stripped before the stage-2 envelope is built
 (`webhook-ingress.service.ts`, since 2026-08-01), so `message.received`
@@ -149,13 +147,13 @@ consumers and stores never see them.
 
 | Provider | Mechanism | Header | Implementation |
 |---|---|---|---|
-| Meta (WhatsApp, Instagram) | HMAC-SHA256 with `timingSafeEqual` | `x-hub-signature-256` | `services/channel-service/src/providers/meta/meta-base.ts` |
 | Telegram | `timingSafeEqual` against secret token | `x-telegram-bot-api-secret-token` (the provider's own `signatureHeader`) | `services/channel-service/src/providers/telegram/telegram.provider.ts` |
 | Generic HTTP channel | `timingSafeEqual` against a shared token | `x-http-channel-token` | `services/channel-service/src/providers/http/http.provider.ts` |
+| e2e-tests sink | none — `verifySignature` always denies, the channel has no ingress path | — | `services/channel-service/src/providers/e2e-tests/e2e-tests.provider.ts` |
 
-For Telegram, an absent or empty header is rejected directly as `signature_mismatch` (no
-fallback to the first active account) because the token is the sole mechanism for identifying
-the sending bot.
+On every channel an absent or empty header is rejected directly as `signature_mismatch` (no
+fallback to the first active account), because the token is the sole mechanism for identifying
+the sending account.
 
 **Providers not yet implemented:**
 
@@ -375,7 +373,8 @@ The extended audit fields for agents (`agent_model`, `confidence`, `tool_chain`,
 
 The revocation design by agent type (webhook secret rotation, service tokens, API keys,
 OAuth2) is not implemented as a centralized mechanism. Webhook secret revocation is done
-manually in the external provider dashboard (Meta, Telegram) and requires updating the
+manually in the external provider dashboard (Telegram BotFather, or whatever issues the
+generic HTTP channel's token) and requires updating the
 configured secret in the system.
 
 | Type | Planned Mechanism | Planned Effective Time |

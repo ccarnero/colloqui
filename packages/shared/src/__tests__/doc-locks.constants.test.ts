@@ -47,24 +47,27 @@ describe("Doc-pinned constants (DOCS/ literals)", () => {
     expect(TENANT_HEADER).toBe("x-yoizen-tenant");
   });
 
-  test("WEBHOOK_FORWARDED_HEADERS has exactly its current 7 entries", () => {
-    expect(WEBHOOK_FORWARDED_HEADERS.length).toBe(7);
+  test("WEBHOOK_FORWARDED_HEADERS has exactly its current 5 entries", () => {
+    expect(WEBHOOK_FORWARDED_HEADERS.length).toBe(5);
     expect([...WEBHOOK_FORWARDED_HEADERS]).toEqual([
       "content-type",
-      "x-hub-signature-256",
-      "x-hub-signature",
       "x-telegram-bot-api-secret-token",
       "x-http-channel-token",
       "x-request-id",
       "user-agent",
     ]);
+    // No `x-hub-signature*`: they were the Meta providers' `signatureHeader`
+    // and no registered provider declares them any more, so forwarding them
+    // would leak an unused third-party secret across the bridge.
+    expect([...WEBHOOK_FORWARDED_HEADERS].join(",")).not.toContain(
+      "x-hub-signature"
+    );
   });
 
   test("WEBHOOK_SECRET_HEADERS is exactly the verification subset of the allowlist", () => {
     // envelope.md §4.1, 2026-08-01 decision: these authenticate the webhook at
-    // stage 1 and are stripped before the stage-2 envelope. The two Meta
-    // `x-hub-signature*` entries left the subset with the Meta channel
-    // decommission — no surviving provider declares them as `signatureHeader`.
+    // stage 1 and are stripped before the stage-2 envelope. The subset is
+    // exactly the `signatureHeader` of each registered provider.
     expect([...WEBHOOK_SECRET_HEADERS]).toEqual([
       "x-telegram-bot-api-secret-token",
       "x-http-channel-token",

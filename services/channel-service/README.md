@@ -84,12 +84,9 @@ Every consumer reconciles tenant streams matching `/^INGRESS-/` via
 | `auto-reply` (`auto-reply.service.ts:50`) | `evt.*.channel-service.messaging.*.*.received.v1` (built at `auto-reply.service.ts:99`) | Match rules, send the reply |
 | `channel-egress` (`send-command-consumer.service.ts:38`) | `evt.*.channel-service.messaging.*.*.send.v1` (`CHANNEL_SEND_SUBJECT_PATTERN`, `channel.constants.ts:35-36`) | Execute outbound send commands (e.g. workflow-service `channelSend`) |
 
-There is no webhook-verify request/reply server any more: the `hub.challenge`
-GET verification handshake was Meta's, and it was removed end-to-end with the
-Meta provider family (the api-gateway `GET /api/webhooks/:channel/:tenantId`
-route went with it). `WEBHOOK_VERIFY_RPC_SUBJECT` in
-`packages/shared/src/channel.constants.ts` is now unused and dies with the
-contract shrink.
+There is no webhook-verify request/reply server and no `GET /api/webhooks/...`
+route: no registered provider performs a challenge/response handshake, so every
+webhook arrives as a POST and is authenticated by its `signatureHeader` alone.
 
 The webhook ingress handler runs with a concurrency of 32 by default,
 overridable via `WEBHOOK_INGRESS_HANDLER_CONCURRENCY`

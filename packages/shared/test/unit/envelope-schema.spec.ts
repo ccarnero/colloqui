@@ -202,6 +202,39 @@ function definition(name: string): ISchema {
 }
 
 // ---------------------------------------------------------------------------
+// Union mirror. The schema enums are documentation of three TypeScript string
+// unions; `bun test` erases types, so the unions are read back out of the
+// declaring source and compared literal-for-literal. Multi-line declarations
+// (MessageKind) are handled by reading up to the terminating semicolon.
+// ---------------------------------------------------------------------------
+const CHANNEL_INTERFACES_PATH = `${import.meta.dir}/../../src/channel.interfaces.ts`;
+const channelInterfacesLines = readFileSync(
+  CHANNEL_INTERFACES_PATH,
+  "utf-8"
+).split("\n");
+
+/** 1-based line of `export type <name> =` in channel.interfaces.ts. */
+function unionDeclarationLine(name: string): number {
+  const index = channelInterfacesLines.findIndex((line) =>
+    line.startsWith(`export type ${name} =`)
+  );
+  expect(index).toBeGreaterThanOrEqual(0);
+  return index + 1;
+}
+
+/** String-literal members of that union, in declaration order. */
+function unionMembers(name: string): string[] {
+  const start = unionDeclarationLine(name) - 1;
+  const rest = channelInterfacesLines.slice(start);
+  const end = rest.findIndex((line) => line.includes(";"));
+  expect(end).toBeGreaterThanOrEqual(0);
+  const declaration = rest.slice(0, end + 1).join("\n");
+  const members = declaration.match(/"([^"]+)"/g) ?? [];
+  expect(members.length).toBeGreaterThan(0);
+  return members.map((member) => member.slice(1, -1));
+}
+
+// ---------------------------------------------------------------------------
 // Fixtures. Shapes copied from the real producers:
 //   stage 1 — services/api-gateway/src/modules/channels/webhook-ingress-publisher.service.ts:113-146
 //   stage 2 — services/channel-service/src/domain/envelope.factory.ts:80-120
@@ -308,24 +341,21 @@ describe("envelope-schema.json (skills/envelope-messages asset)", () => {
   });
 
   // ── (a) channel enum ────────────────────────────────────────────────────
-  it("mirrors the Channel union exactly, including the implemented http channel", () => {
-    // packages/shared/src/channel.interfaces.ts:3
-    //
-    // KNOWN DRIFT (Meta decommission, register 05 T02): the `Channel` /
-    // `ChannelProvider` unions lost `whatsapp` / `instagram` / `meta`, but the
-    // skills asset is a documentation artifact and the decommission's doc
-    // sweep is T03 — so the asset (and therefore this pin) still carries the
-    // pre-decommission lists. Reported in the T02 summary.
+  it("mirrors the Channel / ChannelProvider / MessageKind unions exactly", () => {
+    // Two-sided pin (register 05 T03, Meta decommission doc sweep). The list
+    // is asserted BOTH against the literal expectation — so shrinking a union
+    // stays a deliberate edit of this file — AND against the union parsed out
+    // of channel.interfaces.ts, so the asset can never silently fall behind
+    // the type again (which is exactly what T02 left behind as KNOWN DRIFT).
     expect(definition("Channel")["enum"]).toEqual([
-      "whatsapp",
-      "instagram",
       "telegram",
       "http",
+      "e2e-tests",
     ]);
     expect(definition("ChannelProvider")["enum"]).toEqual([
-      "meta",
       "telegram",
       "http",
+      "e2e-tests",
     ]);
     expect(definition("MessageKind")["enum"]).toEqual([
       "received",
@@ -335,6 +365,22 @@ describe("envelope-schema.json (skills/envelope-messages asset)", () => {
       "failed",
       "send",
     ]);
+
+    for (const name of ["Channel", "ChannelProvider", "MessageKind"] as const) {
+      expect(definition(name)["enum"]).toEqual(unionMembers(name));
+      // …and the `$comment` cites the line the union really lives on.
+      expect(definition(name)["$comment"] as string).toContain(
+        `channel.interfaces.ts:${unionDeclarationLine(name)}`
+      );
+    }
+
+    // The decommissioned tokens are gone from every enum, not merely reordered.
+    const everyEnumMember = (["Channel", "ChannelProvider"] as const).flatMap(
+      (name) => definition(name)["enum"] as string[]
+    );
+    for (const dead of ["whatsapp", "instagram", "meta"]) {
+      expect(everyEnumMember).not.toContain(dead);
+    }
   });
 
   // ── (b) correlation_id description ──────────────────────────────────────
@@ -582,7 +628,23 @@ describe("skills/envelope-messages/SKILL.md claims", () => {
   it("documents the http channel against the declaring type", () => {
     expect(headerAllowlistBlock()).toContain("x-http-channel-token");
     expect(skill).toContain("`http`");
-    expect(skill).toContain("channel.interfaces.ts:3");
+    // Cited at the line `Channel` really lives on, not a frozen number.
+    expect(skill).toContain(
+      `channel.interfaces.ts:${unionDeclarationLine("Channel")}`
+    );
+  });
+
+  it("lists exactly the surviving Channel members, and none of the dead ones", () => {
+    // The skill's field tables enumerate the union in prose. Whatever the
+    // wording, every surviving member has to appear and no decommissioned
+    // token may — same removal as the schema enums above.
+    for (const member of unionMembers("Channel")) {
+      expect(skill).toContain(member);
+    }
+    // Word-bounded: `metadata:` in the front-matter is not the `meta` provider.
+    for (const dead of [/\bwhatsapp\b/i, /\binstagram\b/i, /\bmeta\b/i]) {
+      expect(skill).not.toMatch(dead);
+    }
   });
 
   it("cites the real buildEventEnvelope correlation_id fallback", () => {

@@ -41,8 +41,8 @@ Every message published to the bus **must** be serialized as the following envel
   "specversion": "1.0",
   "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
   "source": "channel-service/accounts/69bea8cd",
-  "type": "io.yoizen.messaging.whatsapp.meta.received.v1",
-  "resource": "tenant/acme/account/69bea8cd/channel/whatsapp/provider/meta",
+  "type": "io.yoizen.messaging.telegram.telegram.received.v1",
+  "resource": "tenant/acme/account/69bea8cd/channel/telegram/provider/telegram",
   "time": "2026-04-17T15:40:11.382Z",
   "traceid": "4bf92f3577b34da6a3ce929d0e0e4736",
   "causation_id": "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
@@ -50,8 +50,8 @@ Every message published to the bus **must** be serialized as the following envel
   "tenant": "acme",
   "producer": "channel-service",
   "domain": "messaging",
-  "channel": "whatsapp",
-  "provider": "meta",
+  "channel": "telegram",
+  "provider": "telegram",
   "accountid": "69bea8cd868e860918359cc7",
   "idempotencykey": "sha256:a1b2c3d4...",
   "transport": {
@@ -86,8 +86,8 @@ Every message published to the bus **must** be serialized as the following envel
 | `tenant` | string | Tenant ID. |
 | `producer` | string | Service that publishes. Active producers: `api-gateway` (`WebhookIngressEnvelope`), `channel-service` (`CHANNEL_PRODUCER`), `registry-service` (`REGISTRY_PRODUCER`), `agent-admin-service` (`AGENT_ADMIN_PRODUCER`), `agent-ai-service` (`AGENT_AI_PRODUCER`, since the 2026-08-07 E3 migration — see the note below), `agent-memory-service` (`AGENT_MEMORY_PRODUCER`), `agent-scheduler-service` (`AGENT_SCHEDULER_PRODUCER`), `ai-agent-gateway` (`AI_AGENT_GATEWAY_PRODUCER`, via `execution-client.ts`), plus three services that do **not** use a `@yoizen/shared` constant: `connector-runtime` and `workflow-service` inline the string literal at each publish site, while `provisioning-service` declares a file-local `const PRODUCER` in `apply-events.publisher.ts` and `secret-audit.publisher.ts`. |
 | `domain` | string | Business domain. Examples: `messaging`, `automation`, `platform`. |
-| `channel` | string | Channel. Examples: `whatsapp`, `telegram`, `platform`. |
-| `provider` | string | Provider. Examples: `meta`, `telegram`, `internal`. |
+| `channel` | string | Channel. Examples: `telegram`, `http`, `platform`. |
+| `provider` | string | Provider. Examples: `telegram`, `http`, `internal`. |
 | `accountid` | string | Logical account ID (not the tenant). **Absent** in the initial `WebhookIngressEnvelope` — `channel-service` resolves it in stage 2. |
 | `idempotencykey` | string | `sha256:` + hex(sha256(canonical_json(rawPayload))). Must be deterministic. |
 | `transport` | object | See §4. |
@@ -159,8 +159,8 @@ evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>
 | `tenant` | Tenant ID (same value as `envelope.tenant`) | `acme`, `globex` |
 | `producer` | Publishing service | `channel-service`, `api-gateway`, `agent-admin-service` |
 | `domain` | Business domain | `messaging`, `automation`, `platform` |
-| `channel` | Channel | `whatsapp`, `telegram`, `platform` |
-| `provider` | Provider | `meta`, `telegram`, `internal`, `webhook` |
+| `channel` | Channel | `telegram`, `http`, `platform` |
+| `provider` | Provider | `telegram`, `http`, `internal`, `webhook` |
 | `kind` | Operational type | `webhook_received`, `received`, `sent`, `delivered`, `send`, `agent_outbound`, `config_sync`, `job_trigger` |
 | `version` | Subject schema version | `v1` |
 
@@ -203,12 +203,10 @@ interface EventTransport {
 
 ### 4.1 Webhook header allowlist (D8)
 
-Seven headers may be forwarded. Defined in `WEBHOOK_FORWARDED_HEADERS` (`packages/shared/src/channel.constants.ts`), with `WEBHOOK_FORWARDED_HEADERS_SET` as its O(1) lookup:
+Five headers may be forwarded. Defined in `WEBHOOK_FORWARDED_HEADERS` (`packages/shared/src/channel.constants.ts`), with `WEBHOOK_FORWARDED_HEADERS_SET` as its O(1) lookup:
 
 ```
 content-type
-x-hub-signature-256
-x-hub-signature
 x-telegram-bot-api-secret-token
 x-http-channel-token
 x-request-id
@@ -217,10 +215,10 @@ user-agent
 
 All other headers must be discarded.
 
-**Verification-secret strip (2026-08-01).** Four of the seven exist so that
-channel-service can AUTHENTICATE the webhook (`x-hub-signature-256`,
-`x-hub-signature`, `x-telegram-bot-api-secret-token`, `x-http-channel-token` —
-`WEBHOOK_SECRET_HEADERS`, same file). They ride the stage-1 envelope to the
+**Verification-secret strip (2026-08-01).** Two of the five exist so that
+channel-service can AUTHENTICATE the webhook (`x-telegram-bot-api-secret-token`,
+`x-http-channel-token` — `WEBHOOK_SECRET_HEADERS`, same file: exactly the
+`signatureHeader` each registered provider declares). They ride the stage-1 envelope to the
 verifier, and once the signature check has used them
 (`WebhookIngressService.resolveAccount`) they are stripped
 (`stripSecretHeaders`), so stage-2 `data.headers` carries only `content-type`,

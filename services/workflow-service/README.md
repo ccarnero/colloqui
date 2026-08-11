@@ -130,7 +130,7 @@ union — the `activity` discriminant values below are the complete set:
 | `agentCall` | `workflow-orchestrator` (local) | AI agent execution | Invoke a YoizenClaw agent with execution context |
 | `jsFunction` | `workflow-orchestrator` (local) | Inline code | Execute arbitrary JavaScript code |
 | `serviceBusCall` | `workflow-orchestrator` (local) | NATS publish | Publish an event to a NATS subject |
-| `channelSend` | `workflow-orchestrator` (local) | Channel delivery | Send a message through a configured channel account (`whatsapp` \| `instagram` \| `telegram` \| `http` — there is no email/SMS channel) |
+| `channelSend` | `workflow-orchestrator` (local) | Channel delivery | Send a message through a configured channel account (`telegram` \| `http` \| `e2e-tests` — there is no email/SMS channel) |
 | `branch` | — (workflow control) | Parallel execution | Execute multiple action lists concurrently |
 | `conditional` | — (workflow control) | Conditional branch | Execute the first matching branch or an optional default branch |
 
@@ -369,7 +369,7 @@ Publishes event to NATS subject with tenant header injection.
 ### channelSend
 
 Sends a message via a configured channel account. `channel` is one of
-`whatsapp` | `instagram` | `telegram` | `http` (see
+`telegram` | `http` | `e2e-tests` (see
 `packages/shared/src/channel.interfaces.ts`) — there is no `email`/`sms`
 channel. `args` requires `accountId`, `channel`, `provider`, `to`, `type`
 (there is no `recipient`/`subject`/`body`).

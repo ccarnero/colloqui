@@ -14,7 +14,7 @@ export const WEBHOOK_PUBLISH_UNAVAILABLE_MARKER =
  * publishTimeoutMs`, or when the per-pod in-flight cap is exhausted.
  *
  * Mapped to HTTP 503 (NestJS default) with a `Retry-After` header in
- * `ServiceExceptionFilter` so providers (WhatsApp / Telegram / Meta)
+ * `ServiceExceptionFilter` so providers (Telegram, generic HTTP callers)
  * trigger their own retry path instead of dropping the webhook —
  * see `post-mortem/POST-MORTEM.md` §P1.2.
  */

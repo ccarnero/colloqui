@@ -1,8 +1,8 @@
 const PHONE_REGEX = /^\+?\d{10,15}$/;
 
 /**
- * Argentine mobile: Meta webhooks send "549XXXXXXXXXX" (with 9)
- * but the Cloud API send endpoint expects "54XXXXXXXXXX" (without 9).
+ * Argentine mobile: inbound payloads carry "549XXXXXXXXXX" (with 9) while
+ * outbound APIs expect "54XXXXXXXXXX" (without 9).
  * Pattern: 549 + 10 digits = 13 digits total.
  */
 function normalizeArgentineNumber(digits: string): string {
@@ -21,11 +21,11 @@ export interface ParsedSenderId {
 }
 
 /**
- * Determines whether a WhatsApp sender/recipient ID is
- * a phone number (E.164) or a BSUID (Business-Scoped User ID).
+ * Determines whether a sender/recipient ID is a phone number (E.164) or an
+ * opaque business-scoped user id (BSUID).
  *
- * With WhatsApp Usernames (rolling out June 2026), `from` / `to`
- * fields in webhook payloads may contain a BSUID instead of a phone.
+ * `from` / `to` fields in webhook payloads may carry either shape, so the
+ * caller must not assume a phone.
  * BSUID: alphanumeric, up to 128 chars, unique per business+user pair.
  * Phone: digits only, optionally prefixed with +, 10-15 digits.
  *
@@ -50,8 +50,8 @@ export function parseSenderId(rawId: string | undefined | null): ParsedSenderId 
 
 /**
  * Normalizes a recipient identifier for outbound messages.
- * Strips leading +, applies country-specific rules, returns
- * digits-only string ready for the Meta Cloud API.
+ * Strips leading +, applies country-specific rules, returns a
+ * digits-only string ready for a phone-addressed provider API.
  */
 export function normalizeRecipient(rawTo: string): string {
   const { type, value } = parseSenderId(rawTo);

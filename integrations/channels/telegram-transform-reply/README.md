@@ -124,8 +124,7 @@ curl -s "https://api.telegram.org/bot<token>/setWebhook" \
 > endpoint `GET /api/channels/accounts/<id>`, which returns `appSecret` on
 > the account DTO — the row→DTO mapper in
 > `services/channel-service/src/modules/accounts/accounts.service.ts` maps `app_secret` straight
-> through, so LIST and GET both carry it (only `POST /channels/accounts/:id/refresh-token` masks
-> a token).
+> through, so LIST and GET both carry it.
 > Using the `auth()` helper defined under Troubleshooting below (bearer +
 > `x-yoizen-tenant` headers):
 >

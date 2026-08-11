@@ -11,10 +11,10 @@ import { SendChannelMessageBodyDto } from "../../src/modules/channels/channels-g
 // `SendChannelMessageBodyDto.templateComponents` carried `@IsArray()` only over
 // `Record<string, unknown>[]`. Under the production pipe's implicit conversion,
 // class-transformer coerces every element via `plainToClass(Array, element)`,
-// so the WhatsApp template components collapsed to `[[]]` on
-// `POST /api/channels/:accountId/messages` — Meta then rejected the send or
-// delivered the template without its variables. `@Type(() => Object)` stops the
-// element-wise coercion.
+// so a `template` send's components collapsed to `[[]]` on
+// `POST /api/channels/:accountId/messages` — the provider then rejected the
+// send or delivered the template without its variables. `@Type(() => Object)`
+// stops the element-wise coercion.
 //
 // The payload below is the register's reproduction verbatim.
 // ---------------------------------------------------------------------------

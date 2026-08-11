@@ -21,7 +21,7 @@ workflow. Nada de eso está acá — esto es solo lo que **no** se hizo.
 | 2 | Group C — 3 tickets | Datos/config muertos o mentirosos | [`02-group-c.md`](02-group-c.md) |
 | 3 | Group D+E — comentarios y strings | **CERRADO 08-07** (spec 3/3 + rule-5) | [`03-group-d-e.md`](03-group-d-e.md) |
 | 4 | E3 — subject inconsistente | **CERRADO 08-08** (spec 3/3 + verificación en vivo) | [`04-e3-subject.md`](04-e3-subject.md) |
-| 5 | Deuda de plataforma | Huecos estructurales encontrados | [`05-deuda-plataforma.md`](05-deuda-plataforma.md) |
+| 5 | Deuda de plataforma | **Instagram/Meta dado de baja 08-11** (spec 3/3); resto Fase 4 | [`05-deuda-plataforma.md`](05-deuda-plataforma.md) |
 | 6 | Cobertura e2e restante | `mcpCall`, lo único sin cubrir | [`06-e2e-restante.md`](06-e2e-restante.md) |
 | 7 | Verificación pendiente | Lo que falta correr/mirar | [`07-verificacion.md`](07-verificacion.md) |
 | 8 | Manifest gap — `defaultCache` | Paridad declarativa UI/SDK ↔ manifiesto | [`08-manifest-defaultcache-gap.md`](08-manifest-defaultcache-gap.md) |

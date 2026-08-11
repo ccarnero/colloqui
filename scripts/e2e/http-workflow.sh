@@ -277,9 +277,9 @@ COMPOSITE_BRANCH_MATCH="matches-nonce"
 # through the `e2e-tests` sink channel. That channel exists precisely so this
 # assertion can be made: `EgressService` publishes `sent.v1` only inside
 # `if (result.success)`, and no other channel can reach that branch here —
-# `http` fails by design, and telegram/whatsapp/instagram need live
-# credentials. Everything after the provider returns is the same code the real
-# channels run, so this covers the actual egress publish path.
+# `http` fails by design, and telegram needs live credentials. Everything after
+# the provider returns is the same code the real channels run, so this covers
+# the actual egress publish path.
 EGRESS_CHANNEL_NAME_PREFIX="e2e-egress-sink"
 # Arbitrary recipient: the sink discards the message, so `to` only has to be a
 # non-empty string the action validator accepts.

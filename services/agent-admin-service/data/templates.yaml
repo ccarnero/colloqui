@@ -2,7 +2,7 @@ templates:
   - id: "sales-assistant"
     label: "Sales Assistant"
     name: "Sales Assistant Agent"
-    description: "AI-powered sales assistant that qualifies leads, handles objections, and drives conversions through WhatsApp, Telegram, Slack and web chat."
+    description: "AI-powered sales assistant that qualifies leads, handles objections, and drives conversions through Telegram, Slack and web chat."
     system_prompt: |
       You are an expert Sales Assistant for Yoizen - a platform that helps companies automate customer conversations with AI agents.
 

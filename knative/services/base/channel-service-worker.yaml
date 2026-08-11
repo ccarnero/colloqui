@@ -1,11 +1,10 @@
 # channel-service worker pod. Phase 1.5 split.
 #
-# Runs `SERVICE_MODE=worker` — bootstraps the four consumer
+# Runs `SERVICE_MODE=worker` — bootstraps the three consumer
 # services that handle the inbound→outbound message pipeline:
 #   - channel-webhook-ingress  (parse provider webhooks, publish ingress)
 #   - channel-egress           (send outbound messages to providers)
 #   - auto-reply               (rule-driven dispatcher, with rules cache)
-#   - WebhookVerifyRpcServer   (NATS RPC, queue group `channel-service.webhook-verify`)
 apiVersion: apps/v1
 kind: Deployment
 metadata:

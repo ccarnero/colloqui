@@ -14,7 +14,7 @@ Summary: The two-stage webhook bridge (api-gateway receipt then channel-service 
 
 ## 1. Overview
 
-The messaging ingress pipeline is a **two-stage bridge** between an external provider (Meta, Telegram, etc.) and the internal event bus (JetStream). Neither stage has access to tenant business data until the message has been authenticated by HMAC signature.
+The messaging ingress pipeline is a **two-stage bridge** between an external provider (Telegram, the generic HTTP channel) and the internal event bus (JetStream). Neither stage has access to tenant business data until the message has been authenticated by its signature/token header.
 
 ```
 External provider
@@ -24,7 +24,7 @@ External provider
       │  publishes WebhookIngressEnvelope → INGRESS-<tenant>
       ▼
 [channel-service]  durable consumer: channel-webhook-ingress
-      │  verifies HMAC signature, parses messages, resolves accountid
+      │  verifies the signature/token header, parses messages, resolves accountid
       │  publishes ChannelEnvelope → INGRESS-<tenant>
       ▼
 Downstream consumers (agent-ai-service, workflow-service, audit-service, etc.)
@@ -39,12 +39,12 @@ Downstream consumers (agent-ai-service, workflow-service, audit-service, etc.)
 ```
 POST /api/webhooks/:channel/:tenantId
 POST /api/webhooks/:channel/:tenantId/:instance   ← instance-addressed ingress
-GET  /api/webhooks/:channel/:tenantId             ← hub.challenge verification (Meta)
 ```
 
 (`@Controller("webhooks")` under api-gateway's `setGlobalPrefix("api")`.)
 
-All three endpoints are public (`@Public()`, `@SkipTenant()`). The tenant is resolved only from the path parameter — no JWT and no tenant guard.
+There is no GET verification route: no surviving provider performs a
+challenge/response handshake. Both endpoints are public (`@Public()`, `@SkipTenant()`). The tenant is resolved only from the path parameter — no JWT and no tenant guard.
 
 The instance-addressed route lets a tenant expose one URL per configured channel account: `<instance>` is the account's `externalId`, forwarded verbatim in `data.instance` so `channel-service` can resolve the account by `(channel, externalId)`. The URL selects *which* account; a token header (e.g. `x-http-channel-token`) still authenticates downstream — the URL itself is not the credential.
 
@@ -70,7 +70,7 @@ Successful response: HTTP 200 with body `{ "status": "accepted" }`, returned onl
 
 The envelope ID is a UUID v4 (`crypto.randomUUID()`).
 
-The `accountid` field is deliberately absent: at this point the request has not passed signature verification, and the provider account (WhatsApp Business ID, Telegram bot, etc.) has not been resolved. Including a placeholder would corrupt per-account billing aggregations. See the comment above the `WebhookIngressEnvelope` literal in `WebhookIngressPublisherService.publishWebhook`.
+The `accountid` field is deliberately absent: at this point the request has not passed signature verification, and the provider account (the Telegram bot, the HTTP channel account, etc.) has not been resolved. Including a placeholder would corrupt per-account billing aggregations. See the comment above the `WebhookIngressEnvelope` literal in `WebhookIngressPublisherService.publishWebhook`.
 
 Type: `WebhookIngressEnvelope = Omit<EventEnvelope, "accountid"> & { ... }`.
 
@@ -118,12 +118,12 @@ File: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.se
 1. Validates the channel (must have a registered `IChannelProvider` in `ChannelRouter`).
 2. Queries the tenant/channel's active accounts through the configured repository/storage engine (`postgres` by default, `mongo` when selected).
 3. If the request came through the instance-addressed route (`/api/webhooks/:channel/:tenantId/:instance`), narrows the active-account set to the one whose `externalId` matches `instance`. An unknown instance is rejected with `unknown_instance` — there is no fallback to token-only matching.
-4. Verifies the provider's HMAC signature against each (possibly narrowed) active account.
-5. Resolves the concrete `accountid` (disambiguation by `phone_number_id` for WhatsApp or `ig_user_id` for Instagram when multiple accounts verify).
+4. Verifies the provider's signature/token header against each (possibly narrowed) active account, using `timingSafeEqual`.
+5. Resolves the concrete `accountid`: exactly one account must verify. Zero accounts, or more than one, is `signature_mismatch` — no payload hint can break the tie, because no surviving channel carries an account identifier in the body.
 6. Parses the webhook body using the corresponding provider → `InboundMessage[]`.
 7. Calls `IngressService.processInbound` via `setImmediate` (non-blocking), forwarding the causal chain (`correlationId`, `causationId`, `depth`) inherited from the stage-1 `WebhookIngressEnvelope`, plus the stage-1 header allowlist (`webhookHeaders`), which lands on `data.headers` of the stage-2 envelope (since 2026-07-31).
 
-**Telegram/generic-HTTP signature handling:** for `channel === "telegram"` or `channel === "http"`, the corresponding signature header (`X-Telegram-Bot-Api-Secret-Token` or `x-http-channel-token`) is the only signal that identifies the account — the payload carries no account id. If that header is absent or empty, the request is immediately rejected with `signature_mismatch`. There is no fallback to the first active account. WhatsApp and Instagram keep the legacy fallback (first active account when no signature header is present) because they can disambiguate via `phone_number_id` / `ig_user_id`.
+**Signature handling:** the provider's `signatureHeader` (`x-telegram-bot-api-secret-token` for Telegram, `x-http-channel-token` for the generic HTTP channel) is the only signal that identifies the account — the payload carries no account id. If that header is absent or empty, the request is immediately rejected with `signature_mismatch`, on every channel. There is no fallback to the first active account: an unsigned webhook could otherwise be attributed to an arbitrary account of the tenant.
 
 ### 3.3 ChannelEnvelope publication
 
@@ -133,7 +133,7 @@ File: `services/channel-service/src/modules/webhooks/webhook-ingress-consumer.se
 |-------|-------|
 | `producer` | `"channel-service"` |
 | `domain` | `"messaging"` |
-| `provider` | Provider name (`"meta"`, `"telegram"`, etc.) |
+| `provider` | Provider name (`"telegram"`, `"http"`, `"e2e-tests"`) |
 | `kind` | `"received"` |
 | `transport.method` | `"webhook"` |
 | `transport.protocol` | `"https"` |
@@ -159,11 +159,14 @@ transport.protocol = "internal"
 
 ### 3.5 Implemented providers
 
-| Provider | Channel(s) | Path |
-|----------|-----------|------|
-| Meta | whatsapp, instagram | `services/channel-service/src/providers/meta/` |
-| Telegram | telegram | `services/channel-service/src/providers/telegram/` |
-| HTTP (generic) | http | `services/channel-service/src/providers/http/` — authenticates via the `x-http-channel-token` header, same account-resolution rules as Telegram |
+| Provider | Channel | Path |
+|----------|---------|------|
+| Telegram | telegram | `services/channel-service/src/providers/telegram/` — inbound + outbound, authenticates via `x-telegram-bot-api-secret-token` |
+| HTTP (generic) | http | `services/channel-service/src/providers/http/` — inbound only, authenticates via the `x-http-channel-token` header, same account-resolution rules as Telegram |
+| e2e-tests | e2e-tests | `services/channel-service/src/providers/e2e-tests/` — outbound-only sink for the automated suite: `parseWebhook` returns `[]` and `verifySignature` always denies, so it has no ingress path at all |
+
+All three are registered directly in the `ChannelRouter` constructor
+(`services/channel-service/src/providers/channel-router.ts`).
 
 TikTok, Twitter/X, and other channels mentioned in the original design: **not implemented**.
 
@@ -208,21 +211,21 @@ The default category when not specified is `internal_service` (MAX_DEPTH = 5).
 
 ```mermaid
 sequenceDiagram
-    participant Meta as Meta (WhatsApp)
+    participant TG as Telegram
     participant GW as api-gateway
     participant JS as JetStream (INGRESS-<tenant>)
     participant CS as channel-service
     participant AG as agent-ai-service
 
-    Meta->>GW: POST /api/webhooks/whatsapp/<tenant>
+    TG->>GW: POST /api/webhooks/telegram/<tenant>
     GW->>GW: buildWebhookIngressEnvelope(depth=0)
-    GW-->>JS: publish evt.<t>.api-gateway.messaging.whatsapp.webhook.webhook_received.v1
+    GW-->>JS: publish evt.<t>.api-gateway.messaging.telegram.webhook.webhook_received.v1
 
     JS->>CS: deliver(WebhookIngressEnvelope)
-    CS->>CS: verifySignature(HMAC)
+    CS->>CS: verifySignature(x-telegram-bot-api-secret-token)
     CS->>CS: resolveAccountId()
     CS->>CS: createChannelEnvelope(causation_id=webhook.id, correlation_id=webhook.correlation_id, depth=1)
-    CS-->>JS: publish evt.<t>.channel-service.messaging.whatsapp.meta.received.v1
+    CS-->>JS: publish evt.<t>.channel-service.messaging.telegram.telegram.received.v1
 
     JS->>AG: deliver(ChannelEnvelope)
     AG->>AG: enforceDepthLimit(depth=1, max=5) → ok
@@ -341,8 +344,8 @@ callPlatformApi
 
 | Aspect | External provider (as-built) | Internal agent (pending) | Third-party agent (pending) | Platform agent (pending) |
 |--------|------------------------------|-------------------------|-----------------------------|--------------------------|
-| Trust | High (HMAC signature verified) | High (our infra) | Low (third-party code) | Medium (known SaaS) |
-| Authentication | HMAC webhook in channel-service | Service token | API key + tenant auth | OAuth2 / callback signature |
+| Trust | High (signature/token verified) | High (our infra) | Low (third-party code) | Medium (known SaaS) |
+| Authentication | Webhook signature/token in channel-service | Service token | API key + tenant auth | OAuth2 / callback signature |
 | Endpoint | `POST /api/webhooks/:channel/:tenantId` | `POST /api/agents/publish` | `POST /api/agents/publish` | webhook callback or poll |
 | Implemented | ✅ | ❌ | ❌ | ❌ |
 | MAX_DEPTH | 0 (`root`) | 5 (`internal_agent`) | 2 (`thirdparty_agent`) | 3 (`platform_agent`) |
@@ -367,8 +370,8 @@ cell is about which path exists today, not about which categories it can enforce
   "specversion": "1.0",
   "id": "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
   "source": "api-gateway/webhooks",
-  "type": "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1",
-  "resource": "tenant/acme/channel/whatsapp/provider/webhook",
+  "type": "io.yoizen.messaging.telegram.webhook.webhook_received.v1",
+  "resource": "tenant/acme/channel/telegram/provider/webhook",
   "time": "2026-06-11T12:00:00.000Z",
   "traceid": "4bf92f3577b34da6a3ce929d0e0e4736",
   "causation_id": null,
@@ -376,7 +379,7 @@ cell is about which path exists today, not about which categories it can enforce
   "tenant": "acme",
   "producer": "api-gateway",
   "domain": "messaging",
-  "channel": "whatsapp",
+  "channel": "telegram",
   "provider": "webhook",
   "kind": "webhook_received",
   "idempotencykey": "sha256:...",
@@ -391,10 +394,10 @@ cell is about which path exists today, not about which categories it can enforce
     "payload_ref": null,
     "payload_bytes": 512,
     "payload_checksum": "sha256:...",
-    "payload": { "entry": [ "..." ] },
-    "raw_body_b64": "eyJlbnRyeSI6...",
+    "payload": { "update_id": 421, "message": { "...": "..." } },
+    "raw_body_b64": "eyJ1cGRhdGVfaWQiOjQyMX0=",
     "headers": {
-      "x-hub-signature-256": "sha256=abc...",
+      "x-telegram-bot-api-secret-token": "tok_abc...",
       "content-type": "application/json"
     }
   }
@@ -410,8 +413,8 @@ Note: `accountid` is absent — typed as `Omit<EventEnvelope, "accountid">`.
   "specversion": "1.0",
   "id": "b7d9e2f4-1a3c-5e7f-9b1d-2c3e4f5a6b7c",
   "source": "channel-service/accounts/69bea8cd868e860918359cc7",
-  "type": "io.yoizen.messaging.whatsapp.meta.received.v1",
-  "resource": "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta",
+  "type": "io.yoizen.messaging.telegram.telegram.received.v1",
+  "resource": "tenant/acme/account/69bea8cd868e860918359cc7/channel/telegram/provider/telegram",
   "time": "2026-06-11T12:00:01.000Z",
   "traceid": "4bf92f3577b34da6a3ce929d0e0e4736",
   "causation_id": "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
@@ -419,8 +422,8 @@ Note: `accountid` is absent — typed as `Omit<EventEnvelope, "accountid">`.
   "tenant": "acme",
   "producer": "channel-service",
   "domain": "messaging",
-  "channel": "whatsapp",
-  "provider": "meta",
+  "channel": "telegram",
+  "provider": "telegram",
   "accountid": "69bea8cd868e860918359cc7",
   "idempotencykey": "sha256:...",
   "transport": {
@@ -435,11 +438,11 @@ Note: `accountid` is absent — typed as `Omit<EventEnvelope, "accountid">`.
     "payload_bytes": 380,
     "payload_checksum": "sha256:...",
     "payload": {
-      "messageId": "wamid.HBgL...",
-      "from": "5491199998888",
+      "messageId": "421",
+      "from": "874591203",
       "timestamp": "1749643200",
       "type": "text",
-      "text": { "body": "Hola" },
+      "text": "Hola",
       "accountId": "69bea8cd868e860918359cc7"
     },
     "headers": {
@@ -454,8 +457,9 @@ Note: `accountid` is absent — typed as `Omit<EventEnvelope, "accountid">`.
 > `data.headers` carries the stage-1 allowlist on webhook-derived envelopes
 > (§3.3, envelope.md §4.1) as of 2026-07-31, **minus** the verification-secret
 > subset (`WEBHOOK_SECRET_HEADERS`) which `WebhookIngressService.stripSecretHeaders`
-> removes after the signature check as of 2026-08-01 — so `x-hub-signature-256`
-> and friends can no longer appear here, only `content-type`, `x-request-id`
+> removes after the signature check as of 2026-08-01 — so
+> `x-telegram-bot-api-secret-token` and `x-http-channel-token` can never appear
+> here, only `content-type`, `x-request-id`
 > and `user-agent`. Envelopes published before 2026-07-31, and any non-webhook
 > flow, have no `headers` key at all; envelopes published between 2026-07-31 and
 > 2026-08-01 may still carry the secret headers.

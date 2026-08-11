@@ -33,18 +33,15 @@ Core NATS is at-most-once with no persistence. If a consumer is not connected at
 
 Core NATS is the transport wherever loss is acceptable and fan-out or
 low-latency matters more than replay. There are **two producing surfaces**, plus
-an RPC pattern and some subscribe-only consumers:
+some subscribe-only consumers:
 
 | Surface | Subjects | Producer | Why core, not JetStream |
 |---|---|---|---|
 | **Tenant teardown fan-out** | `platform.tenant.deleted` (`TENANT_DELETED_SUBJECT`) | `tenant-service`'s `TenantDeletionPublisherService` (`nc.publish`) | **Every** replica caching a per-tenant Postgres pool must receive it; the `PLATFORM_TENANTS` stream is `RetentionPolicy.Workqueue`, which would deliver to exactly one consumer and defeat the fan-out. Misses self-heal via `TenantConnectionManager.verifyConnectivity`. Subscribers: `tenant-deletion-eviction-listener.ts` / `tenant-mongo-deletion-eviction-listener.ts` (`@yoizen/database`) and agent-admin's own listener. |
 | **Runtime token streaming** | `rt.<tenant>.exec.<executionId>.{token,tool_call,tool_result}` and `…​.cancel` (`RUNTIME_STREAM_SUBJECT_PREFIX` / `buildRuntimeStreamSubject`) | `agent-ai-service`'s `ExecutionHandler.publishToken` (`nc.publish`) for tokens; `YoizenClawExecutionClient.publishCancel` (`packages/shared/src/execution-client.ts`) for the cancel control message | High-frequency display-only deltas with no replay value. The `rt.` prefix is **deliberately outside** the `evt.` taxonomy so no stream's subject filter captures it — persisting millions of token deltas into `INGRESS-<tenant>` is exactly the failure this avoids. Full contract: [`DOCS/architecture/runtime-streaming.md`](../architecture/runtime-streaming.md) §1.1. |
 
-Two related patterns that are core NATS but not fire-and-forget signals:
+One related pattern that is core NATS but not a fire-and-forget signal:
 
-- **Request/reply RPC** — `rpc.channel-service.webhook.verify.v1`
-  (`WEBHOOK_VERIFY_RPC_SUBJECT`): `api-gateway` requests, `channel-service`'s
-  `WebhookVerifyRpcServer` responds.
 - **Subscribe-only relays over JetStream-published subjects** — `ai-agent-gateway`
   and `YoizenClawExecutionClient` open *core* subscriptions on the `evt.…`
   execution-lifecycle subjects (`createNatsMultiSubjectObservable`) to relay them
@@ -141,7 +138,6 @@ flowchart TD
     subgraph core["Core NATS transport (nc.publish / nc.subscribe)"]
         core_tenant["platform.tenant.deleted — teardown fan-out<br/>(ALSO bound by PLATFORM_TENANTS via platform.tenant.&gt; — see the caveat under 'Where core NATS is used')"]
         core_rt["rt.&lt;tenant&gt;.exec.&lt;id&gt;.token / .cancel — runtime token streaming<br/>(stream-free by design)"]
-        core_rpc["rpc.channel-service.webhook.verify.v1 — request/reply<br/>(stream-free)"]
     end
 ```
 

@@ -234,8 +234,7 @@ gateway — see the inlined resolver at the top of `run.sh` / `setup.sh`.
   number field on the `notifySecondary` node).
 - **`discover_chat_ids` relies on the platform handing back the bot's plaintext `accessToken`** via
   `GET /api/channels/accounts?channel=telegram` — confirmed unmasked in
-  `services/channel-service/src/modules/accounts/accounts.service.ts` (only the separate
-  `POST /channels/accounts/:id/refresh-token` endpoint masks its token). If that account was
+  `services/channel-service/src/modules/accounts/accounts.service.ts`. If that account was
   created with a placeholder token (no real `TELEGRAM_BOT_TOKEN` at `telegram-transform-reply`
   setup time), discovery is skipped with a warning and you must set `TELEGRAM_CHAT_ID` manually.
   Discovery also only sees chats Telegram still has buffered for `getUpdates` — old `/start`s can

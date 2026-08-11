@@ -14,7 +14,7 @@ const DEFAULT_MAX_ACK_PENDING = 1000;
 /**
  * Time the server waits for an ack before redelivering. Must exceed the
  * worst-case handler runtime by a comfortable margin. Handlers that do
- * HTTP to third parties (Telegram, WhatsApp) can take seconds under
+ * HTTP to third parties (Telegram, connector endpoints) can take seconds under
  * cold-start / TLS handshake / event-loop saturation — 60s leaves 6x
  * headroom over the 10s external HTTP timeout.
  *

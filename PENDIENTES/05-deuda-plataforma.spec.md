@@ -248,14 +248,31 @@ rg -n "'meta'|\"meta\"" packages/*/src services/*/src sdk/src --glob '!**/node_m
    rule-5 README item CERRADO by Fase 1 (User decision 4); leave teardown /
    publish / provider / file-source explicitly parked for Fase 4.
 3. Update `PENDIENTES/README.md` row 5 status.
+4. *(Amended after T02 — carried findings, same removal, doc-locked
+   surfaces)*: update `skills/envelope-messages/` assets
+   (`assets/envelope-schema.json` Channel/ChannelProvider enums + examples,
+   `assets/subject-builder.ts`, `SKILL.md`) TOGETHER WITH their KNOWN-DRIFT
+   pin in `packages/shared/test/unit/envelope-schema.spec.ts`; drop
+   `x-hub-signature-256`/`x-hub-signature` from `WEBHOOK_FORWARDED_HEADERS`
+   in `packages/shared/src/channel.constants.ts` together with the
+   doc-locked `DOCS/messaging/envelope.md` §4.1 and SKILL.md updates it
+   forces; sweep the T02-reported stragglers (sdk/GROWTH-PLAN.md,
+   sdk/examples/reference-pattern/README.md, packages/shared/README.md,
+   SCHEMAS.md verify-RPC rows, channel-service README verify-RPC row,
+   DOCS/messaging/service-bus.md, agent-admin-service data/ seed prose,
+   bare-word WhatsApp/Meta comments listed in the T02 summary).
 
-**Accept** (after G0 green):
+**Accept** (after G0 green; because step 4 touches `packages/shared` code
+and its doc-locks pins, `cd packages/shared && bun test` is ALSO a T03 gate
+— amendment recorded 2026-08-11):
 
 ```
 rg -ln -i "instagram" DOCS --glob '!DOCS/archive/**'
 # ^ expected: zero files.
 rg -n -i "whatsapp" DOCS --glob '!DOCS/archive/**'
 # ^ expected: zero hits.
+rg -n -i "whatsapp|instagram|'meta'|\"meta\"" skills/envelope-messages
+# ^ expected: zero hits (amended after T02).
 ```
 
 ---
@@ -293,7 +310,20 @@ rg -n -i "whatsapp" DOCS --glob '!DOCS/archive/**'
       packages/shared/README.md + SCHEMAS.md verify-RPC rows,
       agent-admin data/agents seed prose, bare-word WhatsApp comments list in
       T02 summary)
-- [ ] T03 — docs swept, instagram.md deleted, register 05 + index updated
+- [x] T03 — docs swept, instagram.md deleted, register 05 + index updated
+      (2026-08-11, G0 + shared 384/0 + api-gateway 362/0 + agent-admin 796/0 +
+      channel-service 150/0 green, 3 accept greps zero. 2× APPROVED on second
+      round — round-1 rejections were both the orchestrator's diff-capture
+      including the two PRECONDITION-exempt user files; corrected diff
+      approved with no new objections. Amended step 4 executed: skills/
+      envelope-messages assets + pin rebuilt STRONGER (union mirror parsed
+      from source, dead-token negatives, mutation-checked),
+      WEBHOOK_FORWARDED_HEADERS 7→5 with envelope.md §4.1 + SKILL.md +
+      doc-locks pin in the same change. ingress.md rewritten around Telegram.
+      Smells reported for future rounds: TAXONOMY.md still registers
+      whatsapp/instagram tech values (needs its own ruling — persisted
+      history), phone.utils.ts is dead code with no callers since the
+      removal, envelope-schema.json:225 stale non-Meta line cite)
 
 ## Post-queue (operator, outside the loop)
 
