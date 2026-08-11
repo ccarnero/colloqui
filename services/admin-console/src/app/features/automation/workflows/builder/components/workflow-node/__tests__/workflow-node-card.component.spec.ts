@@ -182,7 +182,7 @@ describe("WorkflowNodeCardComponent", () => {
   it("shows no badge at all for an outbound (non-trigger) channel node", () => {
     fixture.componentInstance.node = makeNode({
       type: EWorkflowNodeType.CHANNEL,
-      configuration: { direction: "outbound", channel: "whatsapp" },
+      configuration: { direction: "outbound", channel: "telegram" },
     });
     fixture.detectChanges();
 

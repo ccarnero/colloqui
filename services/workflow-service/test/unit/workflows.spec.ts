@@ -12,7 +12,7 @@ const executeServiceBusCall = mock(() =>
 const executeChannelSend = mock(() =>
   Promise.resolve({
     published: true as const,
-    subject: "evt.tenant-1.messaging.whatsapp.meta.send.v1",
+    subject: "evt.tenant-1.messaging.telegram.telegram.send.v1",
   })
 );
 const executeServiceCall = mock(() =>
@@ -260,8 +260,8 @@ describe("runWorkflow (temporal/workflows)", () => {
           name: "send",
           args: {
             accountId: "acc-1",
-            channel: "whatsapp",
-            provider: "meta",
+            channel: "telegram",
+            provider: "telegram",
             to: "+5491112345678",
             type: "text",
             text: "Hello from workflow",
@@ -1902,8 +1902,8 @@ describe("runWorkflow (temporal/workflows)", () => {
             name: "send",
             args: {
               accountId: "acc-1",
-              channel: "whatsapp",
-              provider: "meta",
+              channel: "telegram",
+              provider: "telegram",
               to: "+5491112345678",
               type: "text",
               text: "Hello",
@@ -1913,11 +1913,11 @@ describe("runWorkflow (temporal/workflows)", () => {
       });
       expect(ctx.variables.previous).toEqual({
         published: true,
-        subject: "evt.tenant-1.messaging.whatsapp.meta.send.v1",
+        subject: "evt.tenant-1.messaging.telegram.telegram.send.v1",
       });
       expect(ctx.variables.node.send).toEqual({
         published: true,
-        subject: "evt.tenant-1.messaging.whatsapp.meta.send.v1",
+        subject: "evt.tenant-1.messaging.telegram.telegram.send.v1",
       });
     });
 

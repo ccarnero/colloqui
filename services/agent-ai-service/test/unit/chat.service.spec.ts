@@ -374,7 +374,7 @@ describe("ChatService", () => {
         chatId: "chat-1",
         userId: "user-1",
         customerName: "Alice",
-        channel: "whatsapp",
+        channel: "telegram",
       };
 
       await service.generateReply("tenant-1", request);
@@ -386,7 +386,7 @@ describe("ChatService", () => {
       expect(extra.chatId).toBe("chat-1");
       expect(extra.userId).toBe("user-1");
       expect(extra.customerName).toBe("Alice");
-      expect(extra.channel).toBe("whatsapp");
+      expect(extra.channel).toBe("telegram");
     });
 
     it("should not include extra fields when request has none", async () => {

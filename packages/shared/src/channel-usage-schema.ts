@@ -15,7 +15,7 @@
  *                         the PK with `ts` so replayed inserts are
  *                         deduped via `ON CONFLICT DO NOTHING`.
  *   - `account_id`      — `envelope.accountid`.
- *   - `channel`         — `envelope.channel` (`whatsapp`,`instagram`,...).
+ *   - `channel`         — `envelope.channel` (`telegram`,`http`,`e2e-tests`).
  *   - `direction`       — normalized ingress/egress/dlq (derived from
  *                         envelope `kind` / stream prefix).
  *   - `subject`         — original NATS subject (retained for audit

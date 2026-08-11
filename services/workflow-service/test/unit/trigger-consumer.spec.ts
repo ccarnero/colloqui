@@ -37,7 +37,7 @@ function makeDefinition(
 const sharedTrigger: WorkflowTrigger = {
   type: "message_received",
   mode: "shared",
-  config: { channels: ["whatsapp"], providers: ["meta"] },
+  config: { channels: ["telegram"], providers: ["telegram"] },
 };
 
 const exclusiveTrigger: WorkflowTrigger = {
@@ -46,10 +46,16 @@ const exclusiveTrigger: WorkflowTrigger = {
   config: {},
 };
 
-const telegramTrigger: WorkflowTrigger = {
+/**
+ * Subscribes to a channel the fixture envelope is NOT on — the negative case
+ * for the channel filter. (It used to be `telegram` against a `whatsapp`
+ * envelope; with the Meta family decommissioned the envelope is `telegram`,
+ * so the non-matching channel is `http`.)
+ */
+const otherChannelTrigger: WorkflowTrigger = {
   type: "message_received",
   mode: "shared",
-  config: { channels: ["telegram"] },
+  config: { channels: ["http"] },
 };
 
 const patternTrigger: WorkflowTrigger = {
@@ -126,8 +132,8 @@ describe("TriggerConsumerService", () => {
   const baseEnvelope = {
     id: "msg-1",
     tenantId: "t1",
-    channel: "whatsapp",
-    provider: "meta",
+    channel: "telegram",
+    provider: "telegram",
     kind: "received",
     correlation_id: "conv-abc",
     transport: { method: "webhook", protocol: "https", depth: 0 },
@@ -141,7 +147,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         baseEnvelope
       )
     );
@@ -159,7 +165,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         baseEnvelope
       )
     );
@@ -169,14 +175,14 @@ describe("TriggerConsumerService", () => {
 
   it("filters out workflows that do not match channel", async () => {
     findByTriggerType.mockResolvedValue([
-      makeDefinition({ id: "def-1", trigger: telegramTrigger }),
+      makeDefinition({ id: "def-1", trigger: otherChannelTrigger }),
     ]);
 
     await (
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         baseEnvelope
       )
     );
@@ -194,7 +200,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         baseEnvelope
       )
     );
@@ -211,7 +217,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         baseEnvelope
       )
     );
@@ -233,7 +239,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         noMatchEnvelope
       )
     );
@@ -250,7 +256,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         baseEnvelope
       )
     );
@@ -267,7 +273,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         baseEnvelope
       )
     );
@@ -284,7 +290,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         baseEnvelope
       )
     );
@@ -311,7 +317,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         deepEnvelope
       )
     );
@@ -326,8 +332,8 @@ describe("TriggerConsumerService", () => {
     ]);
     const legacyEnvelope: Record<string, unknown> = {
       tenantId: "t1",
-      channel: "whatsapp",
-      provider: "meta",
+      channel: "telegram",
+      provider: "telegram",
       kind: "received",
       data: { from: "+1234", text: "hello world", accountId: "acc-1" },
     };
@@ -336,7 +342,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         legacyEnvelope
       )
     );
@@ -372,7 +378,7 @@ describe("TriggerConsumerService", () => {
         service as unknown as { handleMessage: (m: unknown) => Promise<void> }
       ).handleMessage(
         buildMessage(
-          "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+          "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
           baseEnvelope
         )
       )
@@ -411,7 +417,7 @@ describe("TriggerConsumerService", () => {
       service as unknown as { handleMessage: (m: unknown) => Promise<void> }
     ).handleMessage(
       buildMessage(
-        "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
         baseEnvelope
       )
     );
@@ -431,7 +437,7 @@ describe("TriggerConsumerService", () => {
         service as unknown as { handleMessage: (m: unknown) => Promise<void> }
       ).handleMessage(
         buildMessage(
-          "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+          "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
           baseEnvelope
         )
       )

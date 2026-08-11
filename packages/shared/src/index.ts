@@ -95,7 +95,6 @@ export {
   WEBHOOK_INGRESS_SUBJECT_FILTER,
   WEBHOOK_SECRET_HEADERS,
   WEBHOOK_SECRET_HEADERS_SET,
-  WEBHOOK_VERIFY_RPC_SUBJECT,
 } from "./channel.constants";
 export type {
   AutoReplyRule,
@@ -515,8 +514,6 @@ export type {
 } from "./variable.interfaces";
 export type {
   IWebhookIngressData,
-  IWebhookVerifyRequest,
-  IWebhookVerifyResponse,
   WebhookIngressEnvelope,
 } from "./webhook.interfaces";
 export type {

@@ -25,17 +25,17 @@ describe("createChannelsWriter", () => {
 
     const writer = createChannelsWriter(BASE_URL);
     const channel: ManifestChannel = {
-      name: "wa-in",
-      type: "whatsapp",
+      name: "tg-in",
+      type: "telegram",
       direction: "inbound",
-      secretRef: "wa-token",
+      secretRef: "tg-token",
     };
 
     const result = await writer.create("tenant-a", channel);
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.kind).toBe("secret_not_resolvable");
-      expect(result.error.resourceName).toBe("wa-in");
+      expect(result.error.resourceName).toBe("tg-in");
     }
   });
 
@@ -43,21 +43,21 @@ describe("createChannelsWriter", () => {
     let capturedBody: unknown;
     globalThis.fetch = mock(async (_url, init: RequestInit) => {
       capturedBody = JSON.parse(init.body as string);
-      return json({ id: "chan-wa-1" }, 201);
+      return json({ id: "chan-tg-1" }, 201);
     }) as unknown as typeof fetch;
 
     const resolver = {
       resolve: mock(async () => ({
         ok: true as const,
-        value: "real-wa-token",
+        value: "real-tg-token",
       })),
     };
     const writer = createChannelsWriter(BASE_URL, resolver);
     const channel: ManifestChannel = {
-      name: "wa-in",
-      type: "whatsapp",
+      name: "tg-in",
+      type: "telegram",
       direction: "inbound",
-      secretRef: "wa-token",
+      secretRef: "tg-token",
     };
 
     const result = await writer.create("tenant-a", channel, {
@@ -67,11 +67,11 @@ describe("createChannelsWriter", () => {
     expect(resolver.resolve).toHaveBeenCalledWith({
       tenantId: "tenant-a",
       kind: "channel",
-      owner: "wa-in",
-      secretName: "wa-token",
+      owner: "tg-in",
+      secretName: "tg-token",
       correlationId: "run-1",
     });
-    expect(capturedBody).toMatchObject({ accessToken: "real-wa-token" });
+    expect(capturedBody).toMatchObject({ accessToken: "real-tg-token" });
   });
 
   it("create: T05 — a broker resolution failure still fails loud with secret_not_resolvable, never fabricating a value", async () => {
@@ -84,10 +84,10 @@ describe("createChannelsWriter", () => {
     };
     const writer = createChannelsWriter(BASE_URL, resolver);
     const channel: ManifestChannel = {
-      name: "wa-in",
-      type: "whatsapp",
+      name: "tg-in",
+      type: "telegram",
       direction: "inbound",
-      secretRef: "wa-token",
+      secretRef: "tg-token",
     };
 
     const result = await writer.create("tenant-a", channel);
@@ -120,6 +120,58 @@ describe("createChannelsWriter", () => {
       channel: "http",
       provider: "http",
       name: "http-in",
+    });
+  });
+
+  /**
+   * Register-05 regression (Meta decommission, T02): `providerFor` used to
+   * fall through to the Meta provider for every type it did not name, so
+   * e2e-tests channel accounts were created with a Meta `provider` — a value
+   * that then leaked into every envelope subject/type they produced. The
+   * mapping is now exhaustive and identity-shaped.
+   */
+  it("create: an e2e-tests channel is stamped with the e2e-tests provider, never the removed Meta one", async () => {
+    let capturedBody: unknown;
+    globalThis.fetch = mock(async (_url, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return json({ id: "chan-e2e-1" }, 201);
+    }) as unknown as typeof fetch;
+
+    const writer = createChannelsWriter(BASE_URL);
+    const channel: ManifestChannel = {
+      name: "e2e-sink",
+      type: "e2e-tests",
+      direction: "outbound",
+    };
+
+    const result = await writer.create("tenant-a", channel);
+    expect(result.ok).toBe(true);
+    expect(capturedBody).toMatchObject({
+      channel: "e2e-tests",
+      provider: "e2e-tests",
+      name: "e2e-sink",
+    });
+  });
+
+  it("create: a telegram channel is stamped with the telegram provider", async () => {
+    let capturedBody: unknown;
+    globalThis.fetch = mock(async (_url, init: RequestInit) => {
+      capturedBody = JSON.parse(init.body as string);
+      return json({ id: "chan-tg-2" }, 201);
+    }) as unknown as typeof fetch;
+
+    const writer = createChannelsWriter(BASE_URL);
+    const channel: ManifestChannel = {
+      name: "tg-plain",
+      type: "telegram",
+      direction: "inbound",
+    };
+
+    const result = await writer.create("tenant-a", channel);
+    expect(result.ok).toBe(true);
+    expect(capturedBody).toMatchObject({
+      channel: "telegram",
+      provider: "telegram",
     });
   });
 

@@ -23,19 +23,16 @@ export class AccountsPostgresRepository implements IAccountsRepository {
   async insertAccount(params: IInsertAccountParams): Promise<IAccountRow[]> {
     const { id, tenantId, data, appSecret } = params;
     const sql = await this.sqlFor(tenantId);
+    // `provider` is always written explicitly: the column lost its Meta
+    // DEFAULT with the Meta channel decommission (channel-schema.ts).
     return sql<IAccountRow[]>`
       INSERT INTO channel_accounts (
         id, channel, provider, name, external_id,
-        phone_number_id, waba_id, ig_user_id, telegram_bot_token,
-        access_token, app_id, app_secret, verify_token, is_active
+        telegram_bot_token, access_token, app_secret, is_active
       ) VALUES (
         ${id}, ${data.channel}, ${data.provider}, ${data.name},
-        ${data.externalId}, ${data.phoneNumberId ?? null},
-        ${data.wabaId ?? null}, ${data.igUserId ?? null},
-        ${data.telegramBotToken ?? null},
-        ${data.accessToken}, ${data.appId ?? null},
-        ${appSecret}, ${data.verifyToken ?? null},
-        ${data.isActive}
+        ${data.externalId}, ${data.telegramBotToken ?? null},
+        ${data.accessToken}, ${appSecret}, ${data.isActive}
       )
       RETURNING *
     `;
@@ -99,17 +96,9 @@ export class AccountsPostgresRepository implements IAccountsRepository {
       sets.push("access_token");
       values.push(data.accessToken);
     }
-    if (data.appId !== undefined) {
-      sets.push("app_id");
-      values.push(data.appId);
-    }
     if (data.appSecret !== undefined) {
       sets.push("app_secret");
       values.push(data.appSecret);
-    }
-    if (data.verifyToken !== undefined) {
-      sets.push("verify_token");
-      values.push(data.verifyToken);
     }
     if (data.isActive !== undefined) {
       sets.push("is_active");

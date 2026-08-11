@@ -58,7 +58,7 @@ describe("ChannelsController", () => {
       to: "2026-04-23T00:00:00Z",
       bucket: "hour",
       accountId: "acct-1",
-      channel: "whatsapp",
+      channel: "telegram",
     } as never);
     expect(proxy).toHaveBeenCalledWith({
       method: "GET",
@@ -68,7 +68,7 @@ describe("ChannelsController", () => {
         from: "2026-04-20T00:00:00Z",
         to: "2026-04-23T00:00:00Z",
         accountId: "acct-1",
-        channel: "whatsapp",
+        channel: "telegram",
         bucket: "hour",
       }),
     });
@@ -110,7 +110,7 @@ describe("ChannelsController", () => {
 
   it("streamMessages URL-encodes the key and forwards query", async () => {
     await controller.streamMessages(req, "ingress", {
-      subject: "ingress.whatsapp.*",
+      subject: "ingress.telegram.*",
       limit: 10,
     } as never);
     expect(proxy).toHaveBeenCalledWith({
@@ -118,7 +118,7 @@ describe("ChannelsController", () => {
       path: "/channels/streams/ingress/messages",
       tenantId: "tenant-1",
       query: expect.objectContaining({
-        subject: "ingress.whatsapp.*",
+        subject: "ingress.telegram.*",
         limit: 10,
       }),
     });

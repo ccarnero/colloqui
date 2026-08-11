@@ -92,7 +92,7 @@ describe("detectBumpType", () => {
     const prev = makeSnapshot({
       channels: [
         { type: "webchat", id: "ch-1" },
-        { type: "whatsapp", id: "ch-2" },
+        { type: "telegram", id: "ch-2" },
       ],
     });
     const curr = makeSnapshot({
@@ -131,7 +131,7 @@ describe("detectBumpType", () => {
     const curr = makeSnapshot({
       channels: [
         { type: "webchat", id: "ch-1" },
-        { type: "whatsapp", id: "ch-2" },
+        { type: "telegram", id: "ch-2" },
       ],
     });
 
@@ -228,7 +228,7 @@ describe("detectBumpType", () => {
       ],
       channels: [
         { type: "webchat", id: "ch-1" },
-        { type: "whatsapp", id: "ch-2" },
+        { type: "telegram", id: "ch-2" },
       ],
     });
 

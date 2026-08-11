@@ -11,7 +11,6 @@ import type {
   ListChannelAccountsParams,
   ListUsageParams,
   ListUsageTotalsParams,
-  RefreshAccountTokenResult,
   SendChannelMessageInput,
   SendChannelMessageResult,
   StreamMessage,
@@ -53,15 +52,6 @@ export interface ChannelsClient {
   ): Promise<ChannelAccount>;
   /** `DELETE /channels/accounts/:id`; resolves on 204. */
   removeAccount(id: string, opts?: ChannelCallOptions): Promise<void>;
-  /**
-   * `POST /channels/accounts/:id/refresh-token` — exchanges the current Meta
-   * access token for a long-lived one. Only supported for `provider: "meta"`
-   * accounts (downstream rejects others with 400).
-   */
-  refreshAccountToken(
-    id: string,
-    opts?: ChannelCallOptions
-  ): Promise<RefreshAccountTokenResult>;
   /** `POST /channels/:accountId/messages` — egress send. */
   sendMessage(
     accountId: string,
@@ -183,18 +173,6 @@ export function createChannelsClient({
       method: "DELETE",
       retry: opts.retry,
     });
-  }
-
-  async function refreshAccountToken(
-    id: string,
-    opts: ChannelCallOptions = {}
-  ): Promise<RefreshAccountTokenResult> {
-    const { body } = await transport.request<RefreshAccountTokenResult>({
-      path: `/channels/accounts/${encodePath(id)}/refresh-token`,
-      method: "POST",
-      retry: opts.retry,
-    });
-    return body;
   }
 
   async function sendMessage(
@@ -326,7 +304,6 @@ export function createChannelsClient({
     getAccount,
     updateAccount,
     removeAccount,
-    refreshAccountToken,
     sendMessage,
     createAutoReplyRule,
     listAutoReplyRules,

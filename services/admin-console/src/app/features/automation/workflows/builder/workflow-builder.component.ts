@@ -1079,7 +1079,7 @@ export class WorkflowBuilderComponent implements OnInit, OnDestroy {
       {
         path: "request.channel",
         label: "channel",
-        description: "Channel type (whatsapp, telegram…)",
+        description: "Channel type (telegram, http…)",
       },
     ]) {
       if (!requestSeen.has(fallback.label)) {

@@ -21,7 +21,6 @@ export type {
   ListChannelAccountsParams,
   ListUsageParams,
   ListUsageTotalsParams,
-  RefreshAccountTokenResult,
   SendChannelMessageInput,
   SendChannelMessageResult,
   StreamInspectionMode,

@@ -260,7 +260,7 @@ export class TemplateAutocompleteComponent {
         {
           path: "request.channel",
           label: "channel",
-          description: "Channel type (whatsapp, telegram…)",
+          description: "Channel type (telegram, http…)",
         },
         {
           path: "variables.previous",

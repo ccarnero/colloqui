@@ -80,10 +80,10 @@ describe("classify — TAXONOMY.md §4 rules 1-20", () => {
 
   it("rule 5 — channel-service catch-all kind", () => {
     const c = value(
-      "evt.acme.channel-service.messaging.whatsapp.meta.status_update.v1"
+      "evt.acme.channel-service.messaging.telegram.telegram.status_update.v1"
     );
     expect(c).toMatchObject({
-      tech: "whatsapp",
+      tech: "telegram",
       businessFn: "channel-processing",
       rule: 5,
     });
@@ -488,12 +488,12 @@ describe("classify — TAXONOMY.md §4 rules 1-20", () => {
 
   it("rule 19 — near-miss: producer workflow-service but domain != workflow falls through", () => {
     // domain token is `messaging`, not `workflow` → rule 19 must NOT fire;
-    // it falls to the generic rule 17 (channel `whatsapp` is whitelisted).
+    // it falls to the generic rule 17 (channel `telegram` is whitelisted).
     const c = value(
-      "evt.acme.workflow-service.messaging.whatsapp.meta.some_kind.v1"
+      "evt.acme.workflow-service.messaging.telegram.telegram.some_kind.v1"
     );
     expect(c).toMatchObject({
-      tech: "whatsapp",
+      tech: "telegram",
       businessFn: "unknown",
       rule: 17,
     });
@@ -502,10 +502,10 @@ describe("classify — TAXONOMY.md §4 rules 1-20", () => {
 
   it("rule 17 — generic 8-token, whitelisted channel keeps tech", () => {
     const c = value(
-      "evt.acme.some-producer.some-domain.whatsapp.meta.some_kind.v1"
+      "evt.acme.some-producer.some-domain.telegram.telegram.some_kind.v1"
     );
     expect(c).toMatchObject({
-      tech: "whatsapp",
+      tech: "telegram",
       businessFn: "unknown",
       rule: 17,
     });

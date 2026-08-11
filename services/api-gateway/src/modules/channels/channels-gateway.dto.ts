@@ -35,32 +35,29 @@ export class ListAutoReplyRulesQueryDto {
   accountId?: string;
 }
 
-/** Mirrors channel-service `CreateAccountDto` for gateway validation. */
+/**
+ * Mirrors channel-service `CreateAccountDto` for gateway validation.
+ *
+ * The Meta channel family is decommissioned: the `whatsapp`/`instagram`
+ * channel tokens, the `meta` provider and the Meta-only account fields
+ * (`phoneNumberId`, `wabaId`, `igUserId`, `appId`, `verifyToken`) are gone
+ * downstream, so the gateway rejects them here instead of proxying a body
+ * channel-service would strip. `appSecret` stays — Telegram and Http use it
+ * as their webhook verification secret.
+ */
 export class CreateChannelAccountBodyDto {
-  @IsIn(["whatsapp", "instagram", "telegram", "http", "e2e-tests"])
-  channel!: "whatsapp" | "instagram" | "telegram" | "http" | "e2e-tests";
+  @IsIn(["telegram", "http", "e2e-tests"])
+  channel!: "telegram" | "http" | "e2e-tests";
 
   @IsOptional()
-  @IsIn(["meta", "telegram", "http", "e2e-tests"])
-  provider?: "meta" | "telegram" | "http" | "e2e-tests";
+  @IsIn(["telegram", "http", "e2e-tests"])
+  provider?: "telegram" | "http" | "e2e-tests";
 
   @IsString()
   name!: string;
 
   @IsString()
   externalId!: string;
-
-  @IsOptional()
-  @IsString()
-  phoneNumberId?: string;
-
-  @IsOptional()
-  @IsString()
-  wabaId?: string;
-
-  @IsOptional()
-  @IsString()
-  igUserId?: string;
 
   @IsOptional()
   @IsString()
@@ -71,15 +68,7 @@ export class CreateChannelAccountBodyDto {
 
   @IsOptional()
   @IsString()
-  appId?: string;
-
-  @IsOptional()
-  @IsString()
   appSecret?: string;
-
-  @IsOptional()
-  @IsString()
-  verifyToken?: string;
 
   @IsOptional()
   @IsBoolean()
@@ -97,15 +86,7 @@ export class UpdateChannelAccountBodyDto {
 
   @IsOptional()
   @IsString()
-  appId?: string;
-
-  @IsOptional()
-  @IsString()
   appSecret?: string;
-
-  @IsOptional()
-  @IsString()
-  verifyToken?: string;
 
   @IsOptional()
   @IsBoolean()
@@ -215,7 +196,9 @@ export class CreateAutoReplyRuleBodyDto {
   @IsString()
   accountId!: string;
 
-  @IsIn(["whatsapp", "instagram"])
+  // Kept in step with channel-service's `CreateAutoReplyRuleDto` @IsIn:
+  // auto-reply is channel-agnostic, so it serves every surviving channel.
+  @IsIn(["telegram", "http", "e2e-tests"])
   channel!: string;
 
   @IsString()

@@ -1,6 +1,11 @@
 /**
  * Channel account as returned by channel-service list/detail APIs.
  * Optional fields align with provider-specific credentials.
+ *
+ * The Meta-only fields (`phoneNumberId`, `wabaId`, `igUserId`, `appId`,
+ * `verifyToken`) went away with the Meta channel decommission, together with
+ * their `channel_accounts` columns. `appSecret` stays: it is the webhook
+ * verification secret for Telegram and Http.
  */
 export interface IChannelAccount {
   id: string;
@@ -8,13 +13,9 @@ export interface IChannelAccount {
   provider: string;
   name: string;
   externalId: string;
-  phoneNumberId?: string;
-  wabaId?: string;
   telegramBotToken?: string;
   accessToken: string;
-  appId?: string;
   appSecret?: string;
-  verifyToken?: string;
   isActive: boolean;
   /** Present on list responses; omitted in dialog edit payloads. */
   createdAt?: string;

@@ -3,21 +3,19 @@ import type { EventData, EventEnvelope } from "./interfaces";
 // `e2e-tests` is an OUTBOUND-ONLY sink channel that exists so the egress path
 // can be exercised by the automated suite. Before it, egress was structurally
 // untestable: `http` is inbound-only BY DESIGN (its `sendMessage` always
-// returns `success: false`) and the three real channels need live third-party
-// credentials, so `EgressService`'s `if (result.success)` branch — the one that
-// calls `shadowPublish` and emits `sent.v1` — never ran under test. Its
-// provider accepts the message, returns success and discards it; everything
-// downstream of the provider is the SAME code WhatsApp and Telegram run, so
+// returns `success: false`) and the remaining real channel needs live
+// third-party credentials, so `EgressService`'s `if (result.success)` branch —
+// the one that calls `shadowPublish` and emits `sent.v1` — never ran under
+// test. Its provider accepts the message, returns success and discards it;
+// everything downstream of the provider is the SAME code Telegram runs, so
 // what the suite covers is the real egress path, not a stand-in for it.
 // See DOCS/channels/channel-service.md's channel table and
 // scripts/e2e/http-workflow.sh's `channelSend` stage.
-export type Channel =
-  | "whatsapp"
-  | "instagram"
-  | "telegram"
-  | "http"
-  | "e2e-tests";
-export type ChannelProvider = "meta" | "telegram" | "http" | "e2e-tests";
+//
+// Keep this union identical to `CHANNEL_ACCOUNTS_SCHEMA_SQL`'s two channel
+// CHECK lists (channel-schema.ts) and to `CreateAccountDto`'s `@IsIn`.
+export type Channel = "telegram" | "http" | "e2e-tests";
+export type ChannelProvider = "telegram" | "http" | "e2e-tests";
 export type MessageKind =
   | "received"
   | "sent"
@@ -67,14 +65,16 @@ export interface ChannelAccount {
   provider: ChannelProvider;
   name: string;
   externalId: string;
-  phoneNumberId?: string;
-  wabaId?: string;
-  igUserId?: string;
   telegramBotToken?: string;
   accessToken: string;
-  appId?: string;
+  /**
+   * Webhook verification secret. Telegram sends it back in
+   * `x-telegram-bot-api-secret-token`, Http in `x-http-channel-token`.
+   * (The Meta-only `phoneNumberId` / `wabaId` / `igUserId` / `appId` /
+   * `verifyToken` fields died with the Meta channel decommission, together
+   * with their `channel_accounts` columns.)
+   */
   appSecret?: string;
-  verifyToken?: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

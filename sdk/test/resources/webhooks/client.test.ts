@@ -56,12 +56,12 @@ test("ingest() POSTs the instance-addressed path when instance is provided", asy
 
   await client.ingest({
     tenant: "acme",
-    channel: "whatsapp",
+    channel: "telegram",
     instance: "ext-123",
     body: { entry: [] },
   });
 
-  assert.equal(calls[0]!.path, "/webhooks/whatsapp/acme/ext-123");
+  assert.equal(calls[0]!.path, "/webhooks/telegram/acme/ext-123");
 });
 
 test("ingest() URL-encodes channel, tenant, and instance segments", async () => {

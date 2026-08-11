@@ -1,12 +1,12 @@
+import type { Channel, ChannelProvider, TriggerMode } from "@yoizen/shared";
+import { Type } from "class-transformer";
 import {
-  IsString,
-  IsIn,
   IsArray,
+  IsIn,
   IsOptional,
+  IsString,
   ValidateNested,
 } from "class-validator";
-import { Type } from "class-transformer";
-import type { Channel, ChannelProvider, TriggerMode } from "@yoizen/shared";
 
 class MessageReceivedTriggerConfigDto {
   @IsOptional()
@@ -14,14 +14,17 @@ class MessageReceivedTriggerConfigDto {
   @IsString({ each: true })
   accountIds?: string[];
 
+  // Both lists mirror the `Channel` / `ChannelProvider` unions in
+  // @yoizen/shared — the Meta family (`whatsapp`/`instagram` + provider
+  // `meta`) was decommissioned and left them.
   @IsOptional()
   @IsArray()
-  @IsIn(["whatsapp", "instagram", "telegram", "http"], { each: true })
+  @IsIn(["telegram", "http", "e2e-tests"], { each: true })
   channels?: Channel[];
 
   @IsOptional()
   @IsArray()
-  @IsIn(["meta", "telegram", "http"], { each: true })
+  @IsIn(["telegram", "http", "e2e-tests"], { each: true })
   providers?: ChannelProvider[];
 
   @IsOptional()

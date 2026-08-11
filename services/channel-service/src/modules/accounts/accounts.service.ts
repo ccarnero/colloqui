@@ -12,10 +12,11 @@ import {
 
 /**
  * Row → `ChannelAccount`. The Meta-only columns (`phone_number_id`,
- * `waba_id`, `ig_user_id`, `app_id`, `verify_token`) are no longer surfaced:
- * no surviving channel writes or reads them and the columns themselves are
- * dropped with the contract shrink. `app_secret` stays — Telegram and Http
- * use it as their webhook verification secret.
+ * `waba_id`, `ig_user_id`, `app_id`, `verify_token`) are gone: no surviving
+ * channel wrote or read them, so they were dropped from the DDL, from
+ * `IAccountRow` and from `ChannelAccount` with the contract shrink.
+ * `app_secret` stays — Telegram and Http use it as their webhook
+ * verification secret.
  */
 function mapRow(row: IAccountRow, tenantId: string): ChannelAccount {
   return {

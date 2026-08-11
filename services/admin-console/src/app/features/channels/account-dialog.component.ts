@@ -2,22 +2,22 @@ import {
   ChangeDetectionStrategy,
   Component,
   inject,
-  signal,
   type OnInit,
+  signal,
 } from "@angular/core";
 import { FormsModule } from "@angular/forms";
-import { ChannelAdminService } from "../../core/services/channel-admin.service";
+import { MatButtonModule } from "@angular/material/button";
 import {
   MAT_DIALOG_DATA,
   MatDialogModule,
   MatDialogRef,
 } from "@angular/material/dialog";
-import { MatButtonModule } from "@angular/material/button";
 import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatIconModule } from "@angular/material/icon";
 import { MatInputModule } from "@angular/material/input";
 import { MatSelectModule } from "@angular/material/select";
 import type { IChannelAccount } from "../../core/models/channel-account.model";
+import { ChannelAdminService } from "../../core/services/channel-admin.service";
 
 export interface IAccountDialogData {
   account?: IChannelAccount;
@@ -50,7 +50,7 @@ export interface IAccountDialogResult {
           {{
             isEdit
               ? "Update channel account settings"
-              : "Connect a WhatsApp, Telegram or HTTP account"
+              : "Connect a Telegram or HTTP account"
           }}
         </div>
       </div>
@@ -73,7 +73,6 @@ export interface IAccountDialogResult {
             (ngModelChange)="channel.set($event)"
             [disabled]="isEdit"
           >
-            <mat-option value="whatsapp">WhatsApp</mat-option>
             <mat-option value="telegram">Telegram</mat-option>
             <mat-option value="http">HTTP</mat-option>
           </mat-select>
@@ -86,11 +85,9 @@ export interface IAccountDialogResult {
             [ngModel]="name()"
             (ngModelChange)="name.set($event)"
             [placeholder]="
-              channel() === 'whatsapp'
-                ? 'e.g. My WhatsApp Business'
-                : channel() === 'http'
-                  ? 'e.g. My HTTP Ingest'
-                  : 'e.g. My Telegram Bot'
+              channel() === 'http'
+                ? 'e.g. My HTTP Ingest'
+                : 'e.g. My Telegram Bot'
             "
           />
         </mat-form-field>
@@ -102,26 +99,13 @@ export interface IAccountDialogResult {
             [ngModel]="externalId()"
             (ngModelChange)="externalId.set($event)"
             [placeholder]="
-              channel() === 'whatsapp'
-                ? 'WABA ID'
-                : channel() === 'http'
-                  ? 'Ingest id (e.g. my-http-ingest)'
-                  : 'Bot username'
+              channel() === 'http'
+                ? 'Ingest id (e.g. my-http-ingest)'
+                : 'Bot username'
             "
             [disabled]="isEdit"
           />
         </mat-form-field>
-
-        @if (channel() === "whatsapp") {
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>Phone Number ID</mat-label>
-            <input
-              matInput
-              [ngModel]="phoneNumberId()"
-              (ngModelChange)="phoneNumberId.set($event)"
-            />
-          </mat-form-field>
-        }
 
         @if (channel() === "telegram") {
           <mat-form-field appearance="outline" class="full-width">
@@ -160,37 +144,6 @@ export interface IAccountDialogResult {
             "
           />
         </mat-form-field>
-
-        @if (channel() === "whatsapp") {
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>Access Token</mat-label>
-            <input
-              matInput
-              type="password"
-              [ngModel]="accessToken()"
-              (ngModelChange)="accessToken.set($event)"
-            />
-          </mat-form-field>
-
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>App ID (optional)</mat-label>
-            <input
-              matInput
-              [ngModel]="appId()"
-              (ngModelChange)="appId.set($event)"
-            />
-          </mat-form-field>
-
-          <mat-form-field appearance="outline" class="full-width">
-            <mat-label>Verify Token (optional)</mat-label>
-            <input
-              matInput
-              [ngModel]="verifyToken()"
-              (ngModelChange)="verifyToken.set($event)"
-              placeholder="Used for webhook verification"
-            />
-          </mat-form-field>
-        }
 
         @if (errorMessage()) {
           <div class="error-msg">{{ errorMessage() }}</div>
@@ -261,22 +214,19 @@ export interface IAccountDialogResult {
 export class AccountDialogComponent implements OnInit {
   private readonly channels = inject(ChannelAdminService);
   readonly dialogRef = inject(
-    MatDialogRef<AccountDialogComponent, IAccountDialogResult>,
+    MatDialogRef<AccountDialogComponent, IAccountDialogResult>
   );
   private readonly data = inject<IAccountDialogData>(MAT_DIALOG_DATA);
 
   isEdit = false;
   private editId = "";
 
-  readonly channel = signal("whatsapp");
+  readonly channel = signal("telegram");
   readonly name = signal("");
   readonly externalId = signal("");
-  readonly phoneNumberId = signal("");
   readonly telegramBotToken = signal("");
   readonly accessToken = signal("");
-  readonly appId = signal("");
   readonly appSecret = signal("");
-  readonly verifyToken = signal("");
   readonly saving = signal(false);
   readonly errorMessage = signal("");
 
@@ -288,12 +238,9 @@ export class AccountDialogComponent implements OnInit {
       this.channel.set(account.channel);
       this.name.set(account.name);
       this.externalId.set(account.externalId);
-      this.phoneNumberId.set(account.phoneNumberId ?? "");
       this.telegramBotToken.set(account.telegramBotToken ?? "");
       this.accessToken.set(account.accessToken);
-      this.appId.set(account.appId ?? "");
       this.appSecret.set(account.appSecret ?? "");
-      this.verifyToken.set(account.verifyToken ?? "");
     } else if (this.data.defaultChannel) {
       this.channel.set(this.data.defaultChannel);
     }
@@ -325,9 +272,7 @@ export class AccountDialogComponent implements OnInit {
         .patchAccount(this.editId, {
           name: this.name().trim(),
           accessToken: this.accessToken().trim(),
-          appId: this.appId().trim() || undefined,
           appSecret: this.appSecret().trim() || undefined,
-          verifyToken: this.verifyToken().trim() || undefined,
         })
         .subscribe({
           next: () => {
@@ -337,7 +282,7 @@ export class AccountDialogComponent implements OnInit {
           error: (err) => {
             this.saving.set(false);
             this.errorMessage.set(
-              err?.error?.message ?? "Failed to update account",
+              err?.error?.message ?? "Failed to update account"
             );
           },
         });
@@ -349,25 +294,20 @@ export class AccountDialogComponent implements OnInit {
       this.channels
         .createAccount({
           channel: this.channel(),
-          // Provider defaults to "meta" for non-telegram channels on the
-          // backend, so http must declare its provider explicitly.
-          ...(isHttp ? { provider: "http" } : {}),
+          // The `provider` column lost its Meta default with the Meta channel
+          // decommission, so it is ALWAYS sent explicitly. Every surviving
+          // channel is served by its own single-channel provider, so the
+          // mapping is the identity.
+          provider: this.channel(),
           name: this.name().trim(),
           externalId: this.externalId().trim(),
-          phoneNumberId: this.phoneNumberId().trim() || undefined,
-          wabaId:
-            this.channel() === "whatsapp"
-              ? this.externalId().trim()
-              : undefined,
           telegramBotToken: botToken || undefined,
           accessToken: isTelegram
             ? botToken
             : isHttp
               ? this.accessToken().trim() || "placeholder"
               : this.accessToken().trim(),
-          appId: this.appId().trim() || undefined,
           appSecret: this.appSecret().trim() || undefined,
-          verifyToken: this.verifyToken().trim() || undefined,
         })
         .subscribe({
           next: () => {
@@ -377,7 +317,7 @@ export class AccountDialogComponent implements OnInit {
           error: (err) => {
             this.saving.set(false);
             this.errorMessage.set(
-              err?.error?.message ?? "Failed to create account",
+              err?.error?.message ?? "Failed to create account"
             );
           },
         });

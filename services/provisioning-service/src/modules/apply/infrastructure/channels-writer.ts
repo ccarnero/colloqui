@@ -99,22 +99,36 @@ async function resolveChannelSecret(
  * even when channel-service would have accepted it.
  */
 const SUPPORTED_CHANNEL_TYPES = new Set([
-  "whatsapp",
-  "instagram",
   "telegram",
   "http",
   // Outbound-only sink used by the e2e suite to cover the egress publish path.
   "e2e-tests",
 ]);
 
+/**
+ * Channel type → `provider` for the `POST /channels/accounts` body.
+ *
+ * Exhaustive over the surviving channels: each is served by its own
+ * single-channel provider, so the mapping is the identity. There is NO
+ * fallback — the decommissioned Meta family used to absorb every unmapped
+ * type, which is how e2e-tests accounts ended up stamped with a Meta
+ * provider. An unknown type is a caller bug and throws; `SUPPORTED_CHANNEL_TYPES`
+ * is the guard that turns it into a typed `unsupported_kind_shape` apply
+ * error before it can ever reach here.
+ */
 function providerFor(channelType: string): string {
-  if (channelType === "telegram") {
-    return "telegram";
+  switch (channelType) {
+    case "telegram":
+      return "telegram";
+    case "http":
+      return "http";
+    case "e2e-tests":
+      return "e2e-tests";
+    default:
+      throw new Error(
+        `providerFor: unknown channel type '${channelType}' — no provider mapping exists (surviving channels: telegram, http, e2e-tests)`
+      );
   }
-  if (channelType === "http") {
-    return "http";
-  }
-  return "meta";
 }
 
 export function createChannelsWriter(

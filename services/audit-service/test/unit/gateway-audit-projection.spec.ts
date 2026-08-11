@@ -24,7 +24,7 @@ describe("gateway-audit-projection", () => {
       trace_id: "trace-abc",
       tenant_id: "t1",
       method: "POST",
-      path: "/api/webhooks/whatsapp/t1",
+      path: "/api/webhooks/telegram/t1",
       status_code: 200,
       duration_ms: 42.5,
       client_ip: "1.2.3.4",

@@ -18,8 +18,8 @@ import { ChannelDetailComponent } from "./channel-detail.component";
 
 const ACCOUNT_1: IChannelAccount = {
   id: "acct-1",
-  channel: "whatsapp",
-  provider: "meta",
+  channel: "telegram",
+  provider: "telegram",
   name: "Ventas AR",
   externalId: "waba-1",
   accessToken: "token-1",
@@ -39,7 +39,7 @@ describe("ChannelDetailComponent", () => {
 
   beforeEach(async () => {
     const paramMap$ = new BehaviorSubject(
-      convertToParamMap({ channel: "whatsapp", accountId: "acct-1" })
+      convertToParamMap({ channel: "telegram", accountId: "acct-1" })
     );
     channels = {
       getUsage: vi.fn().mockReturnValue(
@@ -48,7 +48,7 @@ describe("ChannelDetailComponent", () => {
             {
               bucket: "2026-04-23T10:00:00Z",
               accountId: "acct-1",
-              channel: "whatsapp",
+              channel: "telegram",
               direction: "ingress",
               events: 10,
             },
@@ -194,7 +194,7 @@ describe("ChannelDetailComponent", () => {
       })
     );
     expect(channels.deleteAccount).toHaveBeenCalledWith("acct-1");
-    expect(navigateSpy).toHaveBeenCalledWith(["/channels", "whatsapp"]);
+    expect(navigateSpy).toHaveBeenCalledWith(["/channels", "telegram"]);
   });
 
   it("does not delete when the confirm dialog is cancelled", () => {
@@ -224,7 +224,7 @@ describe("ChannelDetailComponent", () => {
     expect(channels.getUsageTotals).toHaveBeenCalledTimes(1);
     const call = channels.getUsage.mock.calls[0][0];
     expect(call.accountId).toBe("acct-1");
-    expect(call.channel).toBe("whatsapp");
+    expect(call.channel).toBe("telegram");
     expect(call.bucket).toBe("hour");
     expect((fixture.nativeElement as HTMLElement).textContent).not.toContain(
       "1h"
@@ -310,7 +310,7 @@ describe("ChannelDetailComponent", () => {
       {
         bucket: "2026-04-24T17:00:00.000Z",
         accountId: "acct-1",
-        channel: "whatsapp",
+        channel: "telegram",
         direction: "ingress",
         events: 5,
       },

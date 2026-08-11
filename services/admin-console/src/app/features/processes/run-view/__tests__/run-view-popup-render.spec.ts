@@ -163,9 +163,9 @@ describe("deep links", () => {
   });
 
   it("builds the channel account route", () => {
-    expect(channelDeepLink("whatsapp", "acct-1")).toEqual([
+    expect(channelDeepLink("telegram", "acct-1")).toEqual([
       "/channels",
-      "whatsapp",
+      "telegram",
       "accounts",
       "acct-1",
     ]);

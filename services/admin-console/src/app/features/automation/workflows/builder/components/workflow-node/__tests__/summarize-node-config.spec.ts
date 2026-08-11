@@ -28,17 +28,17 @@ describe("summarizeNodeConfig", () => {
   it("channel (inbound): direction + listened channels", () => {
     const node = makeNode(EWorkflowNodeType.CHANNEL, {
       direction: "inbound",
-      channels: ["whatsapp", "telegram"],
+      channels: ["telegram", "http"],
     });
-    expect(summarizeNodeConfig(node)).toBe("inbound · whatsapp, telegram");
+    expect(summarizeNodeConfig(node)).toBe("inbound · telegram, http");
   });
 
   it("channel (outbound): direction + single channel", () => {
     const node = makeNode(EWorkflowNodeType.CHANNEL, {
       direction: "outbound",
-      channel: "whatsapp",
+      channel: "telegram",
     });
-    expect(summarizeNodeConfig(node)).toBe("outbound · whatsapp");
+    expect(summarizeNodeConfig(node)).toBe("outbound · telegram");
   });
 
   it("channel: empty when no direction/channel data", () => {

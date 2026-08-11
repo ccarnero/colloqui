@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { ensureTenantIngressStream } from "@yoizen/database";
+import type { Channel } from "@yoizen/shared";
 import { TENANT_HEADER } from "@yoizen/shared";
 import type { JetStreamClient, JetStreamManager } from "nats";
 import { gatewayConfig } from "../../src/config";
-import type { Channel } from "@yoizen/shared";
 import { WebhookIngressPublisherService } from "../../src/modules/channels/webhook-ingress-publisher.service";
 import { WebhookPublishUnavailableError } from "../../src/modules/channels/webhook-publish-unavailable.error";
 
@@ -35,18 +35,18 @@ describe("WebhookIngressPublisherService", () => {
   it("publishes canonical webhook ingress envelope with filtered headers", async () => {
     const service = new WebhookIngressPublisherService(js, jsm);
     const rawBody = Buffer.from(
-      JSON.stringify({ object: "whatsapp_business_account", entry: [] }),
+      JSON.stringify({ update_id: 421, message: { text: "hola" } }),
       "utf8"
     );
 
     await service.publishWebhook({
       tenantId: "tenant-a",
-      channel: "whatsapp",
+      channel: "telegram",
       rawBody,
-      parsedBody: { object: "whatsapp_business_account", entry: [] },
+      parsedBody: { update_id: 421, message: { text: "hola" } },
       headers: {
         "content-type": "application/json",
-        "x-hub-signature-256": "sha256=test",
+        "x-telegram-bot-api-secret-token": "tok_test",
         authorization: "secret",
       },
     });
@@ -54,7 +54,7 @@ describe("WebhookIngressPublisherService", () => {
     expect(publish).toHaveBeenCalledTimes(1);
     const [subject, bytes, options] = publish.mock.calls[0];
     expect(subject).toBe(
-      "evt.tenant-a.api-gateway.messaging.whatsapp.webhook.webhook_received.v1"
+      "evt.tenant-a.api-gateway.messaging.telegram.webhook.webhook_received.v1"
     );
 
     const envelope = JSON.parse(new TextDecoder().decode(bytes));
@@ -64,16 +64,18 @@ describe("WebhookIngressPublisherService", () => {
     // channel, instead of the old channel-less
     // `io.yoizen.messaging.webhook.received.v1`.
     expect(envelope.type).toBe(
-      "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1"
+      "io.yoizen.messaging.telegram.webhook.webhook_received.v1"
     );
     // `accountid` MUST be absent — the account is unresolved at this
     // stage and using a placeholder would corrupt per-account usage
     // aggregations downstream (billing).
     expect("accountid" in envelope).toBe(false);
     expect(envelope.data.raw_body_b64).toBe(rawBody.toString("base64"));
+    // Allowlist applied (`authorization` dropped), verification secret kept:
+    // stage 2 needs it to authenticate and strips it afterwards.
     expect(envelope.data.headers).toEqual({
       "content-type": "application/json",
-      "x-hub-signature-256": "sha256=test",
+      "x-telegram-bot-api-secret-token": "tok_test",
     });
     expect(options.headers.get(TENANT_HEADER)).toBe("tenant-a");
     expect(options.headers.get("Nats-Msg-Id")).toBe(envelope.idempotencykey);
@@ -142,7 +144,7 @@ describe("WebhookIngressPublisherService", () => {
         const service = new WebhookIngressPublisherService(stalledJs, jsm);
         const promise = service.publishWebhook({
           tenantId: "tenant-stall",
-          channel: "whatsapp",
+          channel: "telegram",
           rawBody: Buffer.from("{}"),
           parsedBody: {},
           headers: {},
@@ -167,7 +169,7 @@ describe("WebhookIngressPublisherService", () => {
         await expect(
           service.publishWebhook({
             tenantId: "tenant-stall-2",
-            channel: "whatsapp",
+            channel: "telegram",
             rawBody: Buffer.from("{}"),
             parsedBody: {},
             headers: {},
@@ -178,7 +180,7 @@ describe("WebhookIngressPublisherService", () => {
         await expect(
           service.publishWebhook({
             tenantId: "tenant-stall-2",
-            channel: "whatsapp",
+            channel: "telegram",
             rawBody: Buffer.from("{}"),
             parsedBody: {},
             headers: {},
@@ -213,7 +215,7 @@ describe("WebhookIngressPublisherService", () => {
         void service
           .publishWebhook({
             tenantId: "tenant-cap",
-            channel: "whatsapp",
+            channel: "telegram",
             rawBody: Buffer.from("{}"),
             parsedBody: {},
             headers: {},
@@ -222,7 +224,7 @@ describe("WebhookIngressPublisherService", () => {
         void service
           .publishWebhook({
             tenantId: "tenant-cap",
-            channel: "whatsapp",
+            channel: "telegram",
             rawBody: Buffer.from("{}"),
             parsedBody: {},
             headers: {},
@@ -235,7 +237,7 @@ describe("WebhookIngressPublisherService", () => {
         await expect(
           service.publishWebhook({
             tenantId: "tenant-cap",
-            channel: "whatsapp",
+            channel: "telegram",
             rawBody: Buffer.from("{}"),
             parsedBody: {},
             headers: {},
@@ -257,7 +259,9 @@ describe("WebhookIngressPublisherService", () => {
   // apart from a stage-2 `received` (DRIFT.md row 1).
   // =========================================================================
   describe("stage-1 envelope type", () => {
-    async function publishOn(channel: Channel): Promise<Record<string, unknown>> {
+    async function publishOn(
+      channel: Channel
+    ): Promise<Record<string, unknown>> {
       publish.mockClear();
       const service = new WebhookIngressPublisherService(js, jsm);
       await service.publishWebhook({
@@ -272,18 +276,17 @@ describe("WebhookIngressPublisherService", () => {
     }
 
     it("emits a per-channel type for every channel stage-1 serves", async () => {
-      const channels: readonly Channel[] = [
-        "telegram",
-        "whatsapp",
-        "http",
-        "instagram",
-      ];
+      // Every surviving channel — the Meta family (`whatsapp`/`instagram`)
+      // left the `Channel` union with the Meta channel decommission.
+      const channels: readonly Channel[] = ["telegram", "http", "e2e-tests"];
       for (const channel of channels) {
         const envelope = await publishOn(channel);
         expect(envelope.type).toBe(
           `io.yoizen.messaging.${channel}.webhook.webhook_received.v1`
         );
-        expect(envelope.type).not.toBe("io.yoizen.messaging.webhook.received.v1");
+        expect(envelope.type).not.toBe(
+          "io.yoizen.messaging.webhook.received.v1"
+        );
       }
     });
 
@@ -302,9 +305,11 @@ describe("WebhookIngressPublisherService", () => {
       const envelope = JSON.parse(new TextDecoder().decode(bytes));
 
       // The subject was always per-channel; `type` now agrees with it.
-      expect(String(subject).endsWith(String(envelope.type).split(".").slice(-4).join("."))).toBe(
-        true
-      );
+      expect(
+        String(subject).endsWith(
+          String(envelope.type).split(".").slice(-4).join(".")
+        )
+      ).toBe(true);
       expect(String(envelope.type).split(".")[3]).toBe(envelope.channel);
       expect(String(envelope.type).split(".")[5]).toBe(envelope.kind);
     });

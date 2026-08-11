@@ -516,8 +516,8 @@ describe("RunViewPopupComponent", () => {
         .flush([
           {
             id: "acct-1",
-            channel: "whatsapp",
-            provider: "meta",
+            channel: "telegram",
+            provider: "telegram",
             name: "Support WA",
             externalId: "ext-1",
             accessToken: "secret",
@@ -528,10 +528,10 @@ describe("RunViewPopupComponent", () => {
 
       const text = el().textContent ?? "";
       expect(text).toContain("Support WA");
-      expect(text).toContain("whatsapp");
+      expect(text).toContain("telegram");
       const link = el().querySelector("a.rvp-deep-link") as HTMLAnchorElement;
       expect(link.getAttribute("href")).toBe(
-        "/channels/whatsapp/accounts/acct-1"
+        "/channels/telegram/accounts/acct-1"
       );
     });
   });

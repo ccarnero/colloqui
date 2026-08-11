@@ -35,12 +35,12 @@ const FIXTURES_DIR = join(
 );
 
 const STAGE_1_SUBJECT =
-  "evt.t1.api-gateway.messaging.whatsapp.webhook.webhook_received.v1";
+  "evt.t1.api-gateway.messaging.telegram.webhook.webhook_received.v1";
 
 /** The value every stage-1 envelope carried before 2026-07-31. */
 const OLD_TYPE = "io.yoizen.messaging.webhook.received.v1";
-/** What api-gateway stamps now, for channel `whatsapp`. */
-const NEW_TYPE = "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1";
+/** What api-gateway stamps now, for channel `telegram`. */
+const NEW_TYPE = "io.yoizen.messaging.telegram.webhook.webhook_received.v1";
 
 function stage1Envelope(type: string): Record<string, unknown> {
   const fixture = JSON.parse(
@@ -73,7 +73,7 @@ describe("stage-1 type migration (envelope-drift T05)", () => {
     }
     expect(result.value.businessFn).toBe("ingress");
     expect(result.value.rule).toBe(2);
-    expect(result.value.tech).toBe("whatsapp");
+    expect(result.value.tech).toBe("telegram");
   });
 
   it("maps old-type and new-type envelopes to identical classifications", () => {

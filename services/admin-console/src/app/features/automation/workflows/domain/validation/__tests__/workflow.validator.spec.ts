@@ -315,8 +315,8 @@ describe("validateWorkflow — outbound account vs trigger", () => {
         makeNode("out", EWorkflowNodeType.CHANNEL, {
           direction: "outbound",
           accountId: "acc-rogue",
-          channel: "whatsapp",
-          provider: "meta",
+          channel: "telegram",
+          provider: "telegram",
           to: "+1",
           messageType: "text",
           text: "hi",
@@ -354,8 +354,8 @@ describe("validateWorkflow — outbound account vs trigger", () => {
         makeNode("out", EWorkflowNodeType.CHANNEL, {
           direction: "outbound",
           accountId: "acc-2",
-          channel: "whatsapp",
-          provider: "meta",
+          channel: "telegram",
+          provider: "telegram",
           to: "+1",
           messageType: "text",
         }),
@@ -461,8 +461,8 @@ describe("validateWorkflow — channel direction", () => {
         makeNode("ch", EWorkflowNodeType.CHANNEL, {
           direction: "outbound",
           accountId: "a",
-          channel: "whatsapp",
-          provider: "meta",
+          channel: "telegram",
+          provider: "telegram",
           to: "+1",
           messageType: "text",
         }),

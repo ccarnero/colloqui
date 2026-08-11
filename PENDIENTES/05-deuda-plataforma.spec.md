@@ -226,8 +226,13 @@ rg -n -i "instagram|whatsapp|refreshMetaToken|MetaChannelProviderBase" services/
 ```
 rg -n "'whatsapp'|\"whatsapp\"|'instagram'|\"instagram\"" packages/*/src services/*/src sdk/src scripts --glob '!**/node_modules/**'
 # ^ expected: zero hits.
-rg -n "'meta'|\"meta\"" packages/*/src services/*/src sdk/src --glob '!**/node_modules/**'
+rg -n "'meta'|\"meta\"" packages/*/src services/*/src sdk/src --glob '!**/node_modules/**' --glob '!packages/shared/src/channel-usage-mongo-schema.ts'
 # ^ expected: zero hits (bare-word "meta"/"metadata" prose is fine; the quoted token is not).
+# Exclusion amended during T02 (spec-authoring fix, not a scope change): that file's
+# `metaField: "meta"` is MongoDB's time-series metadata sub-document key — a persisted
+# collection-layout identifier written by usage-aggregator and read by channel-service
+# usage queries. Renaming it would rewrite every tenant's usage collection layout; it
+# has nothing to do with the removed Meta provider. The file carries its own sweep note.
 ```
 
 ### T03 — docs sweep + register close-out
@@ -270,8 +275,24 @@ rg -n -i "whatsapp" DOCS --glob '!DOCS/archive/**'
       WEBHOOK_VERIFY_RPC_SUBJECT + verify types now unreferenced,
       channel-router negative pin can drop its `as never` once the union
       shrinks)
-- [ ] T02 — unions/DDL/provider shrunk, providerFor exhaustive, downstream
-      sweep clean
+- [x] T02 — unions/DDL/provider shrunk, providerFor exhaustive, downstream
+      sweep clean (2026-08-11, all gates + G5 151/0 + G6 362/0 green, 2×
+      APPROVED first attempt. 96 files. Columns dropped: phone_number_id,
+      waba_id, ig_user_id, app_id, verify_token; app_secret + telegram_bot_token
+      stay. Added idempotent ALTER COLUMN provider DROP DEFAULT for existing
+      tenants. e2e-tests envelopes now provider "e2e-tests" (was "meta"),
+      pinned. Breaking: SDK loses refreshAccountToken() + Meta account fields,
+      unions now telegram|http|e2e-tests (+e2e-tests newly present); gateway
+      loses POST accounts/:id/refresh-token; auto-reply channel list aligned.
+      Accept grep 2 amended: channel-usage-mongo-schema.ts metaField:"meta"
+      is MongoDB time-series layout, excluded. Carried to T03: skills/
+      envelope-messages assets stale (KNOWN DRIFT pin in envelope-schema.spec
+      — update asset + pin together), WEBHOOK_FORWARDED_HEADERS still lists
+      x-hub-signature* (needs envelope.md + SKILL.md in same change),
+      sdk/GROWTH-PLAN.md + reference-pattern README refresh-token mentions,
+      packages/shared/README.md + SCHEMAS.md verify-RPC rows,
+      agent-admin data/agents seed prose, bare-word WhatsApp comments list in
+      T02 summary)
 - [ ] T03 — docs swept, instagram.md deleted, register 05 + index updated
 
 ## Post-queue (operator, outside the loop)

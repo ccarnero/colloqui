@@ -224,12 +224,6 @@ export class ChannelsLandingComponent {
 
   protected readonly channels = computed<IChannelStatus[]>(() => [
     {
-      name: "WhatsApp",
-      slug: "whatsapp",
-      status: "ok",
-      msgs24h: this.metrics.whatsappTraffic() ?? 0,
-    },
-    {
       name: "Telegram",
       slug: "telegram",
       status: "ok",
@@ -261,6 +255,6 @@ export class ChannelsLandingComponent {
   }
 
   protected newChannel(): void {
-    void this.router.navigate(["/channels", "whatsapp"]);
+    void this.router.navigate(["/channels", "telegram"]);
   }
 }

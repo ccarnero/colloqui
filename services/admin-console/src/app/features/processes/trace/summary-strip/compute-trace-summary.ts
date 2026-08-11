@@ -35,7 +35,7 @@ export interface ITraceSummary {
   readonly spansTotal: number;
   /** `CANAL` cell — the SAME client-side proxy the Causal graph tab already
    * shows (the ingress event's `tech` field), NOT a true channel/account
-   * identity (e.g. "whatsapp · Ventas AR" per the mock) — no
+   * identity (e.g. "telegram · Ventas AR" per the mock) — no
    * channel-type/account field exists on `ITrackedEvent` (DATA-GAP, T01
    * finding 11). */
   readonly channel: string;

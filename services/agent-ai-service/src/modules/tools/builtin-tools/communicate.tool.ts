@@ -1,4 +1,9 @@
-import type { ToolDef, ToolHandler, ToolResult, ToolExecutionContext } from "../tool-definition";
+import type {
+  ToolDef,
+  ToolExecutionContext,
+  ToolHandler,
+  ToolResult,
+} from "../tool-definition";
 
 const COMMUNICATE_TOOL: ToolDef = {
   name: "communicate",
@@ -25,8 +30,10 @@ const COMMUNICATE_TOOL: ToolDef = {
       },
       channel: {
         type: "string",
-        enum: ["whatsapp", "email", "sms", "push"],
-        default: "whatsapp",
+        // `whatsapp` left this enum with the Meta channel decommission: the
+        // platform has no WhatsApp channel to deliver on any more.
+        enum: ["telegram", "email", "sms", "push"],
+        default: "telegram",
         description: "Communication channel",
       },
       priority: {
@@ -52,9 +59,11 @@ export const COMMUNICATE_TOOL_DEF: ToolDef = COMMUNICATE_TOOL;
 
 export const communicateHandler: ToolHandler = async (
   params: Record<string, unknown>,
-  _state: ToolExecutionContext,
+  _state: ToolExecutionContext
 ): Promise<ToolResult> => {
-  const action = String(params.action ?? "").trim().toLowerCase();
+  const action = String(params.action ?? "")
+    .trim()
+    .toLowerCase();
   const targetId = String(params.target_id ?? "").trim();
 
   if (!action || !targetId) {
@@ -69,7 +78,7 @@ export const communicateHandler: ToolHandler = async (
     action,
     target_id: targetId,
     message: String(params.message ?? ""),
-    channel: String(params.channel ?? "whatsapp"),
+    channel: String(params.channel ?? "telegram"),
     priority: String(params.priority ?? "medium"),
     context: String(params.context ?? ""),
     ...(params.metadata ? { metadata: params.metadata } : {}),

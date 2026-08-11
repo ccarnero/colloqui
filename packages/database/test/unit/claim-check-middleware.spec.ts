@@ -65,8 +65,8 @@ function makeEnvelope(
     specversion: "1.0",
     id: "env-test",
     source: "channel-service/accounts/acc-1",
-    type: "io.yoizen.messaging.whatsapp.meta.received.v1",
-    resource: "tenant/t1/account/acc-1/channel/whatsapp/provider/meta",
+    type: "io.yoizen.messaging.telegram.telegram.received.v1",
+    resource: "tenant/t1/account/acc-1/channel/telegram/provider/telegram",
     time: new Date().toISOString(),
     traceid: "trace-1",
     causation_id: null,
@@ -74,8 +74,8 @@ function makeEnvelope(
     tenant: "t1",
     producer: "channel-service",
     domain: "messaging",
-    channel: "whatsapp",
-    provider: "meta",
+    channel: "telegram",
+    provider: "telegram",
     accountid: "acc-1",
     idempotencykey: "sha256:aabb",
     transport: { method: "webhook", protocol: "https", depth: 0 },
@@ -167,7 +167,7 @@ describe("MultiTenantConsumerManager claim-check middleware", () => {
   it("passes inline envelope through byte-identical without calling getBlob", async () => {
     const streamName = "INGRESS-t1";
     const jsm = makeJsmMock(streamName);
-    const msg = makeInlineMsg("evt.t1.channel-service.messaging.whatsapp.meta.received.v1");
+    const msg = makeInlineMsg("evt.t1.channel-service.messaging.telegram.telegram.received.v1");
     const consumer = makeConsumerMock([msg]);
     const getBlob = mock(async () => null);
 
@@ -209,7 +209,7 @@ describe("MultiTenantConsumerManager claim-check middleware", () => {
     const bucket = "PAYLOAD-t1";
     const key = "env-test-payload";
     const { msg, storedBytes } = makeClaimCheckMsg(
-      "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+      "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
       payload,
       bucket,
       key,
@@ -263,7 +263,7 @@ describe("MultiTenantConsumerManager claim-check middleware", () => {
     const bucket = "PAYLOAD-t1";
     const key = "proxy-test-payload";
     const { msg, storedBytes } = makeClaimCheckMsg(
-      "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+      "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
       payload,
       bucket,
       key,
@@ -309,7 +309,7 @@ describe("MultiTenantConsumerManager claim-check middleware", () => {
     const bucket = "PAYLOAD-t1";
     const key = "mismatch-test";
     const { msg } = makeClaimCheckMsg(
-      "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+      "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
       payload,
       bucket,
       key,
@@ -356,7 +356,7 @@ describe("MultiTenantConsumerManager claim-check middleware", () => {
     const bucket = "PAYLOAD-t1";
     const key = "missing-key";
     const { msg } = makeClaimCheckMsg(
-      "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+      "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
       payload,
       bucket,
       key,
@@ -399,7 +399,7 @@ describe("MultiTenantConsumerManager claim-check middleware", () => {
     const bucket = "PAYLOAD-t1";
     const key = "error-key";
     const { msg } = makeClaimCheckMsg(
-      "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+      "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
       payload,
       bucket,
       key,
@@ -446,7 +446,7 @@ describe("MultiTenantConsumerManager claim-check middleware", () => {
       'xxx"payload_inline":false,garbage!!!',
     );
     const msg = makeMsg({
-      subject: "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+      subject: "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
       data: new Uint8Array(garbageWithMarker),
     });
     const consumer = makeConsumerMock([msg]);
@@ -496,7 +496,7 @@ describe("MultiTenantConsumerManager claim-check middleware", () => {
     };
     const rawBytes = new TextEncoder().encode(JSON.stringify(notAnEnvelope));
     const msg = makeMsg({
-      subject: "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+      subject: "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
       data: rawBytes,
     });
     const consumer = makeConsumerMock([msg]);
@@ -541,7 +541,7 @@ describe("MultiTenantConsumerManager claim-check middleware", () => {
     const envelope = makeEnvelope({ nested: { payload_inline: false } }, true);
     const rawBytes = new TextEncoder().encode(JSON.stringify(envelope));
     const msg = makeMsg({
-      subject: "evt.t1.channel-service.messaging.whatsapp.meta.received.v1",
+      subject: "evt.t1.channel-service.messaging.telegram.telegram.received.v1",
       data: rawBytes,
     });
     const consumer = makeConsumerMock([msg]);

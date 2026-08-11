@@ -106,8 +106,8 @@ describe("IsWorkflowActionArrayConstraint", () => {
         name: "n",
         args: {
           accountId: "acc-1",
-          channel: "whatsapp",
-          provider: "meta",
+          channel: "telegram",
+          provider: "telegram",
           to: "+1",
           type: "text",
         },
@@ -217,8 +217,8 @@ describe("IsWorkflowActionArrayConstraint", () => {
           name: "send",
           args: {
             accountId: "acc-1",
-            channel: "whatsapp",
-            provider: "meta",
+            channel: "telegram",
+            provider: "telegram",
             to: "{{request.from}}",
             type: "text",
             text: "Hello",
@@ -255,7 +255,7 @@ describe("IsWorkflowActionArrayConstraint", () => {
     expect(errors.length).toBeGreaterThan(0);
   });
 
-  it("accepts a valid whatsapp channelSend with the real required fields", async () => {
+  it("accepts a valid telegram channelSend with the real required fields", async () => {
     const dto = plainToInstance(CreateWorkflowDto, {
       name: "w",
       application: "app",
@@ -265,8 +265,8 @@ describe("IsWorkflowActionArrayConstraint", () => {
           name: "notify",
           args: {
             accountId: "acc-1",
-            channel: "whatsapp",
-            provider: "meta",
+            channel: "telegram",
+            provider: "telegram",
             to: "+5491100000000",
             type: "text",
           },

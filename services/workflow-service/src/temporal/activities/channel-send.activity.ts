@@ -1,4 +1,9 @@
-import { connect, headers as natsHeaders, type NatsConnection } from "nats";
+import {
+  activeOrRandomTraceId,
+  injectTraceContext,
+  PinoLoggerService,
+  startNatsProducerSpan,
+} from "@yoizen/observability";
 import type {
   Channel,
   ChannelEnvelope,
@@ -9,19 +14,14 @@ import type {
 } from "@yoizen/shared";
 import {
   buildChannelSubject,
-  canonicalByteLength,
-  CHANNEL_PRODUCER,
   CHANNEL_DOMAIN,
+  CHANNEL_PRODUCER,
+  canonicalByteLength,
   computeIdempotencyKey,
   computePayloadChecksum,
   TENANT_HEADER,
 } from "@yoizen/shared";
-import {
-  activeOrRandomTraceId,
-  injectTraceContext,
-  startNatsProducerSpan,
-  PinoLoggerService,
-} from "@yoizen/observability";
+import { connect, type NatsConnection, headers as natsHeaders } from "nats";
 import { workflowServiceConfig } from "../../config";
 
 let nc: NatsConnection | null = null;
@@ -29,7 +29,9 @@ const encoder = new TextEncoder();
 const logger = new PinoLoggerService("channel-send.activity");
 
 async function getConnection(): Promise<NatsConnection> {
-  if (nc && !nc.isClosed()) return nc;
+  if (nc && !nc.isClosed()) {
+    return nc;
+  }
   const url = workflowServiceConfig.natsUrl;
   nc = await connect({ servers: url });
   return nc;
@@ -38,7 +40,7 @@ async function getConnection(): Promise<NatsConnection> {
 /**
  * Publishes a channel send command to the per-tenant INGRESS
  * JetStream stream. The channel-service picks it up and
- * delivers via the appropriate provider (WhatsApp / Telegram).
+ * delivers via the appropriate provider (Telegram / e2e-tests sink).
  *
  * The envelope is DOCS/messaging/envelope.md compliant: `payload_checksum` is the pure
  * canonical hash of the outbound payload; `idempotencykey` (and the
@@ -74,7 +76,7 @@ export async function executeChannelSend(
   args: ChannelSendArgs,
   tenantId: string,
   causal?: EventCausalContext,
-  executionId?: string,
+  executionId?: string
 ): Promise<{ published: true; subject: string }> {
   if (executionId) {
     logger.log(`channelSend executionId=${executionId} tenant=${tenantId}`);
@@ -158,14 +160,12 @@ export async function executeChannelSend(
   hdrs.set(TENANT_HEADER, tenantId);
   hdrs.set("Nats-Msg-Id", idempotencykey);
   hdrs.set("X-Correlation-Id", correlationId);
-  if (causationId) hdrs.set("X-Causation-Id", causationId);
+  if (causationId) {
+    hdrs.set("X-Causation-Id", causationId);
+  }
   injectTraceContext(hdrs);
 
-  const { span } = startNatsProducerSpan(
-    "workflow-service",
-    subject,
-    hdrs,
-  );
+  const { span } = startNatsProducerSpan("workflow-service", subject, hdrs);
 
   try {
     conn.publish(subject, encoder.encode(JSON.stringify(envelope)), {

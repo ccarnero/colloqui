@@ -20,8 +20,8 @@ const INACTIVE_ACCOUNT_ID = "9b1f6c3a-2e4a-4b3b-9d3a-1a2b3c4d5e6f";
 
 const mockActiveAccount: IChannelAccount = {
   id: ACTIVE_ACCOUNT_ID,
-  channel: "whatsapp",
-  provider: "meta",
+  channel: "telegram",
+  provider: "telegram",
   name: "Test Business",
   externalId: "ext-1",
   accessToken: "token",
@@ -31,8 +31,8 @@ const mockActiveAccount: IChannelAccount = {
 
 const mockInactiveAccount: IChannelAccount = {
   id: INACTIVE_ACCOUNT_ID,
-  channel: "whatsapp",
-  provider: "meta",
+  channel: "telegram",
+  provider: "telegram",
   name: "Support MX",
   externalId: "ext-2",
   accessToken: "token",
@@ -71,7 +71,7 @@ async function renderChannelsComponent(
   navigate: ReturnType<typeof vi.fn>;
 }> {
   const paramMap$ = new BehaviorSubject(
-    convertToParamMap({ channel: "whatsapp" })
+    convertToParamMap({ channel: "telegram" })
   );
   await TestBed.configureTestingModule({
     imports: [ChannelsComponent],
@@ -173,7 +173,7 @@ describe("ChannelsComponent", () => {
       const el = fixture.nativeElement as HTMLElement;
       expect(el.querySelectorAll(".table-row").length).toBe(0);
       expect(el.textContent).toContain(
-        "No accounts found. Connect your first whatsapp account to get started."
+        "No accounts found. Connect your first telegram account to get started."
       );
     });
   });
@@ -189,7 +189,7 @@ describe("ChannelsComponent", () => {
       row.click();
       expect(navigate).toHaveBeenCalledWith([
         "/channels",
-        "whatsapp",
+        "telegram",
         "accounts",
         ACTIVE_ACCOUNT_ID,
       ]);
@@ -233,7 +233,7 @@ describe("ChannelsComponent", () => {
       action.click();
       expect(navigate).toHaveBeenCalledWith([
         "/channels",
-        "whatsapp",
+        "telegram",
         "accounts",
         INACTIVE_ACCOUNT_ID,
       ]);

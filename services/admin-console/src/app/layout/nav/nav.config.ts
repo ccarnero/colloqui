@@ -62,11 +62,6 @@ export const NAV_SECTIONS: INavSection[] = [
     landingPath: "/channels",
     pages: [
       {
-        label: "WhatsApp",
-        route: "/channels/whatsapp",
-        indicator: { kind: "count", source: "channels.whatsapp.total" },
-      },
-      {
         label: "Telegram",
         route: "/channels/telegram",
         indicator: { kind: "count", source: "channels.telegram.total" },

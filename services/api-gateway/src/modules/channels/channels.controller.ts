@@ -93,18 +93,6 @@ export class ChannelsController {
     });
   }
 
-  @Post("accounts/:id/refresh-token")
-  async refreshAccountToken(
-    @Req() req: ITenantScopedRequest,
-    @Param("id") id: string
-  ) {
-    return this.proxy.proxy({
-      method: "POST",
-      path: `/channels/accounts/${encodeURIComponent(id)}/refresh-token`,
-      tenantId: req.tenantId,
-    });
-  }
-
   @Delete("accounts/:id")
   @HttpCode(HttpStatus.NO_CONTENT)
   async removeAccount(

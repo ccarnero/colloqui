@@ -91,7 +91,7 @@ import { ChannelResolutionError, IngestError } from "@yoizen/platform-sdk";
 try {
   const result = await client.webhooks.ingest({
     tenant: "acme",
-    channel: "http", // or "whatsapp", "telegram", "instagram", ...
+    channel: "http", // or "telegram", ...
     instance: "my-http-instance", // optional: pins to one channel account
     headers: { "x-http-channel-token": appSecret }, // provider-specific auth, if any
     body: { from: "customer@example.com", text: "hello" },
@@ -282,7 +282,6 @@ try {
 ### channels — [`src/resources/channels/types.ts`](./src/resources/channels/types.ts)
 
 - `createAccount` / `listAccounts` / `getAccount` / `updateAccount` / `removeAccount` — account CRUD
-- `refreshAccountToken` — exchange a Meta access token for a long-lived one
 - `sendMessage` — send an outbound (egress) message on an account
 - `createAutoReplyRule` / `listAutoReplyRules` / `removeAutoReplyRule` — auto-reply rules
 - `listStreams` / `streamMessages` — NATS stream inspection

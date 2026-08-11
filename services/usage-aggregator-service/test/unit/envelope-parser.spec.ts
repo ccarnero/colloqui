@@ -6,14 +6,14 @@ function encode(payload: unknown): Uint8Array {
 }
 
 // Realistic subject shape: `evt.<tenant>.channel-service.messaging.<channel>.<provider>.<kind>.v<version>`
-const subj = (kind: string, channel = "whatsapp", provider = "meta") =>
+const subj = (kind: string, channel = "telegram", provider = "telegram") =>
   `evt.tenant-1.channel-service.messaging.${channel}.${provider}.${kind}.v1`;
 
 describe("parseEnvelope", () => {
   const base = {
     idempotencykey: "abc-1",
     accountid: "acct-1",
-    channel: "whatsapp",
+    channel: "telegram",
     producer: "channel-service",
     time: "2026-04-23T10:00:00.000Z",
     kind: "received",
@@ -30,7 +30,7 @@ describe("parseEnvelope", () => {
     if (!out.ok) return;
     expect(out.row.direction).toBe("ingress");
     expect(out.row.accountId).toBe("acct-1");
-    expect(out.row.channel).toBe("whatsapp");
+    expect(out.row.channel).toBe("telegram");
     expect(out.row.messageType).toBe("text");
     expect(out.row.idempotencyKey).toBe("abc-1");
     expect(out.row.ts.toISOString()).toBe("2026-04-23T10:00:00.000Z");

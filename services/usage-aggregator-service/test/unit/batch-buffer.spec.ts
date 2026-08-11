@@ -10,9 +10,9 @@ function makeRow(key: string): IChannelEventRow {
     ts: new Date("2026-04-23T10:00:00.000Z"),
     idempotencyKey: key,
     accountId: "acct-1",
-    channel: "whatsapp",
+    channel: "telegram",
     direction: "ingress",
-    subject: "ingress.whatsapp.received",
+    subject: "ingress.telegram.received",
     messageType: "text",
   };
 }

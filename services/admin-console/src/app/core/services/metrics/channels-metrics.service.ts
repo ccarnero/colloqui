@@ -5,7 +5,7 @@ import { ChannelAdminService } from "../channel-admin.service";
 /**
  * Channels section metrics.
  *
- * `whatsappTotal` / `telegramTotal` back the per-channel sub-nav "created
+ * `telegramTotal` / `httpTotal` back the per-channel sub-nav "created
  * resources" badges and are hydrated once via `loadCounts()` (a single
  * accounts fetch split per channel). Usage traffic signals are hydrated
  * via `loadUsageTotals()`.
@@ -25,7 +25,6 @@ export class ChannelsMetricsService {
   private readonly channelsApi = inject(ChannelAdminService);
 
   /** Accounts created per channel. */
-  readonly whatsappTotal = signal<number | null>(null);
   readonly telegramTotal = signal<number | null>(null);
   readonly httpTotal = signal<number | null>(null);
 
@@ -35,7 +34,6 @@ export class ChannelsMetricsService {
   readonly messagesOut24h = signal<number | null>(null);
   readonly failedDeliveries24h = signal<number | null>(null);
 
-  readonly whatsappTraffic = signal<number | null>(null);
   readonly telegramTraffic = signal<number | null>(null);
   readonly httpTraffic = signal<number | null>(null);
 
@@ -46,26 +44,21 @@ export class ChannelsMetricsService {
   loadCounts(): void {
     this.channelsApi.listAccounts().subscribe({
       next: (accounts) => {
-        let whatsapp = 0;
         let telegram = 0;
         let http = 0;
         for (const account of accounts) {
-          if (account.channel === "whatsapp") {
-            whatsapp++;
-          } else if (account.channel === "telegram") {
+          if (account.channel === "telegram") {
             telegram++;
           } else if (account.channel === "http") {
             http++;
           }
         }
-        this.whatsappTotal.set(whatsapp);
         this.telegramTotal.set(telegram);
         this.httpTotal.set(http);
         this.connectedCount.set(accounts.length);
         this.totalCount.set(accounts.length);
       },
       error: () => {
-        this.whatsappTotal.set(null);
         this.telegramTotal.set(null);
         this.httpTotal.set(null);
         this.connectedCount.set(null);
@@ -80,11 +73,6 @@ export class ChannelsMetricsService {
     const to = new Date().toISOString();
     forkJoin({
       all: this.channelsApi.getUsageTotals({ from, to }),
-      whatsapp: this.channelsApi.getUsageTotals({
-        from,
-        to,
-        channel: "whatsapp",
-      }),
       telegram: this.channelsApi.getUsageTotals({
         from,
         to,
@@ -92,13 +80,9 @@ export class ChannelsMetricsService {
       }),
       http: this.channelsApi.getUsageTotals({ from, to, channel: "http" }),
     }).subscribe({
-      next: ({ all, whatsapp, telegram, http }) => {
+      next: ({ all, telegram, http }) => {
         this.messagesIn24h.set(sumEvents(all.items, "ingress"));
         this.messagesOut24h.set(sumEvents(all.items, "egress"));
-        this.whatsappTraffic.set(
-          sumEvents(whatsapp.items, "ingress") +
-            sumEvents(whatsapp.items, "egress")
-        );
         this.telegramTraffic.set(
           sumEvents(telegram.items, "ingress") +
             sumEvents(telegram.items, "egress")
@@ -121,8 +105,6 @@ export class ChannelsMetricsService {
 
   resolve(source: string): Signal<number | null> | null {
     switch (source) {
-      case "channels.whatsapp.total":
-        return this.whatsappTotal;
       case "channels.telegram.total":
         return this.telegramTotal;
       case "channels.http.total":

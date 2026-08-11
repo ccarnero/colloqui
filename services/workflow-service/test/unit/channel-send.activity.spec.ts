@@ -42,8 +42,8 @@ describe("executeChannelSend", () => {
     const result = await executeChannelSend(
       {
         accountId: "acc-1",
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         to: "+5491100000000",
         type: "text" as const,
         text: "Hello",
@@ -53,13 +53,13 @@ describe("executeChannelSend", () => {
 
     expect(result.published).toBe(true);
     expect(result.subject).toBe(
-      "evt.acme.channel-service.messaging.whatsapp.meta.send.v1",
+      "evt.acme.channel-service.messaging.telegram.telegram.send.v1",
     );
     expect(mockPublish).toHaveBeenCalledTimes(1);
 
     const [subject, payload] = mockPublish.mock.calls[0];
     expect(subject).toBe(
-      "evt.acme.channel-service.messaging.whatsapp.meta.send.v1",
+      "evt.acme.channel-service.messaging.telegram.telegram.send.v1",
     );
     expect(payload).toBeDefined();
 
@@ -97,8 +97,8 @@ describe("executeChannelSend", () => {
     await executeChannelSend(
       {
         accountId: "acc-1",
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         to: "+1234",
         type: "text" as const,
       },
@@ -131,8 +131,8 @@ describe("executeChannelSend", () => {
       executeChannelSend(
         {
           accountId: "acc-1",
-          channel: "whatsapp",
-          provider: "meta",
+          channel: "telegram",
+          provider: "telegram",
           to: "+1",
           type: "text" as const,
         },
@@ -150,8 +150,8 @@ describe("executeChannelSend", () => {
     await executeChannelSend(
       {
         accountId: "acc-1",
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         to: "+1",
         type: "text" as const,
       },
@@ -209,8 +209,8 @@ describe("executeChannelSend", () => {
     await executeChannelSend(
       {
         accountId: "acc-1",
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         to: "+1",
         type: "text" as const,
       },
@@ -231,8 +231,8 @@ describe("executeChannelSend", () => {
     await executeChannelSend(
       {
         accountId: "acc-1",
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         to: "+1",
         type: "text" as const,
       },

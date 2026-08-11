@@ -5,9 +5,9 @@ import { createClient } from "../../src/index.js";
 /**
  * Live-cluster regression test for the `channels` + `webhooks` resource
  * clients (GROWTH-PLAN.md Phase 2). Exercises an http-channel account
- * lifecycle (create -> get -> list -> patch -> refresh-token rejection for
- * non-meta providers -> delete -> verify gone) plus a webhook ingest through
- * the created account, entirely through `createClient()`. Streams/usage are
+ * lifecycle (create -> get -> list -> patch -> delete -> verify gone) plus a
+ * webhook ingest through the created account, entirely through
+ * `createClient()`. Streams/usage are
  * asserted only for correct shape (may be empty on a fresh dev cluster).
  *
  * Gated behind SDK_E2E=1 so `npm test` stays offline-safe. Run with:
@@ -120,15 +120,6 @@ test("SDK e2e: createClient().channels -> account CRUD + webhooks.ingest() (live
       });
       assert.equal(updated.name, `SDK e2e channels ${nonce} renamed`);
     });
-
-    await t.test(
-      "refreshAccountToken() rejects a non-meta provider with 400",
-      async () => {
-        await assert.rejects(() =>
-          client.channels.refreshAccountToken(created.id)
-        );
-      }
-    );
 
     await t.test(
       "webhooks.ingest() accepts a message through the created account",

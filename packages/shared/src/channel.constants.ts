@@ -36,13 +36,6 @@ export const CHANNEL_SEND_SUBJECT_PATTERN =
   "evt.*.channel-service.messaging.*.*.send.v1" as const;
 
 /**
- * Request/reply subject for webhook verification (Meta `hub.challenge`).
- * `api-gateway` sends a request and `channel-service` responds.
- */
-export const WEBHOOK_VERIFY_RPC_SUBJECT =
-  "rpc.channel-service.webhook.verify.v1" as const;
-
-/**
  * Canonical webhook ingress subject:
  * `evt.<tenant>.api-gateway.messaging.<channel>.webhook.webhook_received.v1`.
  */
@@ -73,10 +66,12 @@ export const WEBHOOK_FORWARDED_HEADERS_SET = new Set<string>(
  * provider's `signatureHeader`); once the signature check has used them they
  * are stripped, so stage-2 `data.headers` never carries a verification secret
  * (envelope.md §4.1, decided 2026-08-01).
+ *
+ * `x-hub-signature-256` / `x-hub-signature` left this subset with the Meta
+ * channel decommission: no surviving provider declares them as its
+ * `signatureHeader`, so they are no longer anybody's verification secret.
  */
 export const WEBHOOK_SECRET_HEADERS = Object.freeze([
-  "x-hub-signature-256",
-  "x-hub-signature",
   "x-telegram-bot-api-secret-token",
   "x-http-channel-token",
 ] as const);

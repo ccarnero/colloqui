@@ -10,6 +10,13 @@ const CHANNEL_USAGE_RETENTION_SECONDS = 60 * 24 * 60 * 60;
  *
  * Documents use a `meta` subdocument for time-series metadata:
  * `{ tenant_id, channel_id, account_id }` (channel_id maps to envelope channel).
+ *
+ * NOTE for token sweeps: the `metaField: "meta"` below is MongoDB's
+ * time-series metadata key (read back as `meta.account_id` /
+ * `meta.tenant_id` by `usage.mongo.repository.ts`, written by
+ * usage-aggregator-service's `batch-inserter.mongo.ts`). It has NOTHING to do
+ * with the decommissioned Meta channel provider and MUST NOT be renamed — the
+ * key is baked into every existing tenant's `channel_events` collection.
  */
 export const CHANNEL_USAGE_MONGO_SCHEMA: IMongoCollectionSchema[] = [
   {

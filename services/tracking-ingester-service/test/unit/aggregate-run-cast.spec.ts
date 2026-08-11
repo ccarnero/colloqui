@@ -91,7 +91,7 @@ describe("aggregateRunCast", () => {
         event_id: "evt-1",
         producer: "api-gateway",
         domain: "messaging",
-        tech: "whatsapp",
+        tech: "telegram",
         business_fn: "ingress",
         rule: 2,
       }),
@@ -99,13 +99,13 @@ describe("aggregateRunCast", () => {
         event_id: "evt-2",
         producer: "channel-service",
         domain: "messaging",
-        tech: "whatsapp",
+        tech: "telegram",
         business_fn: "channel-egress",
         rule: 4,
       }),
     ];
     expect(aggregateRunCast(events)).toEqual([
-      { kind: "channel", id: "whatsapp", name: "whatsapp", count: 2 },
+      { kind: "channel", id: "telegram", name: "telegram", count: 2 },
     ]);
   });
 
@@ -206,13 +206,13 @@ describe("aggregateRunCast", () => {
         event_id: "evt-1",
         producer: "api-gateway",
         domain: "messaging",
-        tech: "whatsapp",
+        tech: "telegram",
         business_fn: "ingress",
         rule: 2,
       }),
     ];
     expect(aggregateRunCast(events)).toEqual([
-      { kind: "channel", id: "whatsapp", name: "whatsapp", count: 1 },
+      { kind: "channel", id: "telegram", name: "telegram", count: 1 },
     ]);
   });
 });

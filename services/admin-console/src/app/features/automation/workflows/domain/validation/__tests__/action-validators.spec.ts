@@ -130,8 +130,8 @@ describe("validateAction — serviceBusCall", () => {
 describe("validateAction — channelSend", () => {
   const baseFields = {
     accountId: "acc-1",
-    channel: "whatsapp",
-    provider: "meta",
+    channel: "telegram",
+    provider: "telegram",
     to: "+123",
   };
 

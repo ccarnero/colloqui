@@ -203,7 +203,7 @@ export class ChannelsComponent implements OnInit {
   private readonly dialog = inject(MatDialog);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  readonly channelFilter = signal("whatsapp");
+  readonly channelFilter = signal("telegram");
   readonly accounts = signal<IChannelAccount[]>([]);
 
   readonly loading = signal(true);
@@ -328,7 +328,7 @@ export class ChannelsComponent implements OnInit {
 
   ngOnInit(): void {
     this.route.paramMap.subscribe((params) => {
-      this.channelFilter.set(params.get("channel") ?? "whatsapp");
+      this.channelFilter.set(params.get("channel") ?? "telegram");
       this.loadAccounts();
       this.loadUsageTotals();
     });

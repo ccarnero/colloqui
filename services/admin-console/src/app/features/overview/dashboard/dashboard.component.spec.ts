@@ -43,7 +43,7 @@ const mockStats: IDashboardStats = {
     },
     {
       type: "auth.failed",
-      text: "delivery failed · WhatsApp 131047",
+      text: "delivery failed · Telegram 131047",
       timestamp: "2024-06-02T14:07:00.000Z",
     },
     {
@@ -161,7 +161,7 @@ describe("DashboardComponent", () => {
     const rows = el.querySelectorAll(".feed-row");
     expect(rows.length).toBe(3);
     expect(el.textContent).toContain("workflow lead-qualification executed");
-    expect(el.textContent).toContain("delivery failed · WhatsApp 131047");
+    expect(el.textContent).toContain("delivery failed · Telegram 131047");
 
     const dots = el.querySelectorAll(".feed-dot");
     expect(dots[0].className).toContain("tone-ok"); // "user.created"

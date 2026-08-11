@@ -7,7 +7,7 @@ function sampleRawEvent(
 ): RawChainEventRow {
   return {
     event_id: "evt-1",
-    subject: "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1",
+    subject: "evt.tenant-a.channel-service.messaging.telegram.telegram.received.v1",
     tenant: "tenant-a",
     producer: "channel-service",
     domain: "messaging",
@@ -17,7 +17,7 @@ function sampleRawEvent(
     causation_id: null,
     causation_depth: 0,
     occurred_at: "2026-07-11T12:00:00.000Z",
-    tech: "whatsapp",
+    tech: "telegram",
     business_fn: "messaging",
     rule: 3,
     consumed_by: [],

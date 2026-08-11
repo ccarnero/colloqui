@@ -9,20 +9,21 @@ import type {
   IInsertAccountParams,
 } from "./accounts.repository.interface";
 
+/**
+ * Mongo mirror of `channel_accounts`. The Meta-only fields
+ * (`phone_number_id`, `waba_id`, `ig_user_id`, `app_id`, `verify_token`) died
+ * with the Meta channel decommission; `app_secret` stays — it is the webhook
+ * verification secret for Telegram and Http.
+ */
 interface IChannelAccountDoc {
   readonly _id: string;
   readonly channel: string;
   readonly provider: string;
   readonly name: string;
   readonly external_id: string;
-  readonly phone_number_id: string | null;
-  readonly waba_id: string | null;
-  readonly ig_user_id: string | null;
   readonly telegram_bot_token: string | null;
   readonly access_token: string;
-  readonly app_id: string | null;
   readonly app_secret: string | null;
-  readonly verify_token: string | null;
   readonly is_active: boolean;
   readonly created_at: Date;
   readonly updated_at: Date;
@@ -42,14 +43,9 @@ function docToRow(doc: IChannelAccountDoc): IAccountRow {
     provider: doc.provider,
     name: doc.name,
     external_id: doc.external_id,
-    phone_number_id: doc.phone_number_id,
-    waba_id: doc.waba_id,
-    ig_user_id: doc.ig_user_id,
     telegram_bot_token: doc.telegram_bot_token,
     access_token: doc.access_token,
-    app_id: doc.app_id,
     app_secret: doc.app_secret,
-    verify_token: doc.verify_token,
     is_active: doc.is_active,
     created_at: toIso(doc.created_at),
     updated_at: toIso(doc.updated_at),
@@ -77,14 +73,9 @@ export class AccountsMongoRepository implements IAccountsRepository {
       provider: data.provider,
       name: data.name,
       external_id: data.externalId,
-      phone_number_id: data.phoneNumberId ?? null,
-      waba_id: data.wabaId ?? null,
-      ig_user_id: data.igUserId ?? null,
       telegram_bot_token: data.telegramBotToken ?? null,
       access_token: data.accessToken,
-      app_id: data.appId ?? null,
       app_secret: appSecret,
-      verify_token: data.verifyToken ?? null,
       is_active: data.isActive,
       created_at: now,
       updated_at: now,
@@ -144,14 +135,8 @@ export class AccountsMongoRepository implements IAccountsRepository {
     if (data.accessToken !== undefined) {
       sets.access_token = data.accessToken;
     }
-    if (data.appId !== undefined) {
-      sets.app_id = data.appId;
-    }
     if (data.appSecret !== undefined) {
       sets.app_secret = data.appSecret;
-    }
-    if (data.verifyToken !== undefined) {
-      sets.verify_token = data.verifyToken;
     }
     if (data.isActive !== undefined) {
       sets.is_active = data.isActive;

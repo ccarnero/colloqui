@@ -21,7 +21,7 @@ describe("WebhookIngressPublisherService — correlation stamping", () => {
 
     const id = await service.publishWebhook({
       tenantId: "t1",
-      channel: "whatsapp",
+      channel: "telegram",
       rawBody: Buffer.from(JSON.stringify({ entry: [] })),
       parsedBody: { entry: [] },
       headers: {},
@@ -55,7 +55,7 @@ describe("WebhookIngressPublisherService — correlation stamping", () => {
 
     const id = await service.publishWebhook({
       tenantId: "t3",
-      channel: "whatsapp",
+      channel: "telegram",
       rawBody: Buffer.from("{}"),
       parsedBody: {},
       headers: {},

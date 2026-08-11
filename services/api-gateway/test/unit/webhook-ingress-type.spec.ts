@@ -21,26 +21,22 @@ import { buildWebhookIngressType } from "../../src/modules/channels/webhook-ingr
  * kind . version) and the old channel-less one had 6.
  */
 
-const ALL_CHANNELS: readonly Channel[] = [
-  "whatsapp",
-  "instagram",
-  "telegram",
-  "http",
-];
+/**
+ * Every surviving channel (the Meta family — `whatsapp`/`instagram` — was
+ * decommissioned and left the `Channel` union).
+ */
+const ALL_CHANNELS: readonly Channel[] = ["telegram", "http", "e2e-tests"];
 
 describe("buildWebhookIngressType", () => {
   it("builds the prescriptive per-channel type (7 dot-separated segments)", () => {
     expect(buildWebhookIngressType("telegram")).toBe(
       "io.yoizen.messaging.telegram.webhook.webhook_received.v1"
     );
-    expect(buildWebhookIngressType("whatsapp")).toBe(
-      "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1"
-    );
-    expect(buildWebhookIngressType("instagram")).toBe(
-      "io.yoizen.messaging.instagram.webhook.webhook_received.v1"
-    );
     expect(buildWebhookIngressType("http")).toBe(
       "io.yoizen.messaging.http.webhook.webhook_received.v1"
+    );
+    expect(buildWebhookIngressType("e2e-tests")).toBe(
+      "io.yoizen.messaging.e2e-tests.webhook.webhook_received.v1"
     );
   });
 

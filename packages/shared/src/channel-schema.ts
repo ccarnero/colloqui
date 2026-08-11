@@ -10,18 +10,19 @@
 export const CHANNEL_ACCOUNTS_SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS channel_accounts (
   id                 TEXT        PRIMARY KEY,
-  channel            TEXT        NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'telegram', 'http', 'e2e-tests')),
-  provider           TEXT        NOT NULL DEFAULT 'meta',
+  channel            TEXT        NOT NULL CHECK (channel IN ('telegram', 'http', 'e2e-tests')),
+  -- No DEFAULT: every writer sets \`provider\` explicitly (channel-service's
+  -- AccountsController defaults it to the channel itself). The decommissioned
+  -- Meta default silently stamped e2e/manifest-created accounts with a
+  -- provider value that no longer exists.
+  provider           TEXT        NOT NULL,
   name               TEXT        NOT NULL,
   external_id        TEXT        NOT NULL,
-  phone_number_id    TEXT,
-  waba_id            TEXT,
-  ig_user_id         TEXT,
   telegram_bot_token TEXT,
   access_token       TEXT        NOT NULL,
-  app_id             TEXT,
+  -- Webhook verification secret: Telegram's \`x-telegram-bot-api-secret-token\`
+  -- and Http's \`x-http-channel-token\`. NOT Meta-only — it survives.
   app_secret         TEXT,
-  verify_token       TEXT,
   is_active          BOOLEAN     NOT NULL DEFAULT true,
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -36,6 +37,13 @@ CREATE INDEX IF NOT EXISTS idx_channel_accounts_external
 ALTER TABLE channel_accounts
   ADD COLUMN IF NOT EXISTS telegram_bot_token TEXT;
 
+-- Tenants provisioned before the Meta decommission still carry a column
+-- default pointing at the removed Meta provider; the CREATE TABLE above only
+-- governs tenants created from here on. Drop the default so no writer can
+-- silently land a decommissioned provider value. Idempotent.
+ALTER TABLE channel_accounts
+  ALTER COLUMN provider DROP DEFAULT;
+
 -- Re-applied on every schema init so tenants provisioned before a channel was
 -- added pick the new value up: the CREATE TABLE above only governs tenants
 -- created from here on. Keep this list identical to it — and to the \`Channel\`
@@ -46,7 +54,7 @@ BEGIN
     DROP CONSTRAINT IF EXISTS channel_accounts_channel_check;
   ALTER TABLE channel_accounts
     ADD CONSTRAINT channel_accounts_channel_check
-    CHECK (channel IN ('whatsapp', 'instagram', 'telegram', 'http', 'e2e-tests'));
+    CHECK (channel IN ('telegram', 'http', 'e2e-tests'));
 EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 `;

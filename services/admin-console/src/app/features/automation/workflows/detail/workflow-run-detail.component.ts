@@ -74,7 +74,7 @@ interface IStep {
           </div>
         </header>
 
-        <div class="meta">
+        <div class="meta-grid">
           <div class="meta-cell">
             <div class="meta-l">Started</div>
             <div class="meta-v">{{ d.createdAt | utcDate: "medium" }}</div>
@@ -223,7 +223,7 @@ interface IStep {
       color: #fff;
       border-color: var(--primary, #1a66ff);
     }
-    .meta {
+    .meta-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
       gap: 8px;

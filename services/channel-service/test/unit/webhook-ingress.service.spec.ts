@@ -579,8 +579,10 @@ describe("WebhookIngressService", () => {
       {
         "content-type": "application/json",
         "x-telegram-bot-api-secret-token": "secret-1",
-        "x-hub-signature-256": "sha256=stray",
-        "x-hub-signature": "sha1=stray",
+        // Another channel's verification secret, riding along: still stripped
+        // even though it is not THIS provider's signature header. (The two
+        // Meta `x-hub-signature*` headers left WEBHOOK_SECRET_HEADERS with the
+        // Meta channel decommission — no surviving provider owns them.)
         "x-http-channel-token": "stray",
         "x-request-id": "req-1",
         "user-agent": "TelegramBot",

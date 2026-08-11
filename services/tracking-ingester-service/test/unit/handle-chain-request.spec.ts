@@ -13,7 +13,7 @@ import {
 
 const EVENT: ChainEventRow = {
   event_id: "evt-1",
-  subject: "channel.whatsapp.message.received",
+  subject: "channel.telegram.message.received",
   tenant: "tenant-a",
   producer: "channel-service",
   domain: "channel",
@@ -24,7 +24,7 @@ const EVENT: ChainEventRow = {
   causation_depth: 0,
   occurred_at: "2026-07-01T00:00:00.000Z",
   tech: "ingress",
-  business_fn: "channel-whatsapp",
+  business_fn: "channel-telegram",
   rule: 1,
   consumed_by: [],
   is_claim_check: false,

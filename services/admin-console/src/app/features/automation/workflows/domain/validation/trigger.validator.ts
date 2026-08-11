@@ -5,8 +5,8 @@
  *
  *   - type: "message_received" (only supported)
  *   - mode: "exclusive" | "shared"
- *   - config.channels[]   (optional, ∈ {whatsapp, instagram, telegram})
- *   - config.providers[]  (optional, ∈ {meta, telegram})
+ *   - config.channels[]   (optional, ∈ {telegram, http, e2e-tests})
+ *   - config.providers[]  (optional, ∈ {telegram, http, e2e-tests})
  *   - config.accountIds[] (optional, strings)
  *   - config.patterns[]   (optional, strings)
  */
@@ -15,8 +15,10 @@ import type { ValidationError } from "./validation.types";
 
 const VALID_TRIGGER_TYPES = ["message_received"];
 const VALID_TRIGGER_MODES = ["exclusive", "shared"];
-const VALID_CHANNELS = ["whatsapp", "instagram", "telegram", "http"];
-const VALID_PROVIDERS = ["meta", "telegram", "http"];
+// Mirrors the `Channel` / `ChannelProvider` unions in @yoizen/shared — the
+// Meta family (whatsapp/instagram + provider meta) was decommissioned.
+const VALID_CHANNELS = ["telegram", "http", "e2e-tests"];
+const VALID_PROVIDERS = ["telegram", "http", "e2e-tests"];
 
 interface TriggerContext {
   /** Visual node key of the inbound CHANNEL node, when known. */
@@ -26,7 +28,7 @@ interface TriggerContext {
 
 export function validateTrigger(
   trigger: unknown,
-  ctx: TriggerContext = {},
+  ctx: TriggerContext = {}
 ): ValidationError[] {
   if (typeof trigger !== "object" || trigger === null) {
     return [
@@ -73,8 +75,7 @@ export function validateTrigger(
         nodeName: ctx.nodeName,
         field: "trigger.config.accountIds",
         code: "REQUIRED",
-        message:
-          "At least one channel account is required for the trigger.",
+        message: "At least one channel account is required for the trigger.",
       });
     }
     return errors;
@@ -96,7 +97,7 @@ export function validateTrigger(
     ...validateConfigArray(cfg, "channels", VALID_CHANNELS, ctx),
     ...validateConfigArray(cfg, "providers", VALID_PROVIDERS, ctx),
     ...validateStringArray(cfg, "accountIds", ctx),
-    ...validateStringArray(cfg, "patterns", ctx),
+    ...validateStringArray(cfg, "patterns", ctx)
   );
 
   if (isMessageReceived) {
@@ -107,8 +108,7 @@ export function validateTrigger(
         nodeName: ctx.nodeName,
         field: "trigger.config.accountIds",
         code: "REQUIRED",
-        message:
-          "At least one channel account is required for the trigger.",
+        message: "At least one channel account is required for the trigger.",
       });
     }
   }
@@ -120,10 +120,12 @@ function validateConfigArray(
   config: Record<string, unknown>,
   field: string,
   allowed: string[],
-  ctx: TriggerContext,
+  ctx: TriggerContext
 ): ValidationError[] {
   const value = config[field];
-  if (value === undefined || value === null) return [];
+  if (value === undefined || value === null) {
+    return [];
+  }
   if (!Array.isArray(value)) {
     return [
       {
@@ -154,10 +156,12 @@ function validateConfigArray(
 function validateStringArray(
   config: Record<string, unknown>,
   field: string,
-  ctx: TriggerContext,
+  ctx: TriggerContext
 ): ValidationError[] {
   const value = config[field];
-  if (value === undefined || value === null) return [];
+  if (value === undefined || value === null) {
+    return [];
+  }
   if (!Array.isArray(value)) {
     return [
       {

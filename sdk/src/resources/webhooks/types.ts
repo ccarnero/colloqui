@@ -34,7 +34,7 @@ export interface WebhookIngestInput {
    * explicitly per call.
    */
   tenant: string;
-  /** Channel identifier segment of the URL, e.g. `"http"`, `"whatsapp"`, `"telegram"`, `"instagram"`. */
+  /** Channel identifier segment of the URL, e.g. `"http"` or `"telegram"`. */
   channel: string;
   /**
    * Optional account `externalId` for instance-addressed ingress

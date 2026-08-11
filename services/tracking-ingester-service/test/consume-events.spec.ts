@@ -152,7 +152,7 @@ describe("makeTrackedEventHandler — per-message pipeline", () => {
 
     const { msg, calls } = makeMsg({
       subject:
-        "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.tenant-a.channel-service.messaging.telegram.telegram.received.v1",
       stream: "INGRESS-TENANT-A",
       seq: 7,
       payload: loadFixture("audit-service-channel-envelope-01.json"),
@@ -176,7 +176,7 @@ describe("makeTrackedEventHandler — per-message pipeline", () => {
 
     const { msg, calls } = makeMsg({
       subject:
-        "evt.t1.api-gateway.messaging.whatsapp.webhook.webhook_received.v1",
+        "evt.t1.api-gateway.messaging.telegram.webhook.webhook_received.v1",
       stream: "INGRESS-T1",
       seq: 8,
       payload: loadFixture("channel-service-webhook-ingress-envelope-01.json"),
@@ -301,7 +301,7 @@ describe("makeTrackedEventHandler — per-message pipeline", () => {
     // JSON body on a canonical evt.* subject that fails isCompliantEnvelope.
     const { msg, calls } = makeMsg({
       subject:
-        "evt.t1.api-gateway.messaging.whatsapp.webhook.webhook_received.v1",
+        "evt.t1.api-gateway.messaging.telegram.webhook.webhook_received.v1",
       stream: "INGRESS-T1",
       seq: 10,
       payload: { not: "an envelope" },
@@ -327,7 +327,7 @@ describe("makeTrackedEventHandler — per-message pipeline", () => {
 
     const { msg, calls } = makeMsg({
       subject:
-        "evt.t1.api-gateway.messaging.whatsapp.webhook.webhook_received.v1",
+        "evt.t1.api-gateway.messaging.telegram.webhook.webhook_received.v1",
       stream: "INGRESS-T1",
       seq: 11,
       payload: null,
@@ -350,7 +350,7 @@ function slimClaimCheckEnvelope(): Record<string, unknown> {
     specversion: "1.0",
     id: "evt-claim-ingest-1",
     source: "test/claim-check",
-    type: "io.yoizen.messaging.whatsapp.meta.received.v1",
+    type: "io.yoizen.messaging.telegram.telegram.received.v1",
     resource: "tenant/tenant-a/x",
     time: "2026-07-11T00:00:00.000Z",
     traceid: "44444444-4444-4444-4444-444444444444",
@@ -359,8 +359,8 @@ function slimClaimCheckEnvelope(): Record<string, unknown> {
     tenant: "tenant-a",
     producer: "channel-service",
     domain: "messaging",
-    channel: "whatsapp",
-    provider: "meta",
+    channel: "telegram",
+    provider: "telegram",
     accountid: "acc-1",
     idempotencykey: "idem-claim-ingest-1",
     transport: { method: "webhook", protocol: "https", depth: 0 },
@@ -379,7 +379,7 @@ function slimClaimCheckEnvelope(): Record<string, unknown> {
 
 describe("makeTrackedEventHandler — claim-check resolution at ingest (T02)", () => {
   const CLAIM_CHECK_SUBJECT =
-    "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1";
+    "evt.tenant-a.channel-service.messaging.telegram.telegram.received.v1";
 
   it("resolves successfully: persists the envelope WITH payload, payload_status='resolved'", async () => {
     const { buffer, inserted } = bufferWith(okInsert);

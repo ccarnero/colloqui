@@ -30,14 +30,14 @@ describe("DetailDialogComponent", () => {
   it("renders with the redesign token classes and the dialog title/subtitle", () => {
     createFixture({
       title: "Soporte MX",
-      subtitle: "whatsapp · account",
+      subtitle: "telegram · account",
       fields: [{ label: "id", value: "acc_123" }],
     });
 
     const el = fixture.nativeElement as HTMLElement;
     expect(el.querySelector(".dialog-title")?.textContent).toBe("Soporte MX");
     expect(el.querySelector(".dialog-subtitle")?.textContent).toBe(
-      "whatsapp · account"
+      "telegram · account"
     );
     // Restyled per redesign tokens: dialog structure carries the classes
     // covered by the `.rd-dialog-panel` global theme in styles.scss.

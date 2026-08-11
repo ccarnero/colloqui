@@ -103,7 +103,7 @@ describe("processTrackedMessage — outcome derivation", () => {
 
   it("stamps a rule-18 drift row (undecodable body) compliance none", () => {
     const result = processTrackedMessage({
-      subject: "evt.acme.channel-service.messaging.whatsapp.meta.received.v1",
+      subject: "evt.acme.channel-service.messaging.telegram.telegram.received.v1",
       streamName: "INGRESS-ACME",
       streamSequence: 7,
       payload: "<<not-json>>",

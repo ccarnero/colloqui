@@ -217,7 +217,7 @@ describe("deserializeFlow — conditional edge labels", () => {
 describe("deserializeFlow — trigger", () => {
   it("creates a channel node in inbound mode for the trigger", () => {
     const { nodes } = deserializeFlow({
-      trigger: { mode: "shared", config: { channels: ["whatsapp"] } },
+      trigger: { mode: "shared", config: { channels: ["telegram"] } },
       actions: [],
     });
     const trigger = Object.values(nodes).find(

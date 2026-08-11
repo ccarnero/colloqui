@@ -84,8 +84,8 @@ test("listAccounts() forwards the channel filter as a query param", async () => 
   }));
   const client = createChannelsClient({ transport });
 
-  await client.listAccounts({ channel: "whatsapp" }).page();
-  assert.equal(calls[0]!.path, "/channels/accounts?channel=whatsapp");
+  await client.listAccounts({ channel: "telegram" }).page();
+  assert.equal(calls[0]!.path, "/channels/accounts?channel=telegram");
 });
 
 test("getAccount() GETs /channels/accounts/:id", async () => {
@@ -146,24 +146,6 @@ test("removeAccount() DELETEs /channels/accounts/:id and resolves with no value"
   assert.equal(result, undefined);
 });
 
-test("refreshAccountToken() POSTs /channels/accounts/:id/refresh-token", async () => {
-  const refreshed = {
-    accessToken: "abc123..z9y8",
-    tokenType: "bearer",
-    expiresIn: 5184000,
-  };
-  const { transport, calls } = fakeTransport(() => ({
-    status: 200,
-    body: refreshed,
-  }));
-  const client = createChannelsClient({ transport });
-
-  const result = await client.refreshAccountToken("acc-1");
-  assert.equal(calls[0]!.path, "/channels/accounts/acc-1/refresh-token");
-  assert.equal(calls[0]!.method, "POST");
-  assert.deepEqual(result, refreshed);
-});
-
 test("sendMessage() POSTs /channels/:accountId/messages with the input body", async () => {
   const sendResult = {
     success: true,
@@ -197,7 +179,7 @@ test("createAutoReplyRule() POSTs /channels/auto-reply with the input body", asy
     id: "rule-1",
     tenantId: "acme",
     accountId: "acc-1",
-    channel: "whatsapp" as const,
+    channel: "telegram" as const,
     triggerPattern: "hello",
     replyText: "hi there",
     isActive: true,
@@ -210,7 +192,7 @@ test("createAutoReplyRule() POSTs /channels/auto-reply with the input body", asy
 
   const result = await client.createAutoReplyRule({
     accountId: "acc-1",
-    channel: "whatsapp",
+    channel: "telegram",
     triggerPattern: "hello",
     replyText: "hi there",
   });
@@ -226,7 +208,7 @@ test("listAutoReplyRules() GETs /channels/auto-reply and degrades to a single pa
       id: "rule-1",
       tenantId: "acme",
       accountId: "acc-1",
-      channel: "whatsapp" as const,
+      channel: "telegram" as const,
       triggerPattern: "hello",
       replyText: "hi there",
       isActive: true,
@@ -390,9 +372,7 @@ test("usageSummary() GETs /channels/usage/summary and returns the 24h rolling su
   const summary = {
     windowHours: 24 as const,
     total: { ingress: 10, egress: 4, dlq: 0 },
-    byChannel: [
-      { channel: "http", ingress: 10, egress: 4, dlq: 0 },
-    ],
+    byChannel: [{ channel: "http", ingress: 10, egress: 4, dlq: 0 }],
   };
   const { transport, calls } = fakeTransport(() => ({
     status: 200,

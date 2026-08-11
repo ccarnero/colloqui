@@ -12,7 +12,7 @@
 //   - agent: `payload_agent_id` (`action_started`/`action_completed` on
 //     `agentCall` actions). No dedicated column exists today.
 //   - channel: the chain's ingress/egress/processing events (TAXONOMY.md §4
-//     rules 2-5) — `tech` IS the channel token (e.g. "whatsapp",
+//     rules 2-5) — `tech` IS the channel token (e.g. "telegram",
 //     "http-generic"). There is no channel-ACCOUNT id/name surfaced on the
 //     projected columns, so `id === name === tech` (documented gap — a
 //     future task could join `channel_accounts` by `accountid`, which IS on

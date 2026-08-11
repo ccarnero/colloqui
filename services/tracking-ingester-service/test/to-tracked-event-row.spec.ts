@@ -21,6 +21,13 @@ function loadFixture(name: string): unknown {
 // Every fixture in fixtures/bus-events/, paired with the NATS delivery subject
 // it would arrive on. `streamName` is supplied where it changes classification
 // (the DLQ fixture is the same body as ingress-01 but delivered from DLQ-*).
+//
+// The subjects below are this spec's own literals, retargeted to `telegram`
+// with the Meta channel decommission. The fixture BODIES still carry the Meta
+// channel/provider they were captured with — `fixtures/bus-events/` is a
+// frozen faithful transcription (see its README), and nothing here asserts
+// body-channel == subject-channel: `toTrackedEventRow` derives `tech` from
+// the SUBJECT alone (TAXONOMY.md §4).
 interface FixtureCase {
   file: string;
   subject: string;
@@ -34,7 +41,8 @@ const FIXTURES: FixtureCase[] = [
   },
   {
     file: "audit-service-channel-envelope-01.json",
-    subject: "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1",
+    subject:
+      "evt.tenant-a.channel-service.messaging.telegram.telegram.received.v1",
   },
   {
     file: "audit-service-execution-envelope-01.json",
@@ -44,20 +52,21 @@ const FIXTURES: FixtureCase[] = [
   {
     file: "channel-service-webhook-ingress-envelope-01.json",
     subject:
-      "evt.t1.api-gateway.messaging.whatsapp.webhook.webhook_received.v1",
+      "evt.t1.api-gateway.messaging.telegram.webhook.webhook_received.v1",
   },
   {
     file: "usage-aggregator-envelope-parser-ingress-01.json",
-    subject: "evt.tenant-1.channel-service.messaging.whatsapp.meta.received.v1",
+    subject:
+      "evt.tenant-1.channel-service.messaging.telegram.telegram.received.v1",
   },
   {
     file: "usage-aggregator-envelope-parser-egress-02.json",
-    subject: "evt.tenant-1.channel-service.messaging.whatsapp.meta.sent.v1",
+    subject: "evt.tenant-1.channel-service.messaging.telegram.telegram.sent.v1",
   },
   {
     file: "usage-aggregator-envelope-parser-dlq-03.json",
     subject:
-      "dlq.tenant-1.evt.tenant-1.channel-service.messaging.whatsapp.meta.received.v1",
+      "dlq.tenant-1.evt.tenant-1.channel-service.messaging.telegram.telegram.received.v1",
     streamName: "DLQ-tenant-1",
   },
 ];
@@ -126,7 +135,7 @@ describe("toTrackedEventRow — every fixture in fixtures/bus-events/", () => {
 
 describe("toTrackedEventRow — full row projection (compliant fixture)", () => {
   const subject =
-    "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1";
+    "evt.tenant-a.channel-service.messaging.telegram.telegram.received.v1";
   const envelope = loadFixture(
     "audit-service-channel-envelope-01.json"
   ) as Record<string, unknown>;
@@ -153,7 +162,7 @@ describe("toTrackedEventRow — full row projection (compliant fixture)", () => 
     expect(row.version).toBe("v1");
 
     // Classification from classify(subject) — TAXONOMY.md §4 rule 3.
-    expect(row.tech).toBe("whatsapp");
+    expect(row.tech).toBe("telegram");
     expect(row.business_fn).toBe("channel-processing");
     expect(row.rule).toBe(3);
 
@@ -335,7 +344,7 @@ describe("toTrackedEventRow — T4 click-through detail columns", () => {
 
   it("an unrelated event family (channel-processing, rule 3) has all four columns null", () => {
     const subject =
-      "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1";
+      "evt.tenant-a.channel-service.messaging.telegram.telegram.received.v1";
     const envelope = loadFixture(
       "audit-service-channel-envelope-01.json"
     ) as Record<string, unknown>;
@@ -362,14 +371,14 @@ describe("toTrackedEventRow — T4 click-through detail columns", () => {
 // ---------------------------------------------------------------------------
 describe("toTrackedEventRow — T01 payload_status assignment", () => {
   const subject =
-    "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1";
+    "evt.tenant-a.channel-service.messaging.telegram.telegram.received.v1";
 
   function envelopeWithPayload(payload: unknown): Record<string, unknown> {
     return {
       specversion: "1.0",
       id: "evt-payload-1",
       source: "test/payload",
-      type: "io.yoizen.messaging.whatsapp.meta.received.v1",
+      type: "io.yoizen.messaging.telegram.telegram.received.v1",
       resource: "tenant/tenant-a/x",
       time: "2026-07-11T00:00:00.000Z",
       traceid: "22222222-2222-2222-2222-222222222222",
@@ -378,8 +387,8 @@ describe("toTrackedEventRow — T01 payload_status assignment", () => {
       tenant: "tenant-a",
       producer: "channel-service",
       domain: "messaging",
-      channel: "whatsapp",
-      provider: "meta",
+      channel: "telegram",
+      provider: "telegram",
       accountid: "acc-1",
       idempotencykey: "idem-payload-1",
       transport: { method: "webhook", protocol: "https", depth: 0 },
@@ -572,7 +581,7 @@ describe("buildNonEnvelopeRow — T01 payload_status", () => {
 
 describe("toTrackedEventRow — malformed / expected failures", () => {
   const subject =
-    "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1";
+    "evt.tenant-a.channel-service.messaging.telegram.telegram.received.v1";
 
   it("rejects an empty subject", () => {
     const result = toTrackedEventRow("", { id: "x" });
@@ -695,7 +704,7 @@ describe("toTrackedEventRow — STAGE-1 INGRESS EXCEPTION (canonical-with-known-
     // Even though accountid is the sole compliance failure, the subject is not
     // the stage-1 webhook family, so this is ordinary drift.
     const stage2Subject =
-      "evt.acme.channel-service.messaging.telegram.meta.received.v1";
+      "evt.acme.channel-service.messaging.telegram.telegram.received.v1";
     const result = toTrackedEventRow(stage2Subject, golden.envelope);
     expect(result.ok).toBe(false);
     if (result.ok) {

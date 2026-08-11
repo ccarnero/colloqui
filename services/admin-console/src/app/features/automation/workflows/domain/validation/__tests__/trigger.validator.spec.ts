@@ -93,8 +93,8 @@ describe("validateTrigger", () => {
         type: "message_received",
         mode: "exclusive",
         config: {
-          channels: ["whatsapp", "telegram"],
-          providers: ["meta"],
+          channels: ["telegram", "http"],
+          providers: ["telegram"],
           accountIds: ["acc-1"],
           patterns: ["hello"],
         },

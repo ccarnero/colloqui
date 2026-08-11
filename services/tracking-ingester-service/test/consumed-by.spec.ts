@@ -28,14 +28,14 @@ describe("consumedBy — TAXONOMY.md §5 facet", () => {
 
   it("§5 row 2 — channel send.v1 → channel-egress + audit sink", () => {
     expect(
-      value("evt.acme.channel-service.messaging.whatsapp.meta.send.v1")
+      value("evt.acme.channel-service.messaging.telegram.telegram.send.v1")
     ).toEqual(["channel-service", "audit-service"]);
   });
 
   it("§5 row 3 — sent/delivered/read/failed → audit + usage aggregator", () => {
     for (const kind of ["sent", "delivered", "read", "failed"]) {
       expect(
-        value(`evt.acme.channel-service.messaging.whatsapp.meta.${kind}.v1`)
+        value(`evt.acme.channel-service.messaging.telegram.telegram.${kind}.v1`)
       ).toEqual(["audit-service", "usage-aggregator-service"]);
     }
   });

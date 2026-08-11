@@ -2,13 +2,17 @@ import type { Channel, ChannelAccount } from "@yoizen/shared";
 
 export const ACCOUNTS_REPOSITORY = Symbol("ACCOUNTS_REPOSITORY");
 
-/** Mutable channel_accounts columns for PATCH-style updates. */
+/**
+ * Mutable channel_accounts columns for PATCH-style updates.
+ *
+ * The Meta-only `app_id` / `verify_token` columns were dropped with the Meta
+ * channel decommission; `app_secret` stays — it is the webhook verification
+ * secret for Telegram and Http.
+ */
 export interface IAccountUpdatePatch {
   name?: string;
   accessToken?: string;
-  appId?: string | null;
   appSecret?: string | null;
-  verifyToken?: string | null;
   isActive?: boolean;
 }
 
@@ -24,20 +28,20 @@ export interface IInsertAccountParams {
   readonly appSecret: string | null;
 }
 
+/**
+ * One `channel_accounts` row. Mirrors `CHANNEL_ACCOUNTS_SCHEMA_SQL` — the
+ * Meta-only columns (`phone_number_id`, `waba_id`, `ig_user_id`, `app_id`,
+ * `verify_token`) are gone with the Meta channel decommission.
+ */
 export interface IAccountRow {
   id: string;
   channel: string;
   provider: string;
   name: string;
   external_id: string;
-  phone_number_id: string | null;
-  waba_id: string | null;
-  ig_user_id: string | null;
   telegram_bot_token: string | null;
   access_token: string;
-  app_id: string | null;
   app_secret: string | null;
-  verify_token: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;

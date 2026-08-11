@@ -211,8 +211,8 @@ const STAGE_1_SAMPLE: WebhookIngressEnvelope = {
   id: "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
   source: "api-gateway/webhooks",
   // envelope-drift T05: per-channel stage-1 type (webhook-ingress-type.ts).
-  type: "io.yoizen.messaging.whatsapp.webhook.webhook_received.v1",
-  resource: "tenant/acme/channel/whatsapp/provider/webhook",
+  type: "io.yoizen.messaging.telegram.webhook.webhook_received.v1",
+  resource: "tenant/acme/channel/telegram/provider/webhook",
   time: "2026-07-31T15:40:11.382Z",
   traceid: "4bf92f3577b34da6a3ce929d0e0e4736",
   causation_id: null,
@@ -220,7 +220,7 @@ const STAGE_1_SAMPLE: WebhookIngressEnvelope = {
   tenant: "acme",
   producer: "api-gateway",
   domain: "messaging",
-  channel: "whatsapp",
+  channel: "telegram",
   provider: "webhook",
   kind: "webhook_received",
   idempotencykey: "sha256:a1b2c3d4",
@@ -231,11 +231,11 @@ const STAGE_1_SAMPLE: WebhookIngressEnvelope = {
     payload_ref: null,
     payload_bytes: 480,
     payload_checksum: "sha256:a1b2c3d4",
-    payload: { object: "whatsapp_business_account", entry: [] },
-    raw_body_b64: "eyJvYmplY3QiOiJ3aGF0c2FwcF9idXNpbmVzc19hY2NvdW50In0=",
+    payload: { update_id: 421, message: { text: "hola" } },
+    raw_body_b64: "eyJ1cGRhdGVfaWQiOjQyMX0=",
     headers: {
       "content-type": "application/json",
-      "x-hub-signature-256": "sha256=abc123",
+      "x-telegram-bot-api-secret-token": "tok_abc123",
     },
   },
 };
@@ -260,9 +260,9 @@ const STAGE_2_SAMPLE: ChannelEnvelope = {
   specversion: "1.0",
   id: "c5e0f3d4-6d7a-9b1c-d4e5-f6a7b8c9d0e1",
   source: "channel-service/accounts/69bea8cd868e860918359cc7",
-  type: "io.yoizen.messaging.whatsapp.meta.received.v1",
+  type: "io.yoizen.messaging.telegram.telegram.received.v1",
   resource:
-    "tenant/acme/account/69bea8cd868e860918359cc7/channel/whatsapp/provider/meta",
+    "tenant/acme/account/69bea8cd868e860918359cc7/channel/telegram/provider/telegram",
   time: "2026-07-31T15:40:12.001Z",
   traceid: "4bf92f3577b34da6a3ce929d0e0e4736",
   causation_id: "a3c8f1d2-4b5e-7f9a-b2c3-d4e5f6a7b8c9",
@@ -270,8 +270,8 @@ const STAGE_2_SAMPLE: ChannelEnvelope = {
   tenant: "acme",
   producer: "channel-service",
   domain: "messaging",
-  channel: "whatsapp",
-  provider: "meta",
+  channel: "telegram",
+  provider: "telegram",
   accountid: "69bea8cd868e860918359cc7",
   idempotencykey: "sha256:e5f6a7b8",
   transport: { method: "webhook", protocol: "https", depth: 1 },
@@ -281,7 +281,7 @@ const STAGE_2_SAMPLE: ChannelEnvelope = {
     payload_ref: null,
     payload_bytes: 512,
     payload_checksum: "sha256:e5f6a7b8",
-    payload: { messageId: "wamid.xxx", from: "5491100000000" },
+    payload: { messageId: "tg:421", from: "5491100000000" },
   },
   kind: "received",
 };
@@ -310,6 +310,12 @@ describe("envelope-schema.json (skills/envelope-messages asset)", () => {
   // ── (a) channel enum ────────────────────────────────────────────────────
   it("mirrors the Channel union exactly, including the implemented http channel", () => {
     // packages/shared/src/channel.interfaces.ts:3
+    //
+    // KNOWN DRIFT (Meta decommission, register 05 T02): the `Channel` /
+    // `ChannelProvider` unions lost `whatsapp` / `instagram` / `meta`, but the
+    // skills asset is a documentation artifact and the decommission's doc
+    // sweep is T03 — so the asset (and therefore this pin) still carries the
+    // pre-decommission lists. Reported in the T02 summary.
     expect(definition("Channel")["enum"]).toEqual([
       "whatsapp",
       "instagram",

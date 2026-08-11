@@ -28,8 +28,11 @@ describe("ChannelRouter", () => {
   it("resolves nothing for a decommissioned channel token", () => {
     // The Meta family is gone: a token the router no longer registers must
     // resolve to `undefined` (the ingress path turns that into
-    // `unsupported_channel`), never to a leftover provider.
-    expect(router.get("slack" as never)).toBeUndefined();
+    // `unsupported_channel`), never to a leftover provider. The cast is the
+    // point — `"whatsapp"` left the `Channel` union with the contract shrink,
+    // so only an out-of-contract caller can even ask for it.
+    expect(router.get("whatsapp" as never)).toBeUndefined();
+    expect(router.get("instagram" as never)).toBeUndefined();
   });
 
   it("resolves the http provider", () => {
@@ -42,6 +45,9 @@ describe("ChannelRouter", () => {
 
   it("getOrThrow throws for unknown channel", () => {
     expect(() => router.getOrThrow("slack" as never)).toThrow(
+      NotFoundException
+    );
+    expect(() => router.getOrThrow("whatsapp" as never)).toThrow(
       NotFoundException
     );
   });

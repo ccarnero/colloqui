@@ -1,6 +1,5 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { Test } from "@nestjs/testing";
-import type { Db } from "mongodb";
 import { AccountsMongoRepository } from "../../src/modules/accounts/accounts.mongo.repository";
 import { ChannelTenantConnectionManager } from "../../src/providers/channel-tenant-connection-manager";
 import { makeFakeTenantMongoConnections, makeMockDb } from "../make-mongo-mock";
@@ -13,14 +12,9 @@ function accountDoc(overrides: Record<string, unknown> = {}) {
     provider: "telegram",
     name: "Primary",
     external_id: "ext-1",
-    phone_number_id: null,
-    waba_id: null,
-    ig_user_id: null,
     telegram_bot_token: null,
     access_token: "tok",
-    app_id: null,
     app_secret: null,
-    verify_token: null,
     is_active: true,
     created_at: now,
     updated_at: now,
@@ -55,13 +49,8 @@ describe("AccountsMongoRepository", () => {
         provider: "telegram",
         name: "Primary",
         externalId: "ext-1",
-        phoneNumberId: null,
-        wabaId: null,
-        igUserId: null,
         telegramBotToken: null,
         accessToken: "tok",
-        appId: null,
-        verifyToken: null,
         isActive: true,
       },
       appSecret: null,
@@ -98,9 +87,7 @@ describe("AccountsMongoRepository", () => {
   });
 
   it("updateAccount applies patch via findOneAndUpdate", async () => {
-    const findOneAndUpdate = mock(async () =>
-      accountDoc({ name: "Renamed" }),
-    );
+    const findOneAndUpdate = mock(async () => accountDoc({ name: "Renamed" }));
     const db = makeMockDb({
       channel_accounts: { findOneAndUpdate },
     });

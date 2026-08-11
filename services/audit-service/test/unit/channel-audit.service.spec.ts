@@ -41,8 +41,8 @@ describe("ChannelAuditService", () => {
   const sampleRow = {
     _id: "evt-1",
     tenant_id: "t1",
-    channel: "whatsapp",
-    provider: "meta",
+    channel: "telegram",
+    provider: "telegram",
     kind: "inbound",
     account_id: "acc",
     from_id: "f1",

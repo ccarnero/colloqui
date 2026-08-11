@@ -11,10 +11,11 @@ import { parseSubject } from "@yoizen/shared";
 import { err, ok, type Result } from "./result.js";
 
 // tech dimension — TAXONOMY.md §2 (http source value maps to display value http-generic).
+// The Meta channel tokens (`whatsapp`, `instagram`) left this union with the
+// Meta channel decommission — no producer can emit them any more.
 export type Tech =
-  | "whatsapp"
-  | "instagram"
   | "telegram"
+  | "e2e-tests"
   | "http-generic"
   | "platform"
   | "runtime-stream"
@@ -65,11 +66,14 @@ export interface ClassifyOptions {
 }
 
 // Channel token whitelist for the generic 8-token fallback (rule 17).
+// Kept in step with the `Channel` union in @yoizen/shared plus the `platform`
+// placeholder token; the Meta tokens went away with the Meta channel
+// decommission, so a stray `whatsapp`/`instagram` subject now falls to
+// `tech: unknown` here — which is the alarm rule 17 exists to raise.
 const CHANNEL_WHITELIST = new Set([
-  "whatsapp",
-  "instagram",
   "telegram",
   "http",
+  "e2e-tests",
   "platform",
 ]);
 

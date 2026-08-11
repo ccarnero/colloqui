@@ -42,7 +42,7 @@ describe("AuditInterceptor — correlation propagation", () => {
     const interceptor = createInterceptor();
     const req = {
       method: "POST",
-      url: "/api/webhooks/whatsapp/t1",
+      url: "/api/webhooks/telegram/t1",
       headers: { "user-agent": "webhook-provider" },
       id: "req-wh-1",
       ip: "1.2.3.4",

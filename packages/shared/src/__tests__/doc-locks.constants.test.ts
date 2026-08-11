@@ -61,11 +61,11 @@ describe("Doc-pinned constants (DOCS/ literals)", () => {
   });
 
   test("WEBHOOK_SECRET_HEADERS is exactly the verification subset of the allowlist", () => {
-    // envelope.md §4.1, 2026-08-01 decision: these four authenticate the
-    // webhook at stage 1 and are stripped before the stage-2 envelope.
+    // envelope.md §4.1, 2026-08-01 decision: these authenticate the webhook at
+    // stage 1 and are stripped before the stage-2 envelope. The two Meta
+    // `x-hub-signature*` entries left the subset with the Meta channel
+    // decommission — no surviving provider declares them as `signatureHeader`.
     expect([...WEBHOOK_SECRET_HEADERS]).toEqual([
-      "x-hub-signature-256",
-      "x-hub-signature",
       "x-telegram-bot-api-secret-token",
       "x-http-channel-token",
     ]);

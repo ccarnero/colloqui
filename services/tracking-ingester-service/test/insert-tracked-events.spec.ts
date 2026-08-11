@@ -30,7 +30,7 @@ function loadFixture(name: string): unknown {
 function sampleRow(overrides: Partial<TrackedEventRow> = {}): TrackedEventRow {
   return {
     event_id: "evt-1",
-    subject: "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1",
+    subject: "evt.tenant-a.channel-service.messaging.telegram.telegram.received.v1",
     tenant: "tenant-a",
     producer: "channel-service",
     domain: "messaging",
@@ -40,7 +40,7 @@ function sampleRow(overrides: Partial<TrackedEventRow> = {}): TrackedEventRow {
     causation_id: "cause-1",
     causation_depth: 2,
     occurred_at: "2026-07-09T12:00:00.000Z",
-    tech: "whatsapp",
+    tech: "telegram",
     business_fn: "messaging",
     rule: 3,
     consumed_by: ["usage-aggregator", "audit-service"],
@@ -374,7 +374,7 @@ describe("insertTrackedEvents — dev Postgres integration", () => {
         "audit-service-channel-envelope-01.json"
       ) as { id: string };
       const mapped = toTrackedEventRow(
-        "evt.tenant-a.channel-service.messaging.whatsapp.meta.received.v1",
+        "evt.tenant-a.channel-service.messaging.telegram.telegram.received.v1",
         envelope
       );
       expect(mapped.ok).toBe(true);

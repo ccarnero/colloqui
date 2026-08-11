@@ -93,18 +93,18 @@ describe("buildSubject / parseSubject", () => {
       tenant: "t1",
       producer: "channel-service",
       domain: "messaging",
-      channel: "whatsapp",
-      provider: "meta",
+      channel: "telegram",
+      provider: "telegram",
       kind: "received",
     });
-    expect(subject).toBe("evt.t1.channel-service.messaging.whatsapp.meta.received.v1");
+    expect(subject).toBe("evt.t1.channel-service.messaging.telegram.telegram.received.v1");
     const parsed = parseSubject(subject);
     expect(parsed).toEqual({
       tenant: "t1",
       producer: "channel-service",
       domain: "messaging",
-      channel: "whatsapp",
-      provider: "meta",
+      channel: "telegram",
+      provider: "telegram",
       kind: "received",
       version: "v1",
     });

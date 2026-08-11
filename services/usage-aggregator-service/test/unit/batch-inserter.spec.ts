@@ -10,9 +10,9 @@ function makeRow(overrides: Partial<IChannelEventRow> = {}): IChannelEventRow {
     ts: new Date("2026-04-23T10:00:00.000Z"),
     idempotencyKey: "k1",
     accountId: "acct-1",
-    channel: "whatsapp",
+    channel: "telegram",
     direction: "ingress",
-    subject: "ingress.whatsapp.received",
+    subject: "ingress.telegram.received",
     messageType: "text",
     ...overrides,
   };
@@ -59,7 +59,7 @@ describe("insertBatch", () => {
       direction: string;
     }>;
     expect(docs[0]!.idempotency_key).toBe("k1");
-    expect(docs[0]!.meta.channel_id).toBe("whatsapp");
+    expect(docs[0]!.meta.channel_id).toBe("telegram");
     expect(docs[0]!.meta.account_id).toBe("acct-1");
     expect(docs[1]!.direction).toBe("egress");
   });

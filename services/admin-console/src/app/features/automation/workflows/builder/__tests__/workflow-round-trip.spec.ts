@@ -29,8 +29,8 @@ describe("workflow round trip — open a workflow, save without edits (T03)", ()
       mode: "shared",
       config: {
         accountIds: ["acc-1", "acc-2"],
-        channels: ["whatsapp", "telegram"],
-        providers: ["meta"],
+        channels: ["telegram", "http"],
+        providers: ["telegram"],
         patterns: ["^support"],
       },
     },
@@ -106,7 +106,7 @@ describe("workflow round trip — open a workflow, save without edits (T03)", ()
                   conversationId: "conv-1",
                   customerName: "Jane Doe",
                   userId: "user-1",
-                  channel: "whatsapp",
+                  channel: "telegram",
                 },
               },
             ],
@@ -132,7 +132,7 @@ describe("workflow round trip — open a workflow, save without edits (T03)", ()
         activity: "channelSend",
         args: {
           accountId: "acc-final",
-          channel: "whatsapp",
+          channel: "telegram",
           provider: "prov-final",
           to: "{{request.from}}",
           type: "text",

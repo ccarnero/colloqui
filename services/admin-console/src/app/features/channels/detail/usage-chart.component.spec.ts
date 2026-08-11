@@ -32,7 +32,7 @@ describe("UsageChartComponent", () => {
       {
         bucket: "2026-04-24T17:00:00.000Z",
         accountId: "acct-1",
-        channel: "whatsapp",
+        channel: "telegram",
         direction: "ingress",
         events: 5,
       },
@@ -62,14 +62,14 @@ describe("UsageChartComponent", () => {
       {
         bucket: "2026-04-24T17:00:00.000Z",
         accountId: "acct-1",
-        channel: "whatsapp",
+        channel: "telegram",
         direction: "ingress",
         events: 3,
       },
       {
         bucket: "2026-04-24T17:00:00.000Z",
         accountId: "acct-1",
-        channel: "whatsapp",
+        channel: "telegram",
         direction: "egress",
         events: 1,
       },

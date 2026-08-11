@@ -6,8 +6,7 @@
  * - `services/api-gateway/src/modules/channels/channels.controller.ts` +
  *   `channels-gateway.dto.ts` define the gateway-side routes and validation.
  * - `services/channel-service/src/modules/accounts/accounts.controller.ts` +
- *   `accounts.service.ts` + `accounts.dto.ts` define account CRUD + the
- *   refresh-token exchange.
+ *   `accounts.service.ts` + `accounts.dto.ts` define account CRUD.
  * - `services/channel-service/src/modules/egress/egress.controller.ts` +
  *   `egress.dto.ts` define the outbound message send.
  * - `services/channel-service/src/modules/auto-reply/auto-reply.controller.ts`
@@ -30,8 +29,17 @@
  * `byChannel` array, a numeric `total.ingress`). See `usageSummary()`.
  */
 
-export type Channel = "whatsapp" | "instagram" | "telegram" | "http";
-export type ChannelProvider = "meta" | "telegram" | "http";
+/**
+ * BREAKING (Meta channel decommission): the `whatsapp` / `instagram` channel
+ * tokens, the `meta` provider, the Meta-only account fields
+ * (`phoneNumberId`, `wabaId`, `igUserId`, `appId`, `verifyToken`) and
+ * `refreshAccountToken()` are gone — the endpoints and DB columns behind them
+ * no longer exist. `appSecret` stays: it is the webhook verification secret
+ * for Telegram (`x-telegram-bot-api-secret-token`) and Http
+ * (`x-http-channel-token`).
+ */
+export type Channel = "telegram" | "http" | "e2e-tests";
+export type ChannelProvider = "telegram" | "http" | "e2e-tests";
 
 /** Response shape for account create/list/get/update (`ChannelAccount` in `@yoizen/shared`). */
 export interface ChannelAccount {
@@ -41,14 +49,9 @@ export interface ChannelAccount {
   provider: ChannelProvider;
   name: string;
   externalId: string;
-  phoneNumberId?: string;
-  wabaId?: string;
-  igUserId?: string;
   telegramBotToken?: string;
   accessToken: string;
-  appId?: string;
   appSecret?: string;
-  verifyToken?: string;
   isActive: boolean;
   /** ISO-8601 timestamp. */
   createdAt: string;
@@ -62,14 +65,9 @@ export interface CreateChannelAccountInput {
   provider?: ChannelProvider;
   name: string;
   externalId: string;
-  phoneNumberId?: string;
-  wabaId?: string;
-  igUserId?: string;
   telegramBotToken?: string;
   accessToken: string;
-  appId?: string;
   appSecret?: string;
-  verifyToken?: string;
   isActive?: boolean;
 }
 
@@ -77,25 +75,12 @@ export interface CreateChannelAccountInput {
 export interface UpdateChannelAccountInput {
   name?: string;
   accessToken?: string;
-  appId?: string;
   appSecret?: string;
-  verifyToken?: string;
   isActive?: boolean;
 }
 
 export interface ListChannelAccountsParams {
   channel?: Channel;
-}
-
-/**
- * `POST /channels/accounts/:id/refresh-token` response (`RefreshTokenResponseDto`).
- * `accessToken` is masked by the downstream service before it reaches the
- * gateway (`accessToken.slice(0,6)..accessToken.slice(-4)`), never the raw token.
- */
-export interface RefreshAccountTokenResult {
-  accessToken: string;
-  tokenType: string;
-  expiresIn: number;
 }
 
 /** `POST /channels/:accountId/messages` body (mirrors `SendMessageDto`). */
@@ -122,8 +107,8 @@ export interface SendChannelMessageResult {
 /** `POST /channels/auto-reply` body (mirrors `CreateAutoReplyRuleDto`). */
 export interface CreateAutoReplyRuleInput {
   accountId: string;
-  /** Downstream validates only `"whatsapp" | "instagram"` for auto-reply, unlike the broader `Channel` union. */
-  channel: "whatsapp" | "instagram";
+  /** Auto-reply is channel-agnostic: downstream validates the full `Channel` union. */
+  channel: Channel;
   triggerPattern: string;
   replyText: string;
 }

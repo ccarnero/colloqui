@@ -51,7 +51,7 @@ describe("ChannelAdminService", () => {
         to: "2026-04-23T00:00:00Z",
         bucket: "hour",
         accountId: "acct-1",
-        channel: "whatsapp",
+        channel: "telegram",
       }),
     );
     const req = httpMock.expectOne(
@@ -61,7 +61,7 @@ describe("ChannelAdminService", () => {
         r.params.get("to") === "2026-04-23T00:00:00Z" &&
         r.params.get("bucket") === "hour" &&
         r.params.get("accountId") === "acct-1" &&
-        r.params.get("channel") === "whatsapp",
+        r.params.get("channel") === "telegram",
     );
     expect(req.request.method).toBe("GET");
     req.flush({ items: [] });
@@ -97,14 +97,14 @@ describe("ChannelAdminService", () => {
   it("getStreamMessages URL-encodes the key and serializes params", async () => {
     const promise = firstValueFrom(
       service.getStreamMessages("ingress", {
-        subject: "ingress.whatsapp.*",
+        subject: "ingress.telegram.*",
         limit: 25,
       }),
     );
     const req = httpMock.expectOne(
       (r) =>
         r.url === `${environment.apiUrl}/channels/streams/ingress/messages` &&
-        r.params.get("subject") === "ingress.whatsapp.*" &&
+        r.params.get("subject") === "ingress.telegram.*" &&
         r.params.get("limit") === "25",
     );
     expect(req.request.method).toBe("GET");

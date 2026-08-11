@@ -23,8 +23,8 @@ describe("channel-audit-projection", () => {
       const doc = {
         _id: "evt-1",
         tenant_id: "t1",
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         kind: "message_received",
         account_id: "acc-1",
         from_id: "+5491112345678",
@@ -36,7 +36,7 @@ describe("channel-audit-projection", () => {
         causation_id: "caus-xyz",
         depth: 2,
         data: { payload: {} },
-        nats_subject: "evt.t1.channel-service.messaging.whatsapp.message.v1",
+        nats_subject: "evt.t1.channel-service.messaging.telegram.message.v1",
         created_at: new Date("2026-06-20T00:00:00Z"),
       };
 
@@ -51,8 +51,8 @@ describe("channel-audit-projection", () => {
       const doc = {
         _id: "evt-conv-1",
         tenant_id: "t1",
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         kind: "message_received",
         account_id: "acc-1",
         from_id: "+5491112345678",
@@ -62,7 +62,7 @@ describe("channel-audit-projection", () => {
         provider_message_id: "mid-123",
         conversation_id: "conv-abc",
         data: { payload: { conversationId: "conv-abc" } },
-        nats_subject: "evt.t1.channel-service.messaging.whatsapp.message.v1",
+        nats_subject: "evt.t1.channel-service.messaging.telegram.message.v1",
         created_at: new Date("2026-07-07T00:00:00Z"),
       };
 
@@ -74,8 +74,8 @@ describe("channel-audit-projection", () => {
       const doc = {
         _id: "evt-conv-2",
         tenant_id: "t1",
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         kind: "message_received",
         account_id: "acc-1",
         data: {},
@@ -91,8 +91,8 @@ describe("channel-audit-projection", () => {
       const doc = {
         _id: "evt-2",
         tenant_id: "t1",
-        channel: "whatsapp",
-        provider: "meta",
+        channel: "telegram",
+        provider: "telegram",
         kind: "message_received",
         account_id: "acc-1",
         from_id: null,
