@@ -85,7 +85,7 @@ cd sdk && bun link   # one-time; or prefix each call with `bun run bin/yoizen.ts
 
 yoizen manifests validate -f ../integrations/http/http-connectors/manifest.yaml
 yoizen manifests plan     -f ../integrations/http/http-connectors/manifest.yaml
-env 'httpbin-basic-auth-username=user' 'httpbin-basic-auth-password=passwd' \
+HTTPBIN_BASIC_AUTH_USERNAME=user HTTPBIN_BASIC_AUTH_PASSWORD=passwd \
   yoizen manifests apply  -f ../integrations/http/http-connectors/manifest.yaml --secrets-from-env
 ```
 

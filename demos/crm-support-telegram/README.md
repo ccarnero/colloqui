@@ -130,33 +130,30 @@ create or update) — it is the standard recovery path if some step fails halfwa
 
 ## Environment variables
 
-**Bindings for `--secrets-from-env`** (read by `yoizen manifests apply --secrets-from-env`; the
-binding NAME must match the environment variable name exactly — see the
-`secrets:` block of `manifest.yaml`):
+**Bindings for `--secrets-from-env`** (read by `yoizen manifests apply --secrets-from-env`; each
+binding resolves from the env var named exactly like the binding or, as a fallback, its
+UPPER_SNAKE form — see the `secrets:` block of `manifest.yaml`):
 
-| Environment variable | Secret binding in the manifest | Scope |
+| Environment variable (UPPER_SNAKE fallback) | Secret binding in the manifest | Scope |
 | --- | --- | --- |
-| `TELEGRAM_BOT_TOKEN` (as `telegram-bot-token`) | `telegram-bot-token` | `channel: crm-support-telegram-bot` |
-| `HUBSPOT_SERVICE_KEY` (as `hubspot-service-key`) | `hubspot-service-key` | `connector: demo-hubspot` |
-| `OPENAI_API_KEY` (as `crm-support-telegram-openai-api-key`) | `crm-support-telegram-openai-api-key` | `connector: sample-openai-llm` |
-| `YOIZEN_EMAIL` (as `priority-scorer-yoizen-email`) | `priority-scorer-yoizen-email` | `service: priority-scorer` |
-| `YOIZEN_PASSWORD` (as `priority-scorer-yoizen-password`) | `priority-scorer-yoizen-password` | `service: priority-scorer` |
+| `TELEGRAM_BOT_TOKEN` | `telegram-bot-token` | `channel: crm-support-telegram-bot` |
+| `HUBSPOT_SERVICE_KEY` | `hubspot-service-key` | `connector: demo-hubspot` |
+| `CRM_SUPPORT_TELEGRAM_OPENAI_API_KEY` | `crm-support-telegram-openai-api-key` | `connector: sample-openai-llm` |
+| `PRIORITY_SCORER_YOIZEN_EMAIL` | `priority-scorer-yoizen-email` | `service: priority-scorer` |
+| `PRIORITY_SCORER_YOIZEN_PASSWORD` | `priority-scorer-yoizen-password` | `service: priority-scorer` |
 
-Each binding name differs from the usual environment variable name of its credential
-(for example, `TELEGRAM_BOT_TOKEN` is bound under `telegram-bot-token`), so
-`--secrets-from-env` needs the value exposed under the BINDING name at apply time,
-for example:
+`TELEGRAM_BOT_TOKEN` and `HUBSPOT_SERVICE_KEY` are the usual credential variables already, so
+they resolve as-is. The other three are binding-specific names — bridge them from the usual
+variables once (they can live in `.env`, see `.env.example`):
 
 ```
-env "telegram-bot-token=$TELEGRAM_BOT_TOKEN" \
-    "hubspot-service-key=$HUBSPOT_SERVICE_KEY" \
-    "crm-support-telegram-openai-api-key=$OPENAI_API_KEY" \
-    "priority-scorer-yoizen-email=$YOIZEN_EMAIL" \
-    "priority-scorer-yoizen-password=$YOIZEN_PASSWORD" \
-    bun run bin/yoizen.ts manifests apply -f ../demos/crm-support-telegram/manifest.yaml --secrets-from-env
+export CRM_SUPPORT_TELEGRAM_OPENAI_API_KEY="$OPENAI_API_KEY"
+export PRIORITY_SCORER_YOIZEN_EMAIL="$YOIZEN_EMAIL"
+export PRIORITY_SCORER_YOIZEN_PASSWORD="$YOIZEN_PASSWORD"
+yoizen manifests apply -f manifest.yaml --secrets-from-env
 ```
 
-(run from `sdk/`; `YOIZEN_EMAIL`/`YOIZEN_PASSWORD` also work as the own login credentials of the
+(run from this demo's directory; `YOIZEN_EMAIL`/`YOIZEN_PASSWORD` also work as the own login credentials of the
 `priority-scorer` hosted service at runtime — the same values, two different purposes: the CLI's
 session authentication, and the service's bound secret. The `priority-scorer-yoizen-*` bindings
 resolve Kubernetes-natively via `valueFrom.secretKeyRef`, never as a plaintext environment

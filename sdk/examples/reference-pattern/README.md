@@ -66,7 +66,7 @@ Telegram side first:
 
 1. **A Telegram channel account** with a real bot token:
    ```bash
-   env 'telegram-bot-token=123:ABC-…' \
+   TELEGRAM_BOT_TOKEN='123:ABC-…' \
      yoizen manifests apply -f integrations/channels/telegram-transform-reply/manifest.yaml --secrets-from-env
    ```
 2. **You (and optionally a second recipient) must have `/start`-ed the bot.** A bot cannot

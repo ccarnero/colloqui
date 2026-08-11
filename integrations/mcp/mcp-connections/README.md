@@ -63,7 +63,7 @@ cd sdk && bun link   # one-time; or prefix each call with `bun run bin/yoizen.ts
 
 yoizen manifests validate -f ../integrations/mcp/mcp-connections/manifest.yaml
 yoizen manifests plan     -f ../integrations/mcp/mcp-connections/manifest.yaml
-env 'mcp-connections-bearer-token=any-non-empty-value' \
+MCP_CONNECTIONS_BEARER_TOKEN=any-non-empty-value \
   yoizen manifests apply  -f ../integrations/mcp/mcp-connections/manifest.yaml --secrets-from-env
 ```
 

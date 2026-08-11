@@ -109,7 +109,7 @@ Against a tenant with nothing provisioned yet, apply in this order:
    `pokeapi`) that other samples reference via `external: true`. Its
    `httpbin-basic-auth` connector needs the demo secret defaults documented
    in its own README:
-   `env 'httpbin-basic-auth-username=user' 'httpbin-basic-auth-password=passwd'`.
+   `HTTPBIN_BASIC_AUTH_USERNAME=user HTTPBIN_BASIC_AUTH_PASSWORD=passwd`.
 2. [`channels/telegram-transform-reply/manifest.yaml`](./channels/telegram-transform-reply/manifest.yaml)
    — creates the shared Telegram channel account `telegram-transform-reply-bot`,
    the one other samples reference via `external: true`. Bind the token
@@ -136,18 +136,18 @@ already applied noop on the next attempt. For the full from-zero walkthrough
 ### Secrets: `--secrets-from-env`
 
 A manifest's `secrets` section carries only NAME + SCOPE bindings, never
-values. `apply --secrets-from-env` reads each binding's VALUE from a
-same-named environment variable — the value never touches the repo, disk,
-or argv. Binding names are slug-cased (manifest `nameSchema`: lowercase
-alphanumeric + hyphens), so when your shell doesn't allow hyphens in a bare
-`VAR=value` assignment, use the `env` command form:
+values. `apply --secrets-from-env` reads each binding's VALUE from the env
+var named exactly like the binding or, as a fallback, its UPPER_SNAKE form
+— the value never touches the repo, disk, or argv. Binding names are
+slug-cased (manifest `nameSchema`: lowercase alphanumeric + hyphens), so the
+fallback is what a plain shell export uses:
 
 ```bash
-env 'telegram-bot-token=<real-bot-token>' \
-  yoizen manifests apply -f manifest.yaml --secrets-from-env
+export TELEGRAM_BOT_TOKEN='<real-bot-token>'
+yoizen manifests apply -f manifest.yaml --secrets-from-env
 ```
 
-Missing bindings fail fast, listing every missing variable name — `apply`
+Missing bindings fail fast, listing both accepted spellings — `apply`
 never partially resolves secrets silently.
 
 ### History: `STANDBY.md`

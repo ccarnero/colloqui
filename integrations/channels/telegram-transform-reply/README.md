@@ -82,7 +82,7 @@ cd sdk && bun link           # one-time; or prefix each call with `bun run bin/y
 
 yoizen manifests validate -f ../integrations/channels/telegram-transform-reply/manifest.yaml
 yoizen manifests plan     -f ../integrations/channels/telegram-transform-reply/manifest.yaml
-env 'telegram-bot-token=123456:ABC-your-bot-token' \
+TELEGRAM_BOT_TOKEN='123456:ABC-your-bot-token' \
   yoizen manifests apply  -f ../integrations/channels/telegram-transform-reply/manifest.yaml --secrets-from-env
 ```
 

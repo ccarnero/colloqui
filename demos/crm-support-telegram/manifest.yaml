@@ -708,21 +708,19 @@ spec:
 
   # Bound to each resource's owner so the broker binding-match check passes
   # (scope kind/owner must match the referencing resource — channel/connector/
-  # service respectively). The binding NAME is the env var `--secrets-from-env`
-  # reads the VALUE from at apply time (no naming transform — same convention
-  # as `telegram-transform-reply/manifest.yaml` and
-  # `http-connectors/manifest.yaml`): `telegram-bot-token` <-
-  # $telegram-bot-token, `hubspot-service-key` <- $hubspot-service-key,
+  # service respectively). `--secrets-from-env` reads each binding's VALUE
+  # from the env var named exactly like the binding OR, as a fallback, its
+  # UPPER_SNAKE form (`resolve-secrets-from-env.ts`): `telegram-bot-token`
+  # <- $TELEGRAM_BOT_TOKEN, `hubspot-service-key` <- $HUBSPOT_SERVICE_KEY,
   # `crm-support-telegram-openai-api-key` <-
-  # $crm-support-telegram-openai-api-key (maps to OPENAI_API_KEY — see
-  # README.md once written, T06/T07), `priority-scorer-yoizen-email`/
-  # `priority-scorer-yoizen-password` <- $priority-scorer-yoizen-email/
-  # $priority-scorer-yoizen-password (the scorer's own platform login,
+  # $CRM_SUPPORT_TELEGRAM_OPENAI_API_KEY (export it from OPENAI_API_KEY —
+  # see README.md "Environment variables"), `priority-scorer-yoizen-email`/
+  # `priority-scorer-yoizen-password` <- $PRIORITY_SCORER_YOIZEN_EMAIL/
+  # $PRIORITY_SCORER_YOIZEN_PASSWORD (the scorer's own platform login,
   # scope `kind: service, owner: priority-scorer` — resolved k8s-natively per
-  # gaps-4 T04, never a plaintext literal in this file). Per the yoizen CLI's
-  # env-var mapping (secret binding names are slug-cased; invoke with `env
-  # 'name=value' bunx yoizen ...` when the shell can't hold a hyphenated bare
-  # env var name).
+  # gaps-4 T04, never a plaintext literal in this file). Same convention as
+  # `telegram-transform-reply/manifest.yaml` and
+  # `http-connectors/manifest.yaml`.
   secrets:
     - name: telegram-bot-token
       scope:

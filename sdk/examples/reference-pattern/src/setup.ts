@@ -437,7 +437,7 @@ async function stageResolve(): Promise<void> {
   if (!TG_ACCOUNT_ID) {
     err("no active Telegram channel account found.");
     err(
-      "Provision one first:  env 'telegram-bot-token=...' yoizen manifests apply -f integrations/channels/telegram-transform-reply/manifest.yaml --secrets-from-env"
+      "Provision one first:  TELEGRAM_BOT_TOKEN=... yoizen manifests apply -f integrations/channels/telegram-transform-reply/manifest.yaml --secrets-from-env"
     );
     err("or pin one with TG_ACCOUNT_ID=<id>.");
     process.exit(1);

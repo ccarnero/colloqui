@@ -780,16 +780,18 @@ arguments.
 ### `--secrets-from-env`
 
 Reads the manifest's `secrets` bindings, takes each VALUE from the
-same-named environment variable, `client.secrets.set()`s it, then applies —
-secret values never touch disk or argv. Missing env vars fail fast, listing
-every missing binding name. Binding names are slug-cased, so a name
-containing a hyphen needs the `env 'name=value'` invocation form rather than
-a bare shell assignment:
+environment, `client.secrets.set()`s it, then applies — secret values never
+touch disk or argv. Each binding resolves from the env var named exactly
+like the binding (`telegram-bot-token`) or, as a fallback, its UPPER_SNAKE
+form (`TELEGRAM_BOT_TOKEN`) — so a plain shell export works:
 
 ```bash
-env 'telegram-bot-token=123456:ABC-your-bot-token' \
-  yoizen manifests apply -f manifest.yaml --secrets-from-env
+export TELEGRAM_BOT_TOKEN='123456:ABC-your-bot-token'
+yoizen manifests apply -f manifest.yaml --secrets-from-env
 ```
+
+Missing env vars fail fast, listing both accepted spellings of every
+missing binding.
 
 `yoizen secrets put` is the equivalent one-off command outside a manifest
 apply: it reads the value from the env var named by `--value-env` and is

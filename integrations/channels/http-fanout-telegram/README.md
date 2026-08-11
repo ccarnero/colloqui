@@ -39,7 +39,7 @@ HTTP msg ─► trigger (message_received, channels:["http"], accountIds pinned 
 > - The 4 connectors (`jsonplaceholder`/`pokeapi`/`catfacts`/`httpbin`) — provisioned by
 >   [`http-connectors`](../../http/http-connectors)'s own `manifest.yaml` (`kind: LibraryManifest`).
 >   Apply it first:
->   `env 'httpbin-basic-auth-username=user' 'httpbin-basic-auth-password=passwd' yoizen manifests
+>   `HTTPBIN_BASIC_AUTH_USERNAME=user HTTPBIN_BASIC_AUTH_PASSWORD=passwd yoizen manifests
 >   apply -f ../../http/http-connectors/manifest.yaml --secrets-from-env` (see its README.md).
 > - The Telegram channel — owned by
 >   [`telegram-transform-reply`](../telegram-transform-reply)'s `manifest.yaml`. Apply it first.
