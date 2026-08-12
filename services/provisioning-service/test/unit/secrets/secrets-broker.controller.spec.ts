@@ -22,6 +22,11 @@ function storeWithBinding(): ISecretsStore {
       }
       return { ok: true, value: null };
     },
+    // Required by `ISecretsStore` since PENDIENTES/12-undeploy.spec.md T01 —
+    // the broker resolve path never deletes.
+    async deleteKey() {
+      return { ok: true, value: { deleted: false } };
+    },
   };
 }
 

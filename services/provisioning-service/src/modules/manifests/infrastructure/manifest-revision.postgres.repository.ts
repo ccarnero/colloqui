@@ -9,6 +9,7 @@ import type {
   IManifestRevision,
   IManifestRevisionRepository,
 } from "../domain/manifest-revision.repository.interface";
+import type { IManifestTeardownRepository } from "../domain/manifest-teardown.repository.interface";
 
 const MANIFEST_REVISION_COLUMNS = [
   "id",
@@ -22,7 +23,7 @@ const MANIFEST_REVISION_COLUMNS = [
 @Injectable()
 export class ManifestRevisionPostgresRepository
   extends TenantScopedPostgresRepository
-  implements IManifestRevisionRepository
+  implements IManifestRevisionRepository, IManifestTeardownRepository
 {
   private readonly logger = new PinoLoggerService(
     ManifestRevisionPostgresRepository.name
@@ -56,6 +57,47 @@ export class ManifestRevisionPostgresRepository
       )}`
     );
     return latest;
+  }
+
+  /**
+   * `IManifestTeardownRepository` — the latest revision of every stored
+   * manifest, one row per name (`DISTINCT ON` over the same
+   * `(tenant_id, name, revision DESC)` index `getLatest` uses).
+   */
+  async listLatestManifests(tenantId: string): Promise<IManifestRevision[]> {
+    const sql = await this.getSql(tenantId);
+
+    const results = await sql<IManifestRevision[]>`
+      SELECT DISTINCT ON (name) ${sql.unsafe(MANIFEST_REVISION_COLUMNS)}
+      FROM manifest_revisions
+      WHERE tenant_id = ${tenantId}
+      ORDER BY name, revision DESC
+    `;
+
+    this.logger.debug(
+      `listLatestManifests tenant='${tenantId}' manifests=${String(results.length)}`
+    );
+    return results;
+  }
+
+  /**
+   * `IManifestTeardownRepository` — drops EVERY revision of `name`. Returns
+   * the row count so undeploy can report "the manifest record was already
+   * gone" instead of failing (decision 6, idempotent).
+   */
+  async deleteManifest(tenantId: string, name: string): Promise<number> {
+    const sql = await this.getSql(tenantId);
+
+    const deleted = await sql<{ id: string }[]>`
+      DELETE FROM manifest_revisions
+      WHERE tenant_id = ${tenantId} AND name = ${name}
+      RETURNING id
+    `;
+
+    this.logger.log(
+      `deleteManifest tenant='${tenantId}' name='${name}' revisionsDeleted=${String(deleted.length)}`
+    );
+    return deleted.length;
   }
 
   async createRevision(

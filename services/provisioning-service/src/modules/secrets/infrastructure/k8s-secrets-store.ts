@@ -141,6 +141,86 @@ export function createK8sSecretsStore(coreApi: k8s.CoreV1Api): ISecretsStore {
       }
     },
 
+    async deleteKey(tenantId, name, scope) {
+      const namespace = tenantKubernetesNamespaceName(
+        tenantId,
+        PLATFORM_ENVIRONMENT
+      );
+      const secretName = secretResourceName(scope.kind, scope.owner);
+      logger.log(
+        `deleteKey: secret name='${name}' resource='${scope.kind}/${scope.owner}' -> k8s Secret '${secretName}' namespace='${namespace}'`
+      );
+
+      try {
+        let existing: k8s.V1Secret | undefined;
+        try {
+          existing = await coreApi.readNamespacedSecret({
+            name: secretName,
+            namespace,
+          });
+        } catch (readError) {
+          if (!isK8sNotFound(readError)) {
+            throw readError;
+          }
+        }
+
+        if (!existing) {
+          logger.log(
+            `deleteKey: no k8s Secret '${secretName}' — nothing to delete (already gone)`
+          );
+          return { ok: true, value: { deleted: false } };
+        }
+
+        const currentData = decodeSecretData(
+          existing.data as Record<string, string> | undefined
+        );
+        if (!currentData.has(name)) {
+          logger.log(
+            `deleteKey: k8s Secret '${secretName}' has no key '${name}' — nothing to delete (already gone)`
+          );
+          return { ok: true, value: { deleted: false } };
+        }
+        currentData.delete(name);
+
+        if (currentData.size === 0) {
+          await coreApi.deleteNamespacedSecret({
+            name: secretName,
+            namespace,
+          });
+          logger.log(
+            `deleteKey: removed the LAST key '${name}' — deleted k8s Secret '${secretName}' entirely`
+          );
+          return { ok: true, value: { deleted: true } };
+        }
+
+        const body: k8s.V1Secret = {
+          apiVersion: "v1",
+          kind: "Secret",
+          type: "Opaque",
+          metadata: {
+            name: secretName,
+            namespace,
+            labels: secretResourceLabels(tenantId, scope.kind, scope.owner),
+          },
+          data: encodeSecretData(currentData),
+        };
+        await coreApi.replaceNamespacedSecret({
+          name: secretName,
+          namespace,
+          body,
+        });
+        logger.log(
+          `deleteKey: removed key '${name}' from k8s Secret '${secretName}' (${String(currentData.size)} key(s) left)`
+        );
+        return { ok: true, value: { deleted: true } };
+      } catch (cause) {
+        const message = `k8s delete failed for key '${name}' in Secret '${secretName}' namespace='${namespace}': ${k8sErrorMessage(cause)}`;
+        logger.error(`deleteKey: ${message}`);
+        const error: SecretsStoreError = { kind: "downstream_error", message };
+        return { ok: false, error };
+      }
+    },
+
     async list(tenantId) {
       const namespace = tenantKubernetesNamespaceName(
         tenantId,

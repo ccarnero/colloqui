@@ -1,17 +1,20 @@
-// `PUT /secrets/:name` / `GET /secrets` — SPEC.md write-only Secret API.
-// No route on this controller (or anywhere else in the service) ever
-// returns a secret value — `PUT` echoes back only `{name, scope}`, `GET`
-// lists `{name, scope}` entries only.
+// `PUT /secrets/:name` / `GET /secrets` / `DELETE /secrets/:name` — SPEC.md
+// write-only Secret API. No route on this controller (or anywhere else in the
+// service) ever returns a secret value — `PUT` echoes back only
+// `{name, scope}`, `GET` lists `{name, scope}` entries only, and `DELETE`
+// echoes `{name, scope, deleted}` (PENDIENTES/12-undeploy.spec.md T01).
 
 import {
   Body,
   Controller,
+  Delete,
   Get,
   HttpCode,
   HttpException,
   HttpStatus,
   Param,
   Put,
+  Query,
   UseGuards,
 } from "@nestjs/common";
 import { TenantGuard, TenantId } from "@yoizen/database";
@@ -121,6 +124,71 @@ export class SecretsController {
       );
     }
     // Echoes ONLY name + scope — never the value (write-only guarantee).
+    return result.value;
+  }
+
+  /**
+   * PENDIENTES/12-undeploy.spec.md T01 item 4 — the DELETE the API was
+   * missing. Same auth/tenant surface as `PUT` (`TenantGuard` + `@TenantId`)
+   * and the SAME scope validation, taken from the query string because a
+   * DELETE carries no body: the scope is not optional metadata, it names the
+   * k8s Secret (`psec-<kind>-<owner>`) the key lives in, so an unscoped
+   * delete could not know what to remove.
+   *
+   * Idempotent by decision 6: deleting an absent secret answers 200 with
+   * `deleted: false` rather than 404, so `undeploy` is safe to run twice.
+   * Never returns a value (write-only guarantee unchanged).
+   */
+  @Delete(":name")
+  @HttpCode(HttpStatus.OK)
+  async delete(
+    @TenantId() tenantId: string,
+    @Param("name") name: string,
+    @Query("kind") kind?: string,
+    @Query("owner") owner?: string
+  ) {
+    this.logger.log(
+      `DELETE /secrets/${name} tenant='${tenantId}' scope='${String(kind)}/${String(owner)}'`
+    );
+
+    if (!nameSchema.safeParse(name).success) {
+      throw new HttpException(
+        {
+          errors: [
+            `secret name '${name}' must be slug-like (see @yoizen/shared nameSchema)`,
+          ],
+        },
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    if (
+      typeof kind !== "string" ||
+      !VALID_SCOPE_KINDS.has(kind as ResourceKind) ||
+      typeof owner !== "string" ||
+      !nameSchema.safeParse(owner).success
+    ) {
+      throw new HttpException(
+        {
+          errors: [
+            "query must be ?kind=channel|connector|agent|service|mcpServer|workflow&owner=<slug-like name>",
+          ],
+        },
+        HttpStatus.BAD_REQUEST
+      );
+    }
+
+    const result = await this.secretsService.delete(tenantId, name, {
+      kind: kind as ResourceKind,
+      owner,
+    });
+    if (!result.ok) {
+      throw new HttpException(
+        { errors: [result.error.message] },
+        HttpStatus.BAD_GATEWAY
+      );
+    }
+    // Name + scope + whether anything was removed — never a value.
     return result.value;
   }
 

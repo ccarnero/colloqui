@@ -6,6 +6,7 @@ import { KbModule } from "./modules/kb/kb.module";
 import { ManifestsModule } from "./modules/manifests/manifests.module";
 import { PlanModule } from "./modules/plan/plan.module";
 import { SecretsModule } from "./modules/secrets/secrets.module";
+import { UndeployModule } from "./modules/undeploy/undeploy.module";
 import { NatsModule } from "./providers/nats.module";
 import { ProvidersModule } from "./providers/providers.module";
 
@@ -21,6 +22,7 @@ import { ProvidersModule } from "./providers/providers.module";
     KbModule,
     PlanModule,
     ApplyModule,
+    UndeployModule,
   ],
 })
 export class AppModule {}

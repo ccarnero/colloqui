@@ -57,6 +57,27 @@ export interface ISecretsStore {
   >;
 
   /**
+   * Removes ONE key (`name`) from the per-resource k8s Secret
+   * `psec-<kind>-<owner>`, leaving every OTHER key bound to the same resource
+   * intact (the exact inverse of `write`'s merge). When the removed key was
+   * the LAST one, the now-empty Secret object itself is deleted rather than
+   * left behind as an empty husk.
+   *
+   * `deleted: false` means there was nothing to remove (no such Secret, or no
+   * such key inside it) — NEVER an error: undeploy must be safe to run twice
+   * (PENDIENTES/12-undeploy.spec.md decision 6). Never reads or returns a
+   * value.
+   */
+  deleteKey(
+    tenantId: string,
+    name: string,
+    scope: { readonly kind: ResourceKind; readonly owner: string }
+  ): Promise<
+    | { readonly ok: true; readonly value: { readonly deleted: boolean } }
+    | { readonly ok: false; readonly error: SecretsStoreError }
+  >;
+
+  /**
    * Reads the full key/value map of the resource's Secret object, or `null`
    * if no Secret exists yet for this (kind, owner). Callers MUST treat the
    * returned values as ephemeral (never logged/persisted).

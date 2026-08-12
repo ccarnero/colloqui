@@ -51,6 +51,20 @@ function fakeCoreApi() {
       secrets.set(`${namespace}/${name}`, body);
       return body;
     },
+    async deleteNamespacedSecret({
+      name,
+      namespace,
+    }: {
+      name: string;
+      namespace: string;
+    }) {
+      const key = `${namespace}/${name}`;
+      if (!secrets.has(key)) {
+        throw notFoundError();
+      }
+      secrets.delete(key);
+      return {};
+    },
     async listNamespacedSecret({
       namespace,
     }: {
@@ -203,5 +217,122 @@ describe("createK8sSecretsStore", () => {
       const allOutput = capturedStdout.join("\n");
       expect(allOutput).not.toContain(SECRET_TOKEN);
     });
+
+    it("deleteKey() never emits the secret value to the logger", async () => {
+      const coreApi = fakeCoreApi();
+      const store = createK8sSecretsStore(coreApi);
+      await store.write("acme", "token", SECRET_TOKEN, {
+        kind: "channel",
+        owner: "http-in",
+      });
+      capturedStdout = [];
+
+      await store.deleteKey("acme", "token", {
+        kind: "channel",
+        owner: "http-in",
+      });
+
+      const allOutput = capturedStdout.join("\n");
+      expect(allOutput).not.toContain(SECRET_TOKEN);
+    });
+  });
+});
+
+// PENDIENTES/12-undeploy.spec.md T01 item 4 — the delete primitive undeploy
+// needs (decision 2: secrets die with the manifest).
+describe("createK8sSecretsStore — deleteKey", () => {
+  it("removes ONE key and keeps the other keys bound to the same resource", async () => {
+    const coreApi = fakeCoreApi();
+    const store = createK8sSecretsStore(coreApi);
+    await store.write("acme", "api-key", "v1", {
+      kind: "connector",
+      owner: "hubspot",
+    });
+    await store.write("acme", "api-secret", "v2", {
+      kind: "connector",
+      owner: "hubspot",
+    });
+
+    const result = await store.deleteKey("acme", "api-key", {
+      kind: "connector",
+      owner: "hubspot",
+    });
+
+    expect(result).toEqual({ ok: true, value: { deleted: true } });
+    const persisted = coreApi.secrets.get("acme-dev-ns/psec-connector-hubspot");
+    expect(Object.keys(persisted?.data ?? {})).toEqual(["api-secret"]);
+  });
+
+  it("deletes the whole k8s Secret once its LAST key is removed", async () => {
+    const coreApi = fakeCoreApi();
+    const store = createK8sSecretsStore(coreApi);
+    await store.write("acme", "token", "v1", {
+      kind: "channel",
+      owner: "http-in",
+    });
+
+    const result = await store.deleteKey("acme", "token", {
+      kind: "channel",
+      owner: "http-in",
+    });
+
+    expect(result).toEqual({ ok: true, value: { deleted: true } });
+    expect(coreApi.secrets.has("acme-dev-ns/psec-channel-http-in")).toBe(false);
+  });
+
+  it("is idempotent: deleting an absent Secret returns deleted:false, never an error", async () => {
+    const store = createK8sSecretsStore(fakeCoreApi());
+
+    const result = await store.deleteKey("acme", "token", {
+      kind: "channel",
+      owner: "http-in",
+    });
+
+    expect(result).toEqual({ ok: true, value: { deleted: false } });
+  });
+
+  it("is idempotent: deleting an absent KEY of an existing Secret returns deleted:false", async () => {
+    const coreApi = fakeCoreApi();
+    const store = createK8sSecretsStore(coreApi);
+    await store.write("acme", "api-key", "v1", {
+      kind: "connector",
+      owner: "hubspot",
+    });
+
+    const result = await store.deleteKey("acme", "other-key", {
+      kind: "connector",
+      owner: "hubspot",
+    });
+
+    expect(result).toEqual({ ok: true, value: { deleted: false } });
+    expect(coreApi.secrets.has("acme-dev-ns/psec-connector-hubspot")).toBe(
+      true
+    );
+  });
+
+  it("surfaces a k8s failure as a typed downstream_error", async () => {
+    const coreApi = fakeCoreApi();
+    const store = createK8sSecretsStore(coreApi);
+    await store.write("acme", "token", "v1", {
+      kind: "channel",
+      owner: "http-in",
+    });
+    (
+      coreApi as unknown as { deleteNamespacedSecret: () => Promise<never> }
+    ).deleteNamespacedSecret = async () => {
+      throw new Error("apiserver exploded");
+    };
+
+    const result = await store.deleteKey("acme", "token", {
+      kind: "channel",
+      owner: "http-in",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.kind).toBe("downstream_error");
+    expect(result.error.message).toContain("apiserver exploded");
   });
 });

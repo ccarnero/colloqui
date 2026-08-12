@@ -16,6 +16,11 @@ function fakeStore(
     async readResourceSecret(_tenantId, kind, owner) {
       return { ok: true, value: map.get(`${kind}/${owner}`) ?? null };
     },
+    // Required by `ISecretsStore` since PENDIENTES/12-undeploy.spec.md T01 —
+    // the existence checker only ever reads.
+    async deleteKey() {
+      return { ok: true, value: { deleted: false } };
+    },
   };
 }
 
@@ -89,6 +94,10 @@ describe("createK8sSecretExistenceChecker", () => {
           ok: false,
           error: { kind: "downstream_error", message: "k8s unavailable" },
         };
+      },
+      // Required by `ISecretsStore` (T01) — never called on this path.
+      async deleteKey() {
+        return { ok: true, value: { deleted: false } };
       },
     };
     const checker = createK8sSecretExistenceChecker(store);

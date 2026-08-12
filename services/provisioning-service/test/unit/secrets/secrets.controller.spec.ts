@@ -17,6 +17,22 @@ function fakeStore(): ISecretsStore {
       written.push({ name, value, scope });
       return { ok: true };
     },
+    // PENDIENTES/12-undeploy.spec.md T01 item 4 — mirrors the real store:
+    // removes the key if present, reports `deleted: false` when there was
+    // nothing to remove.
+    async deleteKey(_tenantId, name, scope) {
+      const index = written.findIndex(
+        (w) =>
+          w.name === name &&
+          w.scope.kind === scope.kind &&
+          w.scope.owner === scope.owner
+      );
+      if (index === -1) {
+        return { ok: true, value: { deleted: false } };
+      }
+      written.splice(index, 1);
+      return { ok: true, value: { deleted: true } };
+    },
     async list() {
       return {
         ok: true,
@@ -173,6 +189,101 @@ describe("SecretsController — write-only guarantee", () => {
         value: "v",
         scope: { kind: "connector", owner: "hubspot" },
       })
+    ).rejects.toBeInstanceOf(HttpException);
+  });
+});
+
+// PENDIENTES/12-undeploy.spec.md T01 item 4 — the DELETE route the write-only
+// Secret API was missing, scope-checked exactly like PUT.
+describe("SecretsController — DELETE /secrets/:name", () => {
+  it("deletes the named secret from its owning resource and echoes {name, scope, deleted}", async () => {
+    const service = new SecretsService(
+      fakeStore(),
+      NOOP_SECRET_AUDIT_PUBLISHER
+    );
+    const controller = new SecretsController(service);
+
+    await controller.put("acme", "hubspot-api-key", {
+      value: "super-secret-value",
+      scope: { kind: "connector", owner: "hubspot" },
+    });
+    const response = await controller.delete(
+      "acme",
+      "hubspot-api-key",
+      "connector",
+      "hubspot"
+    );
+
+    expect(response).toEqual({
+      name: "hubspot-api-key",
+      scope: { kind: "connector", owner: "hubspot" },
+      deleted: true,
+    });
+    expect(JSON.stringify(response)).not.toContain("super-secret-value");
+  });
+
+  it("is idempotent — deleting an absent secret answers deleted:false, not 404", async () => {
+    const service = new SecretsService(
+      fakeStore(),
+      NOOP_SECRET_AUDIT_PUBLISHER
+    );
+    const controller = new SecretsController(service);
+
+    const response = await controller.delete(
+      "acme",
+      "never-written",
+      "connector",
+      "hubspot"
+    );
+
+    expect(response).toMatchObject({ deleted: false });
+  });
+
+  it("rejects a missing scope — an unscoped delete cannot know which Secret to touch", async () => {
+    const service = new SecretsService(
+      fakeStore(),
+      NOOP_SECRET_AUDIT_PUBLISHER
+    );
+    const controller = new SecretsController(service);
+
+    await expect(
+      controller.delete("acme", "hubspot-api-key")
+    ).rejects.toBeInstanceOf(HttpException);
+  });
+
+  it("rejects a scope kind the write path also rejects (systemVariable)", async () => {
+    const service = new SecretsService(
+      fakeStore(),
+      NOOP_SECRET_AUDIT_PUBLISHER
+    );
+    const controller = new SecretsController(service);
+
+    await expect(
+      controller.delete("acme", "some-var", "systemVariable", "some-var")
+    ).rejects.toBeInstanceOf(HttpException);
+  });
+
+  it("rejects a non-slug secret name", async () => {
+    const service = new SecretsService(
+      fakeStore(),
+      NOOP_SECRET_AUDIT_PUBLISHER
+    );
+    const controller = new SecretsController(service);
+
+    await expect(
+      controller.delete("acme", "Not A Slug!", "connector", "hubspot")
+    ).rejects.toBeInstanceOf(HttpException);
+  });
+
+  it("rejects a non-slug owner", async () => {
+    const service = new SecretsService(
+      fakeStore(),
+      NOOP_SECRET_AUDIT_PUBLISHER
+    );
+    const controller = new SecretsController(service);
+
+    await expect(
+      controller.delete("acme", "hubspot-api-key", "connector", "Not A Slug!")
     ).rejects.toBeInstanceOf(HttpException);
   });
 });

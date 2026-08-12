@@ -20,6 +20,12 @@ function storeWithBinding(
       const key = `${kind}/${owner}`;
       return { ok: true, value: map.get(key) ?? null };
     },
+    // Required by `ISecretsStore` since PENDIENTES/12-undeploy.spec.md T01.
+    // The broker never deletes — a stub that removes nothing keeps this
+    // fixture honest AND type-complete.
+    async deleteKey() {
+      return { ok: true, value: { deleted: false } };
+    },
   };
 }
 
@@ -65,6 +71,10 @@ describe("SecretsBrokerService — binding enforcement", () => {
       async readResourceSecret(_tenantId, kind, owner) {
         readCalled = true;
         return { ok: true, value: map.get(`${kind}/${owner}`) ?? null };
+      },
+      // Required by `ISecretsStore` (T01) — the broker never deletes.
+      async deleteKey() {
+        return { ok: true, value: { deleted: false } };
       },
     };
     let denied: unknown;
