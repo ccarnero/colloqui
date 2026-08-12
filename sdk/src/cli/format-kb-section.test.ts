@@ -33,16 +33,33 @@ test("formatKbPlanSection() returns no lines for an empty or absent kb list", ()
   assert.deepEqual(formatKbPlanSection(undefined), []);
 });
 
-test("formatKbApplySection() renders one kbName/documentName line per outcome", () => {
+test("formatKbApplySection() renders one kbName/documentName line per document of each nested outcome (the shape provisioning-service actually returns)", () => {
   const lines = formatKbApplySection([
-    { kbName: "support-faq", documentName: "faq.md", action: "reembed" },
-    { kbName: "support-faq", documentName: "policies.md", action: "skip" },
+    {
+      kbName: "support-faq",
+      kbExternalId: "f2305720-fdf8-4f58-9024-ceac57e59736",
+      documents: [
+        { documentName: "faq.md", action: "reembed" },
+        { documentName: "policies.md", action: "skip" },
+      ],
+    },
   ]);
   assert.deepEqual(lines, [
     "",
     "KNOWLEDGE BASES:",
     "  support-faq/faq.md: reembed",
     "  support-faq/policies.md: skip",
+  ]);
+});
+
+test("formatKbApplySection() never prints 'undefined' for a kb outcome with no documents array entries", () => {
+  const lines = formatKbApplySection([
+    { kbName: "empty-kb", kbExternalId: "x", documents: [] },
+  ]);
+  assert.deepEqual(lines, [
+    "",
+    "KNOWLEDGE BASES:",
+    "  empty-kb: converged (0 documents)",
   ]);
 });
 

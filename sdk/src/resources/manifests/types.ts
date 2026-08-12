@@ -154,10 +154,25 @@ export type ManifestResourceOutcome =
   | ManifestResourceApplyOutcome
   | ManifestResourceNoopOutcome;
 
+export interface ReconcileKbDocumentOutcome {
+  documentName: string;
+  /** Apply-side actions only — `pending_fetch` exists solely in plans. */
+  action: "create" | "reembed" | "skip";
+  documentExternalId?: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Mirrors provisioning-service's `ReconcileKbOutcome`
+ * (`modules/kb/domain/kb.interfaces.ts`): one entry per KB with its
+ * per-document outcomes NESTED — not one flat entry per document. The SDK
+ * shipped the flat shape by mistake until 2026-08-11, which made the CLI
+ * print `<kb>/undefined: undefined` after every apply.
+ */
 export interface ReconcileKbOutcome {
   kbName: string;
-  documentName: string;
-  action: KbDocumentPlanAction;
+  kbExternalId: string;
+  documents: ReconcileKbDocumentOutcome[];
   [key: string]: unknown;
 }
 

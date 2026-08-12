@@ -42,9 +42,15 @@ export function formatKbApplySection(
   }
   const lines = ["", "KNOWLEDGE BASES:"];
   for (const outcome of outcomes) {
-    lines.push(
-      `  ${outcome.kbName}/${outcome.documentName}: ${outcome.action}`
-    );
+    if (outcome.documents.length === 0) {
+      lines.push(`  ${outcome.kbName}: converged (0 documents)`);
+      continue;
+    }
+    for (const document of outcome.documents) {
+      lines.push(
+        `  ${outcome.kbName}/${document.documentName}: ${document.action}`
+      );
+    }
   }
   return lines;
 }
