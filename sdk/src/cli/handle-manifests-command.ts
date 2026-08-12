@@ -29,6 +29,36 @@ export interface HandleManifestsCommandDeps {
  * `process.exit` itself so the bin entrypoint stays the single place doing
  * process-level side effects (see `bin/yoizen.ts`).
  */
+const MANIFESTS_USAGE = [
+  "usage: yoizen manifests <subcommand> -f <file> [options]",
+  "",
+  "subcommands:",
+  "  validate   check the manifest against the schema and live preconditions",
+  "  plan       print the per-resource create|update|noop verdict table",
+  "  apply      converge the cluster to the manifest (never deletes)",
+  "",
+  "options:",
+  "  -f, --file <manifest.yaml>   manifest to operate on (required)",
+  "  --secrets-from-env           apply only: resolve each secret binding from",
+  "                               the env var named like the binding, or its",
+  "                               UPPER_SNAKE form (telegram-bot-token or",
+  "                               TELEGRAM_BOT_TOKEN)",
+  "  -h, --help                   show this help",
+];
+
+function subUsage(sub: string): string[] {
+  const flags = sub === "apply" ? " [--secrets-from-env]" : "";
+  return [
+    `usage: yoizen manifests ${sub} -f <file>${flags}`,
+    ...(sub === "apply"
+      ? [
+          "  --secrets-from-env   resolve each secret binding from the env var",
+          "                       named like the binding or its UPPER_SNAKE form",
+        ]
+      : []),
+  ];
+}
+
 export async function handleManifestsCommand({
   sub,
   args,
@@ -38,10 +68,17 @@ export async function handleManifestsCommand({
   stdout,
   stderr,
 }: HandleManifestsCommandDeps): Promise<number> {
+  if (sub === "--help" || sub === "-h" || sub === "help") {
+    for (const line of MANIFESTS_USAGE) {
+      stdout(line);
+    }
+    return 0;
+  }
+
   if (sub !== "validate" && sub !== "plan" && sub !== "apply") {
     stderr(`yoizen manifests: unknown subcommand '${sub}'`);
     stderr(
-      "usage: yoizen manifests validate|plan|apply -f <file> [--secrets-from-env]"
+      "usage: yoizen manifests validate|plan|apply -f <file> [--secrets-from-env] (see 'yoizen manifests --help')"
     );
     return 1;
   }
@@ -53,6 +90,7 @@ export async function handleManifestsCommand({
       options: {
         file: { type: "string", short: "f" },
         "secrets-from-env": { type: "boolean", default: false },
+        help: { type: "boolean", short: "h", default: false },
       },
       allowPositionals: false,
     });
@@ -61,6 +99,13 @@ export async function handleManifestsCommand({
       `yoizen manifests ${sub}: invalid arguments — ${(cause as Error).message}`
     );
     return 1;
+  }
+
+  if (parsed.values.help === true) {
+    for (const line of subUsage(sub)) {
+      stdout(line);
+    }
+    return 0;
   }
 
   const file = parsed.values.file as string | undefined;

@@ -388,3 +388,44 @@ test("runCli() reports a clear error for an unknown command", async () => {
   assert.equal(exitCode, 1);
   assert.match(stderr.lines.join("\n"), /unknown command/);
 });
+
+test("runCli() 'manifests --help' prints the group usage to stdout and exits 0 without touching the client", async () => {
+  const stdout = collector();
+  for (const helpArg of ["--help", "-h", "help"]) {
+    stdout.lines.length = 0;
+    const exitCode = await runCli({
+      argv: ["manifests", helpArg],
+      client: fakeClient({
+        validate: async () => {
+          throw new Error("client must not be called for --help");
+        },
+      }) as never,
+      stdout: stdout.fn,
+      stderr: () => {},
+    });
+    assert.equal(exitCode, 0, `exit code for '${helpArg}'`);
+    const output = stdout.lines.join("\n");
+    assert.match(output, /usage: yoizen manifests/);
+    assert.match(output, /validate/);
+    assert.match(output, /plan/);
+    assert.match(output, /apply/);
+    assert.match(output, /--secrets-from-env/);
+  }
+});
+
+test("runCli() 'manifests apply --help' prints the subcommand usage and exits 0 without reading a manifest", async () => {
+  const stdout = collector();
+  const exitCode = await runCli({
+    argv: ["manifests", "apply", "--help"],
+    client: fakeClient({}) as never,
+    readManifest: (() => {
+      throw new Error("readManifest must not be called for --help");
+    }) as never,
+    stdout: stdout.fn,
+    stderr: () => {},
+  });
+  assert.equal(exitCode, 0);
+  const output = stdout.lines.join("\n");
+  assert.match(output, /usage: yoizen manifests apply/);
+  assert.match(output, /--secrets-from-env/);
+});
