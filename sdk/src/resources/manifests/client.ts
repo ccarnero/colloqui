@@ -4,6 +4,7 @@ import type {
   ManifestApplyResult,
   ManifestPlan,
   ManifestRevision,
+  ManifestUndeployResult,
   ManifestValidationResult,
 } from "./types.js";
 
@@ -73,6 +74,29 @@ export interface ManifestsClient {
     name: string,
     opts?: ManifestApplyOptions
   ): Promise<ManifestApplyResult>;
+  /**
+   * `POST /provisioning/manifests/:name/undeploy` — the declarative teardown
+   * verb (PENDIENTES/12-undeploy.spec.md): deletes, in the REVERSE of apply's
+   * dependency order, exactly the resources the STORED manifest owns
+   * (`external: true` resources are never deleted — they were never owned).
+   * No request body: undeploy always operates on the latest stored revision.
+   *
+   * Rejects with:
+   * - `NotFoundError` (404) — nothing stored under `name`. A SECOND full
+   *   undeploy lands here because a fully successful run deletes the stored
+   *   record LAST, so callers should render this as "already undeployed"
+   *   rather than a failure (see
+   *   `services/provisioning-service/src/modules/undeploy/undeploy.controller.ts`'s
+   *   header, and `cli/commands/undeploy-command.ts` which does exactly that);
+   * - `ConflictError` (409) — `error.details.body.error` carries the typed
+   *   payload: `undeploy_blocked` (decision 4, with its `dependents` list),
+   *   `cycle_detected`, or a partial run (`undeploy_failed`, whose stored
+   *   manifest is kept so a re-run resumes).
+   */
+  undeploy(
+    name: string,
+    opts?: ManifestCallOptions
+  ): Promise<ManifestUndeployResult>;
 }
 
 /**
@@ -158,5 +182,17 @@ export function createManifestsClient({
     return body;
   }
 
-  return { validate, put, get, plan, apply };
+  async function undeploy(
+    name: string,
+    opts: ManifestCallOptions = {}
+  ): Promise<ManifestUndeployResult> {
+    const { body } = await transport.request<ManifestUndeployResult>({
+      path: `/provisioning/manifests/${encodePath(name)}/undeploy`,
+      method: "POST",
+      retry: opts.retry,
+    });
+    return body;
+  }
+
+  return { validate, put, get, plan, apply, undeploy };
 }

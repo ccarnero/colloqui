@@ -238,6 +238,107 @@ test("apply() propagates ConflictError for a cycle or partial-failure apply resu
   await assert.rejects(() => client.apply("support-bot"), ConflictError);
 });
 
+test("undeploy() POSTs /provisioning/manifests/:name/undeploy with no body and returns the report", async () => {
+  const report = {
+    manifestName: "support-bot",
+    resources: [
+      {
+        kind: "channel",
+        name: "http-in",
+        action: "deleted",
+        externalId: "acc-1",
+      },
+    ],
+    secrets: [
+      {
+        name: "telegram-bot-token",
+        scope: { kind: "channel", owner: "http-in" },
+        action: "deleted",
+      },
+    ],
+    deletedCount: 1,
+    notFoundCount: 0,
+    skippedCount: 0,
+    checksumRowsDeleted: 0,
+    manifestRecordDeleted: true,
+    durationMs: 12,
+  };
+  const { transport, calls } = fakeTransport(() => ({
+    status: 200,
+    body: report,
+  }));
+  const client = createManifestsClient({ transport });
+
+  const result = await client.undeploy("support-bot");
+  assert.equal(calls[0]!.path, "/provisioning/manifests/support-bot/undeploy");
+  assert.equal(calls[0]!.method, "POST");
+  assert.equal(calls[0]!.body, undefined);
+  assert.deepEqual(result, report);
+});
+
+test("undeploy() URL-encodes the manifest name in the path", async () => {
+  const { transport, calls } = fakeTransport(() => ({
+    status: 200,
+    body: {
+      manifestName: "needs encoding/x",
+      resources: [],
+      secrets: [],
+      deletedCount: 0,
+      notFoundCount: 0,
+      skippedCount: 0,
+      checksumRowsDeleted: 0,
+      manifestRecordDeleted: true,
+      durationMs: 1,
+    },
+  }));
+  const client = createManifestsClient({ transport });
+
+  await client.undeploy("needs encoding/x");
+  assert.equal(
+    calls[0]!.path,
+    "/provisioning/manifests/needs%20encoding%2Fx/undeploy"
+  );
+});
+
+test("undeploy() propagates NotFoundError (404) — the already-undeployed case the CLI renders as such", async () => {
+  const { transport } = fakeTransport(() => {
+    throw new NotFoundError("request failed: not found");
+  });
+  const client = createManifestsClient({ transport });
+
+  await assert.rejects(() => client.undeploy("missing"), NotFoundError);
+});
+
+test("undeploy() propagates ConflictError (409 undeploy_blocked / partial run)", async () => {
+  const { transport } = fakeTransport(() => {
+    throw new ConflictError("request failed: conflict");
+  });
+  const client = createManifestsClient({ transport });
+
+  await assert.rejects(() => client.undeploy("support-bot"), ConflictError);
+});
+
+test("undeploy() forwards a per-call retry override", async () => {
+  const { transport, calls } = fakeTransport(() => ({
+    status: 200,
+    body: {
+      manifestName: "support-bot",
+      resources: [],
+      secrets: [],
+      deletedCount: 0,
+      notFoundCount: 0,
+      skippedCount: 0,
+      checksumRowsDeleted: 0,
+      manifestRecordDeleted: true,
+      durationMs: 1,
+    },
+  }));
+  const client = createManifestsClient({ transport });
+
+  await client.undeploy("support-bot", { retry: false });
+  assert.equal(calls[0]!.retry, false);
+});
+
 test("apply() forwards a per-call retry override alongside the bundle", async () => {
   const { transport, calls } = fakeTransport(() => ({
     status: 200,

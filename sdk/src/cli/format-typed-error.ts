@@ -2,9 +2,9 @@ import { trimDetailLine } from "./trim-detail-line.js";
 
 /**
  * Renders the typed `{ error: { ... } }` body that
- * `POST /manifests/:name/(plan|apply)` returns on a 409
- * (`apply.controller.ts` / `plan.controller.ts`), covering every shape those
- * controllers actually emit:
+ * `POST /manifests/:name/(plan|apply|undeploy)` returns on a 409
+ * (`apply.controller.ts` / `plan.controller.ts` / `undeploy.controller.ts`),
+ * covering every shape those controllers actually emit:
  *
  * - `cycle_detected` (`plan.interfaces.ts` `CycleDetectedError`): the cycle
  *   node chain plus its message.
@@ -16,6 +16,12 @@ import { trimDetailLine } from "./trim-detail-line.js";
  *   `unresolvable_external_ref` etc. as PLAN-only preconditions and simply
  *   omits the resource, so apply first trips on the downstream
  *   `unresolved_symbolic_ref` and stops there).
+ * - `undeploy_blocked` (`undeploy.interfaces.ts` `UndeployBlockedError`):
+ *   every blocking (manifest, resource) pair, one per line — decision 4's
+ *   shared-resource guard.
+ * - `undeploy_failed` (`undeploy.interfaces.ts` `ManifestUndeployFailure`):
+ *   the failing step, processed/pending counts, and the resume hint (a
+ *   partial undeploy KEEPS the stored manifest, decision 6).
  * - Any other typed `{ kind, message }` (e.g. a bare `KbReconcileError`):
  *   rendered generically.
  *
@@ -59,6 +65,52 @@ export function formatTypedError(errorField: unknown): string[] | undefined {
       "  run `yoizen manifests plan -f <file>` for full precondition detail"
     );
     return lines;
+  }
+
+  // PENDIENTES/12-undeploy.spec.md T02 — the two typed 409 bodies
+  // `POST /manifests/:name/undeploy` adds (`undeploy.controller.ts`;
+  // `cycle_detected`, its third, is already covered above).
+  if (ef.kind === "undeploy_blocked" && Array.isArray(ef.dependents)) {
+    // Decision 4: another STORED manifest consumes a resource this one owns.
+    // The pairs are the actionable part — the operator has to undeploy or
+    // edit THOSE manifests first — so they are listed one per line rather
+    // than left inside the server's prose message.
+    const lines = [
+      `  blocked by ${String(ef.dependents.length)} dependent reference(s) from other stored manifests:`,
+    ];
+    for (const dependent of ef.dependents) {
+      const pair = (dependent ?? {}) as Record<string, unknown>;
+      lines.push(
+        trimDetailLine(
+          `    ${String(pair.manifestName)} -> ${String(pair.resourceKind)}/${String(pair.resourceName)}`
+        )
+      );
+    }
+    if (typeof ef.message === "string") {
+      lines.push(trimDetailLine(`  ${ef.message}`));
+    }
+    return lines;
+  }
+
+  if (
+    ef.kind === "undeploy_failed" &&
+    ef.failure &&
+    typeof ef.failure === "object"
+  ) {
+    const failure = ef.failure as Record<string, unknown>;
+    const processedCount = Array.isArray(ef.resources)
+      ? ef.resources.length
+      : 0;
+    const pendingCount = Array.isArray(ef.pending) ? ef.pending.length : 0;
+    return [
+      trimDetailLine(
+        `  failure: ${String(failure.kind)} on ${String(failure.resourceKind)}/${String(failure.resourceName)}: ${String(failure.message)}`
+      ),
+      `  processed=${String(processedCount)} pending=${String(pendingCount)}`,
+      // The stored manifest is KEPT on a partial run (decision 6), so the
+      // same command resumes from whatever is still live.
+      "  the stored manifest was kept — re-run `yoizen manifests undeploy -f <file> --yes` to resume",
+    ];
   }
 
   if (typeof ef.message === "string") {

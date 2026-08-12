@@ -2,12 +2,17 @@ import { parseArgs } from "node:util";
 import type { Client } from "../infrastructure/create-client.js";
 import { runApplyCommand } from "./commands/apply-command.js";
 import { runPlanCommand } from "./commands/plan-command.js";
+import {
+  buildUndeployPreview,
+  runUndeployCommand,
+} from "./commands/undeploy-command.js";
 import { runValidateCommand } from "./commands/validate-command.js";
 import { formatErrorDetail } from "./format-error-detail.js";
 import {
   formatKbApplySection,
   formatKbPlanSection,
 } from "./format-kb-section.js";
+import { formatUndeployReport } from "./format-undeploy-report.js";
 import { formatVerdictTable } from "./format-verdict-table.js";
 import type { readManifestFile } from "./read-manifest-file.js";
 
@@ -22,7 +27,8 @@ export interface HandleManifestsCommandDeps {
 }
 
 /**
- * Dispatches `yoizen manifests validate|plan|apply -f <file> [--secrets-from-env]`.
+ * Dispatches
+ * `yoizen manifests validate|plan|apply|undeploy -f <file> [--secrets-from-env] [--yes]`.
  * Uses `node:util.parseArgs` (Node/Bun built-in) — decision 9 bounds this
  * CLI to "no new deps beyond arg parsing", so no `commander`/`yargs`.
  * Returns the process exit code (0 success, 1 failure) — never calls
@@ -36,6 +42,7 @@ const MANIFESTS_USAGE = [
   "  validate   check the manifest against the schema and live preconditions",
   "  plan       print the per-resource create|update|noop verdict table",
   "  apply      converge the cluster to the manifest (never deletes)",
+  "  undeploy   delete the resources the STORED manifest owns (needs --yes)",
   "",
   "options:",
   "  -f, --file <manifest.yaml>   manifest to operate on (required)",
@@ -43,20 +50,32 @@ const MANIFESTS_USAGE = [
   "                               the env var named like the binding, or its",
   "                               UPPER_SNAKE form (telegram-bot-token or",
   "                               TELEGRAM_BOT_TOKEN)",
+  "  --yes                        undeploy only: confirm the deletion. Without",
+  "                               it, undeploy only PREVIEWS what it would",
+  "                               delete and exits 1 (no interactive prompt)",
   "  -h, --help                   show this help",
 ];
 
 function subUsage(sub: string): string[] {
-  const flags = sub === "apply" ? " [--secrets-from-env]" : "";
-  return [
-    `usage: yoizen manifests ${sub} -f <file>${flags}`,
-    ...(sub === "apply"
+  const flags =
+    sub === "apply"
+      ? " [--secrets-from-env]"
+      : sub === "undeploy"
+        ? " [--yes]"
+        : "";
+  const extra =
+    sub === "apply"
       ? [
           "  --secrets-from-env   resolve each secret binding from the env var",
           "                       named like the binding or its UPPER_SNAKE form",
         ]
-      : []),
-  ];
+      : sub === "undeploy"
+        ? [
+            "  --yes                confirm the deletion; without it undeploy only",
+            "                       PREVIEWS what it would delete and exits 1",
+          ]
+        : [];
+  return [`usage: yoizen manifests ${sub} -f <file>${flags}`, ...extra];
 }
 
 export async function handleManifestsCommand({
@@ -75,10 +94,15 @@ export async function handleManifestsCommand({
     return 0;
   }
 
-  if (sub !== "validate" && sub !== "plan" && sub !== "apply") {
+  if (
+    sub !== "validate" &&
+    sub !== "plan" &&
+    sub !== "apply" &&
+    sub !== "undeploy"
+  ) {
     stderr(`yoizen manifests: unknown subcommand '${sub}'`);
     stderr(
-      "usage: yoizen manifests validate|plan|apply -f <file> [--secrets-from-env] (see 'yoizen manifests --help')"
+      "usage: yoizen manifests validate|plan|apply|undeploy -f <file> [--secrets-from-env] [--yes] (see 'yoizen manifests --help')"
     );
     return 1;
   }
@@ -90,6 +114,10 @@ export async function handleManifestsCommand({
       options: {
         file: { type: "string", short: "f" },
         "secrets-from-env": { type: "boolean", default: false },
+        // `undeploy` only (PENDIENTES/12-undeploy.spec.md T02): the
+        // confirmation gate. A FLAG, never an interactive prompt — the CLI
+        // runs in CI/e2e scripts with no TTY.
+        yes: { type: "boolean", default: false },
         help: { type: "boolean", short: "h", default: false },
       },
       allowPositionals: false,
@@ -168,6 +196,56 @@ export async function handleManifestsCommand({
           `  ${precondition.kind} ${precondition.resourceKind}/${precondition.resourceName}: ${precondition.message}`
         );
       }
+    }
+    return 0;
+  }
+
+  if (sub === "undeploy") {
+    // The `--yes` gate (PENDIENTES/12-undeploy.spec.md T02): without it the
+    // command PREVIEWS and refuses, calling nothing — the destructive verb
+    // must never run on a bare `undeploy -f <file>`.
+    if (parsed.values.yes !== true) {
+      const preview = buildUndeployPreview(manifest);
+      if (!preview.ok) {
+        stderr(`yoizen manifests undeploy: ${preview.error.message}`);
+        return 1;
+      }
+      stdout(formatVerdictTable(preview.value.rows));
+      stderr("");
+      stderr(
+        `yoizen manifests undeploy: this would DELETE the resources above that manifest '${preview.value.name}' owns, in reverse dependency order (server-side). 'external (kept)' resources are never deleted.`
+      );
+      stderr(
+        "yoizen manifests undeploy: the list comes from the FILE (declaration order); resources already gone report 'not_found' during the run."
+      );
+      stderr(
+        `yoizen manifests undeploy: NOTHING was deleted — re-run with --yes to confirm: yoizen manifests undeploy -f ${file} --yes`
+      );
+      return 1;
+    }
+
+    const undeployResult = await runUndeployCommand({
+      client,
+      manifest,
+      log: stderr,
+    });
+    if (!undeployResult.ok) {
+      stderr(`yoizen manifests undeploy: ${undeployResult.error.message}`);
+      for (const line of formatErrorDetail(undeployResult.error)) {
+        stderr(line);
+      }
+      return 1;
+    }
+    if (undeployResult.value.kind === "already_absent") {
+      // The server's 404: a fully successful run deletes the stored record
+      // LAST, so a SECOND full undeploy lands here. Decision 6 — success.
+      stdout(
+        `already undeployed (nothing stored under '${undeployResult.value.name}')`
+      );
+      return 0;
+    }
+    for (const line of formatUndeployReport(undeployResult.value.report)) {
+      stdout(line);
     }
     return 0;
   }

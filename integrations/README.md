@@ -78,12 +78,40 @@ cd sdk && bun link   # exposes `yoizen` on PATH; or prefix calls with `cd sdk &&
 yoizen manifests validate -f manifest.yaml
 yoizen manifests plan     -f manifest.yaml
 yoizen manifests apply    -f manifest.yaml --secrets-from-env
+yoizen manifests undeploy -f manifest.yaml --yes
 ```
 
 `validate` and `plan` never mutate anything. `apply` executes the latest
 plan in dependency order; a second `apply` against a converged manifest is a
 no-op (`0 create / 0 update`, all verdicts `noop`) — the idempotence proof
 every migrated integration's README documents.
+
+### Teardown: `undeploy`
+
+`apply` never deletes; `undeploy` is the explicit teardown verb. It deletes,
+in the REVERSE of apply's dependency order, exactly the resources the STORED
+manifest owns (plus that manifest's `secrets` bindings, each after its owner
+resource). The file on disk is read only for its `metadata.name`. Resources
+the manifest declares `external: true` are NEVER deleted — a sample that
+consumes the shared Telegram channel or the shared connector catalog cannot
+tear them down.
+
+```bash
+yoizen manifests undeploy -f manifest.yaml          # PREVIEW: prints KIND/NAME/VERDICT (delete | external (kept)), deletes nothing, exits 1
+yoizen manifests undeploy -f manifest.yaml --yes    # runs it: prints KIND/NAME/ACTION + counts
+```
+
+`--yes` is required; there is no interactive prompt (scripts and CI have no
+TTY). The run is idempotent: resources already gone report `not_found` and
+the command still exits 0, and running a full undeploy TWICE prints
+`already undeployed (nothing stored under '<name>')` and exits 0 (the stored
+manifest record is deleted last, so the second call gets a 404 which is a
+success, not a failure). If another stored manifest references a resource
+this one owns as `external: true`, the server refuses with 409 and the CLI
+lists every blocking `manifest -> kind/name` pair — undeploy or edit that
+manifest first (there is no `--force`). External side effects (Telegram
+`setWebhook`, HubSpot properties, Docker images) stay manual, mirroring
+bootstrap.
 
 ### Provisioning from a blank tenant (dependency order)
 

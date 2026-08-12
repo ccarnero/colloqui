@@ -27,11 +27,16 @@ import { ProvisioningProxyService } from "./provisioning-proxy.service";
  * decorator — the global `TenantGuard`/`AuthGuard` `APP_GUARD`s apply.
  *
  * Route scopes (SPEC.md T07):
- * - manifests validate/put/get/plan/apply: any tenant-scoped JWT
+ * - manifests validate/put/get/plan/apply/undeploy: any tenant-scoped JWT
  *   (tenant-operator level) — no extra `@RequirePermission`, same bare
  *   `@Scopes`-free default every other tenant proxy route in this gateway
  *   already relies on (AuthGuard allows any authenticated tenant:<id> token
- *   whose tenant matches the request).
+ *   whose tenant matches the request). `undeploy` deliberately sits at the
+ *   SAME level as `apply` (PENDIENTES/12-undeploy.spec.md T02): both mutate
+ *   the tenant's provisioned resources, and the SPEC asked for the existing
+ *   proxy pattern — the destructive confirmation lives in the CLI's `--yes`
+ *   gate, not in a gateway permission (a stricter scope here would be a
+ *   ruling of its own, not a T02 side effect).
  * - `PUT /provisioning/secrets/:name`: tenant ADMIN scope, mirrored from
  *   `TrackingController.getPayload`'s strictest precedent — explicit
  *   `@Scopes("platform", "tenant")` + `@RequirePermission("secrets:write")`
@@ -118,6 +123,34 @@ export class ProvisioningController {
     });
     reply.status(status);
     return responseBody;
+  }
+
+  /**
+   * PENDIENTES/12-undeploy.spec.md T02: the declarative teardown verb, same
+   * status-passthrough shape as `plan`/`apply` because
+   * `undeploy.controller.ts` downstream answers with three typed statuses
+   * (its header documents them):
+   * - 200 — the `ManifestUndeploySuccess` report;
+   * - 404 — no stored manifest by that name; a SECOND full undeploy lands
+   *   here (the record is deleted last), which the SDK/CLI render as
+   *   "already undeployed", so it must reach the caller unmodified;
+   * - 409 — the typed `{ error: { kind: "undeploy_blocked", dependents } }`
+   *   shared-resource guard, a `cycle_detected`, or a partial run.
+   * No request body: undeploy operates on the STORED manifest only.
+   */
+  @Post("manifests/:name/undeploy")
+  async undeploy(
+    @Req() req: ITenantScopedRequest,
+    @Res({ passthrough: true }) reply: FastifyReply,
+    @Param("name") name: string
+  ): Promise<object> {
+    const { status, body } = await this.proxy.proxyWithStatus({
+      method: "POST",
+      path: `/manifests/${encodeURIComponent(name)}/undeploy`,
+      tenantId: req[REQUEST_TENANT_KEY],
+    });
+    reply.status(status);
+    return body;
   }
 
   /**

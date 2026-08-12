@@ -137,6 +137,62 @@ describe("ProvisioningController", () => {
     expect(status).toHaveBeenCalledWith(404);
   });
 
+  it("undeploy delegates to proxyWithStatus with the encoded name and tenant, no body", async () => {
+    const { reply, status } = fakeReply();
+    const result = await controller.undeploy(
+      req as never,
+      reply as never,
+      "my manifest"
+    );
+    expect(proxyWithStatus).toHaveBeenCalledWith({
+      method: "POST",
+      path: "/manifests/my%20manifest/undeploy",
+      tenantId: "t1",
+    });
+    expect(status).toHaveBeenCalledWith(200);
+    expect(result).toEqual({ ok: true });
+  });
+
+  it("undeploy forwards the 409 undeploy_blocked typed body verbatim (dependents list intact)", async () => {
+    const blocked = {
+      error: {
+        kind: "undeploy_blocked",
+        manifestName: "acme-support",
+        dependents: [
+          {
+            manifestName: "other-manifest",
+            resourceKind: "channel",
+            resourceName: "shared-http-in",
+          },
+        ],
+        message: "manifest 'acme-support' cannot be undeployed",
+      },
+    };
+    proxyWithStatus.mockImplementationOnce(() =>
+      Promise.resolve({ status: 409, body: blocked })
+    );
+    const { reply, status } = fakeReply();
+    const result = await controller.undeploy(
+      req as never,
+      reply as never,
+      "acme-support"
+    );
+    expect(status).toHaveBeenCalledWith(409);
+    expect(result).toEqual(blocked);
+  });
+
+  it("undeploy forwards a 404 manifest_not_found status verbatim (already undeployed — the CLI renders it as such)", async () => {
+    proxyWithStatus.mockImplementationOnce(() =>
+      Promise.resolve({
+        status: 404,
+        body: { message: "No manifest named 'x' found for this tenant" },
+      })
+    );
+    const { reply, status } = fakeReply();
+    await controller.undeploy(req as never, reply as never, "x");
+    expect(status).toHaveBeenCalledWith(404);
+  });
+
   it("putSecret delegates to proxy with the encoded name, tenant, and value body verbatim", async () => {
     const body = {
       value: "s3cr3t",

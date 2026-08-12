@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ConflictError } from "../domain/errors.js";
+import { ConflictError, NotFoundError } from "../domain/errors.js";
 import { CliError } from "./cli-error.js";
 import { runCli } from "./run-cli.js";
 
@@ -23,11 +23,42 @@ const samplePlan = {
   preconditions: [],
 };
 
+const sampleUndeployReport = {
+  manifestName: "support-bot",
+  resources: [
+    { kind: "workflow", name: "fanout", action: "deleted", externalId: "wf-1" },
+    { kind: "connector", name: "pokeapi", action: "skipped_external" },
+  ],
+  secrets: [
+    {
+      name: "telegram-bot-token",
+      scope: { kind: "channel", owner: "http-in" },
+      action: "deleted",
+    },
+  ],
+  deletedCount: 1,
+  notFoundCount: 0,
+  skippedCount: 1,
+  checksumRowsDeleted: 0,
+  manifestRecordDeleted: true,
+  durationMs: 8,
+};
+
+const undeployableManifest = {
+  metadata: { name: "support-bot" },
+  spec: {
+    channels: [{ name: "http-in" }],
+    connectors: [{ name: "pokeapi", external: true }],
+    workflows: [{ name: "fanout" }],
+  },
+};
+
 function fakeClient(overrides: {
   validate?: () => Promise<unknown>;
   put?: () => Promise<unknown>;
   plan?: () => Promise<unknown>;
   apply?: () => Promise<unknown>;
+  undeploy?: () => Promise<unknown>;
   secretsSet?: () => Promise<unknown>;
 }) {
   return {
@@ -44,6 +75,7 @@ function fakeClient(overrides: {
           noopCount: 0,
           durationMs: 1,
         })),
+      undeploy: overrides.undeploy ?? (async () => sampleUndeployReport),
     },
     secrets: {
       set: overrides.secretsSet ?? (async () => ({})),
@@ -377,6 +409,146 @@ test("runCli() 'manifests apply' failure prints a cycle_detected failure.kind bo
   assert.match(output, /cycle detected: connector:a -> agent:b -> connector:a/);
 });
 
+test("runCli() 'manifests undeploy' WITHOUT --yes previews the deletion, exits 1, and NEVER calls the client", async () => {
+  const stdout = collector();
+  const stderr = collector();
+  let undeployCalled = false;
+  const client = fakeClient({
+    undeploy: async () => {
+      undeployCalled = true;
+      return sampleUndeployReport;
+    },
+  });
+
+  const exitCode = await runCli({
+    argv: ["manifests", "undeploy", "-f", "irrelevant.yaml"],
+    client: client as never,
+    readManifest: () => ({ ok: true, value: undeployableManifest }),
+    stdout: stdout.fn,
+    stderr: stderr.fn,
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(undeployCalled, false);
+  const output = [...stdout.lines, ...stderr.lines].join("\n");
+  // The manifest's own resources, with the delete/external verdict column.
+  assert.match(output, /KIND\tNAME\tVERDICT/);
+  assert.match(output, /channel\thttp-in\tdelete/);
+  assert.match(output, /workflow\tfanout\tdelete/);
+  assert.match(output, /connector\tpokeapi\texternal \(kept\)/);
+  // ...and the instruction to confirm — no interactive prompt (non-TTY safe).
+  assert.match(output, /--yes/);
+  assert.doesNotMatch(output, /undefined/);
+});
+
+test("runCli() 'manifests undeploy --yes' calls the client and prints the outcome table plus the counts summary (no 'undefined' anywhere)", async () => {
+  const stdout = collector();
+  const stderr = collector();
+  const calls: string[] = [];
+  const client = fakeClient({
+    undeploy: async (...args: unknown[]) => {
+      calls.push(args[0] as string);
+      return sampleUndeployReport;
+    },
+  });
+
+  const exitCode = await runCli({
+    argv: ["manifests", "undeploy", "-f", "irrelevant.yaml", "--yes"],
+    client: client as never,
+    readManifest: () => ({ ok: true, value: undeployableManifest }),
+    stdout: stdout.fn,
+    stderr: stderr.fn,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(calls, ["support-bot"]);
+  const output = stdout.lines.join("\n");
+  assert.match(output, /KIND\tNAME\tACTION/);
+  assert.match(output, /workflow\tfanout\tdeleted/);
+  assert.match(output, /connector\tpokeapi\tskipped_external/);
+  assert.match(output, /telegram-bot-token \(channel:http-in\): deleted/);
+  assert.match(
+    output,
+    /deleted=1 notFound=0 skipped=1 checksumRows=0 manifestRecordDeleted=true durationMs=8/
+  );
+  assert.doesNotMatch(
+    [...stdout.lines, ...stderr.lines].join("\n"),
+    /undefined/
+  );
+});
+
+test("runCli() 'manifests undeploy --yes' renders a 404 as 'already undeployed' and exits 0 (second full undeploy, decision 6)", async () => {
+  const stdout = collector();
+  const stderr = collector();
+  const client = fakeClient({
+    undeploy: async () => {
+      throw new NotFoundError("request failed: not found", {
+        details: {
+          httpStatus: 404,
+          body: { message: "No manifest named 'support-bot' found" },
+        },
+      });
+    },
+  });
+
+  const exitCode = await runCli({
+    argv: ["manifests", "undeploy", "-f", "irrelevant.yaml", "--yes"],
+    client: client as never,
+    readManifest: () => ({ ok: true, value: undeployableManifest }),
+    stdout: stdout.fn,
+    stderr: stderr.fn,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(
+    stdout.lines.join("\n"),
+    /already undeployed \(nothing stored under 'support-bot'\)/
+  );
+});
+
+test("runCli() 'manifests undeploy --yes' renders the 409 undeploy_blocked dependents and exits 1", async () => {
+  const stderr = collector();
+  const client = fakeClient({
+    undeploy: async () => {
+      throw new ConflictError("request failed: conflict", {
+        details: {
+          httpStatus: 409,
+          body: {
+            error: {
+              kind: "undeploy_blocked",
+              manifestName: "support-bot",
+              dependents: [
+                {
+                  manifestName: "http-fanout-telegram",
+                  resourceKind: "channel",
+                  resourceName: "http-in",
+                },
+              ],
+              message:
+                "manifest 'support-bot' cannot be undeployed: 1 resource(s) it owns are referenced as external by other stored manifests",
+            },
+          },
+        },
+      });
+    },
+  });
+
+  const exitCode = await runCli({
+    argv: ["manifests", "undeploy", "-f", "irrelevant.yaml", "--yes"],
+    client: client as never,
+    readManifest: () => ({ ok: true, value: undeployableManifest }),
+    stdout: () => {},
+    stderr: stderr.fn,
+  });
+
+  assert.equal(exitCode, 1);
+  const output = stderr.lines.join("\n");
+  assert.match(output, /undeploy request failed for 'support-bot'/);
+  assert.match(output, /blocked by 1 dependent/);
+  assert.match(output, /http-fanout-telegram -> channel\/http-in/);
+  assert.doesNotMatch(output, /undefined/);
+});
+
 test("runCli() reports a clear error for an unknown command", async () => {
   const stderr = collector();
   const exitCode = await runCli({
@@ -409,8 +581,45 @@ test("runCli() 'manifests --help' prints the group usage to stdout and exits 0 w
     assert.match(output, /validate/);
     assert.match(output, /plan/);
     assert.match(output, /apply/);
+    assert.match(output, /undeploy/);
     assert.match(output, /--secrets-from-env/);
+    assert.match(output, /--yes/);
   }
+});
+
+test("runCli() 'manifests undeploy --help' prints the subcommand usage (mentioning --yes) and exits 0 without reading a manifest", async () => {
+  const stdout = collector();
+  const exitCode = await runCli({
+    argv: ["manifests", "undeploy", "--help"],
+    client: fakeClient({
+      undeploy: async () => {
+        throw new Error("client must not be called for --help");
+      },
+    }) as never,
+    readManifest: (() => {
+      throw new Error("readManifest must not be called for --help");
+    }) as never,
+    stdout: stdout.fn,
+    stderr: () => {},
+  });
+  assert.equal(exitCode, 0);
+  const output = stdout.lines.join("\n");
+  assert.match(output, /usage: yoizen manifests undeploy/);
+  assert.match(output, /--yes/);
+});
+
+test("runCli() 'manifests bogus' unknown-subcommand usage line lists undeploy", async () => {
+  const stderr = collector();
+  const exitCode = await runCli({
+    argv: ["manifests", "bogus"],
+    client: fakeClient({}) as never,
+    stdout: () => {},
+    stderr: stderr.fn,
+  });
+  assert.equal(exitCode, 1);
+  const output = stderr.lines.join("\n");
+  assert.match(output, /unknown subcommand 'bogus'/);
+  assert.match(output, /undeploy/);
 });
 
 test("runCli() 'manifests apply --help' prints the subcommand usage and exits 0 without reading a manifest", async () => {

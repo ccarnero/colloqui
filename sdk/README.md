@@ -767,6 +767,7 @@ cd sdk && bun run bin/yoizen.ts <command>
 yoizen manifests validate -f <file>                 # schema + structural checks only, never mutates
 yoizen manifests plan     -f <file>                 # read-only diff; prints a KIND/NAME/VERDICT table
 yoizen manifests apply    -f <file> [--secrets-from-env]
+yoizen manifests undeploy -f <file> [--yes]         # teardown; without --yes it only PREVIEWS
 yoizen secrets put <name> --scope <kind>:<owner> --value-env <VAR>
 ```
 
@@ -796,6 +797,49 @@ missing binding.
 `yoizen secrets put` is the equivalent one-off command outside a manifest
 apply: it reads the value from the env var named by `--value-env` and is
 never logged.
+
+### `undeploy` and its `--yes` gate
+
+`undeploy` is the teardown counterpart of `apply` (`apply` itself still never
+deletes anything). It deletes, in the REVERSE of apply's dependency order,
+exactly the resources the **stored** manifest owns — the file on disk is read
+for one thing only: its `metadata.name`. Resources the manifest declares
+`external: true` are never deleted (they were never owned), and the manifest's
+`secrets` bindings die with their owner resource.
+
+```bash
+yoizen manifests undeploy -f manifest.yaml          # PREVIEW only — deletes nothing, exits 1
+yoizen manifests undeploy -f manifest.yaml --yes    # runs the teardown
+```
+
+Without `--yes`, the command prints the manifest's resources as a
+`KIND/NAME/VERDICT` table (`delete` / `external (kept)`), tells you to re-run
+with `--yes`, and exits 1 having called nothing. There is no interactive
+prompt — the CLI has to work in CI and e2e scripts with no TTY. The preview is
+built from the FILE, so it lists resources in declaration order (the reverse
+dependency order is computed server-side) and cannot know what is still live.
+
+With `--yes`, it prints a `KIND/NAME/ACTION` table — the action per resource is
+`deleted`, `not_found`, `skipped_external` or `skipped_no_delete_api` — plus
+the secret bindings and a `deleted=… notFound=… skipped=… checksumRows=…
+manifestRecordDeleted=… durationMs=…` summary.
+
+Two behaviours worth knowing:
+
+- **Idempotent**: undeploying resources that are already gone reports
+  `not_found` and still exits 0. A SECOND full undeploy gets a 404 from the
+  server (a fully successful run deletes the stored manifest record last) and
+  the CLI renders it as `already undeployed (nothing stored under '<name>')`,
+  exit **0** — not a failure.
+- **Shared resources block it**: if another stored manifest references a
+  resource this one owns as `external: true`, the server refuses with 409 and
+  the CLI lists every blocking `manifest -> kind/name` pair, exit 1. There is
+  no `--force`; undeploy or edit the dependent manifest first. A partial run
+  (some delete failed) keeps the stored manifest, so re-running the same
+  command resumes.
+
+External side effects are NOT undone (Telegram `setWebhook`, HubSpot
+properties, images) — same manual boundary bootstrap has.
 
 ## Development
 

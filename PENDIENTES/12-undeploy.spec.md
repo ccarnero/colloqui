@@ -257,8 +257,19 @@ bash scripts/e2e/http-workflow.sh
       round: stamp manifest:<manifest>/<resource>); second FULL undeploy
       404s (record deleted last) — T02 must render it "already undeployed"
       exit 0; test-tree typecheck baseline 183 pre-existing errors)
-- [ ] T02 — gateway proxy + SDK `manifests.undeploy()` + CLI verb with
-      `--yes` gate and `--help`, docs updated
+- [x] T02 — gateway proxy + SDK `manifests.undeploy()` + CLI verb with
+      `--yes` gate and `--help`, docs updated (2026-08-12, gates + G5
+      full api-gateway 368/0 green, sdk 547/0, 2× APPROVED first attempt.
+      SDK types mirror undeploy.interfaces.ts field-for-field; 404 renders
+      "already undeployed" exit 0; 409 renders dependents; preview without
+      --yes calls nothing, exit 1. Reviewer notes for T03/rounds: exercise
+      the second-undeploy 404 against the REBUILT gateway in the live proof
+      (version-skew false-success risk until then — FINDING: typed 404 body
+      kind:"manifest_not_found" for a provisioning round); SecretScopeKind
+      drift sdk vs shared (missing systemVariable/skill — fold into T07
+      ruling); double "manifests <verb>:" error prefix mirrors apply
+      (cleanup round across verbs); gateway authz for undeploy sits at
+      apply's level — dedicated permission needs its own ruling)
 - [ ] T03 — e2e cleanup migrated to undeploy, live cycle proven, register
       05 teardown item closed
 

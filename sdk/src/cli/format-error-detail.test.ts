@@ -83,6 +83,92 @@ test("formatErrorDetail() renders a cycle_detected failure.kind body", () => {
   assert.match(lines.join("\n"), /dependency cycle detected/);
 });
 
+test("formatErrorDetail() renders an undeploy_blocked 409 with EVERY dependent (manifest + resource pair), not just the message", () => {
+  // Real shape of `UndeployBlockedError`
+  // (`services/provisioning-service/src/modules/undeploy/domain/undeploy.interfaces.ts`),
+  // decision 4's shared-resource guard.
+  const cause = new ConflictError("request failed: conflict", {
+    details: {
+      httpStatus: 409,
+      body: {
+        error: {
+          kind: "undeploy_blocked",
+          manifestName: "telegram-transform-reply",
+          dependents: [
+            {
+              manifestName: "http-fanout-telegram",
+              resourceKind: "channel",
+              resourceName: "telegram-transform-reply-bot",
+            },
+            {
+              manifestName: "ai-agent-triage",
+              resourceKind: "connector",
+              resourceName: "openai",
+            },
+          ],
+          message:
+            "manifest 'telegram-transform-reply' cannot be undeployed: 2 resource(s) it owns are referenced as external by other stored manifests. Undeploy or edit those manifests first.",
+        },
+      },
+    },
+  });
+  const cliError = new CliError(
+    "manifests undeploy: undeploy request failed for 'telegram-transform-reply'",
+    { cause }
+  );
+
+  const lines = formatErrorDetail(cliError).join("\n");
+
+  assert.match(lines, /blocked by 2 dependent/);
+  assert.match(
+    lines,
+    /http-fanout-telegram -> channel\/telegram-transform-reply-bot/
+  );
+  assert.match(lines, /ai-agent-triage -> connector\/openai/);
+  assert.match(lines, /Undeploy or edit those manifests first/);
+  assert.doesNotMatch(lines, /undefined/);
+});
+
+test("formatErrorDetail() renders an undeploy_failed 409 (partial run) with the failing step and the resume hint", () => {
+  const cause = new ConflictError("request failed: conflict", {
+    details: {
+      httpStatus: 409,
+      body: {
+        error: {
+          kind: "undeploy_failed",
+          manifestName: "http-fanout-telegram",
+          resources: [{ kind: "workflow", name: "fanout", action: "deleted" }],
+          secrets: [],
+          pending: [
+            { kind: "channel", name: "http-in" },
+            { kind: "connector", name: "pokeapi" },
+          ],
+          failure: {
+            kind: "downstream_error",
+            resourceKind: "channel",
+            resourceName: "http-in",
+            message: "channel-service returned 500 deleting account 'http-in'",
+          },
+          manifestRecordDeleted: false,
+          durationMs: 9,
+        },
+      },
+    },
+  });
+  const cliError = new CliError(
+    "manifests undeploy: undeploy request failed for 'http-fanout-telegram'",
+    { cause }
+  );
+
+  const lines = formatErrorDetail(cliError).join("\n");
+
+  assert.match(lines, /downstream_error on channel\/http-in/);
+  assert.match(lines, /channel-service returned 500/);
+  assert.match(lines, /processed=1 pending=2/);
+  assert.match(lines, /re-run .*undeploy.* to resume/);
+  assert.doesNotMatch(lines, /undefined/);
+});
+
 test("formatErrorDetail() renders a PUT validation errors[] body", () => {
   const cause = new SdkError("request failed with status 400", {
     code: "HTTP",

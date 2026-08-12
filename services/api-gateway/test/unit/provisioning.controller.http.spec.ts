@@ -43,6 +43,7 @@ const HANDLER_NAMES = [
   "getManifest",
   "plan",
   "apply",
+  "undeploy",
   "putSecret",
   "listSecrets",
 ] as const;
@@ -214,6 +215,68 @@ describe("ProvisioningController — HTTP contract (payload + status passthrough
       payload: {},
     });
     expect(res.statusCode).toBe(409);
+  });
+
+  it("POST manifests/:name/undeploy returns 200 with the downstream report body", async () => {
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/provisioning/manifests/acme-support/undeploy",
+    });
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.payload)).toEqual({ ok: true });
+    expect(proxyWithStatus).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "POST",
+        path: "/manifests/acme-support/undeploy",
+      })
+    );
+  });
+
+  it("POST manifests/:name/undeploy surfaces a 409 undeploy_blocked body unmodified", async () => {
+    proxyWithStatus.mockImplementationOnce(() =>
+      Promise.resolve({
+        status: 409,
+        body: {
+          error: {
+            kind: "undeploy_blocked",
+            manifestName: "acme-support",
+            dependents: [
+              {
+                manifestName: "other-manifest",
+                resourceKind: "connector",
+                resourceName: "shared-openai",
+              },
+            ],
+            message: "manifest 'acme-support' cannot be undeployed",
+          },
+        },
+      })
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/provisioning/manifests/acme-support/undeploy",
+    });
+    expect(res.statusCode).toBe(409);
+    expect(JSON.parse(res.payload).error.dependents).toEqual([
+      {
+        manifestName: "other-manifest",
+        resourceKind: "connector",
+        resourceName: "shared-openai",
+      },
+    ]);
+  });
+
+  it("POST manifests/:name/undeploy surfaces a thrown 404 manifest_not_found unmodified (second full undeploy)", async () => {
+    proxyWithStatus.mockImplementationOnce(() =>
+      Promise.reject(
+        new HttpException("No manifest named 'x' found for this tenant", 404)
+      )
+    );
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/v1/provisioning/manifests/x/undeploy",
+    });
+    expect(res.statusCode).toBe(404);
   });
 
   it("PUT secrets/:name forwards the value body verbatim to the downstream proxy", async () => {
