@@ -5,21 +5,95 @@ Summary: Huecos estructurales que aparecieron al construir, más dos TODOs de ar
 
 ---
 
-## Sin teardown declarativo — **PARKEADO a Fase 4**
+## Sin teardown declarativo — **EJECUTADO 2026-08-12**
 
-`provisioning-service` expone `validate`, `PUT :name`, `GET :name`, `plan` y
-`apply` — **ninguna ruta de delete**, ni concepto de teardown. No existe
-"borrá este manifiesto y sus recursos".
+> El diagnóstico original (que se deja tal cual, porque es lo que motivó la
+> spec): `provisioning-service` exponía `validate`, `PUT :name`, `GET :name`,
+> `plan` y `apply` — **ninguna ruta de delete**, ni concepto de teardown. No
+> existía "borrá este manifiesto y sus recursos". Consecuencia: todo script e2e
+> borraba recurso por recurso de forma imperativa. No era desprolijidad de los
+> scripts — es que no había alternativa. El "teardown sweep" de
+> `manifest-apply.sh` tenía el mismo problema; su propio comentario decía que
+> iba *"straight to connector-admin"*. **Verificado**, no supuesto: se listaron
+> las rutas de los controllers.
 
-Consecuencia: todo script e2e borra recurso por recurso de forma imperativa.
-No es desprolijidad de los scripts — es que no hay alternativa. El "teardown
-sweep" de `manifest-apply.sh` tiene el mismo problema; su propio comentario dice
-que va *"straight to connector-admin"*.
+Adelantado fuera de la tanda de Fase 4 por ruling del usuario (2026-08-12) y
+ejecutado con la spec `PENDIENTES/12-undeploy.spec.md`, en tres tareas:
 
-**Verificado**, no supuesto: se listaron las rutas de los controllers.
+- **T01** — `b4ac9894`: nuevo verbo `POST /manifests/:name/undeploy` en
+  `provisioning-service`. Borra, en el **orden inverso** al de `apply`,
+  exactamente los recursos que el manifiesto **guardado** posee; los `external:
+  true` nunca se tocan (`skipped_external`). Outcomes por recurso
+  (`deleted | not_found | skipped_external | skipped_no_delete_api`),
+  stop-at-first-error con reporte parcial, guard 409 `undeploy_blocked` cuando
+  otro manifiesto guardado consume un recurso de éste (decisión 4, sin
+  `--force` en v1), 404 idempotente, y `DELETE /secrets/:name` (que faltaba)
+  para que los secretos mueran con su dueño (decisión 2). El registro guardado
+  se borra **último**, y sólo si nada falló: un undeploy parcial lo conserva
+  para que re-correrlo resuma. Inventario: **los 9 admin APIs downstream tienen
+  ruta de delete** — cero `skipped_no_delete_api`.
+- **T02** — `953251b9`: proxy del api-gateway (`POST
+  /api/provisioning/manifests/:name/undeploy`), `client.manifests.undeploy()`
+  en el SDK con tipos espejo de `undeploy.interfaces.ts`, y el verbo de CLI
+  `yoizen manifests undeploy -f <file> [--yes]` (sin `--yes` sólo muestra lo
+  que borraría y sale 1; el 404 se renderiza "already undeployed" y sale 0; el
+  409 lista los dependientes) más los dos niveles de `--help`.
+- **T03** — esta tarea (commit pendiente, lo pone el orquestador): los dos
+  scripts e2e pasaron a teardown declarativo. En `scripts/e2e/http-workflow.sh`
+  el borrado deja de ser las cuatro pasadas imperativas y pasa a ser un
+  `undeploy` del manifiesto de la corrida vía gateway, seguido de una
+  verificación explícita, recurso por recurso, de que **cada** recurso del
+  manifiesto quedó borrado (assertion que antes no existía: sólo se miraba el
+  status del DELETE); las cuatro pasadas quedan degradadas a barrido de residuo
+  no-propiedad-del-manifiesto. `scripts/e2e/manifest-apply.sh` undeploya sus
+  cinco manifiestos (base, showcase, LibraryManifest, negativo y T05) contra el
+  ingress de `provisioning-service`, con su teardown imperativo y su barrido
+  intactos abajo como red de seguridad.
 
-Fase 4 lo toma en el orden `defaultCache` → `provider` → publish → teardown →
-file-source, así que este ítem entra anteúltimo.
+**Qué sigue siendo imperativo, a propósito:**
+
+- Los **efectos externos** (decisión 3 de la spec): quitar el `setWebhook` de
+  Telegram, las propiedades de HubSpot, las imágenes Docker. Espejo del
+  bootstrap — nunca entraron por manifiesto, no salen por undeploy.
+- Los barridos por prefijo de nombre de los dos scripts, que quedan como red de
+  seguridad para lo que undeploy **no puede** alcanzar: residuo de corridas
+  anteriores (cada corrida pisa el manifiesto con nombres nuevos, así que los
+  viejos ya no están declarados en ningún lado) y la muerte de
+  `manifest-showcase-driver.ts` antes de imprimir su JSON, que deja los nombres
+  de tres manifiestos fuera del alcance del script. Ese camino está pinneado por
+  `scripts/e2e/teardown-regression.sh`.
+
+**Hallazgos que sobreviven** (cada uno es su propia ronda, ninguno bloquea):
+
+- **Undeploy no emite eventos de auditoría.** `apply` emite `apply_started` /
+  `resource_applied` / `apply_completed`; el verbo nuevo no emite nada — hacen
+  falta clases de evento nuevas registradas en la taxonomía.
+- **Falta un marcador de propiedad por manifiesto.** Ningún kind guarda "me
+  creó el manifiesto X": `channels-writer.ts` estampa
+  `externalId: "manifest:<nombre del CANAL>"`, que prueba procedencia de apply
+  pero no de QUÉ manifiesto; el resto se borra buscando por nombre. Dos
+  manifiestos con un recurso del mismo nombre son indistinguibles al
+  desmontar. Ronda de writers: estampar `manifest:<manifiesto>/<recurso>`.
+- **El 404 del segundo undeploy no tiene cuerpo tipado.** Llega como texto, y
+  el SDK/CLI lo interpretan por status; una ronda de provisioning debería
+  devolver `kind: "manifest_not_found"`.
+- **Las convenciones de not-found downstream están partidas** entre 404 y
+  200-con-`false` (borrados lógicos), y el deleter tiene que tolerar ambas.
+- ~~**El ClusterRole de secrets no tiene el verbo `delete`**~~ — **CERRADO en la
+  misma T03**. Hallazgo real (`knative/services/rbac/cluster-role.yaml` tenía
+  `create`/`get`/`list`/`update`/`patch`): `deleteKey` (`k8s-secrets-store.ts`)
+  reescribe el Secret cuando quedan otras claves —eso entra por `update`—, pero
+  cuando borra la **última** llama a `deleteNamespacedSecret`, que RBAC
+  rechazaba; undeployar un manifiesto cuyo binding es la única clave de su
+  Secret terminaba en `downstream_error` (409 parcial). El orquestador lo
+  declaró en alcance (la decisión 2 de la spec — "los secretos mueren con el
+  manifiesto" — exige el grant) y se agregó `delete` a la regla de `secrets`
+  del ClusterRole `provisioning-service-secrets-manager`, con el comentario del
+  yaml reescrito: la razón vieja ("no `delete`, T05 es create-or-update") queda
+  superada, y la decisión 8 sigue siendo cierta para `apply`, que nunca borra.
+  Aplicado al cluster el 2026-08-12 y verificado en vivo: undeploy de un
+  manifiesto de prueba con secret binding borró físicamente el Secret k8s
+  (`psec-channel-...`) al remover su última key.
 
 ## El publish de un agente no se puede expresar en un manifiesto — **PARKEADO a Fase 4**
 
@@ -31,7 +105,8 @@ el e2e lo hace a mano.
 
 `channelSchema` tiene `type` pero no `provider`: el manifiesto sigue sin poder
 fijarlo. Eso es lo que queda abierto y se trata en Fase 4 (orden:
-`defaultCache` → `provider` → publish → teardown → file-source).
+`defaultCache` → `provider` → publish → file-source; el `teardown` salió de esa
+tanda y ya está ejecutado — ver el primer ítem de este archivo).
 
 Lo cosmético ya murió en T02 (`260d8bd4`): la columna `provider` perdió su
 `DEFAULT 'meta'` (más un `ALTER COLUMN ... DROP DEFAULT` idempotente para los

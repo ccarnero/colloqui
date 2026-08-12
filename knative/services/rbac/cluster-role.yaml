@@ -50,9 +50,20 @@ rules:
 # `psec-<kind>-<owner>`) is APPLICATION-layer, enforced by
 # `SecretsBrokerService` — k8s RBAC cannot filter by label or by Secret name,
 # so this grant is intentionally broad at the k8s layer (consistent with the
-# platform's no-NATS-ACLs stance, SPEC.md decision 5). No `delete` verb: T05
-# is create-or-update only (SPEC.md decision 8's "no prune" stance extends
-# here too — secrets are never programmatically deleted by this service).
+# platform's no-NATS-ACLs stance, SPEC.md decision 5).
+#
+# `delete` (added 2026-08-12, PENDIENTES/12-undeploy.spec.md T01+T03): the
+# teardown verb `POST /manifests/:name/undeploy` deletes each `secrets:`
+# binding of the manifest it tears down through `DELETE /secrets/:name` —
+# user decision 2 of that spec, "secrets die with the manifest". Removing a
+# key while OTHER keys remain rewrites the Secret (`update`), but removing
+# the LAST key deletes the Secret object itself (`deleteKey` in
+# `k8s-secrets-store.ts`), which needs this verb. That supersedes the
+# earlier "no `delete` verb, T05 is create-or-update only" rationale here:
+# SPEC.md decision 8 stays TRUE for `apply` — the apply path still never
+# deletes anything, and no writer on it gained delete behaviour — deletion
+# is only ever reached through the separate, explicitly requested undeploy
+# verb.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -63,4 +74,4 @@ metadata:
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    verbs: ["create", "get", "list", "update", "patch"]
+    verbs: ["create", "get", "list", "update", "patch", "delete"]

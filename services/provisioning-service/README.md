@@ -11,7 +11,7 @@ a NEW service, not a client-side SDK applier); it never writes to other services
 tables directly — it calls their existing internal APIs (channels, connectors, agents,
 registry, workflows).
 
-## Manifest lifecycle: put -> plan -> apply, revisions
+## Manifest lifecycle: put -> plan -> apply -> undeploy, revisions
 
 1. `POST /manifests/validate` — schema + structural-rule validation only, never
    persists, never mutates. Returns `{ valid: boolean, errors: [] }`. Structural rules
@@ -25,6 +25,10 @@ registry, workflows).
 3. `POST /manifests/:name/plan` — read-only diff against live platform state. Never
    mutates anything.
 4. `POST /manifests/:name/apply` — executes the latest plan in dependency order.
+5. `POST /manifests/:name/undeploy` — the explicit teardown verb: deletes, in the
+   REVERSE of apply's dependency order, exactly the resources the stored manifest
+   owns, then the manifest record itself. `apply` still never deletes anything —
+   see "Undeploy contract" below.
 
 ## Plan contract
 
@@ -74,10 +78,13 @@ existing internal service APIs per resource kind (`AgentsWriter`, `ChannelsWrite
 `ConnectorsWriter`, `RegistryServicesWriter`, `WorkflowsWriter` — never a direct table
 write). Semantics:
 
-- **Create-or-update only** — there is **no prune/delete semantics in v1** (SPEC.md
-  user decision 8). A resource removed from the manifest is left untouched on the
-  platform; destructive reconciliation needs its own design round and is explicitly
-  out of scope for this service today.
+- **Create-or-update only** — `apply` **never deletes anything** (SPEC.md user
+  decision 8, unchanged). A resource removed from the manifest is left untouched on
+  the platform: apply does not prune, and no writer on the apply path has delete
+  behaviour. Destructive teardown is a SEPARATE, explicit verb (`undeploy`, below),
+  never a side effect of converging; destructive *reconciliation* (apply noticing a
+  resource left the manifest and removing it) still does not exist and still needs
+  its own design round.
 - **Partial-failure / resume**: apply stops at the FIRST resource-write error and
   reports `applied`/`pending` resources in the typed error body (HTTP 409,
   `error.details.body.error`). Re-applying the same manifest resumes correctly because
@@ -99,6 +106,77 @@ write). Semantics:
   `resource_applied` per resource action, and a terminal `apply_completed` or
   `apply_failed` — see "Audit events" below.
 
+## Undeploy contract
+
+`POST /manifests/:name/undeploy` (`modules/undeploy/`) is the only route in this
+service that deletes platform resources. It takes **no request body** — it always
+operates on the latest STORED revision of `:name` for the calling tenant.
+
+- **Reverse dependency order, by construction.** `build-undeploy-order.ts` calls the
+  SAME `computeResourceOrder` the planner uses for apply and reverses the result, so
+  the delete order is the exact inverse of the create order (`workflow` ->
+  `systemVariable` -> `service` -> `agent` -> `skill` -> `mcpServer` -> `connector` ->
+  `channel`) and cannot drift from it. Knowledge bases are spliced at the mirror of
+  apply's KB hook: deleted AFTER the agents that consume them, BEFORE the connectors
+  their `ingestion_config` points at. A ref cycle raises the same typed
+  `cycle_detected` (HTTP 409) the planner raises — never a hang.
+- **Owned-only deletion, per-kind key.** Each kind has one DELETION KEY and one
+  downstream DELETE route, tabulated in
+  `undeploy/infrastructure/platform-resource-deleters.provider.ts`. All nine downstream
+  admin APIs (channels, connectors, mcpServers, skills, agents, knowledge bases,
+  registry services, system variables, workflows) do expose a delete route — verified
+  live 2026-08-12 — so no kind is `skipped_no_delete_api` today; the outcome exists so
+  an unwired deleter degrades loudly instead of silently. Registry ROUTES are not a
+  separate kind (they die with `DELETE /services/:id`), and a published agent is
+  deleted directly — delete implies unpublish.
+- **No per-manifest ownership marker exists.** `channel` is the only kind with a marker
+  at all (`externalId: "manifest:<CHANNEL name>"`, stamped by `channels-writer.ts`),
+  and it proves apply-PROVENANCE, not which manifest. Every other kind is matched by
+  the stored manifest's resource NAME through the same find-by-name the writers use for
+  create-or-update. Consequence, stated rather than hidden: two manifests declaring the
+  same resource name are indistinguishable at teardown.
+- **Per-resource outcomes**: `deleted` | `not_found` | `skipped_external` |
+  `skipped_no_delete_api` (`undeploy/domain/undeploy.interfaces.ts`). `not_found` is a
+  SUCCESS — undeploy is idempotent, undeploying an already-absent resource is a no-op,
+  not an error. `external: true` resources are NEVER deleted (they were never owned) and
+  report `skipped_external`. Downstream not-found conventions are split across services
+  (404 for channels/connectors/mcpServers/agents/services/workflows, HTTP 200 with a
+  `false` body for skills/knowledge bases/system variables); both map to `not_found`.
+- **Secrets die with their owner.** Every `secrets:` binding of the manifest is deleted
+  AFTER its owner resource, through `DELETE /secrets/:name` (see "Write-only Secret
+  API" below). A binding whose owner survived (`skipped_external` /
+  `skipped_no_delete_api`) is skipped for the same reason — deleting the credential of
+  a live resource would break it.
+- **Provisioning's own state.** `kb_document_checksums` rows for the manifest are
+  removed, and the stored manifest record is deleted LAST, only when every non-skipped
+  outcome succeeded. A PARTIAL run therefore KEEPS the record so re-running resumes.
+- **Shared-resource guard (409 `undeploy_blocked`).** Before deleting anything, the
+  tenant's OTHER stored manifests are scanned for `external: true` references to this
+  manifest's owned resources. Any hit refuses the whole run with a typed body listing
+  every `(manifestName, resourceKind, resourceName)` dependent. There is no `--force`.
+- **Stop-at-first-error**, same as apply: the typed 409 body carries what was already
+  deleted (`resources`, `secrets`), what was never reached (`pending`), the failing step
+  (`failure`), and `manifestRecordDeleted: false`.
+- **Statuses**: `200` — the run finished, body is the `ManifestUndeploySuccess` report
+  (`resources`, `secrets`, `deletedCount`/`notFoundCount`/`skippedCount`,
+  `checksumRowsDeleted`, `manifestRecordDeleted`, `durationMs`); `404` — nothing stored
+  under that name, which a caller should render as "already undeployed" rather than a
+  failure, because a fully successful run deletes the stored record last and a SECOND
+  undeploy lands here; `409` — `undeploy_blocked`, `cycle_detected`, or a partial run.
+- **What undeploy does NOT do.** It emits **no audit events** (apply emits
+  `apply_started`/`resource_applied`/`apply_completed`; the teardown verb has no event
+  kinds registered yet — open gap). It also does not touch external side effects that
+  were never manifest-declared in the first place: a channel provider's webhook
+  registration, CRM properties, container images. Those are removed the same way they
+  were created — by hand.
+- **Deleting the last key of a Secret needs the RBAC `delete` verb**, and has it:
+  `deleteKey` (`k8s-secrets-store.ts`) removes a key by rewriting the Secret while
+  other keys remain (covered by `update`), but when the removed key was the LAST one it
+  calls `deleteNamespacedSecret`. The `provisioning-service-secrets-manager` ClusterRole
+  grants `delete` on secrets for exactly that (see "RBAC" below) — added 2026-08-12 by
+  `PENDIENTES/12-undeploy.spec.md`, whose decision 2 ("secrets die with the manifest")
+  requires it. The grant is only ever exercised through this verb.
+
 ## Secrets model
 
 **One k8s Secret per resource** (SPEC.md decision 4) — never a per-tenant bag. Name:
@@ -114,6 +192,13 @@ Secret object's `data` map, not as separate Secret objects.
   the resource's Secret. Echoes back **only** `{ name, scope }` — never the value
   (write-only guarantee, enforced structurally: no code path in this controller or
   service ever returns the stored value).
+- `DELETE /secrets/:name?kind=<scope kind>&owner=<owner>` — removes ONE binding.
+  The scope travels in the query string because a DELETE carries no body, and it is
+  not optional: it names the k8s Secret (`psec-<kind>-<owner>`) the key lives in.
+  Idempotent — deleting an absent secret answers 200 with `deleted: false`, never 404,
+  which is what makes `undeploy` safe to run twice. Removing the last key of a Secret
+  deletes the Secret object itself, which is why the ClusterRole carries `delete`
+  (see "RBAC" below).
 - `GET /secrets` — lists `{ name, scope }` entries only, never values.
 
 ### Secrets broker (internal-only)
@@ -326,14 +411,19 @@ content is hashed (sha256). Compared against the last-stored checksum
 apply performs the guarded fetch, so `plan` conservatively reports a `pending_fetch`
 action (counted toward the re-embed estimate) rather than under-reporting cost.
 
-## No prune in v1
+## No prune on the apply path
 
-**There is no delete/prune semantics anywhere in this service (SPEC.md user decision
-8).** A resource removed from a manifest, or a KB document no longer referenced, is
-left as-is on the platform. Destructive reconciliation (detecting and removing
-resources no longer in the manifest) needs its own design round with explicit human
-sign-off — it is not a gap to silently close, it is an intentional v1 boundary. This
-also applies to secrets: the granted RBAC ClusterRole has no `delete` verb on Secrets.
+**`plan`/`apply` still have no delete/prune semantics (SPEC.md user decision 8).** A
+resource removed from a manifest, or a KB document no longer referenced, is left as-is
+on the platform: apply converges what the manifest declares and never reaches for what
+it no longer does. Destructive *reconciliation* (apply detecting and removing resources
+that left the manifest) still needs its own design round with explicit human sign-off —
+it is not a gap to silently close, it is an intentional boundary.
+
+What DOES exist since 2026-08-12 is the explicit, separate teardown verb: `POST
+/manifests/:name/undeploy` (see "Undeploy contract") plus the `DELETE /secrets/:name`
+it needs and the `delete` verb the ClusterRole grants for it. Deleting is now something
+a caller ASKS for by name, never something apply decides.
 
 ## Audit events
 
@@ -349,8 +439,14 @@ consumer/correlation metadata.
 
 - `provisioning-service` ServiceAccount (`knative/services/base/provisioning-service-sa.yaml`).
 - `provisioning-service-secrets-manager` ClusterRole
-  (`knative/services/rbac/cluster-role.yaml`): `create`/`get`/`list`/`update`/`patch`
-  on `secrets` (no `delete` — "no prune" extends to secrets too), cluster-scoped
+  (`knative/services/rbac/cluster-role.yaml`):
+  `create`/`get`/`list`/`update`/`patch`/`delete` on `secrets`. `delete` was added
+  2026-08-12 for the undeploy verb (`PENDIENTES/12-undeploy.spec.md` decision 2,
+  "secrets die with the manifest"): `deleteKey` rewrites the Secret when other keys
+  remain (covered by `update`), but removing the LAST key calls
+  `deleteNamespacedSecret`, which without this verb is refused by RBAC. It supersedes
+  the yaml's older "no `delete` — no prune extends to secrets too" note; decision 8
+  still holds for the apply path, which never deletes anything. Cluster-scoped
   because the service must reach EVERY tenant namespace (`<tenant>-<env>-ns`), the same
   shape `registry-service` already uses for cross-namespace Knative service management.
 - `provisioning-service-secrets-manager-dev` ClusterRoleBinding
@@ -384,6 +480,9 @@ by this task:
 ## Related documents
 
 - `manual-loops/declarative-provisioning.md` — full SPEC, task queue, user decisions.
+- `PENDIENTES/12-undeploy.spec.md` — the teardown queue: the undeploy verb's own user
+  decisions (secrets die with the manifest, external side effects stay manual,
+  shared-resource protection, idempotence) and its per-task record.
 - `TAXONOMY.md` — classification rules 22 (`platform`/`provisioning`) and 23
   (`platform`/`secrets-audit`).
 - `DOCS/messaging/service-bus.md` — audit event subject family and causal-chain shape.

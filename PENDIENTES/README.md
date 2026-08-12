@@ -21,13 +21,14 @@ workflow. Nada de eso está acá — esto es solo lo que **no** se hizo.
 | 2 | Group C — 3 tickets | Datos/config muertos o mentirosos | [`02-group-c.md`](02-group-c.md) |
 | 3 | Group D+E — comentarios y strings | **CERRADO 08-07** (spec 3/3 + rule-5) | [`03-group-d-e.md`](03-group-d-e.md) |
 | 4 | E3 — subject inconsistente | **CERRADO 08-08** (spec 3/3 + verificación en vivo) | [`04-e3-subject.md`](04-e3-subject.md) |
-| 5 | Deuda de plataforma | **Instagram/Meta dado de baja 08-11** (spec 3/3); resto Fase 4 | [`05-deuda-plataforma.md`](05-deuda-plataforma.md) |
+| 5 | Deuda de plataforma | **Instagram/Meta dado de baja 08-11** (spec 3/3); **teardown declarativo cerrado 08-12** (spec 12); resto Fase 4 | [`05-deuda-plataforma.md`](05-deuda-plataforma.md) |
 | 6 | Cobertura e2e restante | `mcpCall`, lo único sin cubrir | [`06-e2e-restante.md`](06-e2e-restante.md) |
 | 7 | Verificación pendiente | Lo que falta correr/mirar | [`07-verificacion.md`](07-verificacion.md) |
 | 8 | Manifest gap — `defaultCache` | Paridad declarativa UI/SDK ↔ manifiesto | [`08-manifest-defaultcache-gap.md`](08-manifest-defaultcache-gap.md) |
 | 9 | Hallazgos de la corrida Group C | **CERRADO 08-07** (H1+H2+H3; spec 5/5, suite 868/0) | [`09-hallazgos-group-c.md`](09-hallazgos-group-c.md) |
 | 10 | Regla bash 3.2 → AGENTS.md | Constitución oral; huérfano de Group B | [`10-bash32-en-agents-md.md`](10-bash32-en-agents-md.md) |
 | 11 | ValidationPipe: copias + trampa implicit-conversion | Spec 3/3 corrido 08-08; queda H4 latente + H7 parkeado (ronda de diseño) | [`11-implicit-conversion.md`](11-implicit-conversion.md) |
+| 12 | Teardown declarativo — `manifests undeploy` | Cierra el ítem "sin teardown declarativo" del 05; los e2e ya no borran a mano | [`12-undeploy.spec.md`](12-undeploy.spec.md) |
 
 ---
 

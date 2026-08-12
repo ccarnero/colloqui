@@ -36,7 +36,8 @@ fi
 # never port-forward. NOTE: the api-gateway proxy routes this script
 # predates now EXIST (api-gateway's ProvisioningController: POST
 # manifests/validate, PUT/GET manifests/:name, POST manifests/:name/plan,
-# POST manifests/:name/apply, PUT secrets/:name, GET secrets) and
+# POST manifests/:name/apply, POST manifests/:name/undeploy, PUT
+# secrets/:name, GET secrets) and
 # http-workflow.sh drives provisioning through them; this script still
 # targets provisioning-service's own ingress, so it exercises the service
 # without the gateway in the path.
@@ -58,12 +59,18 @@ fi
 #      for why this is base64-JSON and not true multipart), then change the
 #      inline document's content and re-apply: plan/apply must show EXACTLY
 #      ONE re-embed (the changed document only).
-#   7. Teardown: delete the channel account, the workflow definition, and
-#      the knowledge base created above, directly via their owning services
-#      (provisioning-service has no delete/prune route by design —
-#      decision 8). Runs via an EXIT trap, idempotent (resolves by
-#      e2e-prefixed NAME as a fallback, safe to rerun after a crashed prior
-#      run).
+#   7. Teardown: DECLARATIVE first (T03, PENDIENTES/12-undeploy.spec.md) —
+#      `POST /manifests/:name/undeploy` per stored manifest of this run, which
+#      deletes the channel account, the workflow definition and the knowledge
+#      base created above (plus each manifest's secret bindings and its own
+#      stored record) in the reverse of apply's dependency order. `apply`
+#      itself still never deletes anything (decision 8 intact — undeploy is a
+#      separate, explicit verb). The per-service imperative deletes are KEPT
+#      underneath as the crash net for what undeploy cannot cover: a driver
+#      death before its JSON summary leaves the showcase/library/negative
+#      manifest NAMES unknown to this script, so nothing can be undeployed by
+#      name. Runs via an EXIT trap, idempotent (resolves by e2e-prefixed NAME
+#      as a fallback, safe to rerun after a crashed prior run).
 #   8. (T09 + this task's T1 coverage-maximization pass) The FULL showcase
 #      manifest — telegram-style channel (`http` fallback for CI, real
 #      Telegram creds don't exist in dev), a connector with `auth`
@@ -97,14 +104,18 @@ fi
 #      way `http-workflow.sh` does: `kubectl exec` + `psql` against the
 #      tracking-ingester's Postgres store — this service has no other public
 #      query surface for arbitrary event lookups by manifest name).
-#      Teardown: the driver's created channel/connector/mcpServer/skill/
-#      systemVariable/agent/KB/workflow are deleted directly via their owning
-#      services (same pattern as stage 7), as are the LibraryManifest's
-#      connector and the negative-test manifest's throwaway channel/connector
-#      (its workflow is asserted NEVER created, so there is nothing to delete
-#      for it); the four k8s Secrets it created (`psec-channel-*`,
-#      `psec-connector-*`, `psec-mcpserver-*`) have no delete API (write-only,
-#      decision 4) so they are removed with `kubectl delete secret` directly.
+#      Teardown: same two-layer shape as stage 7 — the showcase, Library and
+#      negative-test manifests are UNDEPLOYED by name (T03), which is what
+#      removes the driver's channel/connector/mcpServer/skill/systemVariable/
+#      agent/KB/workflow, the LibraryManifest's connector, the negative-test
+#      manifest's throwaway channel/connector (its workflow is asserted NEVER
+#      created, so there is nothing to delete for it) and the four secret
+#      bindings it wrote (`psec-channel-*`, `psec-connector-*`,
+#      `psec-mcpserver-*` — provisioning-service gained `DELETE /secrets/:name`
+#      in T01 and undeploy calls it per binding). The per-service imperative
+#      deletes and the `kubectl delete secret` calls stay underneath as the
+#      crash net for a driver death before its JSON summary, where those
+#      manifest names never reach this script.
 #
 #      OUT OF SCOPE for this coverage pass (documented, not an oversight):
 #      `services[]` (hosted services / registry routes — a heavier Knative
@@ -274,6 +285,28 @@ registry_curl() {
     "$@" "${REGISTRY_URL}${path}"
 }
 
+# T03 (PENDIENTES/12-undeploy.spec.md): the teardown verb answers with THREE
+# meaningful statuses (200 report / 404 already-undeployed / 409 blocked or
+# partial), so its caller needs the status code, which `prov_curl`'s `-fsS`
+# hides (it just exits non-zero). Same body-then-status-line trick
+# http-workflow.sh's `api_status` uses, split with plain parameter expansion.
+prov_curl_status() {
+  local method="$1" path="$2"; shift 2
+  curl -sS -w '\n%{http_code}' "${PROVISIONING_RESOLVE[@]}" -X "$method" \
+    -H "Host: ${PROVISIONING_HOST}" -H "x-yoizen-tenant: ${TENANT}" \
+    "$@" "${PROVISIONING_URL}${path}"
+}
+prov_status_body() {
+  # everything before the final line
+  local combined="$1"
+  printf '%s' "${combined%$'\n'*}"
+}
+prov_status_code() {
+  # the final line (status code)
+  local combined="$1"
+  printf '%s' "${combined##*$'\n'}"
+}
+
 NONCE="e2e-$(date +%s)-$RANDOM"
 
 # Regression-test hook (scripts/e2e/teardown-regression.sh): when set, this
@@ -368,11 +401,104 @@ wait_for_health() {
   log "${svc} is reachable"
 }
 
+undeploy_manifest() {
+  # undeploy_manifest <label> <manifest-name>
+  # T03 (PENDIENTES/12-undeploy.spec.md): DECLARATIVE teardown of one stored
+  # manifest — `POST /manifests/:name/undeploy` deletes, in the reverse of
+  # apply's dependency order, exactly the resources that manifest owns
+  # (`external: true` entries are never touched) plus its `secrets:` bindings,
+  # its `kb_document_checksums` rows and, last, the stored record itself.
+  #
+  # Called directly against provisioning-service's own ingress, like every
+  # other call in this script (this suite deliberately runs the service
+  # WITHOUT the gateway in the path — see the header comment).
+  #
+  # Status handling (undeploy.controller.ts):
+  #   2xx — finished; the body carries the per-resource outcome report;
+  #   404 — nothing stored under that name: SUCCESS ("already undeployed").
+  #         Reached both by a second undeploy (the record is deleted LAST) and
+  #         by a run that died before ever PUTting the manifest;
+  #   409 — `undeploy_blocked` (another stored manifest consumes a resource
+  #         this one owns — decision 4, no `--force` in v1), `cycle_detected`,
+  #         or a PARTIAL run (stored manifest kept so a re-run resumes).
+  # A 409 or any other status is a LOUD error and nothing more: this runs
+  # inside the EXIT trap, which must never change the run's exit status, and
+  # the imperative teardown + name sweep below still reclaim whatever undeploy
+  # left behind.
+  local label="$1" name="$2"
+  # Empty (the driver never reported it) or the literal "null" that `jq -r`
+  # prints for a missing field — neither is a manifest, so there is nothing to
+  # undeploy and nothing to warn about.
+  [[ -z "$name" || "$name" == "null" ]] && return 0
+  local combined status_code body kind
+  combined="$(prov_curl_status POST "/manifests/${name}/undeploy" 2>/dev/null || true)"
+  status_code="$(prov_status_code "$combined")"
+  body="$(prov_status_body "$combined")"
+  case "$status_code" in
+    2??)
+      log "undeploy ${label} '${name}': OK (status ${status_code}) deleted=$(echo "$body" | jq -r '.deletedCount // 0' 2>/dev/null || echo '?') notFound=$(echo "$body" | jq -r '.notFoundCount // 0' 2>/dev/null || echo '?') skipped=$(echo "$body" | jq -r '.skippedCount // 0' 2>/dev/null || echo '?') secrets=$(echo "$body" | jq -c '[.secrets[]? | {name, action}]' 2>/dev/null || echo '?') resources=$(echo "$body" | jq -c '[.resources[]? | {kind, name, action}]' 2>/dev/null || echo '?')"
+      ;;
+    404)
+      log "undeploy ${label} '${name}': 404 — already undeployed (the stored record is deleted last), treated as success"
+      ;;
+    409)
+      kind="$(echo "$body" | jq -r '.error.kind // empty' 2>/dev/null || true)"
+      if [[ "$kind" == "undeploy_blocked" ]]; then
+        err "undeploy ${label} '${name}': REFUSED (409 undeploy_blocked) — another STORED manifest declares a resource this one owns as external: true, and there is no --force in v1. Dependents: $(echo "$body" | jq -c '.error.dependents // []' 2>/dev/null || echo '<unparseable>')"
+      else
+        err "undeploy ${label} '${name}': 409 (error.kind='${kind:-<none>}' — partial run or cycle; a partial KEEPS the stored manifest so a re-run resumes). Body: ${body}"
+      fi
+      err "undeploy ${label} '${name}': the imperative teardown + name sweep below are now the fallback"
+      ;;
+    *)
+      err "undeploy ${label} '${name}': unexpected status ${status_code}: ${body}"
+      err "undeploy ${label} '${name}': the imperative teardown + name sweep below are now the fallback"
+      ;;
+  esac
+  return 0
+}
+
 cleanup() {
   local status=$?
   log "Cleanup: tearing down e2e-created resources (idempotent)"
   [[ -n "${BUNDLE_DIR:-}" && -d "${BUNDLE_DIR:-}" ]] && rm -rf "$BUNDLE_DIR"
 
+  # --- PHASE 1: DECLARATIVE teardown, one undeploy per stored manifest -----
+  # T03 (PENDIENTES/12-undeploy.spec.md). Every platform resource this script
+  # creates is manifest-owned — the five manifests below declare all of them
+  # (channels, connectors, mcpServer, skill, systemVariable, agent, KBs,
+  # hosted service, workflows) AND the six secret bindings — so undeploy is
+  # now the primary teardown path, in reverse creation order.
+  #
+  # Manifest names carry THIS run's nonce (`e2e-*-${NONCE}`), so this can only
+  # ever tear down manifests this run wrote. The three driver-side names are
+  # read from the driver's own JSON summary (stage 8); they stay empty when it
+  # never printed one, and `undeploy_manifest` no-ops on an empty name.
+  #
+  # What deliberately stays IMPERATIVE below, and why:
+  #   (a) the whole JSON-driven teardown + the NAME-PREFIX SWEEP — they are the
+  #       crash net. When manifest-showcase-driver.ts dies before printing its
+  #       JSON, the showcase/library/negative manifest NAMES are unknown to
+  #       this script, so no undeploy call can be aimed at them, and only the
+  #       sweep can reclaim what the driver already created. That path is
+  #       pinned by scripts/e2e/teardown-regression.sh (simulated mid-run
+  #       driver death, then an INDEPENDENT zero-residue assertion across every
+  #       admin API and the tenant's k8s Secrets) — removing it would delete a
+  #       live regression guarantee. After a successful phase 1 these passes
+  #       simply find nothing, which is the intended steady state.
+  #   (b) `rm -rf "$BUNDLE_DIR"` above — a local temp dir, not a platform
+  #       resource, and never manifest-declared.
+  #   (c) the `kubectl delete secret` calls — same crash-net role as (a) for
+  #       the k8s Secrets behind the manifests' `secrets:` bindings (undeploy
+  #       deletes those bindings itself when it runs to completion).
+  log "Cleanup: phase 1 — undeploy every stored manifest of this run (declarative teardown)"
+  undeploy_manifest "T05 manifest" "$T05_MANIFEST_NAME"
+  undeploy_manifest "negative-test manifest" "$NEG_MANIFEST_NAME"
+  undeploy_manifest "LibraryManifest (ROUND 2)" "$LIB_MANIFEST_NAME"
+  undeploy_manifest "showcase manifest" "$SHOWCASE_MANIFEST_NAME"
+  undeploy_manifest "base manifest" "$MANIFEST_NAME"
+
+  # --- PHASE 2: imperative crash net (see (a)/(c) above) -------------------
   # Resolve by e2e-prefixed NAME as a fallback when no externalId was
   # captured yet (e.g. the script failed before the first apply).
   if [[ -z "$CHANNEL_EXTERNAL_ID" ]]; then
@@ -574,19 +700,26 @@ cleanup() {
 
   # T05's two service-scoped secrets share ONE k8s Secret
   # (`psec-service-<serviceName>`, per `secret-resource-name.ts` — both
-  # bindings' OWNER is the same service name) — same write-only-API,
-  # kubectl-direct-delete pattern as the showcase driver's four secrets below.
+  # bindings' OWNER is the same service name). Phase 1's undeploy of the T05
+  # manifest already deletes both bindings through `DELETE /secrets/:name`
+  # (T01); this kubectl delete is the same crash-net pattern as the showcase
+  # driver's four secrets below, kept for the runs where undeploy never got
+  # to run. Idempotent (--ignore-not-found).
   if [[ -n "$T05_SERVICE_NAME" ]]; then
     kubectl delete secret "$T05_SECRET_K8S_NAME" \
       -n "$T05_TENANT_NAMESPACE" --ignore-not-found >/dev/null 2>&1 || true
     log "deleted k8s Secret ${T05_SECRET_K8S_NAME} (namespace ${T05_TENANT_NAMESPACE})"
   fi
 
-  # T09 + T1: the four k8s Secrets the showcase driver wrote have no delete
-  # API (write-only Secret API, SPEC.md decision 4) — removed directly via
-  # kubectl. Idempotent (--ignore-not-found), safe to rerun. Secret names
-  # are recomputed from the SHOWCASE_SECRET_*_OWNER vars — never from a
-  # value, only names/owners ever cross this script.
+  # T09 + T1: the four k8s Secrets the showcase driver wrote. The Secret API
+  # is still write-only for READS (SPEC.md decision 4 — no value ever comes
+  # back), but it is no longer delete-less: T01 added `DELETE /secrets/:name`
+  # and phase 1's undeploy of the showcase manifest removes each binding
+  # itself. These kubectl deletes remain the crash net for the driver-death
+  # case, where the showcase manifest name never reaches this script.
+  # Idempotent (--ignore-not-found), safe to rerun. Secret names are
+  # recomputed from the SHOWCASE_SECRET_*_OWNER vars — never from a value,
+  # only names/owners ever cross this script.
   if [[ -n "$SHOWCASE_SECRET_A_OWNER" ]]; then
     TENANT_NAMESPACE="${E2E_TENANT_NAMESPACE:-${TENANT}-dev-ns}"
     kubectl delete secret "psec-channel-${SHOWCASE_SECRET_A_OWNER}" \
@@ -613,6 +746,9 @@ cleanup() {
   fi
 
   # --- Best-effort NAME-PREFIX SWEEP (independent of driver JSON) ---------
+  # Also the gap PHASE 1's undeploy can't cover, and for the same reason: a
+  # driver death before its JSON summary hides the manifest NAMES themselves,
+  # and undeploy is addressed by manifest name.
   # The gap the JSON-driven teardown above can't cover: when
   # manifest-showcase-driver.ts (stage 8) dies BEFORE printing its final JSON
   # summary line (crash, connection failure, ctrl-c, or the

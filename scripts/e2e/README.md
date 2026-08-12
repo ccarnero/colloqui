@@ -165,6 +165,13 @@ match to any `e2e-*`-prefixed name, reclaiming residue from **prior**
 crashed runs too (opt-in only — never safe to default on if another e2e run
 might be in flight concurrently).
 
+Since 2026-08-12 (`PENDIENTES/12-undeploy.spec.md` T03) the sweep is the
+SECOND layer: `cleanup()` first undeploys each stored manifest of the run
+(`POST /manifests/:name/undeploy`), which is what normally deletes those
+resources. The sweep still runs, unchanged, because undeploy is addressed by
+manifest NAME — and a driver death before the JSON summary hides exactly those
+names, which is the incident below.
+
 `teardown-regression.sh` proves the sweep works: it runs
 `manifest-apply.sh` with `E2E_SIMULATE_DRIVER_DEATH=1` (which makes
 `manifest-showcase-driver.ts` `process.exit(1)` right after its first

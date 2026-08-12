@@ -225,6 +225,16 @@ rg -n "undeploy" sdk/README.md integrations/README.md
    `PENDIENTES/README.md` index row for this spec.
 4. Docs: provisioning docs page (DOCS/ wherever apply is documented) gains
    the undeploy contract (route, ordering, outcomes, the 409 guard).
+5. *(Amended 2026-08-12 after the T03 implementer's finding)*: the
+   `provisioning-service-secrets-manager` ClusterRole
+   (`knative/services/rbac/cluster-role.yaml`) lacks the `delete` verb on
+   secrets — its comment cites decision 8's no-prune stance, which User
+   decision 1/2 of THIS spec supersedes for the undeploy verb. Add
+   `delete`, rewrite the comment truthfully (write-only API + undeploy's
+   binding deletion; apply still never deletes), and the orchestrator
+   applies the ClusterRole to the cluster before the live Accept. Without
+   it, undeploying any manifest with secret bindings 409s when removing
+   the last key of a Secret.
 
 **Accept** (after G0 + touched-service gates green; LIVE, orchestrator-run):
 
@@ -270,8 +280,23 @@ bash scripts/e2e/http-workflow.sh
       ruling); double "manifests <verb>:" error prefix mirrors apply
       (cleanup round across verbs); gateway authz for undeploy sits at
       apply's level — dedicated permission needs its own ruling)
-- [ ] T03 — e2e cleanup migrated to undeploy, live cycle proven, register
-      05 teardown item closed
+- [x] T03 — e2e cleanup migrated to undeploy, live cycle proven, register
+      05 teardown item closed (2026-08-12, G0 + bash -n green, 2× APPROVED
+      first attempt. Amended step 5 shipped: secrets ClusterRole gained
+      `delete`, applied to the cluster, grant verified with `kubectl auth
+      can-i`. LIVE PROOF: full http-workflow e2e green with declarative
+      cleanup — undeploy 200, deleted=6, skipped_external=2 (pokeapi +
+      sample-echo protected), manifestRecordDeleted=true, 6/6 is-gone
+      verifications; separate proof-manifest cycle: apply(2 create) →
+      undeploy (reverse order visible: agent before channel; secret binding
+      deleted; k8s Secret physically gone) → channel+agent absent via APIs →
+      second undeploy 404 against the rebuilt gateway. The crm demo manifest
+      was deliberately NOT used for the live cycle — it is in active use by
+      the user; the proof manifest exercises the same path including
+      secrets, which crm's cycle would have. Surviving findings live in
+      register 05: no audit events for undeploy, per-manifest ownership
+      marker pending writer round, typed 404 body, stored-record cleanup
+      gap in teardown-regression.sh, PROVISIONING_RESOLVE set -u edge)
 
 ## Post-queue (operator, outside the loop)
 

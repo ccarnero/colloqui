@@ -78,7 +78,12 @@ fi
 #      masking), so it is fetched with one extra authenticated GET right
 #      after apply, using the channel's externalId from the apply response.
 #      An EXIT trap still tears the manifest-declared channel/workflows/agent
-#      down afterwards (skipped when E2E_KEEP=1) — see `cleanup_e2e_resources`.
+#      down afterwards (skipped when E2E_KEEP=1), now DECLARATIVELY: one
+#      `POST /api/provisioning/manifests/<name>/undeploy` through the same
+#      gateway proxy (PENDIENTES/12-undeploy.spec.md T03), followed by a
+#      per-resource "is it gone" verification and an imperative sweep kept
+#      ONLY for residue the stored manifest does not own — see
+#      `cleanup_e2e_resources`.
 #      Agent PUBLISH is a runtime activation step, not a declarative manifest
 #      property (the manifest schema has no such field), so it stays an
 #      explicit imperative POST after apply, exactly like the workflow
@@ -479,42 +484,203 @@ WORKFLOW_DISABLED=0
 SERVICE_CALL_EVENT_ID=""
 
 cleanup_e2e_resources() {
-  # T08 (manual-loops/connector-trace-linking.md): best-effort end-of-run
-  # teardown of this run's e2e footprint so the greedy shared-trigger
-  # definitions never linger between runs (before account-scoped triggers they
-  # fanned out onto every http message; even scoped, a leftover definition is
-  # noise). Deletes: both e2e workflow definitions, this run's http account
-  # (plus any e2e-prefixed stragglers), and the shared echo agent. Every call
-  # is `|| true` — cleanup NEVER changes the run's exit status. `E2E_KEEP=1`
-  # skips it entirely (logged), leaving this run's manifest-applied
-  # resources in place for inspection; a future run's own per-run-unique
-  # channel/workflow names never collide with them regardless (T2), and this
-  # SAME sweep reclaims them (by prefix) the next time it runs uncached.
+  # T03 (PENDIENTES/12-undeploy.spec.md): end-of-run teardown, now DECLARATIVE.
+  #
+  # WAS (T08, manual-loops/connector-trace-linking.md): four imperative
+  # delete-by-list passes — workflows, http account, e2e-tests sink account,
+  # echo agent — because provisioning-service had no delete concept at all
+  # ("no es desprolijidad de los scripts — es que no hay alternativa",
+  # PENDIENTES/05-deuda-plataforma.md). It does now: `POST
+  # /api/provisioning/manifests/:name/undeploy` deletes, in the reverse of
+  # apply's dependency order, exactly the resources the STORED manifest owns.
+  #
+  # IS (three phases, in order):
+  #   1. `cleanup_undeploy_manifest` — one undeploy call against the manifest
+  #      this run PUT (`${MANIFEST_NAME}`), through the gateway proxy, using
+  #      the same authenticated api_status() transport as every other stage.
+  #      That covers EVERY resource the manifest declares: this run's http
+  #      channel, the e2e-tests sink channel, both nonce-suffixed workflows
+  #      plus the composite one, and the (fixed-name) echo agent. The
+  #      `external: true` pokeapi connector and sample-echo service are NEVER
+  #      touched by it (they belong to the `${PREREQUISITES_MANIFEST_NAME}`
+  #      manifest — undeploy reports them `skipped_external`, decision 4).
+  #   2. `cleanup_verify_manifest_resources_gone` — the "what got deleted must
+  #      still be asserted gone" check the imperative deletes only ever
+  #      implied through their HTTP status. Each of this run's manifest-owned
+  #      resources is re-read from its admin API by NAME and must be absent.
+  #   3. `cleanup_sweep_unowned_residue` — the ONLY imperative deletes left,
+  #      and deliberately so. What they cover is NOT owned by the stored
+  #      manifest and therefore unreachable by undeploy:
+  #        - stragglers from PRIOR crashed runs. Every run PUTs a NEW revision
+  #          of the same `${MANIFEST_NAME}` carrying THIS run's nonce-suffixed
+  #          names, so the previous run's resource names are no longer
+  #          declared anywhere — undeploy can never see them;
+  #        - this run's own resources when phase 1 did NOT finish (409 partial
+  #          / blocked / unreachable gateway), where the sweep is the fallback
+  #          that keeps the cluster clean; phase 2 has already screamed by then.
+  #
+  # Every call stays `|| true`: cleanup NEVER changes the run's exit status
+  # (a failed teardown is reported loudly via err(), not by flipping the
+  # verdict of the chain the suite actually tests). `E2E_KEEP=1` skips all
+  # three phases (logged), leaving this run's manifest APPLIED and STORED for
+  # inspection; a future run's own per-run-unique names never collide with it
+  # (T2), and phase 3 reclaims the leftovers by prefix the next uncached run.
   if [[ "${E2E_KEEP:-0}" == "1" ]]; then
-    warn "Cleanup: E2E_KEEP=1 set — leaving e2e workflows/account/echo agent in place"
+    warn "Cleanup: E2E_KEEP=1 set — skipping undeploy; e2e workflows/accounts/echo agent and the stored manifest stay in place"
     return 0
   fi
-  log "Cleanup: removing this run's e2e workflows, http account, and echo agent (best-effort)"
+  if [[ -z "$TOKEN" ]]; then
+    # stage_login is the FIRST stage, so an empty token means this run never
+    # applied anything — and every call below would 401 anyway, which would
+    # turn the verification of phase 2 into a meaningless "nothing listed,
+    # therefore gone". Skip all three phases loudly instead.
+    warn "Cleanup: no auth token (login never succeeded) — nothing was applied by this run; skipping undeploy, verification and sweep"
+    return 0
+  fi
+  cleanup_undeploy_manifest
+  cleanup_verify_manifest_resources_gone
+  cleanup_sweep_unowned_residue
+  log "Cleanup: done"
+}
+
+cleanup_undeploy_manifest() {
+  # Phase 1 — the declarative teardown call itself.
+  #
+  # The manifest NAME is `${MANIFEST_NAME}`, read from the same variable
+  # stage_apply_manifest PUT (fixed across runs by design — it is the per-run
+  # RESOURCE names that carry the nonce, see the header comment), so this can
+  # never undeploy a manifest this run did not write.
+  #
+  # Status contract (undeploy.controller.ts, proxied verbatim by the gateway):
+  #   2xx — the run finished; the body is the per-resource outcome report;
+  #   404 — no stored manifest by that name. SUCCESS, not a failure: a fully
+  #         successful undeploy deletes the stored record LAST, so a second
+  #         undeploy (or a run whose manifest was never PUT because an early
+  #         stage failed) lands here — "already undeployed";
+  #   409 — `undeploy_blocked` (another stored manifest consumes a resource
+  #         this one owns — decision 4, no `--force` in v1), `cycle_detected`,
+  #         or a PARTIAL run. All three are loud errors here.
+  # '{}' body: api_status() always sets Content-Type: application/json and an
+  # EMPTY body then 400s at the gateway — the same gotcha every DELETE and the
+  # plan/apply POSTs in this script already work around. The route itself
+  # takes no body (undeploy always operates on the stored manifest).
+  log "Cleanup: POST /api/provisioning/manifests/${MANIFEST_NAME}/undeploy (declarative teardown of this run's channels, workflows and echo agent)"
+  local combined status body kind
+  combined="$(api_status POST "/api/provisioning/manifests/${MANIFEST_NAME}/undeploy" '{}' 2>/dev/null || true)"
+  status="$(api_status_code "$combined")"
+  body="$(api_status_body "$combined")"
+  case "$status" in
+    2??)
+      log "Cleanup: undeploy OK (status ${status}) — deleted=$(echo "$body" | jq -r '.deletedCount // 0' 2>/dev/null || echo '?') notFound=$(echo "$body" | jq -r '.notFoundCount // 0' 2>/dev/null || echo '?') skipped=$(echo "$body" | jq -r '.skippedCount // 0' 2>/dev/null || echo '?') checksumRows=$(echo "$body" | jq -r '.checksumRowsDeleted // 0' 2>/dev/null || echo '?') manifestRecordDeleted=$(echo "$body" | jq -r '.manifestRecordDeleted // false' 2>/dev/null || echo '?')"
+      log "Cleanup: undeploy outcomes: $(echo "$body" | jq -c '[.resources[]? | {kind, name, action}]' 2>/dev/null || echo '<unparseable body>')"
+      ;;
+    404)
+      log "Cleanup: undeploy returned 404 — manifest '${MANIFEST_NAME}' is already undeployed (a full run deletes the stored record last); treated as success"
+      ;;
+    409)
+      kind="$(echo "$body" | jq -r '.error.kind // empty' 2>/dev/null || true)"
+      if [[ "$kind" == "undeploy_blocked" ]]; then
+        err "Cleanup: undeploy REFUSED for '${MANIFEST_NAME}' (409 undeploy_blocked) — another STORED manifest declares a resource this one owns as external: true, and there is no --force in v1. Dependents: $(echo "$body" | jq -c '.error.dependents // []' 2>/dev/null || echo '<unparseable>')"
+      else
+        err "Cleanup: undeploy of '${MANIFEST_NAME}' returned 409 (error.kind='${kind:-<none>}' — a partial run or a cycle; a partial KEEPS the stored manifest so a re-run resumes). Body: ${body}"
+      fi
+      err "Cleanup: phase 3's imperative sweep below is now the fallback for whatever undeploy did not delete"
+      ;;
+    *)
+      err "Cleanup: undeploy of '${MANIFEST_NAME}' returned unexpected status ${status}: ${body}"
+      err "Cleanup: phase 3's imperative sweep below is now the fallback for whatever undeploy did not delete"
+      ;;
+  esac
+  return 0
+}
+
+cleanup_verify_gone() {
+  # cleanup_verify_gone <label> <list-path> <jq-items-expr> <name>
+  # Asserts NO resource named <name> is still listed by <list-path>. Returns 1
+  # (loudly) when residue is found; callers swallow the status so cleanup never
+  # flips the run's exit code. `<jq-items-expr>` exists because not every admin
+  # list endpoint returns a bare array (`/api/admin/agents` wraps its items in
+  # `{ agents: [...] }`) — the same shape split manifest-apply.sh's sweep
+  # documents.
+  local label="$1" path="$2" items="$3" name="$4"
+  local list_json ids
+  list_json="$(api GET "$path" 2>/dev/null || true)"
+  # An EMPTY/unreadable list body is NOT proof of absence — the admin API may
+  # simply be unreachable (this runs from an EXIT trap that also fires on
+  # failure paths). Say so instead of reporting a false "gone"; teardown-
+  # regression.sh's residue check makes the same distinction.
+  if [[ -z "$list_json" ]]; then
+    warn "Cleanup VERIFY: could not list ${label}s (${path} returned nothing) — '${name}' NOT verified (neither pass nor fail)"
+    return 0
+  fi
+  # jq FAILING is also "not verified", never "gone": an error body (a 401/5xx
+  # JSON object) makes the items expression throw, and swallowing that would
+  # report absence for a list nobody could read.
+  if ! ids="$(echo "$list_json" \
+    | jq -r --arg n "$name" "[${items}] | .[] | select(.name == \$n) | .id" 2>/dev/null)"; then
+    warn "Cleanup VERIFY: ${label} list at ${path} was not the expected shape (first 120 chars: ${list_json:0:120}) — '${name}' NOT verified (neither pass nor fail)"
+    return 0
+  fi
+  if [[ -n "$ids" ]]; then
+    err "Cleanup VERIFY: ${label} '${name}' is STILL PRESENT after undeploy (id(s): $(echo "$ids" | tr '\n' ' ')) — the manifest owns it, so undeploy should have deleted it"
+    return 1
+  fi
+  log "Cleanup VERIFY: ${label} '${name}' is gone"
+  return 0
+}
+
+cleanup_verify_manifest_resources_gone() {
+  # Phase 2 — every resource `${MANIFEST_NAME}` declares for THIS run must be
+  # absent from its owning admin API. This is the assertion the four
+  # imperative delete loops used to make only indirectly (cleanup_delete
+  # accepted 2xx/404 from the DELETE itself); it now checks the end state
+  # directly, per resource, by name.
+  #
+  # Names never existed at all when an early stage failed before the apply —
+  # the list simply does not contain them and each check passes, which is the
+  # correct reading of "gone".
+  log "Cleanup: verifying every manifest-owned resource of this run is gone"
+  local residue=0
+  cleanup_verify_gone "workflow" "/api/workflows" ".[]?" "$WORKFLOW_NAME" || residue=1
+  cleanup_verify_gone "workflow" "/api/workflows" ".[]?" "$AGENT_WORKFLOW_NAME" || residue=1
+  cleanup_verify_gone "workflow" "/api/workflows" ".[]?" "$COMPOSITE_WORKFLOW_NAME" || residue=1
+  cleanup_verify_gone "http account" "/api/channels/accounts?channel=http" ".[]?" "$CHANNEL_NAME" || residue=1
+  cleanup_verify_gone "e2e-tests sink account" "/api/channels/accounts?channel=e2e-tests" ".[]?" "$EGRESS_CHANNEL_NAME" || residue=1
+  cleanup_verify_gone "echo agent" "/api/admin/agents" ".agents[]?" "$AGENT_NAME" || residue=1
+  if [[ "$residue" -eq 1 ]]; then
+    err "Cleanup VERIFY: manifest-owned residue survived the undeploy (see the lines above) — the sweep below reclaims it, but this is an undeploy defect worth reading"
+  else
+    log "Cleanup VERIFY: all manifest-owned resources of this run are gone"
+  fi
+  return 0
+}
+
+cleanup_sweep_unowned_residue() {
+  # Phase 3 — the only imperative deletes left. Scope, deliberately narrow:
+  # resources the STORED manifest does NOT own (leftovers from prior crashed
+  # runs, whose names this run's revision no longer declares), plus this run's
+  # own resources as a fallback when phase 1 could not finish. Matched by NAME
+  # PREFIX / externalId PREFIX exactly as before, so nothing that used to be
+  # reclaimed stops being reclaimed.
+  log "Cleanup: sweeping e2e-prefixed residue undeploy cannot own (prior crashed runs; fallback for a failed undeploy)"
   local id
   # Workflow definitions — DELETE /api/workflows/:id (same endpoint apply's
-  # own workflow-writer POST uses). T2: matched by NAME PREFIX, not exact
-  # name — every run's manifest-applied workflows carry a per-run nonce
-  # suffix (see the header comment's NONCE-SCOPED WORKFLOW NAMES note), so
-  # this also reclaims any e2e-prefixed stragglers left by a crashed prior
-  # run, same as the http-account sweep below.
+  # own workflow-writer POST uses). Matched by NAME PREFIX, not exact name —
+  # every run's manifest-applied workflows carry a per-run nonce suffix (see
+  # the header comment's NONCE-SCOPED WORKFLOW NAMES note).
   local wf_ids
   wf_ids="$(api GET /api/workflows 2>/dev/null \
     | jq -r ".[] | select(.name | startswith(\"${WORKFLOW_NAME_PREFIX}\") or startswith(\"${AGENT_WORKFLOW_NAME_PREFIX}\") or startswith(\"${COMPOSITE_WORKFLOW_NAME_PREFIX}\")) | .id" 2>/dev/null || true)"
   for id in $wf_ids; do
-    cleanup_delete "workflow" "/api/workflows/${id}" "${id}"
+    cleanup_delete "stale workflow" "/api/workflows/${id}" "${id}"
   done
-  # Http account(s) — DELETE /api/channels/accounts/:id. Covers this run's
-  # manifest-applied account and any e2e-prefixed leftovers from crashed runs.
+  # Http account(s) — DELETE /api/channels/accounts/:id, matched on the
+  # deterministic `manifest:<name>` externalId prefix channels-writer.ts stamps.
   local acc_ids
   acc_ids="$(api GET "/api/channels/accounts?channel=http" 2>/dev/null \
     | jq -r ".[] | select(.externalId | startswith(\"${ACCOUNT_EXTERNAL_PREFIX}\")) | .id" 2>/dev/null || true)"
   for id in $acc_ids; do
-    cleanup_delete "http account" "/api/channels/accounts/${id}" "${id}"
+    cleanup_delete "stale http account" "/api/channels/accounts/${id}" "${id}"
   done
   # The e2e-tests sink account lives on its own channel, so the http query
   # above cannot see it. Matched by NAME prefix (not externalId) because the
@@ -523,16 +689,18 @@ cleanup_e2e_resources() {
   sink_ids="$(api GET "/api/channels/accounts?channel=e2e-tests" 2>/dev/null \
     | jq -r ".[] | select(.name | startswith(\"${EGRESS_CHANNEL_NAME_PREFIX}\")) | .id" 2>/dev/null || true)"
   for id in $sink_ids; do
-    cleanup_delete "e2e-tests sink account" "/api/channels/accounts/${id}" "${id}"
+    cleanup_delete "stale e2e-tests sink account" "/api/channels/accounts/${id}" "${id}"
   done
   # Echo agent — DELETE /api/admin/agents/:id (gateway admin-agents route).
+  # Its name is FIXED across runs, so a leftover here is either a prior run's
+  # (the manifest recreates it every run) or this run's after a failed
+  # undeploy; both are the sweep's job.
   local agent_ids
   agent_ids="$(api GET /api/admin/agents 2>/dev/null \
     | jq -r ".agents[]? | select(.name == \"${AGENT_NAME}\") | .id" 2>/dev/null || true)"
   for id in $agent_ids; do
-    cleanup_delete "echo agent" "/api/admin/agents/${id}" "${id}"
+    cleanup_delete "stale echo agent" "/api/admin/agents/${id}" "${id}"
   done
-  log "Cleanup: done"
 }
 
 cleanup_delete() {
