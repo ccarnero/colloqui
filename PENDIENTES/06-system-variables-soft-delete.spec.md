@@ -85,7 +85,12 @@ G5 (agent-driven, cluster evidence):
       2× APPROVED. Reviewer note kept: reactivation overwrites the
       soft-deleted row's historical value by design — the log line is the
       only evidence)
-- [ ] T02 [cluster] redeploy + convergence proof
+- [x] T02 [cluster] redeploy + convergence proof (2026-08-15: revision 00008
+      deployed. Live: POST over soft-deleted scratch var → 201 SAME id,
+      value updated, "Reactivated soft-deleted system variable" logged;
+      POST over active → 409 naming it, conflict branch logged, no
+      PostgresError; `manifests apply` on crm-support-telegram → noop/noop
+      on both system variables, full convergence)
 
 ## Out of scope (explicit)
 
