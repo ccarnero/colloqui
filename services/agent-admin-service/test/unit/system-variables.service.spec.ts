@@ -33,6 +33,24 @@ const loadService = async () => {
   return SystemVariablesService;
 };
 
+const loadConflictError = async () => {
+  const { SystemVariableConflictError } = await import(
+    "../../src/modules/system-variables/system-variables.service"
+  );
+  return SystemVariableConflictError;
+};
+
+// Typed views over the bun mocks so the specs can inspect the tagged-template
+// calls (one queued result is shifted per `sql` call — see update()).
+const sqlCalls = sqlMock as unknown as {
+  mock: { calls: unknown[][] };
+  mockClear: () => void;
+};
+const jsonCalls = sqlMock.json as unknown as {
+  mock: { calls: unknown[][] };
+  mockClear: () => void;
+};
+
 // ---------------------------------------------------------------------------
 // Shared mock data
 // ---------------------------------------------------------------------------
@@ -270,6 +288,112 @@ describe("SystemVariablesService", () => {
       const result = await service.create(TENANT, dto);
 
       expect(result.name).toBe("My Company Name");
+    });
+
+    // -----------------------------------------------------------------------
+    // Soft-delete reactivation (ON CONFLICT DO UPDATE … WHERE is_active = false)
+    // -----------------------------------------------------------------------
+    it("reactivates a soft-deleted variable and updates its mutable fields", async () => {
+      const dto = {
+        name: "crm-support-company-name",
+        type: "string" as const,
+        value: "ACME Corp",
+        label: "Company Name",
+        description: "Reactivated description",
+      };
+      // The DO UPDATE branch returns the pre-existing row (its own id), now
+      // active and carrying the new values.
+      const reactivated = makeVar({
+        id: "pre-existing-id",
+        name: "crm-support-company-name",
+        type: "string",
+        value: "ACME Corp",
+        label: "Company Name",
+        description: "Reactivated description",
+        is_active: true,
+      });
+
+      sqlQueue.push([reactivated]);
+
+      const result = await service.create(TENANT, dto);
+
+      expect(result).toEqual(reactivated);
+      expect(result.id).toBe("pre-existing-id");
+      expect(result.value).toBe("ACME Corp");
+      expect(result.label).toBe("Company Name");
+      expect(result.description).toBe("Reactivated description");
+    });
+
+    it("issues a single upsert query with the ON CONFLICT reactivation clause", async () => {
+      sqlCalls.mockClear();
+      const dto = { name: "upsertVar", type: "string" as const, value: "hi" };
+      sqlQueue.push([makeVar({ id: "u1", name: "upsertVar" })]);
+
+      await service.create(TENANT, dto);
+
+      // ONE tagged-template call: the mock shifts exactly one queued result.
+      expect(sqlCalls.mock.calls).toHaveLength(1);
+      const strings = sqlCalls.mock.calls[0]![0] as unknown as string[];
+      const query = Array.from(strings).join("?");
+      expect(query).toContain("INSERT INTO system_variables");
+      expect(query).toContain("ON CONFLICT (tenant_id, name) DO UPDATE");
+      expect(query).toContain("is_active = true");
+      expect(query).toContain("type = EXCLUDED.type");
+      expect(query).toContain("value = EXCLUDED.value");
+      expect(query).toContain("label = EXCLUDED.label");
+      expect(query).toContain("description = EXCLUDED.description");
+      expect(query).toContain("updated_at = NOW()");
+      expect(query).toContain("WHERE system_variables.is_active = false");
+    });
+
+    it("serializes `value` with sql.json() exactly once (no double encoding)", async () => {
+      jsonCalls.mockClear();
+      const dto = {
+        name: "j2",
+        type: "json" as const,
+        value: { key: "val" },
+      };
+      sqlQueue.push([makeVar({ id: "j2", name: "j2", value: { key: "val" } })]);
+
+      await service.create(TENANT, dto);
+
+      // Single sql.json() call with the RAW value: the EXCLUDED.value path
+      // reuses the same bound parameter, so nothing is re-stringified.
+      expect(jsonCalls.mock.calls).toHaveLength(1);
+      expect(jsonCalls.mock.calls[0]![0]).toEqual({ key: "val" });
+    });
+
+    it("throws SystemVariableConflictError when an ACTIVE duplicate exists", async () => {
+      const SystemVariableConflictError = await loadConflictError();
+      const dto = {
+        name: "crm-support-company-name",
+        type: "string" as const,
+        value: "ACME Corp",
+      };
+      // Active duplicate: the DO UPDATE's WHERE fails, so no row comes back.
+      sqlQueue.push([]);
+
+      const promise = service.create(TENANT, dto);
+
+      await expect(promise).rejects.toBeInstanceOf(SystemVariableConflictError);
+    });
+
+    it("conflict error names the conflicting variable", async () => {
+      const dto = {
+        name: "crm-support-company-name",
+        type: "string" as const,
+        value: "ACME Corp",
+      };
+      sqlQueue.push([]);
+
+      try {
+        await service.create(TENANT, dto);
+        throw new Error("expected SystemVariableConflictError");
+      } catch (err) {
+        const conflict = err as { variableName?: string; message: string };
+        expect(conflict.variableName).toBe("crm-support-company-name");
+        expect(conflict.message).toContain("crm-support-company-name");
+      }
     });
   });
 

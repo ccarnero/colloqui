@@ -1,10 +1,12 @@
 import {
   Body,
+  ConflictException,
   Controller,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
+  Logger,
   Param,
   Patch,
   Post,
@@ -12,12 +14,17 @@ import {
 } from "@nestjs/common";
 import { TenantGuard } from "../../guards/tenant.guard";
 import { TenantId } from "../../providers/tenant.decorator";
-import { SystemVariablesService } from "./system-variables.service";
+import {
+  SystemVariableConflictError,
+  SystemVariablesService,
+} from "./system-variables.service";
 import { CreateSystemVariableDto, UpdateSystemVariableDto } from "./system-variables.dto";
 
 @Controller("admin/system-variables")
 @UseGuards(TenantGuard)
 export class SystemVariablesController {
+  private readonly logger = new Logger(SystemVariablesController.name);
+
   constructor(private readonly service: SystemVariablesService) {}
 
   @Get()
@@ -35,7 +42,21 @@ export class SystemVariablesController {
   @Post()
   @HttpCode(HttpStatus.CREATED)
   async create(@TenantId() tenantId: string, @Body() body: CreateSystemVariableDto) {
-    return this.service.create(tenantId, body);
+    try {
+      // Creates, or reactivates a soft-deleted variable with the same name —
+      // both resolve to the usual 201 payload.
+      return await this.service.create(tenantId, body);
+    } catch (err) {
+      if (err instanceof SystemVariableConflictError) {
+        this.logger.warn(
+          `409 on create: system variable '${err.variableName}' is already active for tenant ${tenantId}`
+        );
+        throw new ConflictException(
+          `System variable '${err.variableName}' already exists`
+        );
+      }
+      throw err;
+    }
   }
 
   @Patch(":id")

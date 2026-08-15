@@ -15,6 +15,21 @@ export interface ISystemVariable {
   updated_at: Date;
 }
 
+/**
+ * Raised by {@link SystemVariablesService.create} when the `(tenant_id, name)`
+ * pair is already taken by an ACTIVE variable. Distinct from "not found"
+ * (`null`) on purpose: the controller maps it to HTTP 409 instead of letting a
+ * raw PostgresError unique-violation escape as a 500.
+ */
+export class SystemVariableConflictError extends Error {
+  constructor(readonly variableName: string) {
+    super(
+      `System variable '${variableName}' already exists and is active for this tenant`
+    );
+    this.name = "SystemVariableConflictError";
+  }
+}
+
 @Injectable()
 export class SystemVariablesService {
   private readonly logger = new Logger(SystemVariablesService.name);
@@ -74,11 +89,49 @@ export class SystemVariablesService {
     // to postgres.js via ParameterDescription, which then re-applies its own
     // jsonb serializer (JSON.stringify) on top of the already-stringified
     // value, storing a JSON string of JSON text instead of the real value.
+    // delete() only soft-deletes (is_active = false) but the unique index
+    // idx_system_vars_tenant_name still covers the row, so a plain INSERT over a
+    // soft-deleted (tenant_id, name) raised a raw PostgresError 500. ON CONFLICT
+    // DO UPDATE … WHERE system_variables.is_active = false reactivates it
+    // instead; when the conflicting row is ACTIVE the WHERE fails, no row is
+    // returned, and we surface that as a typed conflict (never null-as-404).
+    // This stays ONE tagged-template call — the unit-test mock shifts a single
+    // queued result per sql call (see update()). sql.json() is still applied
+    // exactly once: EXCLUDED.value reuses that same bound parameter, so nothing
+    // is re-stringified.
     const [row] = await sql<ISystemVariable[]>`
       INSERT INTO system_variables (id, tenant_id, name, type, value, label, description)
       VALUES (${id}, ${tenantId}, ${data.name}, ${data.type}, ${sql.json(data.value as JsonValue)}, ${data.label ?? null}, ${data.description ?? null})
+      ON CONFLICT (tenant_id, name) DO UPDATE SET
+        is_active = true,
+        type = EXCLUDED.type,
+        value = EXCLUDED.value,
+        label = EXCLUDED.label,
+        description = EXCLUDED.description,
+        updated_at = NOW()
+      WHERE system_variables.is_active = false
       RETURNING id, name, type, value, label, description, created_at, updated_at
     `;
+
+    if (!row) {
+      this.logger.warn(
+        `Create conflict for system variable '${data.name}' (tenant=${tenantId}): an active variable already holds that name`
+      );
+      throw new SystemVariableConflictError(data.name);
+    }
+
+    // A reactivated row keeps its original id, so a different id than the one
+    // generated here means the ON CONFLICT branch ran.
+    if (row.id !== id) {
+      this.logger.log(
+        `Reactivated soft-deleted system variable '${data.name}' (id=${row.id}, tenant=${tenantId})`
+      );
+    } else {
+      this.logger.log(
+        `Created system variable '${data.name}' (id=${row.id}, tenant=${tenantId})`
+      );
+    }
+
     return row;
   }
 
