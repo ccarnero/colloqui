@@ -72,7 +72,7 @@ spec:
   systemVariables:
     - name: http-fanout-telegram-chat-id
       type: string
-      value: "REPLACE_WITH_YOUR_TELEGRAM_CHAT_ID"
+      value: "517998951"
       label: Telegram chat id for http-fanout-telegram
       description: >-
         Numeric Telegram chat id the 'notify' step DMs a summary to. Edit
