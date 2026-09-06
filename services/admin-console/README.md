@@ -125,7 +125,7 @@ ingress, not on a hard-coded gateway hostname.
 
 ## Component testing strategy
 
-See **Angular consoles** under *Testing* in the repo root `AGENTS.md`. Use Angular `TestBed`, HTTP testing utilities for services, and focused component tests around routing, guards, interceptors, and metrics services before broad feature snapshots.
+Follow [AGENTS.md](../../AGENTS.md), especially Binding styles per surface and Verification, and the [SPEC guide](../../manual-loops-templates/README.md) for task-specific gates. Use Angular `TestBed`, HTTP testing utilities for services, and focused component tests around routing, guards, interceptors, and metrics services before broad feature snapshots.
 
 ## Redesign foundation (theming, tokens, primitives)
 

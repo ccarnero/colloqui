@@ -27,7 +27,7 @@ This document defines the canonical contract for events that travel over the bus
 7. Traceability — three IDs and the D9 caveat.
 8. Two-stage ingress summary (see [`ingress.md`](ingress.md) for full detail).
 9. Envelope examples (four types).
-10. Implementer checklist (12 points).
+10. Implementer checklist (12 points + policy checks).
 11. `EVENTS`/`RESULTS` deprecation decision.
 
 ---
@@ -178,6 +178,16 @@ Subject builders: `buildChannelSubject`, `buildWebhookIngressSubject` in `packag
 - Stream `INGRESS-<tenant>` captures `evt.<tenant>.>` — all tenant events.
 - `audit.gateway.>` (stream `GATEWAY_AUDIT`) does not use the canonical envelope: `publishGatewayAuditEvent` publishes a `GatewayAuditEvent`, a control-channel format of its own.
 - `dlq.<tenant>.>` (stream `DLQ-<tenant>`) is not a *new* format — it re-publishes the **original message bytes verbatim** and puts the dead-letter metadata in headers (`X-Dlq-Reason`, `X-Dlq-Stage`, `X-Dlq-Original-Subject`, `X-Dlq-Stream`, `X-Dlq-Deliveries`/`X-Dlq-Original-Msg-Id`). So a canonical envelope that dies arrives on the DLQ still canonical: `MultiTenantConsumerManager.buildTenantDlqHandler` forwards `msg.data`, and `IngressService.publishWithClaimCheck` forwards the full inlined envelope on a store failure. Subjects are built by `buildDlqMessageSubject`; the separate global `DLQ` stream owns only `dlq.webhook` (`DLQ_STREAM_SUBJECTS`).
+
+### 3.2 Non-critical transport exceptions
+
+The canonical `evt.*` format is still preferred. The only accepted non-canonical transport lanes are:
+
+- `platform.tenant.ready` and `platform.tenant.deleted` over Core NATS: best-effort fan-out for tenant lifecycle bootstrap/teardown (`TenantReadyMessageV1` / `TenantDeletedMessageV1`).
+- `rt.<tenant>.exec.<executionId>.<kind>` and `rt.<tenant>.exec.<executionId>.cancel` over Core NATS: stream-free token/tool progress and cancel control. Replay is intentionally not required.
+- Subscribe-only `evt.*` relays over core subscriptions in `ai-agent-gateway` and SDK client paths: no durable consumer, no alternate event contract, only delivery to SSE.
+
+Any message that carries durable business state must still use the canonical JetStream + canonical subject path from §3.
 
 ---
 
@@ -588,7 +598,8 @@ Before publishing any message to the bus:
 - [ ] `traceid` comes from the active span via `activeOrRandomTraceId()` (§8).
 - [ ] If a derived event: `causation_id` points to the incoming event's `id` and `correlation_id` is copied unchanged.
 - [ ] `transport.depth` was incremented if applicable (use `deriveEnvelope` from `@yoizen/shared`).
-- [ ] Subject follows the 8-token format from §3.
+- [ ] Message uses canonical bus (`evt.*` + JetStream) unless it is explicitly in §3.2.
+- [ ] If canonical bus is used: subject follows the 8-token format from §3.
 - [ ] Publish sets `Nats-Msg-Id` with `idempotencykey`.
 - [ ] Publish injects `traceparent` via `injectTraceContext(headers)`.
 - [ ] If the canonical channel envelope serializes above 256 KB: payload stored in Object Store and `payload_inline = false`; stage-1 webhook envelopes stay inline.

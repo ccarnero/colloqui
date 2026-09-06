@@ -8,7 +8,7 @@ import { Test } from "@nestjs/testing";
 import { WorkflowNotFoundError as TemporalWorkflowNotFoundError } from "@temporalio/common";
 import type { WorkflowAction } from "@yoizen/shared";
 import { WorkflowStatus } from "@yoizen/shared";
-import { EXECUTIONS_REPOSITORY } from "../../src/modules/workflows/executions.repository.interface";
+import { EXECUTIONS_REPOSITORY, type IWorkflowExecutionRow } from "../../src/modules/workflows/executions.repository.interface";
 import { RegisteredServicesResolver } from "../../src/modules/workflows/registered-services.resolver";
 import { SystemVariablesProvider } from "../../src/modules/workflows/system-variables.provider";
 import {
@@ -26,6 +26,12 @@ async function* asyncIterableOf<T>(items: T[]): AsyncIterable<T> {
     yield item;
   }
 }
+
+const ownedRow = (temporalWorkflowId: string, definitionId = "def-1"): IWorkflowExecutionRow => ({
+  id: temporalWorkflowId, definition_id: definitionId, temporal_workflow_id: temporalWorkflowId,
+  temporal_run_id: "stored-run", correlation_id: null, request: {}, status: "COMPLETED",
+  created_at: new Date("2026-09-05T00:00:00Z"), updated_at: new Date("2026-09-05T00:00:00Z"),
+});
 
 describe("WorkflowsService", () => {
   const actions: WorkflowAction[] = [
@@ -568,15 +574,57 @@ describe("WorkflowsService", () => {
   });
 
   describe("terminateRunningExecutions", () => {
+    it("reads all ownership pages before terminating and ignores unowned exact IDs", async () => {
+      const firstPage = Array.from({ length: 100 }, (_, i) => ownedRow(`t1:old-name:${i}`));
+      mockExecutions.findExecutionsByDefinition
+        .mockResolvedValueOnce(firstPage)
+        .mockResolvedValueOnce([ownedRow("t1:old-name:last"), ownedRow("t1:old-name:priority:abc", "def-2")]);
+      mockTemporal.workflow.list.mockImplementationOnce(() => asyncIterableOf([
+        { workflowId: "t1:old-name:0", runId: "current-a" },
+        { workflowId: "t1:old-name:last", runId: "current-b" },
+        { workflowId: "t1:old-name:priority:abc", runId: "other-definition" },
+        { workflowId: "t2:old-name:0", runId: "other-tenant" },
+        { workflowId: "t1:old-name:missing", runId: "not-persisted" },
+      ]));
+      expect(await service.terminateRunningExecutions("t1", "def-1")).toEqual({ terminated: 2, failed: [] });
+      expect(mockExecutions.findExecutionsByDefinition.mock.calls).toEqual([
+        [{ tenantId: "t1", definitionId: "def-1", limit: 100, offset: 0, sort: "asc" }],
+        [{ tenantId: "t1", definitionId: "def-1", limit: 100, offset: 100, sort: "asc" }],
+      ]);
+      expect(mockTemporal.workflow.getHandle.mock.calls).toEqual([
+        ["t1:old-name:0", "current-a"], ["t1:old-name:last", "current-b"],
+      ]);
+    });
+
+    it("does not terminate anything if a later ownership page fails", async () => {
+      mockExecutions.findExecutionsByDefinition
+        .mockResolvedValueOnce(Array.from({ length: 100 }, (_, i) => ownedRow(`t1:My workflow:${i}`)))
+        .mockRejectedValueOnce(new Error("repository unavailable"));
+      await expect(service.terminateRunningExecutions("t1", "def-1")).rejects.toThrow("repository unavailable");
+      expect(mockTemporal.workflow.list).not.toHaveBeenCalled();
+      expect(mockTemporal.workflow.getHandle).not.toHaveBeenCalled();
+    });
+
+    it("never falls back to a matching name when ownership is empty", async () => {
+      mockExecutions.findExecutionsByDefinition.mockResolvedValueOnce([]);
+      mockTemporal.workflow.list.mockImplementationOnce(() => asyncIterableOf([
+        { workflowId: "t1:My workflow:abc", runId: "run-a" },
+      ]));
+      expect(await service.terminateRunningExecutions("t1", "def-1")).toEqual({ terminated: 0, failed: [] });
+      expect(mockTemporal.workflow.getHandle).not.toHaveBeenCalled();
+    });
+    beforeEach(() => {
+      mockExecutions.findExecutionsByDefinition.mockResolvedValue(["abc", "def", "ghi"].map(id => ownedRow(`t1:My workflow:${id}`)));
+    });
     it("queries Temporal with the TenantId + Running visibility filter", async () => {
-      await service.terminateRunningExecutions("t1", "My workflow");
+      await service.terminateRunningExecutions("t1", "def-1");
 
       expect(mockTemporal.workflow.list).toHaveBeenCalledWith({
         query: "TenantId='t1' AND ExecutionStatus='Running'",
       });
     });
 
-    it("terminates only executions whose workflowId matches the tenant:definitionName: prefix", async () => {
+    it("terminates only exact IDs owned by the tenant and definition", async () => {
       mockTemporal.workflow.list.mockImplementationOnce(() =>
         asyncIterableOf([
           { workflowId: "t1:My workflow:abc", runId: "run-a" },
@@ -587,7 +635,7 @@ describe("WorkflowsService", () => {
 
       const result = await service.terminateRunningExecutions(
         "t1",
-        "My workflow"
+        "def-1"
       );
 
       expect(result).toEqual({ terminated: 1, failed: [] });
@@ -613,7 +661,7 @@ describe("WorkflowsService", () => {
 
       const result = await service.terminateRunningExecutions(
         "t1",
-        "My workflow"
+        "def-1"
       );
 
       expect(result.terminated).toBe(2);
@@ -646,7 +694,7 @@ describe("WorkflowsService", () => {
 
       const result = await service.terminateRunningExecutions(
         "t1",
-        "My workflow"
+        "def-1"
       );
 
       expect(result.terminated).toBe(2);
@@ -666,7 +714,7 @@ describe("WorkflowsService", () => {
 
       const result = await service.terminateRunningExecutions(
         "t1",
-        "My workflow"
+        "def-1"
       );
 
       expect(result).toEqual({ terminated: 0, failed: [] });
@@ -675,6 +723,22 @@ describe("WorkflowsService", () => {
   });
 
   describe("updateWorkflowStatus", () => {
+    it("uses stable definition ownership after a rename", async () => {
+      mockDefinitions.setStatus.mockResolvedValueOnce({ ...baseRow, name: "Renamed", status: WorkflowStatus.DISABLED });
+      mockTemporal.workflow.list.mockImplementationOnce(() => asyncIterableOf([
+        { workflowId: "t1:My workflow:abc", runId: "run-before-rename" },
+      ]));
+      const result = await service.updateWorkflowStatus("t1", "def-1", WorkflowStatus.DISABLED);
+      expect(result.terminated).toBe(1);
+      expect(result.name).toBe("Renamed");
+      expect(mockExecutions.findExecutionsByDefinition).toHaveBeenCalledWith({
+        tenantId: "t1", definitionId: "def-1", limit: 100, offset: 0, sort: "asc",
+      });
+      expect(mockTemporal.workflow.getHandle).toHaveBeenCalledWith("t1:My workflow:abc", "run-before-rename");
+    });
+    beforeEach(() => {
+      mockExecutions.findExecutionsByDefinition.mockResolvedValue(["abc", "def"].map(id => ownedRow(`t1:My workflow:${id}`)));
+    });
     it("disabling sets status then terminates running executions and returns the count", async () => {
       mockDefinitions.setStatus.mockImplementationOnce(() =>
         Promise.resolve({ ...baseRow, status: WorkflowStatus.DISABLED })

@@ -4,7 +4,22 @@ Source: `manual-loops/admin-console/design/Rediseño Terminal.dc.html` (1889 lin
 than the ~185k figure suggested; it's a compact single-file "design canvas" component, not a
 large multi-file bundle). Cross-checked against `design/11-builder.png`.
 
-## Top-level structure of the .dc.html (for future navigation)
+## Goal
+
+Consolidar en un punto único las observaciones de diseño extraídas del canvas de
+`Rediseño Terminal.dc.html` para que el porting del builder use una única
+fuente de verdad.
+
+## User decisions (human boundary — do not reinterpret)
+
+1. Este documento es descriptivo; no define comportamiento de negocio.
+2. Se prioriza copiar valores literales de la referencia cuando se define el
+   skin del builder.
+3. Cualquier diferencia detectada en extracción queda explícita aquí.
+
+## Task queue
+ 
+### Top-level structure of the .dc.html (for future navigation)
 
 ```
 lines 1-13     <head> boilerplate, <script src="./support.js"> (the design-canvas runtime)
@@ -44,7 +59,7 @@ and any adjacent per-screen state. To find a screen's data: grep for the plural 
 top of `renderVals()` (e.g. `const builderNodes = ...`) or a static array on the class
 (e.g. `BUILDER_NODES`).
 
-## Builder screen location
+### Builder screen location
 
 - Markup: lines 361-493 (`<sc-if value="{{ showBuilder }}">` … node cards at 378-392,
   inspector panel at 461-491).
@@ -55,7 +70,7 @@ top of `renderVals()` (e.g. `const builderNodes = ...`) or a static array on the
 - Inspector binding: `bSelName` / `bSelId` / `bSelIcon` / `bSelFields` / `bSelHint`,
   lines 1839-1844.
 
-## Key finding: no CSS classes, no per-node-type markup
+### Key finding: no CSS classes, no per-node-type markup
 
 The canvas has exactly **one** `<style>` block (lines 14-46): `:root` tokens (dark +
 `:root.light-theme` override), a few global base rules (`html,body`, `a`, scrollbar,
@@ -76,7 +91,7 @@ inline property:value pairs into class-based rules, so the values are faithful t
 even though the class-based delivery mechanism and class names themselves are new (invented
 here as hooks, clearly flagged in each file's header comment).
 
-## Node variants that exist (all instances of the one template, by `kind` + `tag`)
+### Node variants that exist (all instances of the one template, by `kind` + `tag`)
 
 | Node | kind | tag | icon | stripe/tint color | notes |
 |---|---|---|---|---|---|
@@ -93,7 +108,7 @@ additional node *types* users could drag in (HTTP Connector, MCP Tool, Service C
 Event, JS Function, Parallel Branch) that don't appear as instantiated cards anywhere in the
 canvas — their card appearance is undefined/unspecified by this file.
 
-## Card data fields (exact field names, from `BUILDER_NODES`)
+### Card data fields (exact field names, from `BUILDER_NODES`)
 
 Each node object: `id, name, tag, icon, x, y, kind, summary, stat1, stat2, ok, fields, hint`.
 
@@ -114,7 +129,7 @@ Each node object: `id, name, tag, icon, x, y, kind, summary, stat1, stat2, ok, f
   text), then a free-text `hint` paragraph, and a footer with the node `id` (monospace) and
   a `Remove` button.
 
-## Edge / connection conventions
+### Edge / connection conventions
 
 - Edges are raw SVG `<path>` cubic Bezier curves, not a generic edge component — coordinates
   are hardcoded per edge (no edge data array; each `<path d="...">` is written by hand for
@@ -135,7 +150,7 @@ Each node object: `id, name, tag, icon, x, y, kind, summary, stat1, stat2, ok, f
   regardless of whether it actually has an incoming/outgoing edge (e.g. the trigger node
   still renders an unused left port).
 
-## Palette / dock contents (bottom-center floating dock, `dockItems`)
+### Palette / dock contents (bottom-center floating dock, `dockItems`)
 
 In order, with dividers as shown:
 
@@ -155,13 +170,13 @@ In order, with dividers as shown:
 Each dock item shows icon + short mono label (e.g. `CHAN`, `JS`, `HTTP`) stacked vertically,
 `cursor:grab`, hover background `var(--hover)`.
 
-## Fonts
+### Fonts
 
 - Sans: `Geist` (weights 400/500/600/700), loaded from Google Fonts, `font-family:'Geist',system-ui,sans-serif`, used as the page body default.
 - Mono: `Geist Mono` (weights 400/500/600), token `--mono:'Geist Mono',ui-monospace,monospace`, used for all stat/label/badge/id text throughout the builder (stats row, tag chips, edge labels, zoom %, field labels, node id).
 - Icons: Material Icons (Google Fonts icon font), `.material-icons` class, base `font-size:16px` overridden inline per usage (13-18px range observed in the builder).
 
-## Cross-check against `design/11-builder.png`
+### Cross-check against `design/11-builder.png`
 
 Everything visible in the screenshot is accounted for in the HTML — this canvas is a live
 render, not a static mockup with drift. Specifically confirmed present in both:
@@ -181,7 +196,7 @@ source and documented in node-card.html section 3 — the PNG's bottom-right doe
 panel with a few gray placeholder bars near the "Fallback Message" card, which corresponds to
 the minimap rects, not the inspector).
 
-## Files in this folder
+### Files in this folder
 
 - `tokens.css` — `:root` design tokens (dark + light-theme), global base rules, `@keyframes dashmove`.
 - `node-card.html` — raw node-card template + binding logic + 4 resolved variant instances + inspector panel markup.
@@ -189,3 +204,16 @@ the minimap rects, not the inspector).
 - `canvas-layout.html` — screen root, dotted background, SVG edges/labels, top chrome, dock palette, zoom, minimap.
 - `canvas-layout.css` — same content's styling (mechanically transcribed, see file header).
 - `NOTES.md` — this file.
+
+## Progress
+
+- [x] Extracción inicial completada y congelada en este archivo.
+
+## Out of scope (explicit)
+
+- Cambios de implementación del builder.
+
+## Human boundaries for this change
+
+- Este documento es soporte de referencia; cualquier ajuste requiere aprobación
+  del loop owner y debe documentar la diferencia vs la fuente.

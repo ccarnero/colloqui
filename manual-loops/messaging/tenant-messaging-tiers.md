@@ -18,7 +18,7 @@ replication) is chosen by its `messagingTier` — `free` | `pro` | `enterprise`
 `INGRESS-<TENANT>` at provisioning time and reconciled on tier change, instead
 of today's flat `CHANNEL_STREAM_MAX_AGE_NS`/`CHANNEL_STREAM_MAX_BYTES`.
 
-## User decisions (recorded design calls — the v_next §5 open questions)
+## User decisions (human boundary — do not reinterpret)
 
 1. **Tier is a property of the TENANT** (`messagingTier` on the tenant record,
    default `free`; absent field reads as `free`, no migration). The
@@ -61,7 +61,7 @@ of today's flat `CHANNEL_STREAM_MAX_AGE_NS`/`CHANNEL_STREAM_MAX_BYTES`.
   the provisioning-path integration proof.
 - Dual adversarial review (2× APPROVED) before each commit.
 
-## Gates (per checkpoint)
+## Gates (the `/manual-loop` command runs these verbatim, in order)
 
 ```
 G1  cd packages/shared && bun test && bunx tsc --noEmit
@@ -116,6 +116,12 @@ G6b ./rebuild-redeploy.sh <touched-svc> dev && ./scripts/e2e/http-workflow.sh
   shrink live; cluster e2e + CRM demo smoke green.
 - `DOCS/v_next/tenant-messaging-tiers.md` → moved/annotated as SHIPPED
   (v_next README rules); tenant docs updated.
+
+## Human boundaries for this change
+
+- Human approves this SPEC before the first run.
+- Human decides in advance any new default-capacity behavior (timeout, ceilings,
+  clamp strategy) not already included.
 
 ## Out of scope (explicit)
 - Claim-check bucket + DLQ tiering (decision 5).

@@ -7,7 +7,27 @@
 > Engram topic: 'architecture/rules-audit'. Nothing here changes code — this
 > document feeds the Phase 2 human decisions and the Phase 3 remediation loops.
 
-## Verdict
+## Goal
+
+Centralizar contradicciones y reglas de operación reales para definir cuál es la
+constitución ejecutable del repositorio antes de escalarlas a remediaciones.
+
+## User decisions (human boundary — do not reinterpret)
+
+1. Mantener `AGENTS.md` como norma y usar este artefacto sólo como mapa de
+   implementación.
+2. No tocar runtime desde este documento: cada cambio operativo va en loops
+   separados con pruebas y dual review.
+
+## Constraints (apply to every task)
+
+- Los contratos técnicos vivos mandan sobre documentación.
+- No se asumen capacidades no verificables en guardas existentes.
+- Este texto puede contener hallazgos abiertos; su cierre requiere ronda humana.
+
+## Task queue
+
+### Verdict
 
 The platform HAS a real, coherent rulebook — but it does not live where the
 documentation says it lives. The operative constitution is the `manual-loops/`
@@ -18,7 +38,7 @@ principles — is prose with no enforcement, drifted copies, or claims the code
 contradicts. There is NO CI: no `.github/workflows`, no `lefthook.yml`.
 Every rule is enforced either by a manual-loop run or by nobody.
 
-## 1. The de-facto constitution (real, repeated, worth canonizing)
+### 1. The de-facto constitution (real, repeated, worth canonizing)
 
 Universal (from 28 SPEC Constraints sections):
 - Verbose logging on every new code path (28/28 SPECs).
@@ -58,7 +78,7 @@ Executable enforcement that actually exists:
   run manually.
 - Manual-loop gates + dual review — but ONLY for work done through loops.
 
-## 2. Contradictions & rot (numbered — Phase 2 decides each)
+### 2. Contradictions & rot (numbered — Phase 2 decides each)
 
 C1. `AGENTS.md` is EMPTY (0 bytes) yet cited as authoritative by
     `.claude/CLAUDE.md:4` and `.gemini/gemini.md:6`.
@@ -115,7 +135,7 @@ C11. Security enforcement mostly aspirational: no NATS ACLs (permanent current
      no compensating control), agent auth/revocation "Pending" across the
      board.
 
-## 3. Kill list (C1/C2 — user-directed 2026-07-29, pending execution go)
+### 3. Kill list (C1/C2 — user-directed 2026-07-29, pending execution go)
 
 - `CURSOR.md`, `GEMINI.md`, `.cursorrules`, `.gemini/` (root)
 - `.claude/CLAUDE.md` — after absorbing its 3 true rules (skills/ pointer,
@@ -127,7 +147,7 @@ C11. Security enforcement mostly aspirational: no NATS ACLs (permanent current
 - Open: fate of root `CLAUDE.md`'s SDD-orchestrator content (Part 6) — keep
   SDD or retire it; root CLAUDE.md becomes a pointer to AGENTS.md either way.
 
-## 4. Proposed remediation (Phase 3 — each its own manual-loop)
+### 4. Proposed remediation (Phase 3 — each its own manual-loop)
 
 - L1 `architecture/docs-consolidation.md` — AGENTS.md becomes the single
   normative doc (§1 content, canonized); execute kill list; README stubs for
@@ -154,7 +174,23 @@ Dangling refs left by the 2026-07-29 kill-list execution (assigned):
 - Tenancy convergence (C6) and the 4 orphan services (C10) need Phase 1 code
   audit + a human decision before any loop is written.
 
-## 5. Phase 1 (code audit) — measuring stick now exists
+### 5. Phase 1 (code audit) — measuring stick now exists
+
+## Progress
+
+- [x] Relevado de base (`AGENTS` y 4 suites de auditoría) y contradicciones
+  numeradas.
+- [x] Priorizados manual-loops de remediación de fase 3.
+
+## Out of scope (explicit)
+
+- Decisiones de runtime y cambios de implementación.
+- Tareas históricas ya cerradas sin evidencia nueva.
+
+## Human boundaries for this change
+
+- Este inventario no aprueba cambios directos; toda remediación queda en SPECs
+  posteriores con aprobación humana.
 
 With §1 canonized, the code audit measures every service against: NestJS
 conventions (or named exception), x-yoizen-tenant enforcement, causal-chain

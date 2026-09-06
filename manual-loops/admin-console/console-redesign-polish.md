@@ -782,6 +782,8 @@ grep -n "console-redesign-polish" cowork/INDEX.md && ls manual-loops/admin-conso
 
 ---
 
+## Progress
+
 - [x] T01 visual audit + harness
 - [x] T02 builder full-bleed (nested route)
 - [x] T03 builder palette dock + node cards

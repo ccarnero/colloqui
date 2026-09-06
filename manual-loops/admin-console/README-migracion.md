@@ -1,15 +1,36 @@
-# Migración consola admin → UI "Rediseño Terminal"
+# SPEC — Migración consola admin → UI "Rediseño Terminal"
 
-Plan maestro de manual loops para migrar la consola Angular actual a la nueva
-UI (dark/light, estilo Vercel/Linear, acento azul corporativo). El contrato
-visual binding es **`Rediseño Terminal.dc.html`** (proyecto Cowork "Rediseño
-consola admin") — copiar ese archivo + screenshots por sección a
-`manual-loops/admin-console/design/` del repo antes de la primera corrida, para que
-implementer y reviewers puedan consultarlo.
+> Plan maestro de manual loops para migrar la consola Angular actual a la nueva
+> UI (dark/light, estilo Vercel/Linear, acento azul corporativo).
 
-## Orden y dependencias
+## Goal
 
-```
+Estandarizar el orden, contrato visual y alcance de los loops de rediseño de
+la consola admin para que todos compartan la misma base y dependencias.
+
+## User decisions (human boundary — do not reinterpret)
+
+1. El contrato visual base es **`Rediseño Terminal.dc.html`** + screenshots
+   por sección en `manual-loops/admin-console/design/`.
+2. El alcance de este grupo queda en frontend: Angular, temas y pantallas.
+3. Los loops de datos/servicios sólo se modifican según sus propias decisiones
+   de implementación y nunca para cambiar este orden base.
+
+## Constraints (apply to every task)
+
+- Stack real (validado 2026-07-21): Angular 21 + Material/CDK, monorepo pnpm con
+  `@yoizen/angular-shared` (se buildea en pre-steps de build/test), tests con
+  `ng test`, Monaco en AI (`ngx-monaco-editor-v2`), `@foblex/flow` 18.6.0 en
+  builder. No se agrega ninguna librería nueva sin aprobación humana.
+- Sin cambios de backend: cualquier gap de API se reporta como finding y se decide
+  con el humano.
+- Paths validados contra el repo real y cada loop conserva su inventario T01.
+
+## Task queue
+
+### Orden y dependencias
+
+```text
 L0 console-redesign-foundation      ← todo depende de esto
 ├── L1 console-redesign-dashboard
 ├── L2 console-redesign-channels
@@ -20,47 +41,44 @@ L0 console-redesign-foundation      ← todo depende de esto
 └── L7 console-redesign-users-analytics-settings
 ```
 
-L1–L5 y L7 son paralelizables entre sí una vez que L0 está shipped.
-L6 arranca solo con L5 done.
+L1–L5 y L7 son paralelizables entre sí una vez que L0 esté shipped.
+L6 arranca solo con L5 terminado.
 
-## Convenciones comunes a todos los loops
+### Convenciones comunes a todos los loops
 
-- **Stack real** (validado 2026-07-21): Angular 21 + Material/CDK, monorepo
-  pnpm con `@yoizen/angular-shared` (se buildea en pre-steps de build/test),
-  tests con vitest vía `ng test`, Monaco en AI (`ngx-monaco-editor-v2`),
-  `@foblex/flow` 18.6.0 en el builder. No se agrega ninguna librería nueva
-  sin aprobación humana.
-- **Gates Angular** (la consola no tiene dev-mode → no hay G5a; el commit
-  gate es build de producción):
+- Gates Angular para este bloque:
   - G1 `cd services/admin-console && pnpm exec ng test --watch=false`
   - G2 `cd services/admin-console && pnpm exec tsc -p tsconfig.app.json --noEmit`
-  - G5b `cd services/admin-console && pnpm run build` (el prebuild compila la lib compartida)
-- **Contrato visual**: desviarse de `Rediseño Terminal.dc.html` requiere
-  sign-off humano (está en Human boundaries de cada SPEC).
-- **Paths validados** (2026-07-21) contra el repo real; cada loop conserva su
-  T01 de inventario como confirmación fina (líneas, firmas, contratos de
-  respuesta) antes de codear.
-- **Sin cambios de backend**: estos loops son 100% front. Cualquier gap de
-  API se reporta como finding y se decide con el humano.
+  - G5b `cd services/admin-console && pnpm run build` (el prebuild compila la
+    lib compartida)
+- Contrato visual: cualquier desvío de `Rediseño Terminal.dc.html` requiere
+  sign-off humano.
 
-## Archivos
+### Archivos de alcance
 
-- `console-redesign-foundation.md` — tokens de tema, shell (sidebar/topbar),
-  primitivas compartidas (health dot, sparkline, metric card, needs-attention
-  panel, inventory table, detail modal), toggle dark/light.
+- `console-redesign-foundation.md` — tokens de tema, shell y componentes
+  compartidos.
 - `console-redesign-dashboard.md`
 - `console-redesign-channels.md` — fleet + detalle de cuenta.
 - `console-redesign-connections.md` — inventario + detalle.
-- `console-redesign-ai.md` — lista de agentes, editor IDE con mention
-  highlights, panel de test con chat en vivo.
-- `console-redesign-processes-builder.md` — lista de workflows + builder
-  full-bleed (chrome flotante, puertos coloreados, edge labels, mini-stats,
-  inspector flotante).
-- `console-redesign-trace.md` — waterfall, causal graph, run view canvas,
-  step log; event inspector compartido con selección sincronizada y deep
-  links a Temporal/builder.
+- `console-redesign-ai.md` — lista de agentes, editor IDE + chat.
+- `console-redesign-processes-builder.md` — builder full-bleed y flujo.
+- `console-redesign-trace.md` — waterfall / causal graph / run view.
 - `console-redesign-users-analytics-settings.md`
 
 No cubiertos (follow-ups, post L0–L7): Schedules, sub-páginas de AI
-(playground, memories, skills, knowledge bases, structured KB, system
-variables), Roles / API keys / Billing.
+(playground, memories, skills, knowledge bases, structured KB, system variables),
+Roles / API keys / Billing.
+
+## Progress
+
+- [ ] L0 fundacional definido (esperando ejecución de loop dependientes).
+
+## Out of scope (explicit)
+
+- Diseño de nuevas capacidades o cambios de producto fuera del alcance del
+  rediseño de consola.
+
+## Human boundaries for this change
+
+- Human approves this planning sequence before dependent loops run.

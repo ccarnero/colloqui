@@ -485,6 +485,8 @@ grep -n "console-redesign-trace" cowork/INDEX.md
 
 ---
 
+## Progress
+
 - [x] T01 inventory report
 - [x] T02 shell + selection service
 - [x] T03 waterfall

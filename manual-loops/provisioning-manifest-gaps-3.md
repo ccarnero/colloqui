@@ -703,8 +703,6 @@ find integrations \( -name 'setup.sh' -o -name 'setup.ts' -o -name 'STANDBY.md' 
 
 ## Progress
 
-## Progress
-
 ### T01 — 2026-07-17
 
 `skills` section shipped: `skillSchema`/`skillFileSchema` mirror agent-admin's

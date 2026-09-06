@@ -1699,3 +1699,57 @@ Commits: `971ad0c3` (T01), `e0c2e42f` (T02), `5db90ac5` (T03), `910f55fc` (T04),
 - Validated on **OrbStack (macOS)** and **minikube (Linux)**. One-command startup: `scripts/orbstack/startup.sh` or `scripts/minikube/startup.sh`.
 - Only pending item: optional minor `traceability-depth-and-traceid` (`>=`/`>` adjustment in depth-tracker + D9 traceid).
 - Uncommitted: `.mcp.json`, `.cbmignore`, `.sdd/changes/` (SDD artifacts), `cowork/` (these docs).
+
+## 2026-09-05: Engineering workflow documentation alignment
+
+Local documentation maintenance; not a deployment or a fresh runtime audit.
+Canonical workflow entry points now link AGENTS.md, manual-loop, templates,
+the historical loop inventory and the separate PENDIENTES working register.
+The legacy build-console command forwards to manual-loop with an explicit SPEC.
+Guard documentation describes KISS as default and records CI coverage limits.
+Verification and review status: [operating-docs-alignment](../../manual-loops/architecture/operating-docs-alignment.md).
+
+## 2026-09-05: Dev-mode canary preservation
+
+The validator's local canary cleanup uses ownership-aware snapshots rather than
+Git restoration. Isolated regressions cover failed preflight and restoration
+failure behavior. The development guide and templates describe the recovery
+limits and the separate live OrbStack acceptance cycle.
+Evidence and live-checkpoint status: [dev-mode-canary-preservation](../../manual-loops/architecture/dev-mode-canary-preservation.md).
+
+## 2026-09-05: Workflow-service offline conformance baseline
+
+Diagnostic audit only; no service fixes or deployment. Existing unit tests,
+typecheck and KISS passed. The report records six source-backed findings and
+separates them from unverified live integration behavior.
+Report: [workflow-service conformance](../architecture/workflow-service-conformance.md).
+Evidence and review status: [audit SPEC](../../manual-loops/architecture/workflow-service-conformance-audit.md).
+
+## Change: FP delivery integration (2026-09-05)
+
+The repository now documents the current manual-loop integration for a single
+principal, optional FP architecture advice, economical development/QA, developer
+regression tests, post-implementation QA, all gates before review, and two
+independent capable reviewers. The current contract is
+[manual-loop-fp-delivery.md](../guides/manual-loop-fp-delivery.md). The original
+future proposal remains at
+[v_next/manual-loop-fp-delivery.md](../v_next/manual-loop-fp-delivery.md) with
+its superseded status. Configuration validation is provided by
+[`scripts/checks/check-fp-delivery.py`](../../scripts/checks/check-fp-delivery.py);
+live provider execution is recorded separately from configured model selection.
+
+
+## 2026-09-06 — Tool configuration and documentation standardization
+
+The [standardization SPEC](../../manual-loops/architecture/tool-docs-standardization.md)
+records scope, validation, independent reviews, and any remaining execution evidence.
+The shared [manual-loop procedure](../guides/manual-loop.md) and
+[delivery role contracts](../guides/agent-roles.md) replace duplicated tool-specific
+rules. Local configuration inherits active global choices by default and contains
+only intentional project tuning. The [documentation index](../README.md) now
+provides concise navigation to canonical sources.
+
+The [former index snapshot](documentation-index-2026-09-06.md) and
+[FP delivery proposal snapshot](fp-delivery-proposal-2026-09-05.md) preserve the
+complete pre-consolidation sources. These snapshots are historical evidence,
+not current execution instructions or proof of a live provider run.

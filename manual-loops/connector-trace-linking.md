@@ -318,6 +318,8 @@ grep -n "connector-trace-linking" cowork/INDEX.md
 
 ---
 
+## Progress
+
 - [x] T01 causal threading endpointCall
 - [x] T02 diagnose empty Recent calls (report)
 - [x] T03 ingester /events endpoint + gateway proxy

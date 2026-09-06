@@ -182,6 +182,8 @@ grep -n "console-redesign-ai" cowork/INDEX.md
 
 ---
 
+## Progress
+
 - [x] T01 inventory report
 - [x] T02 agents list view
 - [x] T03 prompt editor + highlights

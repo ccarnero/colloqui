@@ -353,6 +353,8 @@ grep -n "console-redesign-users-analytics-settings" cowork/INDEX.md
 
 ---
 
+## Progress
+
 - [x] T01 inventory report
 - [x] T02 users
 - [x] T03 analytics

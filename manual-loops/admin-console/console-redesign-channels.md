@@ -393,6 +393,8 @@ grep -n "console-redesign-channels" cowork/INDEX.md
 
 ---
 
+## Progress
+
 - [x] T01 inventory report
 - [x] T02 fleet list view
 - [x] T03 account detail view

@@ -1,0 +1,37 @@
+name: Engineering guards
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  engineering-guards:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Ensure guard dependencies are available
+        shell: bash
+        run: |
+          guard_packages=()
+          if ! command -v rg >/dev/null 2>&1; then
+            guard_packages+=(ripgrep)
+          fi
+          if ! command -v fd >/dev/null 2>&1 && ! command -v fdfind >/dev/null 2>&1; then
+            guard_packages+=(fd-find)
+          fi
+          if [ "${#guard_packages[@]}" -gt 0 ]; then
+            sudo apt-get update
+            sudo apt-get install -y "${guard_packages[@]}"
+          fi
+          if ! command -v fd >/dev/null 2>&1; then
+            guard_bin="$(mktemp -d "$RUNNER_TEMP/engineering-guards.XXXXXX")"
+            ln -s "$(command -v fdfind)" "$guard_bin/fd"
+            printf '%s\n' "$guard_bin" >> "$GITHUB_PATH"
+          fi
+      - name: Run KISS repository guards
+        shell: bash
+        run: bash scripts/checks/doc-code-guards.sh

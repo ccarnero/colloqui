@@ -38,10 +38,14 @@
 #             matcher in the Prometheus alerts is a real durable declared in
 #             the code. Added by the docs-code-manda loop's T02, together with
 #             the inversion of the nats-consumer-lag allow-list.
+#   G17       no silent drift in Core NATS publish policy.
+#   G18       all `LazyNatsConnection` wrappers remain explicit legacy debt.
 #
 # Usage:
-#   scripts/checks/doc-code-guards.sh          # run all guards
-#   scripts/checks/doc-code-guards.sh -v        # verbose: also print PASS lines
+#   scripts/checks/doc-code-guards.sh [--full|--kiss] [--verbose|-v]
+#   scripts/checks/doc-code-guards.sh --full         # run every registered guard (explicit full audit)
+#   scripts/checks/doc-code-guards.sh --kiss         # run KISS (core + bus) guard set (default)
+#   scripts/checks/doc-code-guards.sh --kiss --verbose # verbose KISS output
 #
 # Requires: bash 3.2+ (macOS's default /bin/bash — several guards note this
 # explicitly and use case statements instead of associative arrays for it),
@@ -63,7 +67,38 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
 VERBOSE=0
-[[ "${1:-}" == "-v" ]] && VERBOSE=1
+MODE="kiss"
+VIA_CLI=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -v|--verbose)
+      VERBOSE=1
+      shift
+      ;;
+    --kiss)
+      MODE="kiss"
+      shift
+      ;;
+    --full)
+      MODE="full"
+      shift
+      ;;
+    --help|-h)
+      printf 'Usage: %s [--full|--kiss] [--verbose|-v]\n' "$(basename "$0")"
+      exit 0
+      ;;
+    *)
+      VIA_CLI+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ ${#VIA_CLI[@]} -gt 0 ]]; then
+  printf 'Usage: %s [--full|--kiss] [--verbose|-v]\n' "$(basename "$0")" >&2
+  exit 2
+fi
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -1151,29 +1186,173 @@ g16_bash32_compliance() {
   [[ "$ok" -eq 1 ]] && pass "$guard: $scanned shell script(s) are bash 3.2 clean"
 }
 
+# ---------------------------------------------------------------------------
+# G17 — Core NATS publish policy.
+#
+# Drift class: service code ships ad-hoc Core NATS subject names without a
+# contract update, and the next iteration has no automatic signal that the
+# bus-plane decision changed.
+#
+# Rules:
+# - Every Core NATS publish must be canonical (`evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>`)
+#   unless it is one of the explicit exception families:
+#   * `platform.tenant.ready`
+#   * `platform.tenant.deleted`
+#   * `rt.<tenant>.exec.<executionId>.<kind>` (runtime stream)
+#   * request/reply path in `agent-admin-service` runtime client
+# - any non-literal callsites must come from allowlisted files.
+# ---------------------------------------------------------------------------
+g17_core_nats_publish_policy() {
+  local guard="G17(core-nats-publish-policy)"
+  local ok=1
+
+  local calls
+  calls=$(rg --no-heading -n -g '!*.spec.ts' -g '!**/test/**' -g '!**/integration/**' \
+    'nc\.publish\(' services packages 2>/dev/null || true)
+
+  if [[ -z "$calls" ]]; then
+    pass "$guard: no nc.publish callsites in services/packages source"
+    return
+  fi
+
+  local c file line code subject allowed_file=1
+  while IFS= read -r c; do
+    [[ -z "$c" ]] && continue
+
+    file=$(printf '%s\n' "$c" | cut -d: -f1)
+    line=$(printf '%s\n' "$c" | cut -d: -f2)
+    code=$(printf '%s\n' "$c" | cut -d: -f3-)
+
+    allowed_file=0
+    case "$file" in
+      services/agent-admin-service/src/modules/agents/agents-runtime.service.ts|\
+      services/agent-ai-service/src/nats-handlers/execution.handler.ts|\
+      services/agent-ai-service/src/modules/job-executor/job-executor.service.ts|\
+      services/tenant-service/src/providers/tenant-deletion-publisher.service.ts|\
+      services/tenant-service/src/providers/tenant-ready-publisher.service.ts|\
+      packages/shared/src/execution-client.ts)
+        allowed_file=1
+        ;;
+    esac
+
+    subject=$(printf '%s\n' "$code" \
+      | sed -nE "s/^.*nc\\.publish\\([[:space:]]*['\`\"]([^'\`\\\"]*)['\`\"].*$/\\1/p")
+
+    if [[ -n "$subject" ]]; then
+      if echo "$subject" | rg -q '^evt\.[^\.]+\.[^\.]+\.[^\.]+\.[^\.]+\.[^\.]+\.[^\.]+\.v[0-9]+$'; then
+        continue
+      fi
+      if echo "$subject" | rg -q '^platform\.tenant\.(ready|deleted)$'; then
+        continue
+      fi
+      if echo "$subject" | rg -q '^rt\.[^.]+\.[^.]+\.[^.]+\.[^.]+$'; then
+        continue
+      fi
+      fail "$guard: $file:$line publishes a literal non-canonical subject '$subject' via Core NATS"
+      ok=0
+      continue
+    fi
+
+    if [[ "$allowed_file" -eq 0 ]]; then
+      fail "$guard: $file:$line calls nc.publish with non-literal subject outside the allowlisted Core NATS exception files"
+      ok=0
+    fi
+  done <<<"$calls"
+
+  [[ "$ok" -eq 1 ]] && pass "$guard: all nc.publish subject usage is canonical or explicitly documented"
+}
+
+# ---------------------------------------------------------------------------
+# G18 — Legacy LazyNatsConnection wrappers stay in known places.
+#
+# Drift class: a production service can reintroduce legacy manual NATS bootstrapping
+# and bypass shared-provider composition (and this script’s bus governance),
+# creating a new silent compatibility branch.
+# ---------------------------------------------------------------------------
+g18_legacy_lazy_nats_wrappers() {
+  local guard="G18(legacy-lazy-nats-wrappers)"
+  local ok=1
+
+  local allowlisted_wrappers
+  allowlisted_wrappers="
+services/agent-admin-service/src/providers/nats.provider.ts
+services/agent-memory-service/src/providers/nats.provider.ts
+services/agent-scheduler-service/src/providers/nats.provider.ts
+"
+
+  local class_files
+  class_files=$(rg --no-heading -l -g '!*.spec.ts' -g '!**/test/**' \
+    'class LazyNatsConnection' services 2>/dev/null || true)
+
+  if [[ -z "$class_files" ]]; then
+    fail "$guard: no class LazyNatsConnection declaration found under services/ after discovery"
+    return
+  fi
+
+  local f
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    case "$allowlisted_wrappers" in
+      *"$f"*) ;;
+      *)
+        fail "$guard: production class LazyNatsConnection was added at $f outside the documented 3-service legacy debt"
+        ok=0
+        ;;
+    esac
+  done <<<"$class_files"
+
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    if [[ ! -f "$f" ]]; then
+      fail "$guard: allowlisted legacy wrapper '$f' no longer exists; either migrate it or keep this guard aligned with the migration plan"
+      ok=0
+    fi
+  done <<<"$allowlisted_wrappers"
+
+  [[ "$ok" -eq 1 ]] && pass "$guard: LazyNatsConnection remains confined to the documented legacy debt"
+}
+
 main() {
-  g6a_service_inventory
-  g6b_no_scaledobject
-  g6c_autoscaling
-  g6d_referenced_scripts_exist
-  g6e_alert_names
-  g6f_archive_banner
-  g6g_no_component_agents_md
-  g7_ack_wait_census
-  g8_agent_call_timeout_ceiling
-  g9_di_type_imports
-  g9b_numeric_claims
-  g10_markdown_links_resolve
-  g11_storage_engine_documented
-  g12_class_banner
-  g13_doc_paths_resolve
-  g14_no_new_hex_colours
-  g15_alert_consumer_names
-  g16_bash32_compliance
+  if [[ "$MODE" == "kiss" ]]; then
+    note "Running KISS mode (core + bus guard set)"
+    g6a_service_inventory
+    g6b_no_scaledobject
+    g7_ack_wait_census
+    g9_di_type_imports
+    g15_alert_consumer_names
+    g16_bash32_compliance
+    g17_core_nats_publish_policy
+    g18_legacy_lazy_nats_wrappers
+  else
+    g6a_service_inventory
+    g6b_no_scaledobject
+    g6c_autoscaling
+    g6d_referenced_scripts_exist
+    g6e_alert_names
+    g6f_archive_banner
+    g6g_no_component_agents_md
+    g7_ack_wait_census
+    g8_agent_call_timeout_ceiling
+    g9_di_type_imports
+    g9b_numeric_claims
+    g10_markdown_links_resolve
+    g11_storage_engine_documented
+    g12_class_banner
+    g13_doc_paths_resolve
+    g14_no_new_hex_colours
+    g15_alert_consumer_names
+    g16_bash32_compliance
+    g17_core_nats_publish_policy
+    g18_legacy_lazy_nats_wrappers
+  fi
 
   echo
   if [[ "$FAILURES" -eq 0 ]]; then
-    printf "${GREEN}All doc/code guards passed.${NC}\n"
+    if [[ "$MODE" == "kiss" ]]; then
+      printf "${GREEN}KISS doc/code guards passed.${NC}\n"
+    else
+      printf "${GREEN}All doc/code guards passed.${NC}\n"
+    fi
     exit 0
   else
     printf "${RED}%d guard(s) failed.${NC}\n" "$FAILURES"

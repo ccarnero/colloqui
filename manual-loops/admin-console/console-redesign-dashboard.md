@@ -308,6 +308,8 @@ grep -n "console-redesign-dashboard" cowork/INDEX.md
 
 ---
 
+## Progress
+
 - [x] T01 inventory report
 - [x] T02 metrics + needs-attention
 - [x] T03 activity table + retirement

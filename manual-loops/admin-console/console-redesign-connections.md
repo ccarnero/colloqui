@@ -378,6 +378,8 @@ grep -n "console-redesign-connections" cowork/INDEX.md
 
 ---
 
+## Progress
+
 - [x] T01 inventory report
 - [x] T02 inventory list view
 - [x] T03 detail views

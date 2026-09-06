@@ -118,7 +118,9 @@ export class ExecutionsMongoRepository implements IExecutionsRepository {
       definition_id: definitionId,
     };
     const sortSpec =
-      sort === "asc" ? { created_at: 1 as const } : { created_at: -1 as const };
+      sort === "asc"
+        ? { created_at: 1 as const, _id: 1 as const }
+        : { created_at: -1 as const, _id: -1 as const };
     const docs = await col
       .find(filter)
       .sort(sortSpec)

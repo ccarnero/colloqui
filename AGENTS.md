@@ -12,23 +12,39 @@
 
 All non-trivial changes go through the **manual-loop system**:
 
-- Engine: `.claude/commands/manual-loop.md` — one task at a time, gates run
-  verbatim, dual adversarial review, commit per green task.
-- Agents: `.claude/agents/implementer.md` (writes code) and
-  `.claude/agents/reviewer.md` ×2 (judge the diff; their automatic-rejection
-  list is part of this constitution).
+- Engine: [`DOCS/guides/manual-loop.md`](DOCS/guides/manual-loop.md) — one task
+  at a time, gates run verbatim, dual adversarial review, commit per green task.
+- Tool adapters forward to the shared engine and role contracts. Use active
+  global tool/profile roles by default; project files contain only intentional,
+  structurally valid tuning.
 - SPECs: `manual-loops/<area>/<name>.md`, authored from
   `manual-loops-templates/` (read `manual-loops-templates/README.md` first —
-  it explains the context contract: agents only see the task body, its Accept
-  block, and the Constraints section).
+  it explains the context contract: every agent receives full AGENTS.md,
+  the task body including allowed paths/non-goals and Accept, Constraints,
+  and applicable gate commands; reviewers also receive changes and evidence).
 - The human approves every SPEC before its first run, and every SPEC declares
   its Engram topic and its human boundaries.
+- AGENTS.md takes precedence over SPEC Constraints, engine, agents, templates,
+  skills, and local precedent. Constraints may specialize or tighten this
+  contract, never silently weaken it. Report conflicts before implementation.
+  Skills are advisory authoring input, not a developer or CI filesystem dependency.
+- Each task declares allowed write paths and non-goals. Report required scope
+  expansion before editing; preserve preexisting changes and blocked work.
+- The principal assistant is the single coordinator. It may ask `fp-architect`
+  for conditional design advice, asks `fp-qa` for acceptance cases before
+  implementation and validation after it, and assigns implementation to
+  `fp-dev`. The developer owns regression tests. Two independent reviewers
+  judge the unchanged final state; the principal does not review its own work.
+- Shared role duties live in [`DOCS/guides/agent-roles.md`](DOCS/guides/agent-roles.md).
+- Manual-loop owns retries, corrections, and task closure. FP role commands are
+  specialist instructions and must not start a competing retry or closure loop.
 
 ## Universal rules (every service, every change)
 
 1. Never weaken, skip, or delete an existing test — automatic reviewer
    rejection.
-2. Verbose logging on every new code path; nothing fails silently.
+2. Verbose diagnostic logging belongs in the imperative shell on new action
+   and failure paths; nothing fails silently. Calculations never log.
 3. No hardcoded secrets, keys, tokens, or passwords — automatic reviewer
    rejection. Secret values never appear in logs, events, API responses, or
    persisted state.
@@ -59,9 +75,20 @@ All non-trivial changes go through the **manual-loop system**:
 
 ## Binding styles per surface
 
+Across all surfaces, business logic is data plus pure functions returning values
+or typed failures using existing Result/error conventions. Calculations do not
+call effects, including injected I/O callbacks, or use exception control flow.
+The shell reads inputs, calls calculations, then applies outcomes; it owns I/O,
+logging, time, randomness, environment access, mutation, and exception conversion.
+Framework classes remain thin shells delegating business decisions to the core.
+Keep existing frameworks and libraries; new libraries (including Effect) and
+service migrations require separate approved scope. Local precedent cannot
+override this boundary. Record existing deviations by path and remediation scope;
+do not copy them or turn a scoped change into a service rewrite.
+
 | Surface | Style |
 |:---|:---|
-| Backend services (default) | NestJS-on-Bun: modules/services, class-validator DTOs, `@TenantId()` + `TenantGuard`. Follow the file you are editing, not personal taste. |
+| Backend services (default) | NestJS-on-Bun: thin modules/services, class-validator DTOs, `@TenantId()` + `TenantGuard`; pure business functions follow the boundary above. Preserve framework idioms. |
 | `tracking-ingester-service` | Named exception: pure functions in `src/lib/*` (one per file), ALL I/O in `main.ts`, plain Bun — NO NestJS. |
 | `admin-console` | Angular standalone components, signals, OnPush, lazy `loadComponent` routes, inline SVG (no chart libs), tokens-only colors (no NEW hard-coded hex — guard `G14` fails on hex added in a diff; the 58 files that already carry one are grandfathered debt, fix on touch), no new libraries without human approval. Visual contract: `manual-loops/admin-console/design/Rediseño Terminal.dc.html` — deviations need human sign-off. |
 | `api-gateway` | New routes are explicit proxy modules; global guards apply; no `@Public()`. The gateway never auto-forwards. |
@@ -95,6 +122,26 @@ All non-trivial changes go through the **manual-loop system**:
 
 ## Verification
 
+- Completion requires actual gate commands, exit statuses and output, plus two
+  independent APPROVED reviews of the same changes. Record agent/run identity
+  and actual model provenance for implementer and reviewers; reviewers must be
+  no weaker than the implementer within the active tool/profile policy.
+  Configuration selects intent only and does not prove execution. Missing
+  evidence is a blocker, not approval.
+- Review all task changes: staged and unstaged diffs plus full untracked new
+  file content. Identify preexisting changes separately without discarding them.
+  Any change to reviewed code or task artifacts invalidates gates and reviews;
+  rerun applicable gates and both reviews before completion. Evidence-only
+  Progress updates must not alter the reviewed implementation or contract.
+- For affected builds, record pinned runtime/tool versions, lockfile and frozen
+  installation command/output, and build command/output for the reviewed state.
+  Report unavailable prerequisites; do not claim reproducibility without evidence.
+- Test pure decisions with data-driven cases without I/O mocks. Affected
+  persistent writes and migrations require boundary/invariant tests covering
+  validation, failure behavior, and idempotency where applicable.
+- CI runs existing KISS guards; it neither certifies every service nor establishes
+  remotely required merge checks. Claim branch protection only after verification.
+
 - Gates live in each SPEC and run verbatim. Standard set: `G0`
   `scripts/checks/doc-code-guards.sh` (doc/code drift), per-service suites,
   cluster e2e (`scripts/e2e/`) in dev-mode iteration (G-a) and built-image
@@ -113,7 +160,7 @@ All non-trivial changes go through the **manual-loop system**:
   the orchestrator: `angular/*`, `envelope-messages`, `git-commit`,
   `multi-tenant`, `playwright`, `yz-ui`, `judgment-day`, `skill-registry`,
   `_shared`.
-  Skills are advisory; SPEC Constraints are binding.
+  Skills are advisory; SPEC Constraints bind within AGENTS.md precedence.
 - `DOCS/archive/INDEX.md` — registry of shipped changes; every SPEC's docs task
   adds its entry.
 - **Doc classes.** Every file under `DOCS/**` and every `services/*/README.md`
@@ -136,14 +183,24 @@ All non-trivial changes go through the **manual-loop system**:
   retired repo-level SDD tooling listed below — that was the orchestrator
   commands and agents, not these records.
 
+## FP delivery roles
+
+The repository's shared role contract is documented in
+[`DOCS/guides/agent-roles.md`](DOCS/guides/agent-roles.md), and its execution
+procedure in [`DOCS/guides/manual-loop.md`](DOCS/guides/manual-loop.md).
+Tool configuration inherits global choices by default. Any local role tuning
+is explicit and structural; it never substitutes for recording requested and
+observed model identity on an actual run. Reviewers remain no weaker than the
+implementer under the selected tool/profile policy.
+
 ## Retired 2026-07-29 (do not resurrect)
 
 - Repo-level SDD tooling (root CLAUDE.md orchestrator text,
   `.claude/commands/sdd/`, `.claude/agents/sdd-*`, `.ywai/`,
   `.github/prompts/`) — SDD lives in the user's global toolkit, not here.
-- `CURSOR.md`, `GEMINI.md`, `.cursorrules`, `.gemini/`, `.claude/CLAUDE.md`
-  — drifted instruction copies; this file replaced them.
-- `DOCS/guides/code-review.md` — its blocking rules are baked into
-  `.claude/agents/reviewer.md`.
+- `CURSOR.md`, `GEMINI.md`, `.cursorrules`, `.gemini/`, and the former copied
+  `.claude/CLAUDE.md` — drifted instruction copies; this file replaced them.
+- `DOCS/guides/code-review.md` — its blocking rules are preserved in the
+  independent-review section of [`DOCS/guides/agent-roles.md`](DOCS/guides/agent-roles.md).
 - Stale skills (`dotnet`, `devops`, `pydantic-ai`, `tailwind-4`) — they
   legislated for stacks this repo does not have.

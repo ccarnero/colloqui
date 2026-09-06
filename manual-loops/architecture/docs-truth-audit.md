@@ -21,7 +21,12 @@ single verdict ledger: **TRUE** (verified against code, kept where it is),
 The final tree is smaller, every survivor is verified, and the doc classes
 (descriptive / prescriptive / future / RECORD) are explicit and guarded.
 
-## Ground rules (apply to every task)
+## User decisions (human boundary — do not reinterpret)
+
+1. El código sigue siendo la fuente de verdad técnica.
+2. Los cambios estructurales finales (T09/T10) requieren firma humana explícita.
+
+## Constraints (apply to every task)
 
 1. **The code is the source of truth.** A doc-vs-code difference is a DOC bug
    by default. The ONE exception: if the diff reveals a genuine CODE bug
@@ -46,7 +51,7 @@ The final tree is smaller, every survivor is verified, and the doc classes
    path, current class, verdict, evidence, disposition. Built by T01, filled
    by T02–T08, adjudicated in T09, executed in T10.
 
-## Gates (per checkpoint)
+## Gates (the `/manual-loop` command runs these verbatim, in order)
 
 ```
 G0   ./scripts/checks/doc-code-guards.sh        (every task)
@@ -128,6 +133,12 @@ INDEX/ledger closing entries.
 Accept: tree matches the approved proposal; G0 green; full-repo link check
 clean; cluster e2e green (final integration proof); ledger closed with
 final per-file dispositions.
+
+## Human boundaries for this change
+
+- Human approves this SPEC before its first run.
+- Human approves the T09 structure and purge decision table before T10.
+- TAXONOMY/SCHEMAS/AGENTS edits require explicit escalation and approval.
 
 ## Out of scope (explicit)
 - Rewriting history: manual-loops Progress logs, DRIFT.md findings,

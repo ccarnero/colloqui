@@ -84,7 +84,7 @@ export class ExecutionsPostgresRepository implements IExecutionsRepository {
     const { definitionId, tenantId, limit, offset, sort } = params;
     const sql = await this.sqlFor(tenantId);
     const orderFragment =
-      sort === "asc" ? sql`created_at ASC` : sql`created_at DESC`;
+      sort === "asc" ? sql`created_at ASC, id ASC` : sql`created_at DESC, id DESC`;
     return sql<IWorkflowExecutionRow[]>`
       SELECT id, definition_id,
              temporal_workflow_id, temporal_run_id,

@@ -1,0 +1,3 @@
+# Project configuration intentionally inherits the active global Codex profile.
+# Local role files are absent unless a future change documents an explicit,
+# structurally validated project override.

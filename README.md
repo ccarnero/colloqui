@@ -9,6 +9,23 @@ Serverless event-driven architecture on Kubernetes (Minikube / OrbStack) with Kn
 > only pointer a fresh clone has. The documentation map lives in
 > [`DOCS/README.md`](DOCS/README.md).
 
+## Engineering workflow
+
+Read [AGENTS.md](AGENTS.md) for the common engineering contract. Use the
+[loop index and usage guide](manual-loops/README.md) and
+[SPEC templates](manual-loops-templates/README.md) for planned changes.
+[PENDIENTES](PENDIENTES/README.md) tracks additional work outside that historical
+loop inventory; its recorded status must be checked before resuming a task.
+
+The [manual-loop engine](DOCS/guides/manual-loop.md) supplies the current
+rules to every agent, preserves existing work, and requires scoped changes,
+actual verification evidence and two independent reviews before completion.
+KISS is the default repository guard; it does not replace applicable service
+and integration tests. See the [guard guide](DOCS/guides/doc-code-guards.md).
+Local setup recipes below are not evidence of a reproducible build: affected
+build changes require pinned tools and frozen-lockfile installation/build evidence
+under AGENTS.md. A workflow file alone does not establish required remote checks.
+
 ## Developer mode — quickstart
 
 Single-node, single-environment (`dev`) setup. No env argument, no KEDA, single-pod infra.

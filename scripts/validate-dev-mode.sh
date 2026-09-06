@@ -23,9 +23,9 @@ set -euo pipefail
 #   7. restored    live image+command of EVERY object matches the snapshot;
 #                  dev-mode annotation gone. Guards the June-13 regression.
 #
-# Idempotent: safe to re-run; the canary edit is reverted via git checkout
-# (stage 1 refuses to start if the canary file is dirty — never discards
-# changes it did not create). Exit 0 = dev-mode is trustworthy today.
+# Canary restoration uses owned snapshots and preserves unexpected edits.
+# Requires exclusive file access: comparisons are not interprocess locks.
+# Exit 0 = dev-mode is trustworthy today.
 #
 # Usage:
 #   ./scripts/validate-dev-mode.sh [--with-e2e]
@@ -81,10 +81,38 @@ step() { echo -e "${CYAN}[STAGE]${NC} $*"; }
 FAILED=false
 fail() { err "$*"; FAILED=true; }
 
+CANARY_ACTIVE=false
+restore_canary() {
+  $CANARY_ACTIVE || return 0
+  if [[ -f "$CANARY_FILE" && ! -L "$CANARY_FILE" ]]; then
+    if cmp -s "$CANARY_FILE" "${SNAP_DIR}/canary.original"; then
+      CANARY_ACTIVE=false
+      return 0
+    fi
+    if cmp -s "$CANARY_FILE" "${SNAP_DIR}/canary.expected"; then
+      if cp "${SNAP_DIR}/canary.original" "$CANARY_FILE"; then
+        CANARY_ACTIVE=false
+        log "canary restored from owned snapshot"
+        return 0
+      fi
+    fi
+  fi
+  err "canary restoration failed or ownership changed; preserving current file; recovery snapshots: ${SNAP_DIR}"
+  return 1
+}
+
 cleanup() {
-  # Best-effort restore, always safe to re-run.
-  git checkout -- "$CANARY_FILE" 2>/dev/null || true
-  [[ -n "${SNAP_DIR:-}" ]] && rm -rf "$SNAP_DIR"
+  local status=$?
+  trap - EXIT
+  if ! restore_canary; then
+    [[ "$status" -ne 0 ]] || status=1
+  elif [[ -n "${SNAP_DIR:-}" ]]; then
+    if ! rm -rf "$SNAP_DIR"; then
+      err "snapshot cleanup failed; recovery path: ${SNAP_DIR}"
+      [[ "$status" -ne 0 ]] || status=1
+    fi
+  fi
+  exit "$status"
 }
 trap cleanup EXIT
 
@@ -112,7 +140,13 @@ elif [[ "$LOCAL_SHA" != "$CLUSTER_SHA" ]]; then
   err "run: ./dev-mode.sh deps --force   (then re-run this validator)"
   exit 1
 fi
-if [[ -n "$(git status --porcelain "$CANARY_FILE")" ]]; then
+if [[ ! -f "$CANARY_FILE" || -L "$CANARY_FILE" ]]; then
+  err "$CANARY_FILE must be a regular file, not a symlink"; exit 1
+fi
+if ! CANARY_STATUS="$(git status --porcelain -- "$CANARY_FILE")"; then
+  err "cannot determine canary Git status; refusing to continue"; exit 1
+fi
+if [[ -n "$CANARY_STATUS" ]]; then
   err "$CANARY_FILE has local changes — commit/stash them first (won't touch your work)"; exit 1
 fi
 # The snapshot must capture DECLARED state, not dev-mode state: refuse to run
@@ -167,6 +201,20 @@ RELOAD_TARGET="workflow-service-worker"
 step "4/7 live-reload latency (canary edit on $CANARY_FILE, watched on deploy/$RELOAD_TARGET)"
 NONCE="dev-mode-canary-$(date +%s)"
 T0=$(date +%s)
+# Recheck after cluster setup, before taking ownership of the local file.
+if [[ ! -f "$CANARY_FILE" || -L "$CANARY_FILE" ]]; then
+  err "$CANARY_FILE must still be a regular file, not a symlink"; exit 1
+fi
+if ! CANARY_STATUS="$(git status --porcelain -- "$CANARY_FILE")"; then
+  err "cannot determine canary Git status before append"; exit 1
+fi
+if [[ -n "$CANARY_STATUS" ]]; then
+  err "$CANARY_FILE changed before append; refusing to modify it"; exit 1
+fi
+cp "$CANARY_FILE" "${SNAP_DIR}/canary.original"
+cp "${SNAP_DIR}/canary.original" "${SNAP_DIR}/canary.expected"
+printf '\nconsole.log("%s");\n' "$NONCE" >> "${SNAP_DIR}/canary.expected"
+CANARY_ACTIVE=true
 printf '\nconsole.log("%s");\n' "$NONCE" >> "$CANARY_FILE"
 RELOADED=false
 for _ in $(seq 1 "$RELOAD_TIMEOUT"); do
@@ -177,7 +225,7 @@ for _ in $(seq 1 "$RELOAD_TIMEOUT"); do
   sleep 1
 done
 T1=$(date +%s)
-git checkout -- "$CANARY_FILE"
+restore_canary || exit 1
 if $RELOADED; then
   log "canary nonce logged by reloaded pod in $(( T1 - T0 ))s (2026-07-03 baseline: ~2s)"
 else
@@ -188,7 +236,7 @@ fi
 # History (T01, 2026-07-30, manual-loops/architecture/dev-mode-validator-fix.md):
 # src/main.ts is the entry of the worker Deployments AND of the
 # workflow-service-api ksvc, so BOTH stage-4 writes (the canary append above and
-# the `git checkout` revert) restart the API's bun --watch process. Stage 4 only
+# the snapshot revert) restart the API's bun --watch process. Stage 4 only
 # ever watched the worker Deployment, so stage 5 used to start while the API was
 # mid-restart: the gateway then answers a well-formed HTTP 502 JSON *object*
 # ({"statusCode":502,"message":"dial tcp ... connection refused"}), which breaks
@@ -252,7 +300,7 @@ barrier_login() {  # refresh BARRIER_TOKEN; auth-service is not the service bein
 }
 
 barrier_login || true   # first token; failures are retried inside the loop
-T_REVERT=$T1            # wall clock of stage 4's `git checkout` revert above
+T_REVERT=$T1            # wall clock of stage 4's snapshot revert above
 BARRIER_STREAK=0
 BARRIER_RELOAD_SEEN=false
 BARRIER_READY=false

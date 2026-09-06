@@ -98,7 +98,7 @@ Every task in this loop reports a screenshot path.
 - **The old node/canvas styles are deleted, not left dead.** When the new skin
   lands, the superseded styles go with it in the same task.
 
-## PRESERVE list (accepted v1 directions — must survive every task)
+## User decisions (human boundary — do not reinterpret)
 
 These four were reviewed and ACCEPTED by the human. Any task that regresses one
 of them is rejected even if it improves parity elsewhere:
@@ -1101,6 +1101,8 @@ PRESERVE list confirmation:
    the right `Quick Test` chat column are both present and unchanged.
 
 
+
+## Progress
 
 - [x] T01 screenshot-loop bootstrap + before baseline
 - [x] T02 design tokens + type ramp

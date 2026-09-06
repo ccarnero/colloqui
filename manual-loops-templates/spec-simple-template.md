@@ -12,12 +12,17 @@ no cross-SPEC dependencies, no prior-art section, no gate overrides.
 For anything bigger use spec-canonical-template.md.
 
 CONTEXT CONTRACT (what the engine actually passes to the agents):
-- implementer gets ONLY: the task body + its Accept block + the Constraints
-  section (+ previous-attempt failures on retries).
-- reviewers get ONLY: the diff + the task text + the Constraints section.
+- every agent gets full AGENTS.md, task body with allowed paths/non-goals and
+  Accept, all Constraints, applicable gates/conditions, and baseline ownership.
+- implementer also gets previous-attempt failures on retries.
+- reviewers also get staged/unstaged diffs, full untracked new file content,
+  actual gate output/statuses, and implementation/model provenance.
 Everything the implementer must know (precedent citations, binding decisions,
 DO NOTs) must therefore live INSIDE the task body or in Constraints. Goal,
 User decisions and Out of scope address the human and the orchestrator.
+For FP-scoped work, include QA's acceptance cases and risks before implementation;
+the developer owns regression tests and QA's final coverage edits happen before
+gates and review. Manual-loop owns retry and closure decisions.
 -->
 
 ## Goal
@@ -31,14 +36,20 @@ User decisions and Out of scope address the human and the orchestrator.
 
 ## Constraints (apply to every task)
 
+- AGENTS.md is normative; these Constraints specialize it without weakening it.
 - Never weaken, skip, or delete existing tests — automatic reviewer rejection.
-- Verbose logging on every new code path; nothing fails silently.
+- Preserve frameworks/libraries; thin shells call pure business functions with
+  typed failures. Effects, exception conversion, and diagnostic logging stay in shell.
+- Preserve preexisting and blocked work; report scope expansion before editing.
+- Affected builds require pinned runtime/tools, lockfile, frozen installation and
+  build commands with actual output/statuses. Persistent writes/migrations require
+  boundary/invariant tests and idempotency coverage where applicable.
 - <Idempotency, service-boundary, and coding-style rules for this loop.>
 
 ## Gates (the `/manual-loop` command runs these verbatim, in order)
 
 ```
-# G0 — repo guards (doc/code drift, cheap, every attempt)
+# G0 — repo guards (KISS default, every attempt; --full only for a scoped audit)
 ./scripts/checks/doc-code-guards.sh
 # G1 — <primary service> tests
 cd services/<svc> && bun test
@@ -54,6 +65,12 @@ Gate ids follow the shared convention: G0 = repo guards, G1/G2 = primary
 service tests/typecheck, G3/G4 = other touched services (absent in a
 single-service loop — do not renumber), G5a/G5b = cluster e2e.
 
+VALIDATOR SAFETY: keep `services/workflow-service/src/main.ts` clean and prevent
+concurrent edits. Preflight failures leave it unchanged; unexpected edits after
+the canary mutation are preserved with recovery snapshots and a reported failure.
+File cleanup is not cluster rollback. If prerequisites cannot be met, report the
+blocked precondition without invoking it. See `DOCS/guides/dev-mode.md`.
+
 PRECONDITION: `./scripts/validate-dev-mode.sh --with-e2e` must be green once
 before T01; if it fails, skip G5a and rely solely on G5b — and RECORD the skip
 (date + failure symptom) in this SPEC's Progress as a pending repair item. A
@@ -68,8 +85,12 @@ Commits only happen with dev-mode OFF and the built image live.
 
 ### T01 — <short imperative title>
 
+- **Allowed write paths:** <explicit files/directories, including new files/tests>.
+- **Non-goals:** <excluded behavior/refactors>.
 - <Concrete scope: file paths, signatures, line-cited precedent.>
 - <Required unit-test cases.>
+- <If FP-scoped: QA acceptance cases received before implementation and the
+  developer's required regression tests.>
 
 **Accept**
 ```
@@ -78,6 +99,8 @@ cd services/<svc> && bun test && bunx tsc -p tsconfig.json --noEmit
 
 ### T0N — Docs + index
 
+- **Allowed write paths:** `services/<svc>/README.md`, `DOCS/archive/INDEX.md`.
+- **Non-goals:** Runtime changes or historical record rewrites.
 - Update `services/<svc>/README.md`.
 - Add an entry to `DOCS/archive/INDEX.md`.
 
@@ -92,6 +115,12 @@ grep -n "<expected string>" services/<svc>/README.md DOCS/archive/INDEX.md
 
 - [ ] T01 <label>
 - [ ] T0N docs + index
+
+Record actual gate commands/output/statuses, reviewed-state identity, implementer
+and two independent reviewer model/run identities and verdicts, retries, fallbacks,
+skips, and exceptions. Reviewers must be no weaker than implementer (default opus).
+Changed code/artifacts invalidate gates and both reviews; rerun before done.
+Missing evidence blocks completion. CI alone does not prove remote merge enforcement.
 
 ## Out of scope (explicit)
 

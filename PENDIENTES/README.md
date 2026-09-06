@@ -13,6 +13,20 @@ workflow. Nada de eso está acá — esto es solo lo que **no** se hizo.
 
 ---
 
+## Current execution guidance
+
+This working register is separate from the historical
+[manual-loop inventory](../manual-loops/README.md). Its dated rows and SPECs are
+not a fresh verification of remaining work; confirm each task's own status before
+resuming it. Do not infer that this folder is closed from the other inventory.
+
+Existing SPEC paths here remain valid inputs to the
+[current engine](../DOCS/guides/manual-loop.md). Before resuming a pending
+task, retain IDs and decisions, align its scope and concrete gates with
+[AGENTS.md](../AGENTS.md), and follow the [template guide](../manual-loops-templates/README.md).
+Record conflicting business decisions for resolution. Use follow-up SPECs for
+new scope; never rerun completed tasks just to adopt current rules.
+
 ## Índice por prioridad
 
 | # | Qué | Por qué importa | Archivo |

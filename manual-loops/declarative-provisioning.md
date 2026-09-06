@@ -315,6 +315,8 @@ grep -n "manifests" sdk/README.md
 
 ---
 
+## Progress
+
 - [x] T01 manifest schema + validator
 - [x] T02 service scaffold + validate endpoint
 - [x] T03 resolver + planner

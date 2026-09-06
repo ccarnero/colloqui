@@ -1,7 +1,7 @@
 # Doc/code guard script — what `doc-code-guards.sh` actually pins
 
 Class: descriptive
-Summary: As-built description of every guard registered in `scripts/checks/doc-code-guards.sh` (G6a-G6g, G7-G11, G12-G14) and what each one fails on.
+Summary: As-built description of every guard registered in `scripts/checks/doc-code-guards.sh` (G6a-G6g, G7-G16, G17-G18) and what each one fails on.
 
 > Split out of the former `DOCS/guides/doc-code-validation-tests.md` by the
 > docs-truth-audit T10 (ruling D9); this file is its "Implemented" half. The unimplemented test proposal that used to
@@ -17,18 +17,30 @@ table maps each K to the guard that shipped), plus `G9`/`G9b`/`G10`/`G11` and
 and `G12`/`G13`/`G14` added by `manual-loops/architecture/docs-truth-audit.md`
 (T10). Every guard IN THIS SCRIPT carries a `G` prefix: the docs-truth-audit's
 ruling D28 renamed the implemented family K→G, same numbers, because the audit's
-K1-K10 proposal collided by number with the shipped K6a-K11. It is a standalone bash script — this repo has no `lefthook.yml`
-or CI pipeline yaml yet, so there was no existing aggregate to wire it into.
-Run it manually or from a future CI job:
+K1-K10 proposal collided by number with the shipped K6a-K11. It is a standalone bash script, also called by the
+[engineering guards workflow](../../.github/workflows/engineering-guards.yml)
+on pull requests, pushes and manual dispatch.
 
 ```bash
-scripts/checks/doc-code-guards.sh       # quiet: only prints failures
-scripts/checks/doc-code-guards.sh -v    # verbose: also prints PASS lines
+./scripts/checks/doc-code-guards.sh          # KISS default
+./scripts/checks/doc-code-guards.sh -v       # verbose KISS
+./scripts/checks/doc-code-guards.sh --full   # every registered guard
+./scripts/checks/doc-code-guards.sh --full -v
 ```
 
-It exits non-zero the moment any guard fails, naming the failing guard ID.
+### Execution modes and limits
 
-What it pins:
+- KISS runs **G6a, G6b, G7, G9, G15, G16, G17 and G18**.
+- `--full` runs every registered check. Use it for an explicitly scoped broader
+  audit; it is not the default and not a certification of the entire codebase.
+- The script accumulates failures across the selected checks and exits non-zero
+  when any failed. It does not stop at the first finding.
+- G9 reads locally modified files; a clean CI checkout can report zero files.
+  Diff-based guards are not evidence of complete pull-request coverage.
+- The workflow's existence does not establish remote execution success or required
+  branch protection. Task-specific tests, integration checks and review still apply.
+
+### What it pins
 
 - **G6a** — every service documented in `DOCS/architecture/overview.md`'s
   Service Roles table has a matching `services/*` directory (and vice
@@ -112,6 +124,21 @@ What it pins:
   the 58 files that already carry one are grandfathered debt rather than a
   permanently red guard; AGENTS.md's clause was softened to match. Added by
   T10 (D32).
+- **G15** — every literal consumer name written into Prometheus alert
+  `consumer_name` matchers in `infrastructure/base/observability/prometheus/alerts.yaml`
+  must map to a real durable consumer declaration in code. Inverted matcher
+  mode means this now protects against silently drifting names in exclusions.
+- **G16** — repo shell scripts must stay compatible with bash 3.2 (`mapfile`,
+  `readarray`, `declare -A/typeset -A` are blocked). This avoids macOS run-time
+  breakage in the current operational baseline.
+- **G17** — a static scan of `nc.publish()` syntax in services/packages checks
+  canonical subjects (`evt...`) or explicit, documented non-critical exceptions:
+  `platform.tenant.ready`, `platform.tenant.deleted` and runtime subjects. Its
+  literal patterns and file allowlists are bounded checks, not semantic proof that
+  every publish path follows the messaging contract; that contract remains in
+  [service-bus.md](../messaging/service-bus.md).
+- **G18** — only the documented 3 legacy `LazyNatsConnection` provider files may
+  define that wrapper class. New manual-connection wrappers fail this guard.
 
 **Genuine finding while calibrating G7**: the audit's lock description
 assumed only `workflow-service`'s `trigger-consumer` needed allowlisting for

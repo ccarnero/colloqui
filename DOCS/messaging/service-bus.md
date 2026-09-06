@@ -29,15 +29,33 @@ NATS JetStream is the default for all platform events because:
 
 Core NATS is at-most-once with no persistence. If a consumer is not connected at publish time, the message is lost. For ingress events where loss is unacceptable, JetStream is the minimum requirement.
 
+## Message-plane policy (applied in this repo)
+
+This spec treats bus usage as three classes:
+
+1. **Canonical bus (mandatory)**  
+   JetStream, envelope-backed, persistent, replayable, and durable.
+2. **Core NATS (non-critical exception)**  
+   Accepted only when the signal is fan-out/provisional/real-time and explicit replay is not required.
+3. **Legacy technical debt**  
+   Existing manual adapters or transport patterns that work today but are pending standardization (tracked as follow-up work, not business-logic exceptions).
+
+Rules for the architecture:
+
+- Canonical bus uses `evt.<tenant>.<producer>.<domain>.<channel>.<provider>.<kind>.v<version>`.
+- Core NATS exceptions are loss-tolerant by design and must never replace canonical bus requirements for audit, billing, or durable business flow.
+- Legacy debt items must be called out in specs and planned for migration before new work reuses the same path.
+
 ### Where core NATS *is* used
 
 Core NATS is the transport wherever loss is acceptable and fan-out or
-low-latency matters more than replay. There are **two producing surfaces**, plus
+low-latency matters more than replay. There are these producing surfaces, plus
 some subscribe-only consumers:
 
 | Surface | Subjects | Producer | Why core, not JetStream |
 |---|---|---|---|
 | **Tenant teardown fan-out** | `platform.tenant.deleted` (`TENANT_DELETED_SUBJECT`) | `tenant-service`'s `TenantDeletionPublisherService` (`nc.publish`) | **Every** replica caching a per-tenant Postgres pool must receive it; the `PLATFORM_TENANTS` stream is `RetentionPolicy.Workqueue`, which would deliver to exactly one consumer and defeat the fan-out. Misses self-heal via `TenantConnectionManager.verifyConnectivity`. Subscribers: `tenant-deletion-eviction-listener.ts` / `tenant-mongo-deletion-eviction-listener.ts` (`@yoizen/database`) and agent-admin's own listener. |
+| **Tenant readiness fan-out** | `platform.tenant.ready` (`TENANT_READY_SUBJECT`) | `tenant-service`'s `TenantReadyPublisher` (`nc.publish`) | Bootstraps tenant schema and shared clients. A miss is recoverable through lazy bootstrap (`ensureSchema`), so it is intentionally fire-and-forget with no replay guarantee. |
 | **Runtime token streaming** | `rt.<tenant>.exec.<executionId>.{token,tool_call,tool_result}` and `…​.cancel` (`RUNTIME_STREAM_SUBJECT_PREFIX` / `buildRuntimeStreamSubject`) | `agent-ai-service`'s `ExecutionHandler.publishToken` (`nc.publish`) for tokens; `YoizenClawExecutionClient.publishCancel` (`packages/shared/src/execution-client.ts`) for the cancel control message | High-frequency display-only deltas with no replay value. The `rt.` prefix is **deliberately outside** the `evt.` taxonomy so no stream's subject filter captures it — persisting millions of token deltas into `INGRESS-<tenant>` is exactly the failure this avoids. Full contract: [`DOCS/architecture/runtime-streaming.md`](../architecture/runtime-streaming.md) §1.1. |
 
 One related pattern that is core NATS but not a fire-and-forget signal:
@@ -52,6 +70,16 @@ One related pattern that is core NATS but not a fire-and-forget signal:
 > published with `nc.publish`, but they fall inside `PLATFORM_TENANTS`'s
 > `platform.tenant.>` filter, so JetStream also ingests a copy that no consumer
 > reads. Only the `rt.` namespace is genuinely bound by no stream.
+
+### Legacy adapter backlog (technical debt, not canonical)
+
+| Service | Pattern | Why it is tracked |
+|---|---|---|
+| `agent-admin-service` | `LazyNatsConnection` + manual `connect` | Works today, but bypasses shared NATS provider composition. |
+| `agent-memory-service` | `LazyNatsConnection` + manual `connect` | Works today, but bypasses shared provider shape and delays standardization checks. |
+| `agent-scheduler-service` | `LazyNatsConnection` + manual `connect` | Works today, but bypasses shared provider shape and delays standardization checks. |
+
+All three are functional and intentionally kept under **technical debt** until an explicit migration task lands.
 
 ## Cluster Topology
 
@@ -136,7 +164,7 @@ flowchart TD
     end
 
     subgraph core["Core NATS transport (nc.publish / nc.subscribe)"]
-        core_tenant["platform.tenant.deleted — teardown fan-out<br/>(ALSO bound by PLATFORM_TENANTS via platform.tenant.&gt; — see the caveat under 'Where core NATS is used')"]
+        core_tenant["platform.tenant.ready / platform.tenant.deleted — fan-out<br/>(ALSO bound by PLATFORM_TENANTS via platform.tenant.&gt; — see the caveat under 'Where core NATS is used')"]
         core_rt["rt.&lt;tenant&gt;.exec.&lt;id&gt;.token / .cancel — runtime token streaming<br/>(stream-free by design)"]
     end
 ```
@@ -183,6 +211,7 @@ exists). Full as-built description:
 | `GATEWAY_AUDIT` | JetStream stream | `audit.gateway.>` | Cross-tenant gateway request audit trail |
 | `PLATFORM_TENANTS` | JetStream stream | `platform.tenant.>` | Tenant lifecycle messages — `platform.tenant.provision.requested` is consumed by the `tenant-provisioner` durable in tenant-service (`Nats-Msg-Id` = tenantId) |
 | `platform.tenant.deleted` | Core NATS subject | `platform.tenant.deleted` | Fire-and-forget tenant teardown signal |
+| `platform.tenant.ready` | Core NATS subject | `platform.tenant.ready` | Fire-and-forget tenant bootstrap signal |
 
 ## Subject Taxonomy
 

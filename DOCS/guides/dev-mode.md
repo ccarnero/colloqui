@@ -5,6 +5,53 @@ Summary: How to run source-mounted developer mode: which services support it, ho
 
 Source-mounted dev mode lets you edit service TypeScript files on your Mac and see changes reload in the cluster pod in seconds — without a Docker image rebuild. `bun --watch` detects each save and re-runs the entry point inside the pod.
 
+## Using dev mode in an engineering task
+
+Follow the [manual-loop engine](../../.claude/commands/manual-loop.md) and the
+[SPEC guide](../../manual-loops-templates/README.md) for task scope and evidence.
+Source-mounted iteration and built-image commit gates are distinct; applicable
+commit gates require dev-mode off and the built image live. A failed iteration
+precondition must be recorded as debt, not silently treated as a passing gate.
+
+The validator below is an active cluster test. Its canary file is
+`services/workflow-service/src/main.ts`. Preflight refuses local changes and
+fails closed if Git status cannot be read. Failed preflight and failures before
+the canary mutation leave that file unchanged.
+
+After inserting its canary, the validator restores its saved original only when
+the current file matches the expected canary content. Unexpected edits are preserved;
+restoration fails visibly and recovery snapshots are retained at the reported path.
+It never restores the source through Git. Keep the canary file clean and arrange
+exclusive access for the run: comparison and restoration are not an interprocess
+lock, and SIGKILL/power-loss recovery is not guaranteed.
+
+An early failure after dev-mode activation can leave cluster targets in dev mode.
+Local file cleanup is not automatic cluster rollback. Inspect target state and
+use `./dev-mode.sh workflow-service off` when appropriate before retrying.
+
+## Live acceptance cycle
+
+Run this checkpoint after isolated regression tests pass and the development
+cluster is ready. OrbStack must have Kubernetes enabled, the platform workloads
+must be deployed, and the test tenant/admin must exist. See the
+[root quickstart](../../README.md) for bootstrap, port forwarding and tenant setup.
+Use matching gateway, tenant and authentication settings for the validator and e2e.
+
+From the repository root, after preserving work and confirming the workflow-service
+targets are not already in dev mode:
+
+```bash
+bash scripts/smoke-test.sh
+./dev-mode.sh deps
+./scripts/validate-dev-mode.sh --with-e2e
+```
+
+If the dependency PVC is stale, refresh it as reported by preflight before retrying.
+Success requires the full validator to exit 0: canary reload observed, API readiness
+barrier passed, e2e passed, declared images/commands restored and dev-mode removed.
+Also confirm the canary source matches its pre-run content. Record results and any
+retries in the active SPEC; isolated tests alone do not certify this live cycle.
+
 ## What it is
 
 In normal developer flow you edit code, run `./rebuild-changed.sh`, and wait for a Docker build. With dev mode:
@@ -207,7 +254,7 @@ Once both are in place, `rebuild-redeploy.sh <service> <env>` will apply the Cro
 
 ### Stage 4 — the live-reload canary
 
-Stage 4 appends `console.log("dev-mode-canary-<ts>")` to `services/workflow-service/src/main.ts`, waits for that nonce to appear in the reloaded worker pod's logs, and then undoes the edit with `git checkout -- <file>`. Both the append and the revert are file writes, so **each of them restarts `bun --watch`**.
+Stage 4 appends `console.log("dev-mode-canary-<ts>")` to `services/workflow-service/src/main.ts`, waits for that nonce to appear in the reloaded worker pod's logs, and then restores its pre-canary snapshot only if the source still matches the expected canary content. Both the append and the revert are file writes, so **each of them restarts `bun --watch`**.
 
 ### Stage 4b — the stage-4→5 readiness barrier
 

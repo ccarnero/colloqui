@@ -42,6 +42,7 @@ import {
   type IWorkflowExecutionRow,
 } from "./executions.repository.interface";
 import { RegisteredServicesResolver } from "./registered-services.resolver";
+import { selectOwnedWorkflowIds } from "./select-owned-workflow-ids";
 import { augmentActionsWithSlug, collectServiceIds } from "./service-id-walker";
 import { SystemVariablesProvider } from "./system-variables.provider";
 import {
@@ -499,32 +500,55 @@ export class WorkflowsService {
 
   /**
    * Terminates every currently running Temporal execution for the given
-   * tenant + definition name. Used when a tenant admin disables a workflow
+   * tenant + definition ID. Used when a tenant admin disables a workflow
    * (`WorkflowStatus.DISABLED`, `@yoizen/shared` workflow.interfaces.ts:308-316)
    * so already-running instances stop instead of finishing on their own.
    *
-   * Workflow ids are minted as `${tenantId}:${definition.name}:${...}`
-   * (see {@link executeWorkflow}), so executions are matched by that prefix
-   * after narrowing the Temporal visibility query to the tenant's running
-   * executions via the `TenantId` search attribute.
+   * Persisted ownership survives renames and avoids name-prefix collisions.
+   * The existing start/persist race is not addressed: runs without a stored
+   * execution row cannot be safely attributed and are never matched by name.
    *
    * @param tenantId - Tenant scope (search attribute).
-   * @param definitionName - Workflow definition name (id prefix segment).
+   * @param definitionId - Stable workflow definition ID.
    * @returns Count of terminated executions plus any per-execution failures.
    */
   async terminateRunningExecutions(
     tenantId: string,
-    definitionName: string
+    definitionId: string
   ): Promise<ITerminateExecutionsResult> {
-    const idPrefix = `${tenantId}:${definitionName}:`;
     const result: ITerminateExecutionsResult = { terminated: 0, failed: [] };
+    const ownedIds = new Set<string>();
+    const pageSize = 100;
+    this.logger.log(
+      `Loading execution ownership for tenant ${tenantId}, definition ${definitionId}`
+    );
+    try {
+      for (let offset = 0; ; offset += pageSize) {
+        const rows = await this.executions.findExecutionsByDefinition({
+          tenantId,
+          definitionId,
+          limit: pageSize,
+          offset,
+          sort: "asc",
+        });
+        for (const id of selectOwnedWorkflowIds(rows, definitionId)) {
+          ownedIds.add(id);
+        }
+        if (rows.length < pageSize) break;
+      }
+    } catch (err: unknown) {
+      this.logger.error(
+        `Failed to load execution ownership for tenant ${tenantId}, definition ${definitionId}; termination not attempted`
+      );
+      throw err;
+    }
 
     const executions = this.temporal.workflow.list({
       query: `TenantId='${tenantId}' AND ExecutionStatus='Running'`,
     });
 
     for await (const info of executions) {
-      if (!info.workflowId.startsWith(idPrefix)) {
+      if (!ownedIds.has(info.workflowId)) {
         continue;
       }
 
@@ -554,7 +578,7 @@ export class WorkflowsService {
     }
 
     this.logger.log(
-      `Termination sweep for tenant ${tenantId}, definition ${definitionName}: ` +
+      `Termination sweep for tenant ${tenantId}, definition ${definitionId}: ` +
         `terminated=${result.terminated}, failed=${result.failed.length}`
     );
 
@@ -599,7 +623,7 @@ export class WorkflowsService {
     if (status === WorkflowStatus.DISABLED) {
       const { terminated, failed } = await this.terminateRunningExecutions(
         tenantId,
-        row.name
+        row.id
       );
       if (failed.length > 0) {
         this.logger.warn(

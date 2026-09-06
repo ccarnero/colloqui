@@ -342,6 +342,8 @@ grep -n "console-redesign-foundation" services/admin-console/README.md cowork/IN
 
 ---
 
+## Progress
+
 - [x] T01 inventory report
 - [x] T02 tokens + theme service
 - [x] T03 shell restyle
