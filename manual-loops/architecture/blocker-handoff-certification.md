@@ -453,7 +453,7 @@ durable record for `manual-loop/blocker-handoff`.
 
 - [x] T01 deviations established and recorded
 - [x] T02 certification packet and independent verdicts over the committed state
-- [ ] T03 predecessor Progress amended with real evidence
+- [x] T03 predecessor Progress amended with real evidence
 - [ ] T04 predecessor T01 Accept annotated per T01's DEVIATION A finding
 - [ ] T05 index and decision record
 
@@ -736,6 +736,107 @@ Packet SHA-256: `64384e65f840a54d55a22d21ef81b0163fc6b5d5e72d68882bfb59ac2b68a20
 Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9590-7740-9bb1-215ae4c32518`, turn `01a082eb-95c8-70b1-9702-5ee781e6623c`. Native Sol/medium implementation and QA, Luna/low execution, and reviewer provenance verified directly.
 
 No edits, gates, delegation, or current sibling verdict consulted. Truncated reads were recovered; direct reads and `rg` supplied codegraph-equivalent checks. Runtime builds and cluster gates are inapplicable.
+
+
+### T03 attempt 1 — rejected attribution, 2026-09-08
+
+T03 gates G0/G19a/G19b/Accept all exited 0. Native full output/duration/model/run/
+turn and unchanged state are preserved in `T03-gates.json`, `T03-state.json`,
+and associated files under the certification evidence directory. State SHA
+fab86a416f274b57e9f28562ff8c3ec9e1a6706b844e1e4b187fce14570f181b.
+Reviewer A approved; B rejected attribution of the timestamp caveat to gate
+records instead of later Preflight prose. This is a documentation evidence defect,
+not a gate failure. T03 remains unchecked and uncommitted. Engine permits attempt
+2 to correct attribution within the existing scope; all prior files and a complete
+preimage are preserved. QA and all gates/reviews must repeat after correction.
+Non-causal runner prose duration error is disclosed in T03-review-inputs.md;
+persisted native Accept duration remains0.000003292. No gate or model fallback.
+
+#### T03 attempt 1 independent verdicts — verbatim
+
+##### Reviewer A
+
+APPROVED
+
+Reviewed T03 state SHA-256 `fab86a416f274b57e9f28562ff8c3ec9e1a6706b844e1e4b187fce14570f181b`; amended file SHA-256 `fd65e4508e7c5297a86790c87b565ec44180bcea679d1a5cdc8f3293f7d3230c`.
+
+- Only the two authorized Progress paragraphs changed. All five checkboxes, preceding content, and later Preflight remain byte-identical.
+- Historical commands, durations, hashes, provenance, and missing records match the sources. Deviation A remains uncertain; isolated `820221a9` remains rejected. Later certification correctly identifies `9fde0baa` as target and `b9764a6a` as the certification-record commit.
+- All four commands ran verbatim and sequentially, exit 0. Native output and durations match persisted evidence, including Accept duration `0.000003292`.
+- All 3,924 frozen hashes match. Native Sol/medium implementation and QA are verified; QA completed before Luna/low gates. No runtime changes, weakened tests, secrets, or applicable build/cluster requirements.
+
+Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-4ec2-7ee1-b85b-44047c7cef35`, turn `01a0830e-97e3-72b3-a1e0-3ae8c573d9f7`.
+
+No edits, gate reruns, delegation, or current sibling verdict consulted. Truncated displays were recovered through targeted reads and structured comparisons.
+
+##### Reviewer B
+
+REJECTED
+
+1. `manual-loops/architecture/blocker-handoff-diagnosis.md:419` incorrectly says the attempt-2 gate record notes that `started_utc` contains completion timestamps. Neither `T01-attempt2-gates.json` nor its four output files contains that note; it appears only in the preserved later Preflight prose at line 590. This violates the SPEC’s **No reconstruction** constraint and automatic rejection rule **7, contract/evidence gaps**. Attribute the interpretation explicitly to that later Preflight assertion instead of presenting it as original gate-record evidence.
+
+Reviewed state: `fab86a416f274b57e9f28562ff8c3ec9e1a6706b844e1e4b187fce14570f181b`; file SHA-256: `fd65e4508e7c5297a86790c87b565ec44180bcea679d1a5cdc8f3293f7d3230c`.
+
+All 3,924 frozen hashes match. Only the two authorized paragraphs changed; five checkboxes and later Preflight remain byte-identical. Four commands passed with matching native outputs/durations, including Accept `0.000003292`. QA preceded gates; Sol/medium implementation/QA and Luna/low execution provenance verified.
+
+Reviewer requested/observed: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9590-7740-9bb1-215ae4c32518`, turn `01a0830e-c9d2-7991-80c4-87399a9429c9`. No edits, gates, delegation, or current sibling verdict consulted.
+
+
+### T03-attempt2 completed — 2026-09-08
+
+Unchanged reviewed state SHA-256 `27818b998008fbdaf308d1287db2d145ce3f5da0e6e0ff434ec17b6134c6e4e0`; all 3958 frozen hashes match after gates and both reviews.
+Evidence-only Progress closure; reviewed implementation and contracts unchanged.
+
+- `./scripts/checks/doc-code-guards.sh` — exit 0; complete output and exact native duration: `T03-attempt2-gate-01.json`.
+- `python3 ./scripts/checks/check-codex-manual-loop.py` — exit 0; complete output and exact native duration: `T03-attempt2-gate-02.json`.
+- `./scripts/checks/doc-code-guards.sh --full` — exit 0; complete output and exact native duration: `T03-attempt2-gate-03.json`.
+- `grep -q "EVIDENCE AMENDMENT" manual-loops/architecture/blocker-handoff-diagnosis.md && grep -q "not recorded" manual-loops/architecture/blocker-handoff-diagnosis.md && ! grep -q "Additionally record for this queue" manual-loops/architecture/blocker-handoff-diagnosis.md` — exit 0; complete output and exact native duration: `T03-attempt2-gate-04.json`.
+
+Native runner gpt-5.6-luna/low, run `01a082d6-fa9a-76f2-b31b-d1eb5fc9d29e`, turn `01a08313-a5bd-7d33-8d00-df52ae084504`.
+Implementation/QA actual Sol/medium identities and evidence: `T03-attempt2-preflight-provenance.json`, `T03-attempt2-qa-provenance.json`, `T03-attempt2-implementation.md`, `T03-attempt2-qa.md`.
+Both native Astra/high reviewers are no weaker than the implementer; identities
+and exact verdicts are below and in `T03-attempt2-review-provenance.json`.
+All evidence paths are under `blocker-handoff-certification-evidence/`.
+
+No gate retries, new tests, service build, cluster gate or dev-mode precondition
+applies to this Markdown-only scope. Engram unavailable; this is the durable
+record for manual-loop/blocker-handoff. Preexisting work is preserved.
+
+Execution exceptions and read recoveries are recorded in `T03-attempt2-review-inputs.md`, `T03-attempt2-qa-plan.md` and `T03-attempt2-implementation.md`. Persisted gate durations are native results; prose transcription errors never replace them.
+
+#### T03-attempt2 independent reviews — verbatim
+
+##### Reviewer A
+
+APPROVED
+
+Reviewed T03 attempt 2 state SHA-256 `27818b998008fbdaf308d1287db2d145ce3f5da0e6e0ff434ec17b6134c6e4e0`; file SHA-256 `28f2c6426043a63c371a0ee3f378fbf544c93bf5c6853cba3d13e4dc9c83ada7`.
+
+- The timestamp interpretation is now correctly attributed to later Preflight prose, explicitly distinguished from native gate evidence.
+- Reviewed the complete amendment. Historical records and gaps, uncertain deviation A, rejected `820221a9`, and later certification of `9fde0baa` remain accurate and distinct.
+- Only the authorized Progress replacement changed. Five checkboxes, preceding content, and later sections remain byte-identical. Attempt-1 evidence is preserved.
+- All four fresh commands ran verbatim and sequentially, exit 0; native outputs, durations, and provenance match. Sol/medium QA finished before Luna/low gates.
+- All 3,958 frozen hashes match. No runtime changes, weakened tests, secrets, or applicable build/cluster requirements.
+
+Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-4ec2-7ee1-b85b-44047c7cef35`, turn `01a08314-6024-7df2-a3bd-31701e20dada`.
+
+No edits, gate reruns, delegation, or current sibling verdict consulted.
+
+##### Reviewer B
+
+APPROVED
+
+Reviewed T03 attempt 2 state `27818b998008fbdaf308d1287db2d145ce3f5da0e6e0ff434ec17b6134c6e4e0`; file SHA-256 `28f2c6426043a63c371a0ee3f378fbf544c93bf5c6853cba3d13e4dc9c83ada7`.
+
+- Attribution objection resolved: the timestamp interpretation is explicitly a later Preflight assertion, absent from native gate files.
+- Complete amendment preserves historical records, missing evidence, uncertain deviation A, and the distinction between rejected `820221a9` and certified `9fde0baa`.
+- Only the two original template paragraphs are replaced; five checkboxes and all surrounding text remain byte-identical. Prior attempt evidence and unrelated work are preserved.
+- All 3,958 frozen hashes match. Four fresh commands ran verbatim and sequentially, exit 0; native outputs and durations match. Sol/medium QA finished before Luna/low gates.
+- No runtime changes, weakened tests, secrets, or applicable build/cluster requirements.
+
+Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9590-7740-9bb1-215ae4c32518`, turn `01a08314-8403-7920-ac7d-4a9a42837ffe`. Provenance verified against native records.
+
+No edits, gates, delegation, or current sibling verdict consulted.
 
 
 ## Out of scope (explicit)

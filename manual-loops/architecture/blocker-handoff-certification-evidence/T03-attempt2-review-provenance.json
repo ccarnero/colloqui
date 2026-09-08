@@ -1,0 +1,74 @@
+[
+  {
+    "source_file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T18-27-34-01a082eb-4ec2-7ee1-b85b-44047c7cef35.jsonl",
+    "run": "01a082eb-4ec2-7ee1-b85b-44047c7cef35",
+    "source": {
+      "subagent": {
+        "thread_spawn": {
+          "parent_thread_id": "01a082d5-ca89-74c3-b1f3-a3741a0947ad",
+          "depth": 1,
+          "agent_path": "/root/review_t02_r4_a",
+          "agent_nickname": "Kierkegaard",
+          "agent_role": "fp-reviewer"
+        }
+      }
+    },
+    "agent_role": "fp-reviewer",
+    "turns": [
+      {
+        "timestamp": "2026-09-08T21:27:36.730Z",
+        "turn_id": "01a082eb-4f06-7f72-80a7-1b2415c0caa6",
+        "model": "gpt-6-astra",
+        "effort": "high"
+      },
+      {
+        "timestamp": "2026-09-08T22:06:08.699Z",
+        "turn_id": "01a0830e-97e3-72b3-a1e0-3ae8c573d9f7",
+        "model": "gpt-6-astra",
+        "effort": "high"
+      },
+      {
+        "timestamp": "2026-09-08T22:12:28.102Z",
+        "turn_id": "01a08314-6024-7df2-a3bd-31701e20dada",
+        "model": "gpt-6-astra",
+        "effort": "high"
+      }
+    ]
+  },
+  {
+    "source_file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T18-27-52-01a082eb-9590-7740-9bb1-215ae4c32518.jsonl",
+    "run": "01a082eb-9590-7740-9bb1-215ae4c32518",
+    "source": {
+      "subagent": {
+        "thread_spawn": {
+          "parent_thread_id": "01a082d5-ca89-74c3-b1f3-a3741a0947ad",
+          "depth": 1,
+          "agent_path": "/root/review_t02_r4_b",
+          "agent_nickname": "Confucius",
+          "agent_role": "fp-reviewer"
+        }
+      }
+    },
+    "agent_role": "fp-reviewer",
+    "turns": [
+      {
+        "timestamp": "2026-09-08T21:27:54.964Z",
+        "turn_id": "01a082eb-95c8-70b1-9702-5ee781e6623c",
+        "model": "gpt-6-astra",
+        "effort": "high"
+      },
+      {
+        "timestamp": "2026-09-08T22:06:22.796Z",
+        "turn_id": "01a0830e-c9d2-7991-80c4-87399a9429c9",
+        "model": "gpt-6-astra",
+        "effort": "high"
+      },
+      {
+        "timestamp": "2026-09-08T22:12:37.031Z",
+        "turn_id": "01a08314-8403-7920-ac7d-4a9a42837ffe",
+        "model": "gpt-6-astra",
+        "effort": "high"
+      }
+    ]
+  }
+]

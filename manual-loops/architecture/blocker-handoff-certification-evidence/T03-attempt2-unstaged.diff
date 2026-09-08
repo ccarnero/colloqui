@@ -1,0 +1,298 @@
+diff --git a/manual-loops/architecture/blocker-handoff-certification.md b/manual-loops/architecture/blocker-handoff-certification.md
+index ff75d075..e0191a71 100644
+--- a/manual-loops/architecture/blocker-handoff-certification.md
++++ b/manual-loops/architecture/blocker-handoff-certification.md
+@@ -738,6 +738,50 @@ Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9
+ No edits, gates, delegation, or current sibling verdict consulted. Truncated reads were recovered; direct reads and `rg` supplied codegraph-equivalent checks. Runtime builds and cluster gates are inapplicable.
+ 
+ 
++### T03 attempt 1 — rejected attribution, 2026-09-08
++
++T03 gates G0/G19a/G19b/Accept all exited 0. Native full output/duration/model/run/
++turn and unchanged state are preserved in `T03-gates.json`, `T03-state.json`,
++and associated files under the certification evidence directory. State SHA
++fab86a416f274b57e9f28562ff8c3ec9e1a6706b844e1e4b187fce14570f181b.
++Reviewer A approved; B rejected attribution of the timestamp caveat to gate
++records instead of later Preflight prose. This is a documentation evidence defect,
++not a gate failure. T03 remains unchecked and uncommitted. Engine permits attempt
++2 to correct attribution within the existing scope; all prior files and a complete
++preimage are preserved. QA and all gates/reviews must repeat after correction.
++Non-causal runner prose duration error is disclosed in T03-review-inputs.md;
++persisted native Accept duration remains0.000003292. No gate or model fallback.
++
++#### T03 attempt 1 independent verdicts — verbatim
++
++##### Reviewer A
++
++APPROVED
++
++Reviewed T03 state SHA-256 `fab86a416f274b57e9f28562ff8c3ec9e1a6706b844e1e4b187fce14570f181b`; amended file SHA-256 `fd65e4508e7c5297a86790c87b565ec44180bcea679d1a5cdc8f3293f7d3230c`.
++
++- Only the two authorized Progress paragraphs changed. All five checkboxes, preceding content, and later Preflight remain byte-identical.
++- Historical commands, durations, hashes, provenance, and missing records match the sources. Deviation A remains uncertain; isolated `820221a9` remains rejected. Later certification correctly identifies `9fde0baa` as target and `b9764a6a` as the certification-record commit.
++- All four commands ran verbatim and sequentially, exit 0. Native output and durations match persisted evidence, including Accept duration `0.000003292`.
++- All 3,924 frozen hashes match. Native Sol/medium implementation and QA are verified; QA completed before Luna/low gates. No runtime changes, weakened tests, secrets, or applicable build/cluster requirements.
++
++Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-4ec2-7ee1-b85b-44047c7cef35`, turn `01a0830e-97e3-72b3-a1e0-3ae8c573d9f7`.
++
++No edits, gate reruns, delegation, or current sibling verdict consulted. Truncated displays were recovered through targeted reads and structured comparisons.
++
++##### Reviewer B
++
++REJECTED
++
++1. `manual-loops/architecture/blocker-handoff-diagnosis.md:419` incorrectly says the attempt-2 gate record notes that `started_utc` contains completion timestamps. Neither `T01-attempt2-gates.json` nor its four output files contains that note; it appears only in the preserved later Preflight prose at line 590. This violates the SPEC’s **No reconstruction** constraint and automatic rejection rule **7, contract/evidence gaps**. Attribute the interpretation explicitly to that later Preflight assertion instead of presenting it as original gate-record evidence.
++
++Reviewed state: `fab86a416f274b57e9f28562ff8c3ec9e1a6706b844e1e4b187fce14570f181b`; file SHA-256: `fd65e4508e7c5297a86790c87b565ec44180bcea679d1a5cdc8f3293f7d3230c`.
++
++All 3,924 frozen hashes match. Only the two authorized paragraphs changed; five checkboxes and later Preflight remain byte-identical. Four commands passed with matching native outputs/durations, including Accept `0.000003292`. QA preceded gates; Sol/medium implementation/QA and Luna/low execution provenance verified.
++
++Reviewer requested/observed: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9590-7740-9bb1-215ae4c32518`, turn `01a0830e-c9d2-7991-80c4-87399a9429c9`. No edits, gates, delegation, or current sibling verdict consulted.
++
++
+ ## Out of scope (explicit)
+ 
+ - Attempt-budget rules, including whether an evidence-only objection round should
+diff --git a/manual-loops/architecture/blocker-handoff-diagnosis.md b/manual-loops/architecture/blocker-handoff-diagnosis.md
+index 50f8a88b..b23bf623 100644
+--- a/manual-loops/architecture/blocker-handoff-diagnosis.md
++++ b/manual-loops/architecture/blocker-handoff-diagnosis.md
+@@ -337,16 +337,228 @@ grep -n "fresh Codex session" DOCS/guides/codex-manual-loop.md
+ - [x] T03 fp-dev.toml third paragraph + single lock entry refresh
+ - [x] T04 templates: blocker format + cheapest-gate-first
+ - [x] T05 docs + index + decision record
+-Record actual gate commands/output/statuses, reviewed-state identity, implementer
+-and two independent reviewer model/run identities and verdicts, retries,
+-fallbacks, skips, and exceptions. Reviewers must be no weaker than the
+-implementer. Changed code/artifacts invalidate gates and both reviews; rerun
+-before done. Missing evidence blocks completion.
+- 
+-Additionally record for this queue: the reasoning for declaring no cluster gates
+-and no dev-mode precondition (T01 onward); whether `doc-code-guards.sh` actually
+-invokes the Codex checker in both modes (finding from the Gates section); and, at
+-T03, the old and new `fp-dev.toml` hashes plus the fresh-session ordering effect.
++### EVIDENCE AMENDMENT (2026-09-08, under manual-loops/architecture/blocker-handoff-certification.md)
++
++This dated amendment replaces the template instructions with records sourced
++from
++`blocker-handoff-certification-evidence/certification-packet.md`, the complete
++certification evidence directory, and this SPEC's preserved later Preflight
++section. It was written after the original run. It is an evidence-only Progress
++update and does not invalidate the predecessor implementation review. It does
++not reconstruct missing predecessor evidence.
++
++#### Historical task commands and state
++
++Every recorded command below exited 0. T01 has two separate executions because
++its attempt-1 objection concerned evidence while the implementation was already
++correct. Each attempt ran these first three commands in order:
++
++1. `./scripts/checks/doc-code-guards.sh`
++2. `python3 ./scripts/checks/check-codex-manual-loop.py`
++3. `./scripts/checks/doc-code-guards.sh --full`
++
++The native durations, without rounding or recomputation, were:
++
++| Task execution | Command 1 | Command 2 | Command 3 | Accept |
++| --- | ---: | ---: | ---: | ---: |
++| T01 attempt 1 | `0.966425083` | `0.000003666` | `3.568641917` | `0.000003875` |
++| T01 attempt 2 | `1.1002217079512775` | `0.05402770801447332` | `4.096122290939093` | `0.012824874953366816` |
++| T02 | `1.1473162920447066` | `0.05121437495108694` | `3.7107051250059158` | `0.009795458056032658` |
++| T03 | `1.136267332942225` | `0.05670841608662158` | `4.528973625041544` | `0.10642837500199676` |
++| T04 | `1.1580222920747474` | `0.05660045810509473` | `4.268370833015069` | `0.012333500082604587` |
++| T05 attempt 2 | `1.2320749580394477` | `0.05279429198708385` | `4.2168731660349295` | `0.011029041022993624` |
++
++The exact Accept commands were:
++
++- T01 attempts 1 and 2: `grep -n "For humans" DOCS/guides/manual-loop.md && grep -n "non-causal" DOCS/guides/manual-loop.md && grep -n "creates no budget" DOCS/guides/manual-loop.md && grep -c "Max 4 implementation attempts per task" DOCS/guides/manual-loop.md`.
++- T02: `grep -n "HANDOFF NOTE" DOCS/guides/agent-roles.md && grep -n "consumes no attempt" DOCS/guides/agent-roles.md && grep -c "do not diagnose, remediate, edit, retry" DOCS/guides/agent-roles.md`.
++- T03: `python3 -c "import tomllib,sys; d=tomllib.load(open('.codex/agents/fp-dev.toml','rb')); assert d['name']=='fp-dev'; assert d['model']=='gpt-5.6-sol'; assert d['model_reasoning_effort']=='medium'; assert d['sandbox_mode']=='workspace-write'; assert 'handoff note' in d['developer_instructions']; print('ok')" && python3 -c "import json,hashlib; l=json.load(open('.codex/manual-loop.lock.json')); h=hashlib.sha256(open('.codex/agents/fp-dev.toml','rb').read()).hexdigest(); assert l['files']['.codex/agents/fp-dev.toml']==h, 'lock drift'; assert l['files']['.codex/config.toml']=='0e2aafb360454df9f511fe0ff65e0abb783ef5e533b17410d67b341e4d164e94'; assert len(l['files'])==6; print('ok')" && python3 ./scripts/checks/check-codex-manual-loop.py`.
++- T04: `grep -n "Blocker records" manual-loops-templates/README.md && grep -n "cheapest failure first" manual-loops-templates/spec-simple-template.md manual-loops-templates/spec-canonical-template.md && grep -n "G5b" manual-loops-templates/spec-canonical-template.md`.
++- T05 attempt 2: `grep -n "blocker-handoff" DOCS/archive/INDEX.md && grep -n "fresh Codex session" DOCS/guides/codex-manual-loop.md`.
++
++Full outputs are in `T0N-gates.json` and the corresponding
++`T0N-gate-NN*.txt` files. T01 attempt-1 originals remain under `attempt1/`, and
++attempt 2 is recorded separately as `T01-attempt2-*`. T05 attempt 1 stopped at
++QA for two wording corrections before any gate ran.
++
++The committed task sequence and recorded state identities are:
++
++| Task | Commit | Recorded reviewed-state identity |
++| --- | --- | --- |
++| T01 | `612285ef` | `DOCS/guides/manual-loop.md` SHA-256 `009b949a88a2205d9c7f39b3cdf7735738eec6da3e21a7035e19671c0615258b` |
++| T02 | `35b656a7` | `DOCS/guides/agent-roles.md` SHA-256 `8270bad50214b821efc8f19475be5f2dbccd6b25175d82a3a7197984365a3904` |
++| T03 | `26c78b79` | `fp-dev.toml` SHA-256 `5b009539974207f8141a0367bcc3f2581d47618f2ced9c3b61fb7de899ada2b5`; lock SHA-256 `e400b7badccf6d6c15779bd0142f0a10531da9e00ca13407e534122f5ed21701` |
++| T04 | `ec8a9abd` | README `0e1af50d371bdc3bac9bccfb4ebdfea71cad5bd5df2e4fa4cfc640d6355114e9`; simple template `2de695ca8a7ec3a2d79e9dbb4760eaf3c481bdb19da9414923c26c6076464ffe`; canonical template `6f573b25b805deb2bd34431387a3fcda62283e88fa92dbd9e8df2a23b8dc00b9` |
++| T05 | `820221a9` | guide `56ca347cfae38b6b4e0ad2da5aacf32239826f47ad9982698d86e9bac5073fb6`; index `87e5e73c9ceff99949e817f7df59d2821272cf3b2250e71f047d471429f73930` |
++
++`T01-preservation.json` records 3,731 baseline files and the two expected
++changed paths. `T03-preservation.json` records the same baseline count and the
++five accumulated T01-T03 paths. `T04-preservation.json` records the same count
++and eight accumulated paths. T02 and T05 have no preservation file, as recorded
++below. Each `T0N-implementation-qa.md` records exact scope and that no prose-only
++test applied; T05 alone required a pre-gate QA correction. No existing test was
++weakened or deleted.
++
++Historical implementation and QA used native `gpt-5.6-sol` / `medium`:
++fp-dev run `01a0822a-ac72-7102-9608-7f1099e5bb24` and fp-qa run
++`01a08228-815f-7351-81a7-cc78f1e234ff`. T02 records developer task turn
++`01a08237-52b2-7ab1-91cf-d1a6fa1e13d4`; T05 records developer task turn
++`01a08253-3ba9-7c03-a2a4-fb907560b0e3` and final QA turn
++`01a08257-8a3e-70d2-bb21-beb11a9154cb`. Other missing task turns remain listed
++below. Every historical gate record requests `gpt-5.6-luna` / `low` and observes
++script-runner run `01a08228-5aa1-7c92-afdb-dd55fdbc8be8` with that model and
++effort; the missing requested and observed session/turn fields remain holes.
++
++T01 attempt 1 records Reviewer A `APPROVED` and Reviewer B `REJECTED` in
++`blocker-handoff-diagnosis-evidence/T01-review-attempt1.md`. B objected to the
++miscopied Accept duration and omitted evidence-write failure; the record states
++that no implementation edit was indicated by either verdict. The objection
++round was therefore consumed by evidence defects while implementation was
++already correct. The original outputs were preserved, evidence was corrected,
++and attempt 2 repeated QA, all commands, and review without changing
++implementation bytes. The attempt-2 gate record contains its `started_utc`
++fields and native elapsed durations; the preserved later Preflight assertion
++interprets those `started_utc` fields as completion timestamps and states that
++the measured elapsed durations remain valid. That interpretation is not present
++in the native gate files. Final attempt-2 verdicts are not recorded in the
++predecessor evidence.
++
++Other recorded non-causal exceptions were: a malformed T02 coordination call,
++principal interruption and recovered provenance truncation; T03's malformed
++grouped read, cancelled stalled protected patch, authorized write retries and
++permission-status race; and T05's expected `diff` exit 1 stopping an `&&` read
++chain. T04 records no exception. No historical gate retry, model fallback,
++session restart, service build, cluster mutation, or push is recorded.
++
++#### Deviations and missing predecessor records
++
++DEVIATION A is the difference between the human-approved T01 Accept containing
++`grep -n "Para humanos"` and both recorded executions containing
++`grep -n "For humans"`. The attempt-1 record shows the difference predates its
++objection round. The predecessor evidence has no approval-time SPEC copy or
++original command, editor identity, or edit time, so it does not establish who
++changed the command, when it changed, or whether the cause was runner
++substitution or a SPEC edit. `blocker-handoff-certification-evidence/deviations.md`
++records that uncertainty. DEVIATION B is the absence of final independent
++verdicts: `independent-review-verdicts.json` has only the two T01 attempt-1 run
++IDs, each with `final_verdicts: []`.
++
++Every certified historical hole remains explicit:
++
++- T01 final-state dual independent reviewer verdicts: **not recorded**. The
++  only verdicts are A APPROVED and B REJECTED for attempt 1; no verdict exists
++  for attempt 2.
++- T02 final-state independent reviewer verdicts: **not recorded**.
++- T03 final-state independent reviewer verdicts: **not recorded**.
++- T04 final-state independent reviewer verdicts: **not recorded**.
++- T05 final-state independent reviewer verdicts: **not recorded**.
++- `T02-preservation.json`: **not recorded**; the required file is absent.
++- `T05-preservation.json`: **not recorded**; the required file is absent.
++- Requested gate-executor session and turn for T01-T05: **not recorded**.
++- Observed per-gate session and turn for T01-T05: **not recorded**; the records
++  use `unavailable`.
++- Task-specific fp-dev turns for T01, T03 and T04, and the T05 attempt-2
++  correction: **not recorded**.
++- Task-specific fp-qa turns for T01-T04: **not recorded**.
++- Reviewer B's T01 attempt-1 task turn: **not recorded**.
++- Reviewer model/run/turn identities and verdicts for T01 attempt 2 and T02-T05:
++  **not recorded**.
++- Approval-time predecessor SPEC bytes or original command, editor identity,
++  edit time, and evidence distinguishing runner substitution from a mid-flight
++  SPEC edit: **not recorded**.
++- Guard integration as a predecessor-run finding: **not recorded**.
++
++The later Preflight section below is preserved verbatim and asserts two
++APPROVED reviews for final T01-T05 states. Those later prose assertions do not
++create the missing persisted verdict documents and are not presented here as
++contemporaneous predecessor evidence.
++
++#### Required operational findings
++
++No cluster gate or dev-mode precondition applied because this queue changed
++documentation, templates and local role configuration without changing a
++service, migration, built image or cluster behavior. This was declared scope,
++not skipped dev-mode debt; no service rebuild was required.
++
++Current source inspection, separate from the predecessor-run record, shows that
++`scripts/checks/doc-code-guards.sh` defines `g19_codex_manual_loop`, calls
++`check-codex-manual-loop.py`, and invokes G19 after the KISS/full branch rejoins.
++The checker therefore runs in both current modes. This is the current source
++finding whose predecessor-era absence remains listed above.
++
++T03 changed the `fp-dev.toml` source hash from
++`d06443d9f26975f289644b35b9747cdef7cf7477bb13c606f69ad54e0ebc33b5` to
++`5b009539974207f8141a0367bcc3f2581d47618f2ced9c3b61fb7de899ada2b5`.
++The five other lock entries remained:
++
++- `.codex/config.toml`: `0e2aafb360454df9f511fe0ff65e0abb783ef5e533b17410d67b341e4d164e94`
++- `.codex/agents/fp-architect.toml`: `1640055b7754993d2133b1a9b5df3a99271ae2df91fe2278631c71b6abacda4d`
++- `.codex/agents/fp-qa.toml`: `38e65b353624c7abd7a5e81113e32b19c0bba8c4cebc7ad32f85bb65c5f5e3c8`
++- `.codex/agents/fp-reviewer.toml`: `3c1d2938403918b35a1050a0338e18252480336a345703cba3a93af5416a05f8`
++- `.codex/agents/script-runner.toml`: `c25e15631146484210f3d5d027baa34a709e2f438233125663f30a0435c70710`
++
++The already-running session retained the old loaded fp-dev definition; the new
++instructions took effect only in a fresh `codex -C <repo>` session. No restart
++or earlier-task rerun was used to work around that ordering effect.
++
++#### Later integrated certification
++
++The isolated historical target `820221a9` was not self-consistent: its lock
++named six files, four role files were absent, its committed config differed from
++the locked bytes, and the checker and G19 guard wiring were absent. Reviewer A
++found this and blocked certification attempt 1; Reviewer B approved. Their
++separate verdicts are preserved in
++`blocker-handoff-certification-evidence/T02-review-verdicts.md`.
++
++The human resolved the dependency boundary by committing the pending repair as
++`07e1d466`, `51689ecd`, `e111957b`, then `9fde0baa`, rather than reinterpreting
++the defective isolated target. The human root-cause finding is composition:
++each loop correctly committed only its allowed paths, but a lock landed without
++its referents; no isolated loop failed. That finding does not erase the separate
++DEVIATION A and DEVIATION B records.
++
++Revision 4 of
++`manual-loops/architecture/blocker-handoff-certification.md` made integrated
++`9fde0baa9fbae768fc97133731eeb2744f90516e` the current certification target.
++Its reviewed-state SHA-256 is
++`275c436f3fa8b75efe0575f33866103f87bcbfa15fdd7dba64c4254635d30900`;
++the packet SHA-256 is
++`64384e65f840a54d55a22d21ef81b0163fc6b5d5e72d68882bfb59ac2b68a20b`.
++All 3,892 frozen hashes matched. Nine attempt-2 commands ran sequentially and
++exited 0 with native durations recorded in
++`blocker-handoff-certification-evidence/T02-attempt2-gates.json`:
++
++| Command | Working directory | Native duration |
++| --- | --- | ---: |
++| `./scripts/checks/doc-code-guards.sh` | main workspace | `0.772555125` |
++| `python3 ./scripts/checks/check-codex-manual-loop.py` | main workspace | `3.333e-06` |
++| `./scripts/checks/doc-code-guards.sh --full` | main workspace | `3.323310792` |
++| `git rev-parse HEAD` | detached target worktree | `0.388331709` |
++| exact-HEAD equality test for `9fde0baa9fbae768fc97133731eeb2744f90516e` | detached target worktree | `0.323493458` |
++| fail-closed clean-status test before checker | detached target worktree | `0.675057958` |
++| `python3 ./scripts/checks/check-codex-manual-loop.py` | detached target worktree | `0.443782834` |
++| fail-closed clean-status test after checker | detached target worktree | `0.400039667` |
++| T02 packet Accept | main workspace | `4.542e-06` |
++
++This proves exact integrated HEAD, clean before, checker exit 0, and clean after
++without borrowing dirty main-worktree files. The runner was native Luna/low run
++`01a082d6-fa9a-76f2-b31b-d1eb5fc9d29e`, turn
++`01a082e9-b016-76c3-8a40-6c63a627036a`; developer was native Sol/medium run
++`01a082e0-880b-7362-bf33-46d5d8673b1d`, turn
++`01a082e0-884f-7683-b60e-78e15d58b1b7`; QA was native Sol/medium run
++`01a082d6-d7a4-7211-be99-542a79729f10`, postimplementation turn
++`01a082e5-cc7e-7230-bc45-6c85fb391139`.
++
++Both independent Astra/high reviewers approved integrated `9fde0baa` after
++assessing the original defect, resolution, current packet/SPEC and clean-tree
++evidence. Their verbatim verdicts and native identities are in
++`blocker-handoff-certification-evidence/T02-attempt2-review-verdicts.md`:
++Reviewer A run `01a082eb-4ec2-7ee1-b85b-44047c7cef35`, turn
++`01a082eb-4f06-7f72-80a7-1b2415c0caa6`; Reviewer B run
++`01a082eb-9590-7740-9bb1-215ae4c32518`, turn
++`01a082eb-95c8-70b1-9702-5ee781e6623c`. The certification SPEC's Progress
++contains the complete current record and exceptions. Commit `b9764a6a` records
++that certification; it is not the certified target.
+  
+ ## Out of scope (explicit)
+  

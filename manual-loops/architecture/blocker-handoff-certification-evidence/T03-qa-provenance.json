@@ -1,0 +1,80 @@
+[
+  {
+    "source_file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T18-05-13-01a082d6-d7a4-7211-be99-542a79729f10.jsonl",
+    "run": "01a082d6-d7a4-7211-be99-542a79729f10",
+    "source": {
+      "subagent": {
+        "thread_spawn": {
+          "parent_thread_id": "01a082d5-ca89-74c3-b1f3-a3741a0947ad",
+          "depth": 1,
+          "agent_path": "/root/qa_r4",
+          "agent_nickname": "Anscombe",
+          "agent_role": "fp-qa"
+        }
+      }
+    },
+    "agent_role": "fp-qa",
+    "turns": [
+      {
+        "timestamp": "2026-09-08T21:05:15.299Z",
+        "turn_id": "01a082d6-d7f3-79f2-b2fc-4a15a3a80e98",
+        "model": "gpt-5.6-sol",
+        "effort": "medium"
+      },
+      {
+        "timestamp": "2026-09-08T21:21:33.347Z",
+        "turn_id": "01a082e5-cc7e-7230-bc45-6c85fb391139",
+        "model": "gpt-5.6-sol",
+        "effort": "medium"
+      },
+      {
+        "timestamp": "2026-09-08T21:51:54.939Z",
+        "turn_id": "01a08301-882e-7a60-8004-360f22c6b2e5",
+        "model": "gpt-5.6-sol",
+        "effort": "medium"
+      },
+      {
+        "timestamp": "2026-09-08T22:02:30.007Z",
+        "turn_id": "01a0830b-459e-70a2-8857-737ef512c85c",
+        "model": "gpt-5.6-sol",
+        "effort": "medium"
+      }
+    ]
+  },
+  {
+    "source_file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T18-05-22-01a082d6-fa9a-76f2-b31b-d1eb5fc9d29e.jsonl",
+    "run": "01a082d6-fa9a-76f2-b31b-d1eb5fc9d29e",
+    "source": {
+      "subagent": {
+        "thread_spawn": {
+          "parent_thread_id": "01a082d5-ca89-74c3-b1f3-a3741a0947ad",
+          "depth": 1,
+          "agent_path": "/root/runner_r4",
+          "agent_nickname": "Carver",
+          "agent_role": "script-runner"
+        }
+      }
+    },
+    "agent_role": "script-runner",
+    "turns": [
+      {
+        "timestamp": "2026-09-08T21:05:24.373Z",
+        "turn_id": "01a082d6-fada-7772-9ce7-08df9ba8d3cc",
+        "model": "gpt-5.6-luna",
+        "effort": "low"
+      },
+      {
+        "timestamp": "2026-09-08T21:25:48.225Z",
+        "turn_id": "01a082e9-b016-76c3-8a40-6c63a627036a",
+        "model": "gpt-5.6-luna",
+        "effort": "low"
+      },
+      {
+        "timestamp": "2026-09-08T22:02:54.309Z",
+        "turn_id": "01a0830b-a07a-7402-82b3-d2371ba6a746",
+        "model": "gpt-5.6-luna",
+        "effort": "low"
+      }
+    ]
+  }
+]

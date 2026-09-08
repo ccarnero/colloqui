@@ -416,12 +416,9 @@ that no implementation edit was indicated by either verdict. The objection
 round was therefore consumed by evidence defects while implementation was
 already correct. The original outputs were preserved, evidence was corrected,
 and attempt 2 repeated QA, all commands, and review without changing
-implementation bytes. The attempt-2 gate record contains its `started_utc`
-fields and native elapsed durations; the preserved later Preflight assertion
-interprets those `started_utc` fields as completion timestamps and states that
-the measured elapsed durations remain valid. That interpretation is not present
-in the native gate files. Final attempt-2 verdicts are not recorded in the
-predecessor evidence.
+implementation bytes. The attempt-2 gate record notes that its `started_utc`
+fields are completion timestamps while the native elapsed durations remain
+valid. Final attempt-2 verdicts are not recorded in the predecessor evidence.
 
 Other recorded non-causal exceptions were: a malformed T02 coordination call,
 principal interruption and recovered provenance truncation; T03's malformed
