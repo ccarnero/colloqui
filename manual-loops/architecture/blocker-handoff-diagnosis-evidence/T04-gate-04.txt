@@ -1,0 +1,15 @@
+COMMAND: grep -n "Blocker records" manual-loops-templates/README.md && grep -n "cheapest failure first" manual-loops-templates/spec-simple-template.md manual-loops-templates/spec-canonical-template.md && grep -n "G5b" manual-loops-templates/spec-canonical-template.md
+EXIT_STATUS: 0
+ELAPSED_SECONDS: 0.012333500082604587
+FINISHED_UTC: 2026-09-08T18:39:27.424158+00:00
+STDOUT:
+94:## Blocker records
+manual-loops-templates/spec-simple-template.md:65:# G1 — <primary service> typecheck (cheapest failure first)
+manual-loops-templates/spec-simple-template.md:76:service typecheck/tests (cheapest failure first), G3/G4 = other touched services (absent in a
+manual-loops-templates/spec-canonical-template.md:81:# G1 — <primary service> typecheck (cheapest failure first)
+89:# G5b — COMMIT GATE (once per task, built image)
+99:- G5b runs for every task; a diff touching `packages/shared` redeploys every
+111:before T01; if it fails, skip G5a and rely solely on G5b — and RECORD the skip
+116:account-scoped, idempotent teardown. G5a/G5b failures count as failed attempts
+
+STDERR:

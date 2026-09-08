@@ -1,0 +1,10 @@
+COMMAND: python3 -c "import tomllib,sys; d=tomllib.load(open('.codex/agents/fp-dev.toml','rb')); assert d['name']=='fp-dev'; assert d['model']=='gpt-5.6-sol'; assert d['model_reasoning_effort']=='medium'; assert d['sandbox_mode']=='workspace-write'; assert 'handoff note' in d['developer_instructions']; print('ok')" && python3 -c "import json,hashlib; l=json.load(open('.codex/manual-loop.lock.json')); h=hashlib.sha256(open('.codex/agents/fp-dev.toml','rb').read()).hexdigest(); assert l['files']['.codex/agents/fp-dev.toml']==h, 'lock drift'; assert l['files']['.codex/config.toml']=='0e2aafb360454df9f511fe0ff65e0abb783ef5e533b17410d67b341e4d164e94'; assert len(l['files'])==6; print('ok')" && python3 ./scripts/checks/check-codex-manual-loop.py
+EXIT_STATUS: 0
+ELAPSED_SECONDS: 0.10642837500199676
+FINISHED_UTC: 2026-09-08T18:33:32.655344+00:00
+STDOUT:
+ok
+ok
+PASS: project Codex manual-loop policy and hash lock validated
+
+STDERR:

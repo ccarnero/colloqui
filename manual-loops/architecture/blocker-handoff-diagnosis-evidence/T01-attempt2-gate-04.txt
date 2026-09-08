@@ -1,0 +1,10 @@
+COMMAND: grep -n "For humans" DOCS/guides/manual-loop.md && grep -n "non-causal" DOCS/guides/manual-loop.md && grep -n "creates no budget" DOCS/guides/manual-loop.md && grep -c "Max 4 implementation attempts per task" DOCS/guides/manual-loop.md
+EXIT_STATUS: 0
+ELAPSED_SECONDS: 0.012824874953366816
+STDOUT:
+157:     those paths are not allowed. The record OPENS with a "## For humans"
+164:   - Label execution exceptions that did not cause the failure as non-causal, so
+167:     creates no budget, and creates no continuation SPEC. Requesting it does not
+1
+
+STDERR:

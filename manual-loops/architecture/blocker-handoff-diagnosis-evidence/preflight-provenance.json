@@ -1,0 +1,97 @@
+[
+  {
+    "file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T14-54-37-01a08228-5aa1-7c92-afdb-dd55fdbc8be8.jsonl",
+    "records": [
+      {
+        "type": "session_meta",
+        "payload": {
+          "id": "01a08228-5aa1-7c92-afdb-dd55fdbc8be8",
+          "source": {
+            "subagent": {
+              "thread_spawn": {
+                "parent_thread_id": "01a08223-2191-7f33-aac5-5955d5574f1a",
+                "depth": 1,
+                "agent_path": "/root/runner_probe",
+                "agent_nickname": "Planck",
+                "agent_role": "script-runner"
+              }
+            }
+          },
+          "agent_role": "script-runner"
+        }
+      },
+      {
+        "type": "turn_context",
+        "payload": {
+          "model": "gpt-5.6-luna",
+          "effort": "low"
+        }
+      }
+    ]
+  },
+  {
+    "file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T14-54-47-01a08228-815f-7351-81a7-cc78f1e234ff.jsonl",
+    "records": [
+      {
+        "type": "session_meta",
+        "payload": {
+          "id": "01a08228-815f-7351-81a7-cc78f1e234ff",
+          "source": {
+            "subagent": {
+              "thread_spawn": {
+                "parent_thread_id": "01a08223-2191-7f33-aac5-5955d5574f1a",
+                "depth": 1,
+                "agent_path": "/root/qa_cases",
+                "agent_nickname": "Schrodinger",
+                "agent_role": "fp-qa"
+              }
+            }
+          },
+          "agent_role": "fp-qa"
+        }
+      },
+      {
+        "type": "session_meta",
+        "payload": {
+          "id": "01a08223-2191-7f33-aac5-5955d5574f1a",
+          "source": "cli"
+        }
+      },
+      {
+        "type": "turn_context",
+        "payload": {
+          "model": "gpt-6-astra",
+          "effort": "medium"
+        }
+      },
+      {
+        "type": "turn_context",
+        "payload": {
+          "model": "gpt-6-astra",
+          "effort": "medium"
+        }
+      },
+      {
+        "type": "turn_context",
+        "payload": {
+          "model": "gpt-6-astra",
+          "effort": "medium"
+        }
+      },
+      {
+        "type": "turn_context",
+        "payload": {
+          "model": "gpt-6-astra",
+          "effort": "medium"
+        }
+      },
+      {
+        "type": "turn_context",
+        "payload": {
+          "model": "gpt-5.6-sol",
+          "effort": "medium"
+        }
+      }
+    ]
+  }
+]

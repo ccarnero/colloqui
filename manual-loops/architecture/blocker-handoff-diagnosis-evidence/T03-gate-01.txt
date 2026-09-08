@@ -1,0 +1,11 @@
+COMMAND: ./scripts/checks/doc-code-guards.sh
+EXIT_STATUS: 0
+ELAPSED_SECONDS: 1.136267332942225
+FINISHED_UTC: 2026-09-08T18:33:27.962907+00:00
+STDOUT:
+[1;33m[NOTE][0m Running KISS mode (core + bus guard set)
+di-imports guard: CLEAN (0 files scanned, git-modified only)
+
+[0;32mKISS doc/code guards passed.[0m
+
+STDERR:

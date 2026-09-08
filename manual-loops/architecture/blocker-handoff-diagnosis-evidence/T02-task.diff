@@ -1,0 +1,20 @@
+--- baseline/DOCS/guides/agent-roles.md
++++ DOCS/guides/agent-roles.md
+@@ -85,6 +85,17 @@
+ skipped check, or blocker. Do not infer model provenance from configuration.
+ Return evidence for the orchestrator to persist; do not edit the SPEC. Implementation
+ alone is not done: gates and two independent approvals must cover unchanged content.
++
++On a final failed attempt — the orchestrator states that the attempt budget is
++exhausted or that the same error repeated — also return a HANDOFF NOTE
++containing: the failure in one plain-language sentence, with no gate numbers and
++no run IDs; the root cause with `file:line` and the relevant code quoted; and one
++to three candidate fixes, each with a concrete diff, its risk, and whether it
++would invalidate findings already corrected in earlier attempts. The note is
++analysis, not authorization: do not apply it, do not edit files, do not run
++gates, and do not request a retry. Writing it consumes no attempt and creates
++neither budget nor a continuation SPEC. If you have no supportable diagnosis, say
++so plainly; a speculative fix is worse than none.
+ 
+ ## Quality assurance (fp-qa)
+ 

@@ -1,0 +1,45 @@
+--- baseline/DOCS/guides/codex-manual-loop.md
++++ DOCS/guides/codex-manual-loop.md
+@@ -76,6 +76,21 @@
+ their current status. Files on disk or copied role packets alone do not satisfy
+ native loading proof.
+ 
++On 2026-09-08, the human-approved
++[blocker handoff diagnosis SPEC](../../manual-loops/architecture/blocker-handoff-diagnosis.md)
++used dedicated configuration scope to change `fp-dev.toml` from SHA-256
++`d06443d9f26975f289644b35b9747cdef7cf7477bb13c606f69ad54e0ebc33b5` to
++`5b009539974207f8141a0367bcc3f2581d47618f2ced9c3b61fb7de899ada2b5`;
++only that file's lock entry changed. The new instructions take effect only in a
++fresh Codex session. The decision is that a final failed-attempt handoff is
++analysis only: it authorizes no retry, allocates no attempt or budget, and creates
++no continuation SPEC. `fp-dev` supplies the diagnosis because it already reasoned
++about the code; the principal, mechanical executor, and reviewers retain their
++existing prohibitions. This gives the human a concise cause and candidate fixes
++before audit evidence without changing retry or closure rules. The SPEC's Progress
++records the validation evidence and current T05 status. Engram topic:
++`manual-loop/blocker-handoff` (durable record here; no memory tool was available).
++
+ ## Protection boundaries
+ 
+ The current repair session observed the project sandbox reject a write-open of
+--- baseline/DOCS/archive/INDEX.md
++++ DOCS/archive/INDEX.md
+@@ -1764,3 +1764,18 @@
+ current evidence boundaries are documented in the
+ [Codex manual-loop guide](../guides/codex-manual-loop.md) and
+ [repair SPEC](../../manual-loops/architecture/codex-manual-loop-repair.md).
++
++## 2026-09-08 — Blocker handoff diagnosis
++
++Future BLOCKED records lead with a short `For humans` section, the implementer's
++cause and candidate fixes, and then full evidence; non-causal execution exceptions
++are labeled separately. The handoff remains analysis only and creates no retry,
++attempt, budget, or continuation SPEC. The `fp-dev` role update used dedicated
++human-approved configuration scope, changed one SHA-256 lock entry, and takes
++effect only in a fresh Codex session. At publication, T01-T04 were validated and
++T05 gates and reviews were pending; the SPEC records current status. Decision and
++current evidence:
++[blocker-handoff diagnosis SPEC](../../manual-loops/architecture/blocker-handoff-diagnosis.md).
++
++- **Engram topic**: `manual-loop/blocker-handoff` (durable repository record;
++  no memory tool was available).

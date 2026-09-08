@@ -1,0 +1,52 @@
+{
+  "spec": "manual-loops/architecture/blocker-handoff-diagnosis.md",
+  "task": "T01",
+  "cwd": "/Users/chris/sources/yoizen/platform-cluster",
+  "tested_state": {
+    "git_head": "3fe4263c0d99cdccffa22153faf1f2057906bd8f",
+    "manual_loop_sha256": "009b949a88a2205d9c7f39b3cdf7735738eec6da3e21a7035e19671c0615258b"
+  },
+  "requested": {
+    "model": "gpt-5.6-luna",
+    "effort": "low",
+    "role": "mechanical gate executor"
+  },
+  "observed": {
+    "model": "gpt-5.6-luna",
+    "effort": "low",
+    "run": "01a08228-5aa1-7c92-afdb-dd55fdbc8be8",
+    "session": "unavailable",
+    "turn": "unavailable"
+  },
+  "gates": [
+    {
+      "command": "./scripts/checks/doc-code-guards.sh",
+      "exit_status": 0,
+      "duration_seconds": 0.966425083,
+      "stdout_stderr": "T01-gate-01.stdout.txt"
+    },
+    {
+      "command": "python3 ./scripts/checks/check-codex-manual-loop.py",
+      "exit_status": 0,
+      "duration_seconds": 3.666e-06,
+      "stdout_stderr": "T01-gate-02.stdout.txt"
+    },
+    {
+      "command": "./scripts/checks/doc-code-guards.sh --full",
+      "exit_status": 0,
+      "duration_seconds": 3.568641917,
+      "stdout_stderr": "T01-gate-03.stdout.txt"
+    },
+    {
+      "command": "grep -n \"For humans\" DOCS/guides/manual-loop.md && grep -n \"non-causal\" DOCS/guides/manual-loop.md && grep -n \"creates no budget\" DOCS/guides/manual-loop.md && grep -c \"Max 4 implementation attempts per task\" DOCS/guides/manual-loop.md",
+      "exit_status": 0,
+      "duration_seconds": 3.875e-06,
+      "stdout_stderr": "T01-gate-04.stdout.txt"
+    }
+  ],
+  "duration_basis": "Native tool-reported wall time; subprocess duration not independently measured.",
+  "exceptions": [
+    "Non-causal evidence-write correction at 18:01:21\u201318:01:27 UTC: first G0 output apply_patch failed with invalid hunk because line prefixes were missing; corrected patch succeeded. No gate retry.",
+    "Principal corrected transcribed Accept duration after independent review; original report preserved under attempt1/."
+  ]
+}
