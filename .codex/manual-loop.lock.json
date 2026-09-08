@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "algorithm": "sha256",
+  "files": {
+    ".codex/config.toml": "0e2aafb360454df9f511fe0ff65e0abb783ef5e533b17410d67b341e4d164e94",
+    ".codex/agents/fp-architect.toml": "1640055b7754993d2133b1a9b5df3a99271ae2df91fe2278631c71b6abacda4d",
+    ".codex/agents/fp-dev.toml": "5b009539974207f8141a0367bcc3f2581d47618f2ced9c3b61fb7de899ada2b5",
+    ".codex/agents/fp-qa.toml": "38e65b353624c7abd7a5e81113e32b19c0bba8c4cebc7ad32f85bb65c5f5e3c8",
+    ".codex/agents/fp-reviewer.toml": "3c1d2938403918b35a1050a0338e18252480336a345703cba3a93af5416a05f8",
+    ".codex/agents/script-runner.toml": "c25e15631146484210f3d5d027baa34a709e2f438233125663f30a0435c70710"
+  }
+}
