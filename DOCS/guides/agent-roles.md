@@ -9,6 +9,12 @@ global settings and may provide intentional local tuning, but cannot weaken
 these role contracts. Supply the applicable full section with the task packet
 when a global named role needs repository context or a named role is unavailable.
 These names describe responsibilities, not evidence that a native agent loaded.
+The approved project-local Codex definitions are hash-locked as documented in
+[`codex-manual-loop.md`](codex-manual-loop.md). Routine task scope cannot change
+the definitions, runner, lock, checker, or guard integration that governs it.
+Its human-approved cost-policy exception permits the configured runner to equal
+the economical coding tier while remaining below implementation/QA; it permits no
+automatic fallback to a higher-cost model.
 
 ## Principal
 
@@ -80,6 +86,17 @@ skipped check, or blocker. Do not infer model provenance from configuration.
 Return evidence for the orchestrator to persist; do not edit the SPEC. Implementation
 alone is not done: gates and two independent approvals must cover unchanged content.
 
+On a final failed attempt — the orchestrator states that the attempt budget is
+exhausted or that the same error repeated — also return a HANDOFF NOTE
+containing: the failure in one plain-language sentence, with no gate numbers and
+no run IDs; the root cause with `file:line` and the relevant code quoted; and one
+to three candidate fixes, each with a concrete diff, its risk, and whether it
+would invalidate findings already corrected in earlier attempts. The note is
+analysis, not authorization: do not apply it, do not edit files, do not run
+gates, and do not request a retry. Writing it consumes no attempt and creates
+neither budget nor a continuation SPEC. If you have no supportable diagnosis, say
+so plainly; a speculative fix is worse than none.
+
 ## Quality assurance (fp-qa)
 
 You are the FP quality specialist. Before implementation, read the approved
@@ -97,6 +114,25 @@ changes, reviewer verdicts, or closure.
 Report acceptance cases, coverage findings, changed test files, commands with
 actual statuses, model/run provenance, and skipped checks or blockers. A missing
 prerequisite remains pending evidence rather than a pass.
+
+## Mechanical gate execution
+
+The mechanical gate executor is separate from implementation and QA. Resolve a
+configured model below both the implementation/QA tier and the economical coding
+tier before launch. No provider or model is pinned here. If none is available,
+report a prerequisite blocker; do not silently substitute a more expensive role.
+A human-approved exception is required to exceed the cost ceiling, and principal
+execution as a fallback must still respect it. Verify actual callability and the
+applicable tool cost basis; public API pricing alone does not establish billing.
+
+Execute only the exact commands supplied by the approved SPEC, in its working
+directories and order, stopping at the first failure. Report exit status and
+error output; do not diagnose, remediate, edit, retry, change scope, or decide
+closure. Persist full sanitized command output, duration, tested-state identity,
+and requested and observed model/session/turn. Return a concise summary with the
+evidence paths. Each command has one owner. An interruption or handoff transfers
+the existing process/run identity and completion evidence and never duplicates a
+build, E2E run, or other mutating command. The principal owns retries and closure.
 
 ## Architecture advice (fp-architect)
 
