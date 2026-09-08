@@ -1,0 +1,45 @@
+diff --git a/manual-loops/architecture/blocker-handoff-certification.md b/manual-loops/architecture/blocker-handoff-certification.md
+index 525bf5d1..09c7ec95 100644
+--- a/manual-loops/architecture/blocker-handoff-certification.md
++++ b/manual-loops/architecture/blocker-handoff-certification.md
+@@ -839,6 +839,16 @@ Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9
+ No edits, gates, delegation, or current sibling verdict consulted.
+ 
+ 
++### T04 attempt 1 — pre-gate correction, 2026-09-08
++
++No gates ran. QA detected that principal's T04-implementation.md quoted T02's
++Accept instead of T01. Principal also detected annotation placement before the
++opening fence instead of after the closing fence, contrary to QA's placement-pass
++report. Both findings are preserved in T04-qa.md and T04-attempt1-predecessor.md.
++Attempt2 moves unchanged annotation to its required position and corrects the new
++evidence quote; all original files remain frozen. No new human approval is needed:
++existing outcome-driven branch1 scope is unchanged. T04 remains unchecked.
++
+ ## Out of scope (explicit)
+ 
+ - Attempt-budget rules, including whether an evidence-only objection round should
+diff --git a/manual-loops/architecture/blocker-handoff-diagnosis.md b/manual-loops/architecture/blocker-handoff-diagnosis.md
+index b23bf623..5a1bd473 100644
+--- a/manual-loops/architecture/blocker-handoff-diagnosis.md
++++ b/manual-loops/architecture/blocker-handoff-diagnosis.md
+@@ -178,6 +178,19 @@ grep -n "non-causal" DOCS/guides/manual-loop.md && \
+ grep -n "creates no budget" DOCS/guides/manual-loop.md && \
+ grep -c "Max 4 implementation attempts per task" DOCS/guides/manual-loop.md
+ ```
++> ACCEPT ALTERED AFTER APPROVAL (recorded 2026-09-08 under
++> manual-loops/architecture/blocker-handoff-certification.md): the human-approved
++> record says this block read `grep -n "Para humanos"`, while the current block
++> and both recorded executions read `grep -n "For humans"`. The predecessor
++> evidence has no approval-time SPEC copy or original command, editor identity,
++> or edit time, and does not establish whether the runner substituted the command
++> or the SPEC changed during execution. The current English command matches the
++> guide and is left in place under the human decision accepting that header. What
++> is corrected here is the record: this divergence is DEVIATION A in
++> `blocker-handoff-certification-evidence/deviations.md`, supported by
++> `blocker-handoff-diagnosis-evidence/T01-gates.json`,
++> `blocker-handoff-diagnosis-evidence/T01-gate-04.stdout.txt`, and
++> `blocker-handoff-diagnosis-evidence/T01-attempt2-gate-04.txt`.
+  
+ ### T02 — Handoff note in the shared fp-dev return contract
+  

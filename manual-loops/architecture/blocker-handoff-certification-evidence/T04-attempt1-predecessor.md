@@ -172,12 +172,6 @@ rules by reference to another SPEC):
 - DO NOT add the note to the `## Reporting` section; a blocked run's user-facing
   report already points at the record.
 **Accept**
-```
-grep -n "For humans" DOCS/guides/manual-loop.md && \
-grep -n "non-causal" DOCS/guides/manual-loop.md && \
-grep -n "creates no budget" DOCS/guides/manual-loop.md && \
-grep -c "Max 4 implementation attempts per task" DOCS/guides/manual-loop.md
-```
 > ACCEPT ALTERED AFTER APPROVAL (recorded 2026-09-08 under
 > manual-loops/architecture/blocker-handoff-certification.md): the human-approved
 > record says this block read `grep -n "Para humanos"`, while the current block
@@ -191,6 +185,12 @@ grep -c "Max 4 implementation attempts per task" DOCS/guides/manual-loop.md
 > `blocker-handoff-diagnosis-evidence/T01-gates.json`,
 > `blocker-handoff-diagnosis-evidence/T01-gate-04.stdout.txt`, and
 > `blocker-handoff-diagnosis-evidence/T01-attempt2-gate-04.txt`.
+```
+grep -n "For humans" DOCS/guides/manual-loop.md && \
+grep -n "non-causal" DOCS/guides/manual-loop.md && \
+grep -n "creates no budget" DOCS/guides/manual-loop.md && \
+grep -c "Max 4 implementation attempts per task" DOCS/guides/manual-loop.md
+```
  
 ### T02 — Handoff note in the shared fp-dev return contract
  

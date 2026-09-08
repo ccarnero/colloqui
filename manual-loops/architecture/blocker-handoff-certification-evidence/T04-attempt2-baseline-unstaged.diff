@@ -1,0 +1,24 @@
+diff --git a/manual-loops/architecture/blocker-handoff-diagnosis.md b/manual-loops/architecture/blocker-handoff-diagnosis.md
+index b23bf623..1014cf17 100644
+--- a/manual-loops/architecture/blocker-handoff-diagnosis.md
++++ b/manual-loops/architecture/blocker-handoff-diagnosis.md
+@@ -172,6 +172,19 @@ rules by reference to another SPEC):
+ - DO NOT add the note to the `## Reporting` section; a blocked run's user-facing
+   report already points at the record.
+ **Accept**
++> ACCEPT ALTERED AFTER APPROVAL (recorded 2026-09-08 under
++> manual-loops/architecture/blocker-handoff-certification.md): the human-approved
++> record says this block read `grep -n "Para humanos"`, while the current block
++> and both recorded executions read `grep -n "For humans"`. The predecessor
++> evidence has no approval-time SPEC copy or original command, editor identity,
++> or edit time, and does not establish whether the runner substituted the command
++> or the SPEC changed during execution. The current English command matches the
++> guide and is left in place under the human decision accepting that header. What
++> is corrected here is the record: this divergence is DEVIATION A in
++> `blocker-handoff-certification-evidence/deviations.md`, supported by
++> `blocker-handoff-diagnosis-evidence/T01-gates.json`,
++> `blocker-handoff-diagnosis-evidence/T01-gate-04.stdout.txt`, and
++> `blocker-handoff-diagnosis-evidence/T01-attempt2-gate-04.txt`.
+ ```
+ grep -n "For humans" DOCS/guides/manual-loop.md && \
+ grep -n "non-causal" DOCS/guides/manual-loop.md && \

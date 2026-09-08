@@ -454,7 +454,7 @@ durable record for `manual-loop/blocker-handoff`.
 - [x] T01 deviations established and recorded
 - [x] T02 certification packet and independent verdicts over the committed state
 - [x] T03 predecessor Progress amended with real evidence
-- [ ] T04 predecessor T01 Accept annotated per T01's DEVIATION A finding
+- [x] T04 predecessor T01 Accept annotated per T01's DEVIATION A finding
 - [ ] T05 index and decision record
 
 T01 completed in one implementation attempt. `T01-gates.json` records the exact
@@ -837,6 +837,76 @@ Reviewed T03 attempt 2 state `27818b998008fbdaf308d1287db2d145ce3f5da0e6e0ff434e
 Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9590-7740-9bb1-215ae4c32518`, turn `01a08314-8403-7920-ac7d-4a9a42837ffe`. Provenance verified against native records.
 
 No edits, gates, delegation, or current sibling verdict consulted.
+
+
+### T04 attempt 1 — pre-gate correction, 2026-09-08
+
+No gates ran. QA detected that principal's T04-implementation.md quoted T02's
+Accept instead of T01. Principal also detected annotation placement before the
+opening fence instead of after the closing fence, contrary to QA's placement-pass
+report. Both findings are preserved in T04-qa.md and T04-attempt1-predecessor.md.
+Attempt2 moves unchanged annotation to its required position and corrects the new
+evidence quote; all original files remain frozen. No new human approval is needed:
+existing outcome-driven branch1 scope is unchanged. T04 remains unchecked.
+
+### T04-attempt2 completed — 2026-09-08
+
+Unchanged reviewed state SHA-256 `b469750e265190c16238d34f6c14fae58e6cde1cc06f4bb2036af93cf3fc8d24`; all 3996 frozen hashes match after gates and both reviews.
+Evidence-only Progress closure; reviewed implementation and contracts unchanged.
+
+- `./scripts/checks/doc-code-guards.sh` — exit 0; complete output and exact native duration: `T04-attempt2-gate-01.json`.
+- `python3 ./scripts/checks/check-codex-manual-loop.py` — exit 0; complete output and exact native duration: `T04-attempt2-gate-02.json`.
+- `./scripts/checks/doc-code-guards.sh --full` — exit 0; complete output and exact native duration: `T04-attempt2-gate-03.json`.
+- `grep -n "For humans" DOCS/guides/manual-loop.md && \
+grep -n "non-causal" DOCS/guides/manual-loop.md && \
+grep -n "creates no budget" DOCS/guides/manual-loop.md && \
+grep -c "Max 4 implementation attempts per task" DOCS/guides/manual-loop.md` — exit 0; complete output and exact native duration: `T04-attempt2-gate-04.json`.
+- `grep -q -E "ACCEPT ALTERED AFTER APPROVAL|ACCEPT CORRECTED" manual-loops/architecture/blocker-handoff-diagnosis.md && grep -q "DEVIATION A" manual-loops/architecture/blocker-handoff-diagnosis.md` — exit 0; complete output and exact native duration: `T04-attempt2-gate-05.json`.
+
+Native runner gpt-5.6-luna/low, run `01a082d6-fa9a-76f2-b31b-d1eb5fc9d29e`, turn `01a08320-edd4-7163-92cc-1ed75ef7164f`.
+Implementation/QA actual Sol/medium identities and evidence: `T04-attempt2-preflight-provenance.json`, `T04-attempt2-qa-provenance.json`, `T04-attempt2-implementation.md`, `T04-attempt2-qa.md`.
+Both native Astra/high reviewers are no weaker than the implementer; identities
+and exact verdicts are below and in `T04-attempt2-review-provenance.json`.
+All evidence paths are under `blocker-handoff-certification-evidence/`.
+
+No gate retries, new tests, service build, cluster gate or dev-mode precondition
+applies to this Markdown-only scope. Engram unavailable; this is the durable
+record for manual-loop/blocker-handoff. Preexisting work is preserved.
+
+Execution exceptions and read recoveries are recorded in `T04-attempt2-review-inputs.md`, `T04-attempt2-qa-plan.md` and `T04-attempt2-implementation.md`. Persisted gate durations are native results; prose transcription errors never replace them.
+
+#### T04-attempt2 independent reviews — verbatim
+
+##### Reviewer A
+
+APPROVED
+
+Reviewed T04 attempt 2 state SHA-256 `b469750e265190c16238d34f6c14fae58e6cde1cc06f4bb2036af93cf3fc8d24`; file SHA-256 `cbafcedaf9c5caf67c1e883b2d0921e4f36be69e192474d495950179a5396bec`.
+
+- Exactly 13 annotation lines follow T01’s closing Accept fence. Removing them reproduces the baseline byte-for-byte; all five Accept blocks remain unchanged.
+- Wording follows the authorized outcome-driven branch and preserves uncertainty about the editor, timing, and cause. Citations support the recorded divergence.
+- The implementation report quotes the correct T01 command. All five commands ran sequentially with native exit 0; the required four-line Accept matches byte-for-byte. Outputs and durations match native records.
+- Sol/medium QA finished before Luna/low gates. All 3,996 frozen hashes match. Prior placement/report defects and unrelated baseline work are preserved.
+
+Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-4ec2-7ee1-b85b-44047c7cef35`, turn `01a08321-f276-7dd0-96e9-ec94329f516a`.
+
+No edits, gate reruns, delegation, or current sibling verdict consulted. No runtime tests, builds, or cluster gates apply.
+
+##### Reviewer B
+
+APPROVED
+
+Reviewed T04 attempt 2 state `b469750e265190c16238d34f6c14fae58e6cde1cc06f4bb2036af93cf3fc8d24`; file SHA-256 `cbafcedaf9c5caf67c1e883b2d0921e4f36be69e192474d495950179a5396bec`.
+
+- Exactly 13 annotation lines follow T01’s closing Accept fence. Removing them reproduces the original file byte-for-byte.
+- Branch 1 preserves the command and follows the authorized outcome-driven rule. Sources support the annotation; editor, timing, and cause remain explicitly uncertain.
+- The corrected implementation report quotes T01 accurately. Earlier placement and reporting defects remain preserved.
+- All five commands ran verbatim and sequentially, exit 0. The predecessor Accept retains its exact four-line form. Native outputs, durations, and provenance match.
+- All 3,996 frozen hashes match. Sol/medium QA finished before Luna/low gates. No runtime changes, weakened tests, secrets, or applicable build/cluster requirements.
+
+Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9590-7740-9bb1-215ae4c32518`, turn `01a08322-1b6a-7c10-ad18-df0e86342f32`.
+
+No edits, gate reruns, delegation, or current sibling verdict consulted.
 
 
 ## Out of scope (explicit)

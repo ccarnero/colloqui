@@ -1,0 +1,4 @@
+157:     those paths are not allowed. The record OPENS with a "## For humans"
+164:   - Label execution exceptions that did not cause the failure as non-causal, so
+167:     creates no budget, and creates no continuation SPEC. Requesting it does not
+1
