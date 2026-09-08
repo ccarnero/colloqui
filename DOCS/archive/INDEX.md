@@ -1753,3 +1753,29 @@ The [former index snapshot](documentation-index-2026-09-06.md) and
 [FP delivery proposal snapshot](fp-delivery-proposal-2026-09-05.md) preserve the
 complete pre-consolidation sources. These snapshots are historical evidence,
 not current execution instructions or proof of a live provider run.
+
+## 2026-09-07 — Codex manual-loop configuration repair (pending)
+
+The approved repair adds standalone project-local Codex role definitions, exact
+pin validation, a SHA-256 drift lock, and G19 guard integration. The configuration
+is installed, and fresh native sessions loaded all five roles with matching
+observed model provenance. Final QA, the six repair gates, and two independent
+reviews remain pending; this row does not mark the repair complete. Procedure and
+current evidence boundaries are documented in the
+[Codex manual-loop guide](../guides/codex-manual-loop.md) and
+[repair SPEC](../../manual-loops/architecture/codex-manual-loop-repair.md).
+
+## 2026-09-08 — Blocker handoff diagnosis
+
+Future BLOCKED records lead with a short `For humans` section, the implementer's
+cause and candidate fixes, and then full evidence; non-causal execution exceptions
+are labeled separately. The handoff remains analysis only and creates no retry,
+attempt, budget, or continuation SPEC. The `fp-dev` role update used dedicated
+human-approved configuration scope, changed one SHA-256 lock entry, and takes
+effect only in a fresh Codex session. At publication, T01-T04 were validated and
+T05 gates and reviews were pending; the SPEC records current status. Decision and
+current evidence:
+[blocker-handoff diagnosis SPEC](../../manual-loops/architecture/blocker-handoff-diagnosis.md).
+
+- **Engram topic**: `manual-loop/blocker-handoff` (durable repository record;
+  no memory tool was available).
