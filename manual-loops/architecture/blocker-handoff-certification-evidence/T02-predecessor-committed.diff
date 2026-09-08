@@ -1,0 +1,486 @@
+diff --git a/.codex/agents/fp-dev.toml b/.codex/agents/fp-dev.toml
+new file mode 100644
+index 00000000..a5df01aa
+--- /dev/null
++++ b/.codex/agents/fp-dev.toml
+@@ -0,0 +1,10 @@
++name = "fp-dev"
++description = "Implements one approved manual-loop task and its regression tests."
++model = "gpt-5.6-sol"
++model_reasoning_effort = "medium"
++sandbox_mode = "workspace-write"
++developer_instructions = '''Read the repository root AGENTS.md, the approved SPEC task packet, DOCS/guides/manual-loop.md, and the Implementation (fp-dev) section of DOCS/guides/agent-roles.md before writing. AGENTS.md wins. Implement exactly one approved task within its allowed paths and non-goals. Preserve baseline work, existing tests, frameworks, and libraries. Report required scope expansion before editing.
++
++Use functional core / imperative shell. Calculations receive data and return values or typed failures; they never perform I/O, accept I/O callbacks, or use exception control flow. The shell reads facts, calls calculations, then applies outcomes and logs action failures without payloads or secrets. Own behavioral and regression tests in the same task. Do not run gates assigned to the mechanical executor, review your own patch, change retry policy, decide closure, commit, or create a competing orchestration loop. Return changed paths, deviations, blockers, and requested-versus-observed model/run provenance to the principal.
++
++On a final failed attempt, when the principal states that the attempt budget is exhausted or that the same error repeated, also return a handoff note: the failure in one plain-language sentence without gate numbers or run IDs; the root cause with file:line and the relevant code quoted; and one to three candidate fixes, each with a concrete diff, its risk, and whether it would invalidate findings already corrected in earlier attempts. The note is analysis, not authorization: do not apply it, do not edit files, do not run gates, and do not request a retry. Writing it consumes no attempt and creates neither budget nor a continuation SPEC. If you have no supportable diagnosis, say so plainly.'''
+diff --git a/.codex/manual-loop.lock.json b/.codex/manual-loop.lock.json
+new file mode 100644
+index 00000000..29729c88
+--- /dev/null
++++ b/.codex/manual-loop.lock.json
+@@ -0,0 +1,12 @@
++{
++  "version": 1,
++  "algorithm": "sha256",
++  "files": {
++    ".codex/config.toml": "0e2aafb360454df9f511fe0ff65e0abb783ef5e533b17410d67b341e4d164e94",
++    ".codex/agents/fp-architect.toml": "1640055b7754993d2133b1a9b5df3a99271ae2df91fe2278631c71b6abacda4d",
++    ".codex/agents/fp-dev.toml": "5b009539974207f8141a0367bcc3f2581d47618f2ced9c3b61fb7de899ada2b5",
++    ".codex/agents/fp-qa.toml": "38e65b353624c7abd7a5e81113e32b19c0bba8c4cebc7ad32f85bb65c5f5e3c8",
++    ".codex/agents/fp-reviewer.toml": "3c1d2938403918b35a1050a0338e18252480336a345703cba3a93af5416a05f8",
++    ".codex/agents/script-runner.toml": "c25e15631146484210f3d5d027baa34a709e2f438233125663f30a0435c70710"
++  }
++}
+diff --git a/DOCS/archive/INDEX.md b/DOCS/archive/INDEX.md
+index 3bc74ca4..eefd9bda 100644
+--- a/DOCS/archive/INDEX.md
++++ b/DOCS/archive/INDEX.md
+@@ -1753,3 +1753,29 @@ The [former index snapshot](documentation-index-2026-09-06.md) and
+ [FP delivery proposal snapshot](fp-delivery-proposal-2026-09-05.md) preserve the
+ complete pre-consolidation sources. These snapshots are historical evidence,
+ not current execution instructions or proof of a live provider run.
++
++## 2026-09-07 — Codex manual-loop configuration repair (pending)
++
++The approved repair adds standalone project-local Codex role definitions, exact
++pin validation, a SHA-256 drift lock, and G19 guard integration. The configuration
++is installed, and fresh native sessions loaded all five roles with matching
++observed model provenance. Final QA, the six repair gates, and two independent
++reviews remain pending; this row does not mark the repair complete. Procedure and
++current evidence boundaries are documented in the
++[Codex manual-loop guide](../guides/codex-manual-loop.md) and
++[repair SPEC](../../manual-loops/architecture/codex-manual-loop-repair.md).
++
++## 2026-09-08 — Blocker handoff diagnosis
++
++Future BLOCKED records lead with a short `For humans` section, the implementer's
++cause and candidate fixes, and then full evidence; non-causal execution exceptions
++are labeled separately. The handoff remains analysis only and creates no retry,
++attempt, budget, or continuation SPEC. The `fp-dev` role update used dedicated
++human-approved configuration scope, changed one SHA-256 lock entry, and takes
++effect only in a fresh Codex session. At publication, T01-T04 were validated and
++T05 gates and reviews were pending; the SPEC records current status. Decision and
++current evidence:
++[blocker-handoff diagnosis SPEC](../../manual-loops/architecture/blocker-handoff-diagnosis.md).
++
++- **Engram topic**: `manual-loop/blocker-handoff` (durable repository record;
++  no memory tool was available).
+diff --git a/DOCS/guides/agent-roles.md b/DOCS/guides/agent-roles.md
+index d2912434..243d8441 100644
+--- a/DOCS/guides/agent-roles.md
++++ b/DOCS/guides/agent-roles.md
+@@ -9,6 +9,12 @@ global settings and may provide intentional local tuning, but cannot weaken
+ these role contracts. Supply the applicable full section with the task packet
+ when a global named role needs repository context or a named role is unavailable.
+ These names describe responsibilities, not evidence that a native agent loaded.
++The approved project-local Codex definitions are hash-locked as documented in
++[`codex-manual-loop.md`](codex-manual-loop.md). Routine task scope cannot change
++the definitions, runner, lock, checker, or guard integration that governs it.
++Its human-approved cost-policy exception permits the configured runner to equal
++the economical coding tier while remaining below implementation/QA; it permits no
++automatic fallback to a higher-cost model.
+ 
+ ## Principal
+ 
+@@ -80,6 +86,17 @@ skipped check, or blocker. Do not infer model provenance from configuration.
+ Return evidence for the orchestrator to persist; do not edit the SPEC. Implementation
+ alone is not done: gates and two independent approvals must cover unchanged content.
+ 
++On a final failed attempt — the orchestrator states that the attempt budget is
++exhausted or that the same error repeated — also return a HANDOFF NOTE
++containing: the failure in one plain-language sentence, with no gate numbers and
++no run IDs; the root cause with `file:line` and the relevant code quoted; and one
++to three candidate fixes, each with a concrete diff, its risk, and whether it
++would invalidate findings already corrected in earlier attempts. The note is
++analysis, not authorization: do not apply it, do not edit files, do not run
++gates, and do not request a retry. Writing it consumes no attempt and creates
++neither budget nor a continuation SPEC. If you have no supportable diagnosis, say
++so plainly; a speculative fix is worse than none.
++
+ ## Quality assurance (fp-qa)
+ 
+ You are the FP quality specialist. Before implementation, read the approved
+@@ -98,6 +115,25 @@ Report acceptance cases, coverage findings, changed test files, commands with
+ actual statuses, model/run provenance, and skipped checks or blockers. A missing
+ prerequisite remains pending evidence rather than a pass.
+ 
++## Mechanical gate execution
++
++The mechanical gate executor is separate from implementation and QA. Resolve a
++configured model below both the implementation/QA tier and the economical coding
++tier before launch. No provider or model is pinned here. If none is available,
++report a prerequisite blocker; do not silently substitute a more expensive role.
++A human-approved exception is required to exceed the cost ceiling, and principal
++execution as a fallback must still respect it. Verify actual callability and the
++applicable tool cost basis; public API pricing alone does not establish billing.
++
++Execute only the exact commands supplied by the approved SPEC, in its working
++directories and order, stopping at the first failure. Report exit status and
++error output; do not diagnose, remediate, edit, retry, change scope, or decide
++closure. Persist full sanitized command output, duration, tested-state identity,
++and requested and observed model/session/turn. Return a concise summary with the
++evidence paths. Each command has one owner. An interruption or handoff transfers
++the existing process/run identity and completion evidence and never duplicates a
++build, E2E run, or other mutating command. The principal owns retries and closure.
++
+ ## Architecture advice (fp-architect)
+ 
+ You are the optional FP architecture specialist. Advise only when a task has a
+diff --git a/DOCS/guides/codex-manual-loop.md b/DOCS/guides/codex-manual-loop.md
+new file mode 100644
+index 00000000..f5a57268
+--- /dev/null
++++ b/DOCS/guides/codex-manual-loop.md
+@@ -0,0 +1,109 @@
++# Project-local Codex manual-loop configuration
++
++Class: descriptive
++Summary: The installed Codex role layout, its validation and protection layers, and the evidence required before use.
++
++The repository uses standalone native role definitions in `.codex/agents/*.toml`.
++`.codex/config.toml` enables subagents and selects the project principal default.
++Each role file supplies a complete name, description, model, reasoning effort,
++sandbox, and developer instruction set; it does not inherit a partial global role
++definition. The exact approved pins are executable policy in
++[`check-codex-manual-loop.py`](../../scripts/checks/check-codex-manual-loop.py)
++and the accepted file bytes are recorded in `.codex/manual-loop.lock.json`.
++The subagent default uses the implementation/QA tier as a defensive default;
++manual-loop work still selects a named role, whose complete definition wins, and
++an unnamed fallback cannot satisfy native role-loading evidence.
++The selected mechanical runner pin is `gpt-5.6-luna` with low reasoning effort,
++following the human's explicit cost-policy decision. Its configured value still
++requires a harmless native invocation before it may execute gates.
++
++## Roles and ownership
++
++| Native role | Responsibility | Write boundary |
++| --- | --- | --- |
++| `fp-dev` | Implement one approved task and its regression tests. | SPEC-allowed paths only. |
++| `fp-qa` | Plan acceptance coverage, then complete missing tests before gates. | SPEC-allowed test paths only. |
++| `fp-architect` | Advise on a material design decision. | Read-only. |
++| `fp-reviewer` | Independently assess one unchanged state and its evidence. | Read-only. |
++| `script-runner` | Execute approved mechanical gates verbatim and report evidence. | Artifacts produced by those commands and requested evidence only. |
++
++The principal remains the sole coordinator. Native roles do not own retries,
++scope changes, commits, or closure, and they do not create another orchestration
++engine. The runner cannot diagnose, edit, retry, or choose a fallback model.
++
++## Usage
++
++Start a fresh Codex session in the repository so the project configuration and
++native `agent_type` role selector are loaded:
++
++```sh
++codex -C /Users/chris/sources/yoizen/platform-cluster
++```
++
++Then ask the principal in plain language to execute the manual loop for a concrete,
++human-approved SPEC, for example:
++
++```text
++Execute the manual loop for manual-loops/<area>/<approved-spec>.md, task T01 only.
++```
++
++Replace the placeholder with an actual approved SPEC path and omit the task ID to
++process its approved queue. An already-running session may retain an older tool
++schema without native `agent_type`; start a fresh session instead of inventing a
++launcher, slash command, or fallback role route.
++
++## Validation and native evidence
++
++`check-fp-delivery.py` remains the generic structural validator and accepts a
++project with no local overrides. `check-codex-manual-loop.py` adds this project's
++mandatory policy: exact role set and pins, local regular files, canonical contract
++references, retired Claude role absence, and SHA-256 lock integrity. G19 invokes
++the mandatory checker in both KISS and full guard modes. The checker reports drift
++and never rewrites or refreshes the lock.
++
++A fresh Codex CLI session on 2026-09-07 loaded the project principal configuration,
++exposed native `agent_type` selection, resolved `fp-dev`, and created a child whose
++recorded role and observed model/effort matched its definition. The repair SPEC's
++evidence directory records the command, sanitized output, run identities, and
++provenance. The already-running desktop conversation retained its older tool
++schema; it is not negative evidence about the fresh session. Harmless fresh-session
++probes subsequently loaded `script-runner`, `fp-qa`, `fp-architect`, and
++`fp-reviewer`; recorded instruction hashes and actual turn context matched every
++configured role, model, and effort, and the children made no tool calls. These five
++native role observations do not replace repository-content QA, mechanical gate
++execution, or two independent approvals; the
++[repair SPEC](../../manual-loops/architecture/codex-manual-loop-repair.md) records
++their current status. Files on disk or copied role packets alone do not satisfy
++native loading proof.
++
++On 2026-09-08, the human-approved
++[blocker handoff diagnosis SPEC](../../manual-loops/architecture/blocker-handoff-diagnosis.md)
++used dedicated configuration scope to change `fp-dev.toml` from SHA-256
++`d06443d9f26975f289644b35b9747cdef7cf7477bb13c606f69ad54e0ebc33b5` to
++`5b009539974207f8141a0367bcc3f2581d47618f2ced9c3b61fb7de899ada2b5`;
++only that file's lock entry changed. The new instructions take effect only in a
++fresh Codex session. The decision is that a final failed-attempt handoff is
++analysis only: it authorizes no retry, allocates no attempt or budget, and creates
++no continuation SPEC. `fp-dev` supplies the diagnosis because it already reasoned
++about the code; the principal, mechanical executor, and reviewers retain their
++existing prohibitions. This gives the human a concise cause and candidate fixes
++before audit evidence without changing retry or closure rules. The SPEC's Progress
++records the validation evidence and current T05 status. Engram topic:
++`manual-loop/blocker-handoff` (durable record here; no memory tool was available).
++
++## Protection boundaries
++
++The current repair session observed the project sandbox reject a write-open of
++`.codex/config.toml`; its before/after hash was unchanged. That demonstrates the
++active session's sandbox boundary only. The hash lock and G19 detect deletion or
++content drift when guards run. AGENTS.md requires dedicated human-approved scope
++for edits to the role definitions, runner, lock, checker, or guard integration.
++These layers do not make files immutable on the host and do not establish remote
++branch protection.
++
++Configuration selects intent; it does not prove that a model is callable or that
++its applicable account cost satisfies the mechanical-executor ceiling. Before
++gates, the principal verifies the configured runner's native invocation and actual
++cost basis. A refusal or cost mismatch blocks gate execution unless the human
++approves a different pin or a scoped cost exception. There is no automatic model
++or provider fallback.
+diff --git a/DOCS/guides/manual-loop.md b/DOCS/guides/manual-loop.md
+index 66a01c37..63d556e7 100644
+--- a/DOCS/guides/manual-loop.md
++++ b/DOCS/guides/manual-loop.md
+@@ -29,11 +29,28 @@ Local role files are absent by default, and settings stay empty until intentiona
+ tuning. To tune a native role, supply the complete definition required by that
+ tool and verify the effective configuration. Do not copy entire global catalogs
+ or infer provider loading from files being present.
++This repository's approved project-local Codex role set is the named exception;
++[`codex-manual-loop.md`](codex-manual-loop.md) documents its pins, protection
++layers, and required native evidence. A normal feature SPEC cannot authorize a
++change to its own Codex runner, role definitions, lock, checker, or guard wiring;
++that requires dedicated human-approved configuration scope.
++That approved role set includes a human cost-policy exception allowing its runner
++to equal the economical coding tier while remaining below implementation/QA.
++It does not permit an automatic higher-cost model fallback.
+ Resolve the actual launch policy before delegation: economical implementation and
+ QA, capable judgment, and reviewers no weaker than the implementer within the
+ selected tool's policy. Record requested and observed model and agent/run identity
+ separately; configured names do not prove execution or cost.
+ 
++Resolve routine build, test, and E2E execution separately to the configured
++mechanical executor, with an explicit cost ceiling below both the implementation/
++QA tier and the economical coding tier. Verify actual callability and the cost
++basis that applies to the selected tool; public API pricing alone does not prove
++its billing. If no eligible executor is available,
++report a prerequisite blocker before launching commands. Do not silently use a
++more expensive model. Exceeding the ceiling requires a human-approved exception;
++principal execution is still subject to the same ceiling.
++
+ Use global named roles when available, supplying the complete repository role and
+ task packet. If a named role is unavailable, explicitly delegate its role packet
+ using the active model policy and record the fallback. Do not infer that an
+@@ -94,17 +111,23 @@ loop or bypass SPEC approval.
+ 
+ 3. **QA and gates.** After implementation, `fp-qa` checks coverage against its
+    pre-implementation cases and may complete missing tests within the approved
+-   paths. QA edits finish before any gate runs. The principal assigns gate
+-   execution to QA or the implementer as appropriate and assembles the evidence;
+-   the principal owns orchestration, not necessarily shell execution. Then run the SPEC's Gates in order, then the task's own **Accept** commands,
++   paths. QA edits finish before any gate runs. The principal assigns routine
++   command execution to the configured mechanical executor and assembles the
++   evidence; QA and implementation remain separate substantive roles. Then run
++   the SPEC's Gates in order, then the task's own **Accept** commands,
+    verbatim. First failure ends the attempt. Two gate classes, per the SPEC's labels:
+    - Gates labeled **ITERATION** run on EVERY attempt (fast feedback).
+    - Gates labeled **COMMIT GATE** run ONCE per task, only after all iteration
+      gates are green — immediately before dual review. A commit-gate failure is
+      a failed attempt: fix, re-green iteration gates, re-run the commit gate.
+    - Honor any PRECONDITION rules in the SPEC's Gates section before task 1.
+-   - Capture command, exit status, output, and reviewed-state identity for every
+-     gate. Include affected-build reproducibility evidence required by AGENTS.md.
++   - Give each command one executor owner. On interruption or handoff, transfer
++     the existing process/run identity and completion evidence; never issue a
++     duplicate command. The principal owns retries, scope, and closure.
++   - Persist full sanitized output, exit status, duration, tested-state identity,
++     and requested and observed executor model/session/turn for every gate. Keep
++     summaries concise and point to the full evidence. Include affected-build
++     reproducibility evidence required by AGENTS.md.
+ 
+ 4. **Dual review.** Capture staged AND unstaged diffs, a change summary, and full
+    untracked new file content; distinguish task changes from the baseline. Launch
+@@ -131,8 +154,18 @@ loop or bypass SPEC approval.
+ 7. **Block.** Attempt budget exhausted, or same error twice in a row:
+    - Preserve all task and preexisting work. No automatic revert, clean, or deletion.
+    - Record in authorized Progress/BLOCKED.md, or return to the orchestrator if
+-     those paths are not allowed: spec file, task id, date, attempt count, the
+-     exact failing gate/objection, error output (trimmed), and what was tried per attempt.
++     those paths are not allowed. The record OPENS with a "## For humans"
++     section — at most 10 lines, plain language, no run IDs and no gate numbers:
++     what was attempted, what failed, and what decision is pending. It is
++     followed by the implementer's HANDOFF NOTE (plain-language cause,
++     `file:line`, candidate fixes). Only then comes the evidence: spec file,
++     task id, date, attempt count, the exact failing gate/objection, error
++     output (trimmed), and what was tried per attempt.
++   - Label execution exceptions that did not cause the failure as non-causal, so
++     they are not read at the same level as the actual cause.
++   - The handoff note is analysis, not authorization. It allocates no attempt,
++     creates no budget, and creates no continuation SPEC. Requesting it does not
++     reopen a closed or exhausted loop.
+    - Report to the user and STOP the loop — do not continue to the next task.
+ 
+ 8. **Next.** After a successful task, reconcile changes with the preserved baseline
+@@ -186,9 +219,18 @@ through validation; previous approvals cannot certify changed content.
+ ## Tests and gates
+ 
+ A test checks behavior. A gate requires specified checks to succeed before work
+-can advance. Gates are commands and evidence requirements, not separate agents.
+-The principal assigns execution, typically to QA or the implementer, and requires
+-actual commands, exit statuses, output, and identification of the tested state.
++can advance. Routine gate commands are owned by the configured mechanical
++executor, separate from implementation and QA. It executes the exact supplied
++commands in their declared working directories and order, stops at the first
++failure, and reports exit status and error output without diagnosis, remediation,
++edits, retries, scope decisions, or closure decisions. Command semantics and
++mutation boundaries do not change when execution is delegated.
++
++If delegation is unavailable or an in-flight process cannot be inherited safely,
++the principal reports the reason before execution. It may execute only as a
++documented fallback that still satisfies the approved cost ceiling; otherwise the
++missing eligible executor is a blocker. A handoff transfers the existing process
++identity and completion evidence instead of starting the command again.
+ 
+ | Layer | What it demonstrates | Workflow-disable example |
+ | --- | --- | --- |
+diff --git a/manual-loops-templates/README.md b/manual-loops-templates/README.md
+index a15c0025..77c6e8c8 100644
+--- a/manual-loops-templates/README.md
++++ b/manual-loops-templates/README.md
+@@ -13,11 +13,18 @@ This folder owns SPEC authoring format only.
+ 
+ - G0 is `./scripts/checks/doc-code-guards.sh`, which defaults to KISS.
+   Use `--full` only for an explicitly scoped broader audit and explain why.
++- Order gates so the cheapest and most likely failure runs first;
++  stop-on-first-failure then costs the least.
+ - KISS selects the repository guards. It does not replace service tests,
+   typechecks, task acceptance checks, or applicable cluster e2e gates.
+ - Include concrete commands for the services and behavior in scope. Remove
+   template placeholders before running a SPEC. Never weaken existing tests.
+ - Keep Constraints short: specialize AGENTS.md without duplicating or weakening it.
++- State the mechanical gate-executor policy explicitly in Constraints. Routine
++  build, test, and E2E commands use a configured executor below both the
++  implementation/QA tier and the economical coding tier. Verify callability and
++  the applicable tool cost basis rather than inferring billing from API prices. Record any approved
++  cost exception or unavailable/unsafe-handoff blocker; never silently substitute.
+ - Use one acceptance block per task for its specific outcome. Do not repeat
+   commands already covered by shared gates unless a different check is needed.
+ - Preserve existing task IDs, decisions, acceptance criteria, and progress.
+@@ -38,6 +45,12 @@ AGENTS.md wins; Constraints specialize it; skills and precedent are advisory.
+ FP role prompts are specialist instructions; they do not create a competing loop
+ or replace the manual-loop engine.
+ 
++Gate evidence includes full sanitized output, status, duration, tested-state
++identity, and requested and observed executor model/session/turn; summaries stay
++concise and link to that evidence. Preserve one owner per command and transfer an
++in-flight process identity and completion evidence instead of duplicating it.
++Existing SPECs inherit the normative AGENTS.md policy without historical rewrites.
++
+ | Section | What to include |
+ |:---|:---|
+ | Preamble | Origin, Engram topic, and dependencies when applicable |
+@@ -77,3 +90,13 @@ The human runs the first destructive `--apply`.
+ 
+ Update active SPECs when their workflow changes. Leave frozen records intact;
+ put subsequent corrections in a dated follow-up record.
++
++## Blocker records
++
++A BLOCKED record is read by a human first and an auditor second. Order it that
++way: "For humans" (at most 10 lines, plain language, no run IDs or gate
++numbers), then the implementer's handoff note with candidate fixes, then the full
++evidence. Label execution exceptions that did not cause the failure as
++non-causal. The handoff note is analysis only: it authorizes no retry, allocates
++no budget, and creates no continuation SPEC. The engine owns this contract; see
++the manual-loop procedure.
+diff --git a/manual-loops-templates/spec-canonical-template.md b/manual-loops-templates/spec-canonical-template.md
+index 0700114d..9a5f450e 100644
+--- a/manual-loops-templates/spec-canonical-template.md
++++ b/manual-loops-templates/spec-canonical-template.md
+@@ -54,6 +54,12 @@ Repeat each citation inside the body of the task that uses it.
+ - Preserve frameworks/libraries; thin shells call pure business functions with
+   typed failures. Effects, exception conversion, and diagnostic logging stay in shell.
+ - Preserve preexisting and blocked work; report scope expansion before editing.
++- Routine build, test, and E2E commands use the configured mechanical executor
++  below both the implementation/QA tier and economical coding tier. It runs the
++  exact commands in order, stops on first failure, and reports evidence without
++  diagnosis, edits, retries, scope changes, or closure decisions. Record approved
++  cost exceptions or delegation/unsafe-handoff blockers before execution. Verify
++  callability and the applicable tool cost basis; API pricing alone is insufficient.
+ - Affected builds require pinned runtime/tools, lockfile, frozen installation and
+   build commands with actual output/statuses. Persistent writes/migrations require
+   boundary/invariant tests and idempotency coverage where applicable.
+@@ -64,13 +70,18 @@ Repeat each citation inside the body of the task that uses it.
+ 
+ ## Gates (the `/manual-loop` command runs these verbatim, in order)
+ 
++One executor owns each command. Handoffs transfer the existing process/run
++identity and completion evidence; they never duplicate a command. Persist full
++sanitized output, status, duration, tested-state identity, and requested and
++observed executor model/session/turn; keep the summary concise.
++
+ ```
+ # G0 — repo guards (KISS default, every attempt; --full only for a scoped audit)
+ ./scripts/checks/doc-code-guards.sh
+-# G1 — <primary service> tests
+-cd services/<svc> && bun test
+-# G2 — <primary service> typecheck
++# G1 — <primary service> typecheck (cheapest failure first)
+ cd services/<svc> && bunx tsc -p tsconfig.json --noEmit
++# G2 — <primary service> tests
++cd services/<svc> && bun test
+ # G3 — <other touched service> tests (from T0N onward)
+ cd services/<other> && bun test
+ # G5a — ITERATION (per attempt, source-mounted dev mode; admin-console has no dev-mode — skip)
+diff --git a/manual-loops-templates/spec-simple-template.md b/manual-loops-templates/spec-simple-template.md
+index efd8cec6..a5db5420 100644
+--- a/manual-loops-templates/spec-simple-template.md
++++ b/manual-loops-templates/spec-simple-template.md
+@@ -41,6 +41,12 @@ gates and review. Manual-loop owns retry and closure decisions.
+ - Preserve frameworks/libraries; thin shells call pure business functions with
+   typed failures. Effects, exception conversion, and diagnostic logging stay in shell.
+ - Preserve preexisting and blocked work; report scope expansion before editing.
++- Routine build, test, and E2E commands use the configured mechanical executor
++  below both the implementation/QA tier and economical coding tier. It runs the
++  exact commands in order, stops on first failure, and reports evidence without
++  diagnosis, edits, retries, scope changes, or closure decisions. Record approved
++  cost exceptions or delegation/unsafe-handoff blockers before execution. Verify
++  callability and the applicable tool cost basis; API pricing alone is insufficient.
+ - Affected builds require pinned runtime/tools, lockfile, frozen installation and
+   build commands with actual output/statuses. Persistent writes/migrations require
+   boundary/invariant tests and idempotency coverage where applicable.
+@@ -48,13 +54,18 @@ gates and review. Manual-loop owns retry and closure decisions.
+ 
+ ## Gates (the `/manual-loop` command runs these verbatim, in order)
+ 
++One executor owns each command. Handoffs transfer the existing process/run
++identity and completion evidence; they never duplicate a command. Persist full
++sanitized output, status, duration, tested-state identity, and requested and
++observed executor model/session/turn; keep the summary concise.
++
+ ```
+ # G0 — repo guards (KISS default, every attempt; --full only for a scoped audit)
+ ./scripts/checks/doc-code-guards.sh
+-# G1 — <primary service> tests
+-cd services/<svc> && bun test
+-# G2 — <primary service> typecheck
++# G1 — <primary service> typecheck (cheapest failure first)
+ cd services/<svc> && bunx tsc -p tsconfig.json --noEmit
++# G2 — <primary service> tests
++cd services/<svc> && bun test
+ # G5a — ITERATION (per attempt, source-mounted dev mode)
+ ./dev-mode.sh deps && ./dev-mode.sh <svc> on && ./scripts/e2e/<feature>.sh
+ # G5b — COMMIT GATE (once per task, built image)
+@@ -62,7 +73,7 @@ cd services/<svc> && bunx tsc -p tsconfig.json --noEmit
+ ```
+ 
+ Gate ids follow the shared convention: G0 = repo guards, G1/G2 = primary
+-service tests/typecheck, G3/G4 = other touched services (absent in a
++service typecheck/tests (cheapest failure first), G3/G4 = other touched services (absent in a
+ single-service loop — do not renumber), G5a/G5b = cluster e2e.
+ 
+ VALIDATOR SAFETY: keep `services/workflow-service/src/main.ts` clean and prevent

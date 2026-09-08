@@ -3,9 +3,7 @@
 > Task queue for the `/manual-loop` command. One task at a time, gated by tests
 > and dual review. Queues live in `manual-loops/`.
 > Depends on: `manual-loops/architecture/blocker-handoff-diagnosis.md`
-> (historical commits 612285ef..820221a9; isolated target rejected in T02).
-> Current certification target: integrated commit
-> `9fde0baa9fbae768fc97133731eeb2744f90516e`, human-approved in revision 4.
+> (committed 612285ef..820221a9; implementation correct, certification incomplete).
 > Origin: user decision 2026-09-08 (Cowork session, after an audit of the
 > predecessor's evidence directory).
 > Engram topic: 'manual-loop/blocker-handoff'.
@@ -33,41 +31,24 @@
 > covers this case: "Do not copy executable examples without checking
 > applicability." Still no gates, attempts or commits spent.
 
-> REVISION 4 (2026-09-08, human-approved after T02 attempt 1): certify the
-> integrated commit `9fde0baa9fbae768fc97133731eeb2744f90516e` with new gates and
-> two independent reviews. The original target `820221a9` was NOT self-consistent:
-> its lock referenced six files, four role files were not committed, its committed
-> config differed from the locked bytes, and the policy checker was absent.
-> Reviewer A detected this dependency-boundary defect and caused the T02 block.
-> The human resolved it by committing pending configuration repair, not by
-> reinterpreting the old target: `07e1d466`, `51689ecd`, `e111957b`, then `9fde0baa`
-> (the last commit also preserves all 82 predecessor evidence files).
-> Human root-cause finding: this was a composition failure. Each loop correctly
-> committed only its allowed paths, but a lock landed without its referents;
-> no loop failed in isolation. This composition finding does not erase the
-> separate recorded deviations A and B. The old rejection and all attempt-1
-> evidence remain preserved. Attempt 2 must prove the new target in a clean,
-> detached worktree, without relying on uncommitted main-worktree files.
-
-**This SPEC certifies an already-committed integrated state. It changes no
-behavior.** The initial verification premise referred to the dirty working tree;
-it did not prove that isolated commit `820221a9` contained the required files.
-Revision 4 records that defect and requires independent committed-tree proof.
+**This SPEC certifies an already-committed state. It changes no behavior.** The
+predecessor's implementation was verified independently before this SPEC was
+written: `.codex/manual-loop.lock.json` matches `.codex/agents/fp-dev.toml`
+(`5b009539…`), `check-codex-manual-loop.py` exits 0, and the three intended text
+changes are present. What is missing is the record that certifies it.
 
 ---
 
 ## Goal
 
-The integrated committed state `9fde0baa9fbae768fc97133731eeb2744f90516e` carries
-a complete, accurate certification record: two independent verdicts over that
-exact state, a Progress section
+The predecessor's committed state carries a complete, accurate certification
+record: two independent verdicts over that exact state, a Progress section
 containing real evidence rather than template instructions, and an honest account
 of the two contract deviations found in its evidence directory.
 
-Nothing in the predecessor is reimplemented or reverted. Its 82 evidence files
-remain the source for historical claims; this SPEC indexes and audits them.
-Fresh revision-4 checks are new integrated-state evidence, never replacements
-for missing historical records or retroactive approval of `820221a9`.
+Nothing is reimplemented, reverted, or re-executed to produce this. The
+predecessor's 82 evidence files are the source; this SPEC indexes, audits, and
+completes them.
 
 ## User decisions (human boundary — do not reinterpret)
 
@@ -81,10 +62,6 @@ for missing historical records or retroactive approval of `820221a9`.
    accepted on its merits — the guide is written in English. What requires
    correction is that the approved Accept command was not what executed.
 5. Attempt-budget rules are unchanged by this SPEC. A separate SPEC addresses them.
-6. Revision 4 resumes T02 as attempt 2 against integrated `9fde0baa`, with new
-   gates and two independent reviews. Preserve the historical rejection and the
-   human composition finding above. The old task packet is preserved as
-   `T02-attempt1-certification-packet.md`; prior evidence is never overwritten.
 
 ## Prior art (validated 2026-09-08 — REUSE, do not duplicate)
 
@@ -129,14 +106,11 @@ that uses it.
 - **No runtime change.** No task here edits `.codex/**`, `DOCS/guides/manual-loop.md`
   body rules, `DOCS/guides/agent-roles.md`, `manual-loops-templates/`, any script,
   or any service. An edit to those paths is scope creep and an automatic rejection.
-- **No reconstruction.** Every historical recorded value must be quoted or cited from an
+- **No reconstruction.** Every recorded value must be quoted or cited from an
   existing file in the predecessor's evidence directory, with the file name. A
   value that cannot be cited is written as "not recorded" with a one-line note.
   Recomputing a duration, a hash, or a model identity after the fact and
   presenting it as the original record is falsification.
-  Fresh integrated-tree inspections and attempt-2 gates are separately dated and
-  sourced as current observations. The principal owns SPEC amendments and
-  uniquely named execution evidence; the developer owns the T02 packet only.
 - Preserve preexisting and blocked work. The J3 offline repair loop and its
   evidence are read-only here and are not addressed by this SPEC.
 - Routine build, test, and E2E commands use the configured mechanical executor.
@@ -173,25 +147,6 @@ python3 ./scripts/checks/check-codex-manual-loop.py
 ./scripts/checks/doc-code-guards.sh --full
 ```
 
-For **T02 attempt 2 only**, after these three main-worktree gates and before its
-Accept, run the following additional commands verbatim, in order, with working
-directory `/tmp/platform-cluster-certification-9fde0baa` (a separately created
-detached worktree of the exact committed target; no working-copy files copied in):
-
-```sh
-git rev-parse HEAD
-test "$(git rev-parse HEAD)" = "9fde0baa9fbae768fc97133731eeb2744f90516e"
-certification_status="$(git status --porcelain --untracked-files=all)" && test -z "$certification_status"
-python3 ./scripts/checks/check-codex-manual-loop.py
-certification_status="$(git status --porcelain --untracked-files=all)" && test -z "$certification_status"
-```
-
-These commands are the integrated-tree commit gate: exact HEAD, clean before,
-checker exit 0, clean afterwards. The original T02 Accept then runs in the main
-workspace. Persist native results under `T02-attempt2-*`; no attempt-1 gate or
-verdict file is overwritten. Success in the dirty main workspace alone is
-insufficient. Worktree creation is preparation, not a substitute for these gates.
-
 Gate rules (self-contained — the engine runs THIS file verbatim; never inherit
 rules by reference to another SPEC):
 
@@ -206,29 +161,16 @@ rules by reference to another SPEC):
 
 ## Review packet (binding, additional to the engine default)
 
-For **T02**, both reviewers must retain the original historical target and its
-attempt-1 rejection, and additionally assess the integrated resolution. The
-original commands remain part of the packet, not the current certification target:
+For **T02 only**, the two independent reviewers must additionally receive the
+predecessor's full committed change set as their review target:
 
 ```
 git diff 3fe4263c..820221a9 -- DOCS/ .codex/ manual-loops-templates/
 git log --oneline 3fe4263c..820221a9
 ```
 
-Revision 4 adds these read-only review inputs:
-
-```sh
-git diff 820221a9..9fde0baa -- .codex/ scripts/ AGENTS.md DOCS/ manual-loops/README.md manual-loops/architecture/codex-manual-loop-repair.md manual-loops/architecture/codex-manual-loop-repair/ manual-loops/architecture/blocker-handoff-diagnosis-evidence/
-git log --oneline 820221a9..9fde0baa
-git ls-tree -r 9fde0baa -- .codex/ scripts/checks/ scripts/tests/
-```
-
-Review the integrated committed roles/config/lock, checker and guard wiring,
-tests, policy and repair records, and committed predecessor evidence, together
-with clean-worktree gate output. Both reviewers must explicitly assess the
-historical defect AND the integrated resolution, as well as the unchanged current
-packet and SPEC. Approval certifies `9fde0baa`, never rehabilitates isolated
-`820221a9`. A reviewer who assesses only the packet and not these targets has not
+T02's purpose is to obtain two independent verdicts over that state. A reviewer
+who assesses only the certification packet and not the predecessor's diff has not
 performed the required review; the principal must reject that verdict as
 incomplete coverage rather than count it.
 
@@ -288,14 +230,7 @@ test -f manual-loops/architecture/blocker-handoff-certification-evidence/deviati
   `manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md`
   (new file).
 - **Non-goals:** Editing the predecessor SPEC or its evidence files, re-running
-  any gate as retroactive predecessor evidence, and recomputing any historical
-  recorded value. Revision-4 integrated-state gates are fresh current evidence.
-- **Revision 4 amendment:** preserve all historical T01-T05 sections and holes,
-  and add an explicit integrated-target section. Retain the isolated `820221a9`
-  lock/config/checker defect, reviewer A's blocking discovery, resolution by
-  the four integration commits, and the human composition finding. Cite new
-  clean-worktree evidence separately and never assert it passed before execution.
-  The principal preserves the unchanged attempt-1 packet before implementation.
+  any predecessor gate, and recomputing any recorded value.
 - Assemble one section per predecessor task T01-T05, each citing source files by
   name from `…-diagnosis-evidence/`:
   - the committed diff for that task (`git show <sha> --stat` and the task diff file)
@@ -452,7 +387,7 @@ No service rebuild is required. Engram is unavailable; these files are the
 durable record for `manual-loop/blocker-handoff`.
 
 - [x] T01 deviations established and recorded
-- [x] T02 certification packet and independent verdicts over the committed state
+- [ ] T02 certification packet and independent verdicts over the committed state
 - [ ] T03 predecessor Progress amended with real evidence
 - [ ] T04 predecessor T01 Accept annotated per T01's DEVIATION A finding
 - [ ] T05 index and decision record
@@ -612,131 +547,6 @@ and no dev-mode precondition; both reviewers' verdicts for T02 verbatim, with
 confirmation that each assessed the predecessor's committed diff and not only the
 packet; and every item written as "not recorded", so the holes are visible in the
 Progress section itself rather than only in the evidence directory.
-
-### Revision 4 — T02 attempt 2 completed, 2026-09-08
-
-The human explicitly approved the integrated target
-`9fde0baa9fbae768fc97133731eeb2744f90516e`. This supersedes the target for current
-certification, not the historical rejection. Isolated `820221a9` was not
-self-consistent: six lock referents, four missing roles, mismatched config and
-absent checker/G19 wiring. Reviewer A detected this and blocked attempt 1.
-Pending configuration repair was committed through `07e1d466`, `51689ecd`,
-`e111957b`, and `9fde0baa`; this is a composition resolution, not reinterpretation.
-Human root-cause finding: each loop correctly committed only its allowed paths,
-but a lock landed without its referents; no loop failed in isolation. Separate
-historical deviations A/B remain recorded. Attempt-1 records, including BLOCKED.md,
-remain immutable historical evidence; this dated entry records their resolution.
-
-Current reviewed-state SHA-256:
-`275c436f3fa8b75efe0575f33866103f87bcbfa15fdd7dba64c4254635d30900`.
-Packet SHA-256:
-`64384e65f840a54d55a22d21ef81b0163fc6b5d5e72d68882bfb59ac2b68a20b`.
-All 3,892 frozen hashes matched after gates and both reviews. The amendment below
-is evidence-only Progress; the reviewed contract and implementation are unchanged.
-Full records live under `blocker-handoff-certification-evidence/T02-attempt2-*`.
-The nine gate results establish a clean detached worktree at exact HEAD before
-and after checker exit 0, without borrowing files from the dirty main workspace.
-
-- `./scripts/checks/doc-code-guards.sh` — cwd `/Users/chris/sources/yoizen/platform-cluster`, exit 0; raw output and native duration: `T02-attempt2-gate-01.json`.
-- `python3 ./scripts/checks/check-codex-manual-loop.py` — cwd `/Users/chris/sources/yoizen/platform-cluster`, exit 0; raw output and native duration: `T02-attempt2-gate-02.json`.
-- `./scripts/checks/doc-code-guards.sh --full` — cwd `/Users/chris/sources/yoizen/platform-cluster`, exit 0; raw output and native duration: `T02-attempt2-gate-03.json`.
-- `git rev-parse HEAD` — cwd `/tmp/platform-cluster-certification-9fde0baa`, exit 0; raw output and native duration: `T02-attempt2-gate-04.json`.
-- `test "$(git rev-parse HEAD)" = "9fde0baa9fbae768fc97133731eeb2744f90516e"` — cwd `/tmp/platform-cluster-certification-9fde0baa`, exit 0; raw output and native duration: `T02-attempt2-gate-05.json`.
-- `certification_status="$(git status --porcelain --untracked-files=all)" && test -z "$certification_status"` — cwd `/tmp/platform-cluster-certification-9fde0baa`, exit 0; raw output and native duration: `T02-attempt2-gate-06.json`.
-- `python3 ./scripts/checks/check-codex-manual-loop.py` — cwd `/tmp/platform-cluster-certification-9fde0baa`, exit 0; raw output and native duration: `T02-attempt2-gate-07.json`.
-- `certification_status="$(git status --porcelain --untracked-files=all)" && test -z "$certification_status"` — cwd `/tmp/platform-cluster-certification-9fde0baa`, exit 0; raw output and native duration: `T02-attempt2-gate-08.json`.
-- `test -f manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md && grep -c "Missing from the predecessor record" manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md && grep -c "5b009539974207f8141a0367bcc3f2581d47618f2ced9c3b61fb7de899ada2b5" manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md` — cwd `/Users/chris/sources/yoizen/platform-cluster`, exit 0; raw output and native duration: `T02-attempt2-gate-09.json`.
-
-Full native evidence/provenance: `T02-attempt2-gates.json`; runner Luna/low run
-`01a082d6-fa9a-76f2-b31b-d1eb5fc9d29e`, turn
-`01a082e9-b016-76c3-8a40-6c63a627036a`. Developer Sol/medium run
-`01a082e0-880b-7362-bf33-46d5d8673b1d`, turn
-`01a082e0-884f-7683-b60e-78e15d58b1b7`. QA Sol/medium run
-`01a082d6-d7a4-7211-be99-542a79729f10`, postimplementation turn
-`01a082e5-cc7e-7230-bc45-6c85fb391139`. Native role/model/effort were observed,
-not inferred from config. Astra/high reviewers are no weaker than the implementer.
-
-Non-causal exceptions: expired agent path required new same-model native
-instances; worktree post-checkout hook emitted a log-path warning; ChatGPT login
-reported a PATH-alias warning but succeeded; developer repeated one read-only
-hash inspection after zsh special-variable lookup failures. Runner prose
-misstated gate 8 duration; persisted native evidence is exactly `0.400039667`,
-without recomputation or rerun. Reviewers recovered truncated reads and used
-direct source/Git inspection where codegraph was unavailable. Reviewer A's
-non-blocking navigation observation is retained verbatim below. No gate retry,
-model fallback, test weakening, cluster gate, or service rebuild occurred.
-No cluster/dev-mode/build/frozen-install applies to this Markdown-only scope.
-Engram unavailable: this SPEC and evidence are the durable topic record.
-
-Historical holes remain visible (quoted from the packet, not backfilled):
-
-
-- T01 final-state dual independent reviewer verdicts: **not recorded**. The only
-  verdicts are Reviewer A APPROVED and Reviewer B REJECTED for attempt 1; no
-  verdict exists for attempt 2.
-- T02 final-state independent reviewer verdicts: **not recorded**.
-- T03 final-state independent reviewer verdicts: **not recorded**.
-- T04 final-state independent reviewer verdicts: **not recorded**.
-- T05 final-state independent reviewer verdicts: **not recorded**.
-- `T02-preservation.json`: **not recorded**; the required file is absent.
-- `T05-preservation.json`: **not recorded**; the required file is absent.
-- Requested gate-executor session and turn for T01-T05: **not recorded**; those
-  fields are absent from every `requested` object.
-- Observed per-gate session and turn for T01-T05: **not recorded**; the gate
-  records use `unavailable`, which does not supply either identity.
-- Task-specific fp-dev turns for T01, T03, and T04, and the T05 attempt-2
-  correction: **not recorded**.
-- Task-specific fp-qa turns for T01-T04: **not recorded**.
-- Reviewer B's T01 attempt-1 task turn: **not recorded** in the verdict document.
-- Reviewer model/run/turn identities and verdicts for T01 attempt 2 and T02-T05:
-  **not recorded**.
-- Approval-time predecessor SPEC bytes or original command, editor identity,
-  edit time, and evidence distinguishing runner substitution from a mid-flight
-  SPEC edit: **not recorded**, as established in `deviations.md`.
-- The guard integration finding above as a predecessor-run finding: **not
-  recorded**; it is distinguished as a current source inspection.
-
-
-Both reviewers independently assessed the historical committed diff AND the
-integrated resolution, not merely the packet. Exact verdicts follow.
-
-#### T02 attempt 2 independent verdicts — verbatim
-
-##### Reviewer A
-
-APPROVED
-
-Reviewed integrated commit `9fde0baa9fbae768fc97133731eeb2744f90516e`, state SHA-256 `275c436f3fa8b75efe0575f33866103f87bcbfa15fdd7dba64c4254635d30900`, packet SHA-256 `64384e65f840a54d55a22d21ef81b0163fc6b5d5e72d68882bfb59ac2b68a20b`.
-
-- Independently assessed the full historical diff and confirmed `820221a9` has six lock references, four missing roles, mismatched config bytes, and no checker/G19 wiring. Its rejection remains valid. The four integration commits resolve those configuration dependencies. The human composition finding and separate deviations A/B remain intact.
-- Assessed committed roles/config/lock, checker, guard wiring, tests, policy, repair records, and all 82 predecessor evidence files. Pure validation uses data and diagnostic values; filesystem operations and reporting remain in the shell. Existing tests are preserved. The committed checker, guard, and test bytes match the repair’s recorded passing suites.
-- All nine current commands ran verbatim, sequentially, with native exit 0. Verified native outputs/durations, including gate 8’s `0.400039667`. Separate-checkout evidence establishes exact HEAD, clean-before, checker success, and clean-after.
-- All 3,892 frozen hashes match. Only authorized SPEC/packet content changed; historical records and unrelated baseline work are preserved. QA finished before gates. Native Sol/medium implementation and Luna/low execution are verified.
-
-Reviewer requested/observed: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-4ec2-7ee1-b85b-44047c7cef35`, turn `01a082eb-4f06-7f72-80a7-1b2415c0caa6`.
-
-No edits, gate reruns, delegation, or current sibling verdict consulted. Codegraph unavailable; direct source/Git inspection substituted. Truncated reads and inventory assumptions about ignored logs/empty JSON artifacts were recovered.
-
-Non-blocking: `manual-loops/README.md:18` links to an evaluation draft absent from the committed target; this preserved navigation issue does not affect the certified configuration.
-
-##### Reviewer B
-
-APPROVED
-
-Reviewed integrated commit `9fde0baa9fbae768fc97133731eeb2744f90516e`, the complete historical diff/log, committed configuration repair and evidence, and unchanged T02 artifacts.
-
-- Historical `820221a9` remains defective: six lock references, four absent roles, mismatched config, and missing checker/G19 wiring. Reviewer A’s discovery and blocking rejection remain preserved. The four integration commits resolve that dependency boundary; the human’s composition finding and separate deviations A/B remain intact.
-- Integrated roles/config match all six lock entries. Checker decisions are pure; filesystem access, exception conversion, and diagnostics remain in the shell. Existing validation is reused, tests are preserved, and passing evidence covers the unchanged checker/guard/tests: 16 generic and 18 policy tests.
-- All nine current commands exited 0. Native evidence confirms sequential execution, exact target HEAD, clean detached worktree before/after checker success, and gate 8 duration `0.400039667`.
-- All 3,892 frozen file hashes match; only authorized SPEC/packet changes differ from baseline. All 82 committed predecessor evidence files match their working copies. Historical missing records remain disclosed.
-
-Reviewed state SHA-256: `275c436f3fa8b75efe0575f33866103f87bcbfa15fdd7dba64c4254635d30900`.
-Packet SHA-256: `64384e65f840a54d55a22d21ef81b0163fc6b5d5e72d68882bfb59ac2b68a20b`.
-
-Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9590-7740-9bb1-215ae4c32518`, turn `01a082eb-95c8-70b1-9702-5ee781e6623c`. Native Sol/medium implementation and QA, Luna/low execution, and reviewer provenance verified directly.
-
-No edits, gates, delegation, or current sibling verdict consulted. Truncated reads were recovered; direct reads and `rg` supplied codegraph-equivalent checks. Runtime builds and cluster gates are inapplicable.
-
 
 ## Out of scope (explicit)
 

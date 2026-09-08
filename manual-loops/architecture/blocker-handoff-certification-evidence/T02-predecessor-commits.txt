@@ -1,0 +1,5 @@
+820221a9 docs(codex-manual-loop): T05 record fp-dev lock change, index entry, and SPEC evidence
+ec8a9abd docs(manual-loops-templates): T04 blocker record format and cheapest-gate-first gates
+26c78b79 chore(codex): T03 add fp-dev handoff note instruction and refresh lock
+35b656a7 docs(agent-roles): T02 require fp-dev handoff note on final failed attempt
+612285ef docs(manual-loop): T01 open blocker records with human summary and handoff note

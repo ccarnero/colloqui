@@ -1,0 +1,13 @@
+{
+  "baseline_file": "T02-attempt2-baseline.json",
+  "checked_files": 3875,
+  "changed_paths": [
+    "manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md",
+    "manual-loops/architecture/blocker-handoff-certification.md"
+  ],
+  "allowed_paths": [
+    "manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md",
+    "manual-loops/architecture/blocker-handoff-certification.md"
+  ],
+  "unexpected_changes": []
+}

@@ -1,0 +1,1 @@
+PASS: project Codex manual-loop policy and hash lock validated

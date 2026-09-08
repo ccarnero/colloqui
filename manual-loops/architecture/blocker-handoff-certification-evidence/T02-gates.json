@@ -1,0 +1,56 @@
+{
+  "source_file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T16-38-20-01a08287-4e02-7f50-a8ae-5418bc1f3d83.jsonl",
+  "run": "01a08287-4e02-7f50-a8ae-5418bc1f3d83",
+  "requested_role": "script-runner",
+  "requested_model": "gpt-5.6-luna",
+  "requested_effort": "low",
+  "native_turn": {
+    "turn_id": "01a082a8-8780-7310-8206-39a258b03a6b",
+    "model": "gpt-5.6-luna",
+    "effort": "low"
+  },
+  "state_file": "T02-state.json",
+  "state_sha256": "27a4eb92bfd3155d55bfd5bb3b18659455e3a7219cdcc122bd389d9ba1461894",
+  "gates": [
+    {
+      "command": "./scripts/checks/doc-code-guards.sh",
+      "native_call": "const r = await tools.exec_command({cmd:\"./scripts/checks/doc-code-guards.sh\",\"workdir\":\"/Users/chris/sources/yoizen/platform-cluster\",\"yield_time_ms\":10000,\"max_output_tokens\":20000}); text(r)\n",
+      "call_id": "call_QrE13ifCOgoryWYSLx7Vj6e7",
+      "timestamp": "2026-09-08T20:14:45.222Z",
+      "native_result_file": "T02-gate-01.json",
+      "stdout_file": "T02-gate-01.stdout.txt",
+      "exit_code": 0,
+      "wall_time_seconds": 0.914468791
+    },
+    {
+      "command": "python3 ./scripts/checks/check-codex-manual-loop.py",
+      "native_call": "const r = await tools.exec_command({cmd:\"python3 ./scripts/checks/check-codex-manual-loop.py\",\"workdir\":\"/Users/chris/sources/yoizen/platform-cluster\",\"yield_time_ms\":10000,\"max_output_tokens\":20000}); text(r)\n",
+      "call_id": "call_6C2glCct3rpeFkwRfjuO2qQd",
+      "timestamp": "2026-09-08T20:14:49.118Z",
+      "native_result_file": "T02-gate-02.json",
+      "stdout_file": "T02-gate-02.stdout.txt",
+      "exit_code": 0,
+      "wall_time_seconds": 4.167e-06
+    },
+    {
+      "command": "./scripts/checks/doc-code-guards.sh --full",
+      "native_call": "const r = await tools.exec_command({cmd:\"./scripts/checks/doc-code-guards.sh --full\",\"workdir\":\"/Users/chris/sources/yoizen/platform-cluster\",\"yield_time_ms\":10000,\"max_output_tokens\":20000}); text(r)\n",
+      "call_id": "call_Bs8hP8G35jCZkmVZIi9tgg9n",
+      "timestamp": "2026-09-08T20:14:51.738Z",
+      "native_result_file": "T02-gate-03.json",
+      "stdout_file": "T02-gate-03.stdout.txt",
+      "exit_code": 0,
+      "wall_time_seconds": 3.36880725
+    },
+    {
+      "command": "test -f manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md && grep -c \"Missing from the predecessor record\" manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md && grep -c \"5b009539974207f8141a0367bcc3f2581d47618f2ced9c3b61fb7de899ada2b5\" manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md",
+      "native_call": "const r = await tools.exec_command({cmd:\"test -f manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md && grep -c \\\"Missing from the predecessor record\\\" manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md && grep -c \\\"5b009539974207f8141a0367bcc3f2581d47618f2ced9c3b61fb7de899ada2b5\\\" manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md\",\"workdir\":\"/Users/chris/sources/yoizen/platform-cluster\",\"yield_time_ms\":10000,\"max_output_tokens\":20000}); text(r)\n",
+      "call_id": "call_fiXgR2tUA4zcqAWjR5MZCTrV",
+      "timestamp": "2026-09-08T20:14:59.849Z",
+      "native_result_file": "T02-gate-04.json",
+      "stdout_file": "T02-gate-04.stdout.txt",
+      "exit_code": 0,
+      "wall_time_seconds": 3.083e-06
+    }
+  ]
+}
