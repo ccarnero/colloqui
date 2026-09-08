@@ -54,6 +54,12 @@ Repeat each citation inside the body of the task that uses it.
 - Preserve frameworks/libraries; thin shells call pure business functions with
   typed failures. Effects, exception conversion, and diagnostic logging stay in shell.
 - Preserve preexisting and blocked work; report scope expansion before editing.
+- Routine build, test, and E2E commands use the configured mechanical executor
+  below both the implementation/QA tier and economical coding tier. It runs the
+  exact commands in order, stops on first failure, and reports evidence without
+  diagnosis, edits, retries, scope changes, or closure decisions. Record approved
+  cost exceptions or delegation/unsafe-handoff blockers before execution. Verify
+  callability and the applicable tool cost basis; API pricing alone is insufficient.
 - Affected builds require pinned runtime/tools, lockfile, frozen installation and
   build commands with actual output/statuses. Persistent writes/migrations require
   boundary/invariant tests and idempotency coverage where applicable.
@@ -64,13 +70,18 @@ Repeat each citation inside the body of the task that uses it.
 
 ## Gates (the `/manual-loop` command runs these verbatim, in order)
 
+One executor owns each command. Handoffs transfer the existing process/run
+identity and completion evidence; they never duplicate a command. Persist full
+sanitized output, status, duration, tested-state identity, and requested and
+observed executor model/session/turn; keep the summary concise.
+
 ```
 # G0 — repo guards (KISS default, every attempt; --full only for a scoped audit)
 ./scripts/checks/doc-code-guards.sh
-# G1 — <primary service> tests
-cd services/<svc> && bun test
-# G2 — <primary service> typecheck
+# G1 — <primary service> typecheck (cheapest failure first)
 cd services/<svc> && bunx tsc -p tsconfig.json --noEmit
+# G2 — <primary service> tests
+cd services/<svc> && bun test
 # G3 — <other touched service> tests (from T0N onward)
 cd services/<other> && bun test
 # G5a — ITERATION (per attempt, source-mounted dev mode; admin-console has no dev-mode — skip)

@@ -13,11 +13,18 @@ This folder owns SPEC authoring format only.
 
 - G0 is `./scripts/checks/doc-code-guards.sh`, which defaults to KISS.
   Use `--full` only for an explicitly scoped broader audit and explain why.
+- Order gates so the cheapest and most likely failure runs first;
+  stop-on-first-failure then costs the least.
 - KISS selects the repository guards. It does not replace service tests,
   typechecks, task acceptance checks, or applicable cluster e2e gates.
 - Include concrete commands for the services and behavior in scope. Remove
   template placeholders before running a SPEC. Never weaken existing tests.
 - Keep Constraints short: specialize AGENTS.md without duplicating or weakening it.
+- State the mechanical gate-executor policy explicitly in Constraints. Routine
+  build, test, and E2E commands use a configured executor below both the
+  implementation/QA tier and the economical coding tier. Verify callability and
+  the applicable tool cost basis rather than inferring billing from API prices. Record any approved
+  cost exception or unavailable/unsafe-handoff blocker; never silently substitute.
 - Use one acceptance block per task for its specific outcome. Do not repeat
   commands already covered by shared gates unless a different check is needed.
 - Preserve existing task IDs, decisions, acceptance criteria, and progress.
@@ -37,6 +44,12 @@ go to implementers. Repeat needed decisions/prior art from other sections in tas
 AGENTS.md wins; Constraints specialize it; skills and precedent are advisory.
 FP role prompts are specialist instructions; they do not create a competing loop
 or replace the manual-loop engine.
+
+Gate evidence includes full sanitized output, status, duration, tested-state
+identity, and requested and observed executor model/session/turn; summaries stay
+concise and link to that evidence. Preserve one owner per command and transfer an
+in-flight process identity and completion evidence instead of duplicating it.
+Existing SPECs inherit the normative AGENTS.md policy without historical rewrites.
 
 | Section | What to include |
 |:---|:---|
@@ -77,3 +90,13 @@ The human runs the first destructive `--apply`.
 
 Update active SPECs when their workflow changes. Leave frozen records intact;
 put subsequent corrections in a dated follow-up record.
+
+## Blocker records
+
+A BLOCKED record is read by a human first and an auditor second. Order it that
+way: "For humans" (at most 10 lines, plain language, no run IDs or gate
+numbers), then the implementer's handoff note with candidate fixes, then the full
+evidence. Label execution exceptions that did not cause the failure as
+non-causal. The handoff note is analysis only: it authorizes no retry, allocates
+no budget, and creates no continuation SPEC. The engine owns this contract; see
+the manual-loop procedure.
