@@ -13,6 +13,13 @@ SPECs in PENDIENTES use the same engine and current AGENTS.md when resumed.
 FP-scoped work follows the current [FP delivery guide](../DOCS/guides/manual-loop.md),
 including its role routing and evidence rules.
 
+## Draft evaluations awaiting approval
+
+- [Platform-cluster end-to-end evaluation](architecture/end-to-end-evaluation.md):
+  product understanding, runtime validation, one real delivery through the existing
+  loop, then a record-cleanup proposal. Draft only: complete concrete gates after
+  read-only preflight and obtain approval before execution. No cleanup authorized.
+
 ## Current state
 
 - 37 SPECs have recorded completed task checklists.

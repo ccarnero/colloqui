@@ -1,0 +1,75 @@
+[
+  {
+    "id": "01a080ed-91c6-7d72-88e1-771952ffbe0b",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "agent_path": null,
+    "agent_role": null,
+    "source": "exec",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T09-10-48-01a080ed-91c6-7d72-88e1-771952ffbe0b.jsonl",
+    "selected_evidence": [
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a080ed-9216-75a1-b114-30560ac282f3",
+          "model": "gpt-6-astra",
+          "effort": "medium"
+        }
+      },
+      {
+        "type": "native_spawn",
+        "selector": "fp-qa",
+        "task_name": "repair_qa_final",
+        "fork_turns": "none"
+      }
+    ],
+    "tool_calls": [
+      "spawn_agent",
+      "wait_agent",
+      "wait_agent",
+      "wait_agent",
+      "wait_agent",
+      "wait_agent",
+      "wait_agent"
+    ],
+    "final_messages": []
+  },
+  {
+    "id": "01a080ed-d99c-7d61-a6e0-af69cdc32439",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium",
+    "agent_path": "/root/repair_qa_final",
+    "agent_role": "fp-qa",
+    "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a080ed-91c6-7d72-88e1-771952ffbe0b\",\"depth\":1,\"agent_path\":\"/root/repair_qa_final\",\"agent_nickname\":\"Euclid\",\"agent_role\":\"fp-qa\"}}}",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T09-11-06-01a080ed-d99c-7d61-a6e0-af69cdc32439.jsonl",
+    "selected_evidence": [
+      {
+        "type": "loaded_role_developer_instructions",
+        "file": ".codex/agents/fp-qa.toml",
+        "file_sha256": "38e65b353624c7abd7a5e81113e32b19c0bba8c4cebc7ad32f85bb65c5f5e3c8",
+        "exact_role_instructions_present": true
+      },
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a080ed-d9e9-7142-aec5-56730b56f3b2",
+          "model": "gpt-5.6-sol",
+          "effort": "medium"
+        }
+      }
+    ],
+    "tool_calls": [
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec"
+    ],
+    "final_messages": []
+  }
+]

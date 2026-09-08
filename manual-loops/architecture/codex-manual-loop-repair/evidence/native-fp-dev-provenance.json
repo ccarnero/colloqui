@@ -1,0 +1,53 @@
+[
+  {
+    "id": "01a07e3d-a1c4-7061-ac6e-56d9ecaf9c8d",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "agent_path": null,
+    "agent_role": null,
+    "source": "exec",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/07/rollout-2026-09-07T20-39-23-01a07e3d-a1c4-7061-ac6e-56d9ecaf9c8d.jsonl",
+    "selected_evidence": [
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a07e3d-a214-7c63-80f6-b22b58245535",
+          "model": "gpt-6-astra",
+          "effort": "medium"
+        }
+      },
+      {
+        "type": "native_spawn",
+        "selector": "fp-dev",
+        "task_name": "role_probe",
+        "fork_turns": "none",
+        "call_id": "call_t9vWR7zlFDJTtTtKsQkPOIDe"
+      }
+    ]
+  },
+  {
+    "id": "01a07e3d-bff2-7a73-9100-b224dc9e9718",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium",
+    "agent_path": "/root/role_probe",
+    "agent_role": "fp-dev",
+    "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a07e3d-a1c4-7061-ac6e-56d9ecaf9c8d\",\"depth\":1,\"agent_path\":\"/root/role_probe\",\"agent_nickname\":\"Cicero\",\"agent_role\":\"fp-dev\"}}}",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/07/rollout-2026-09-07T20-39-31-01a07e3d-bff2-7a73-9100-b224dc9e9718.jsonl",
+    "selected_evidence": [
+      {
+        "type": "loaded_role_developer_instructions",
+        "file": ".codex/agents/fp-dev.toml",
+        "file_sha256": "d06443d9f26975f289644b35b9747cdef7cf7477bb13c606f69ad54e0ebc33b5",
+        "exact_role_instructions_present": true
+      },
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a07e3d-c03c-75b2-be80-1e94c28444db",
+          "model": "gpt-5.6-sol",
+          "effort": "medium"
+        }
+      }
+    ]
+  }
+]

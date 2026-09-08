@@ -1,0 +1,12 @@
+{
+  "command": [
+    "codex",
+    "debug",
+    "prompt-input",
+    "Native configuration inspection only; do not execute a manual loop."
+  ],
+  "exit": 0,
+  "duration_seconds": 1.076,
+  "stdout_bytes": 37537,
+  "top_level_keys": "array"
+}

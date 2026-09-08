@@ -1,0 +1,15 @@
+{
+  "command": [
+    "codex",
+    "exec",
+    "--strict-config",
+    "--sandbox",
+    "workspace-write",
+    "--json",
+    "-c",
+    "mcp_servers.node_repl.enabled=false",
+    "-c",
+    "mcp_servers.computer-use.enabled=false",
+    "Act only as native dispatcher for approved T01 repair. Existing ChatGPT subscription, no API/purchases/provider/auth change. Tools only native spawn and wait, max60000ms waits, no busy polling. Spawn one configured agent_type fp-dev, task_name repair_correction3, fork_turns none, no model/effort overrides or copied role definitions. Task: Implement correction attempt 3 in manual-loops/architecture/codex-manual-loop-repair.md. Read full AGENTS.md, SPEC Task/Accept/Constraints/Gates, shared manual-loop and roles, evidence/review-round2-objections.md with BOTH exact independent verdicts, round2-manifest.json, round2-diff, round2-staged.diff, round2-unstaged.diff, round2-new-files.json and baseline.diff/status. Fix the sole merged rejection: numeric/non-string developer_instructions causes policy membership TypeError despite generic validator recording structural errors. Return diagnostics as values, preserving the existing structural diagnostic convention. Add pure and real filesystem boundary regression cases for non-string instruction data, including reviewer numeric reproductions; consider other valid TOML scalar/container types as table cases so this type boundary is complete. No exceptions in pure calculation control flow, no broad workaround/catch swallowing. Preserve every existing test and previous ancestor symlink fixes/pin matrix. Allowed writes ONLY scripts/checks/check-codex-manual-loop.py and scripts/tests/test_codex_manual_loop.py. All other artifacts/config/lock/docs/SPEC/evidence/global and old evaluation files remain unchanged. No tests/gates/builds/E2E/network/install/commits/retries/delegation; runner executes all gates AFTER QA. Read-only inspections allowed, keep output small enough to avoid truncation. Return concise rationale, exact changed paths and SHA256s, then stop. Native fp-dev is Sol medium; principal independently verifies observed telemetry. Wait for report and relay it; no fallback."
+  ]
+}

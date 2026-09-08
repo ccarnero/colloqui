@@ -1,0 +1,50 @@
+{
+  "status": "verified",
+  "identities": [
+    {
+      "id": "01a08101-d90a-7b00-8932-2353fda54993",
+      "agent_path": "/root/review_one",
+      "agent_role": "fp-reviewer",
+      "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a08101-6f77-7312-bfa5-539ea11d3640\",\"depth\":1,\"agent_path\":\"/root/review_one\",\"agent_nickname\":\"Bacon\",\"agent_role\":\"fp-reviewer\"}}}",
+      "selected_evidence": [
+        {
+          "type": "loaded_role_developer_instructions",
+          "file": ".codex/agents/fp-reviewer.toml",
+          "file_sha256": "3c1d2938403918b35a1050a0338e18252480336a345703cba3a93af5416a05f8",
+          "exact_role_instructions_present": true
+        },
+        {
+          "type": "turn_context",
+          "data": {
+            "turn_id": "01a08101-d950-7100-a314-f83e886cc70f",
+            "model": "gpt-6-astra",
+            "effort": "high"
+          }
+        }
+      ]
+    },
+    {
+      "id": "01a08102-3857-7c41-9a3f-817c9be74fd2",
+      "agent_path": "/root/review_two",
+      "agent_role": "fp-reviewer",
+      "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a08101-6f77-7312-bfa5-539ea11d3640\",\"depth\":1,\"agent_path\":\"/root/review_two\",\"agent_nickname\":\"Lorentz\",\"agent_role\":\"fp-reviewer\"}}}",
+      "selected_evidence": [
+        {
+          "type": "loaded_role_developer_instructions",
+          "file": ".codex/agents/fp-reviewer.toml",
+          "file_sha256": "3c1d2938403918b35a1050a0338e18252480336a345703cba3a93af5416a05f8",
+          "exact_role_instructions_present": true
+        },
+        {
+          "type": "turn_context",
+          "data": {
+            "turn_id": "01a08102-389b-7c80-a766-8135e08d76b4",
+            "model": "gpt-6-astra",
+            "effort": "high"
+          }
+        }
+      ]
+    }
+  ],
+  "verdicts_included": false
+}

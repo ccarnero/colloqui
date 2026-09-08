@@ -1,0 +1,12 @@
+{
+  "command": [
+    "codex",
+    "--strict-config",
+    "debug",
+    "prompt-input",
+    "Native configuration inspection only; do not execute a manual loop."
+  ],
+  "exit": 1,
+  "duration_seconds": 0.013,
+  "stdout_bytes": 0
+}

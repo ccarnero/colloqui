@@ -1,0 +1,130 @@
+[
+  {
+    "id": "01a08115-920d-73e3-8051-42fd9d8cf288",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "agent_path": null,
+    "agent_role": null,
+    "source": "exec",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T09-54-29-01a08115-920d-73e3-8051-42fd9d8cf288.jsonl",
+    "selected_evidence": [
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a08115-9256-7fc0-ab3c-23cf98764e6c",
+          "model": "gpt-6-astra",
+          "effort": "medium"
+        }
+      },
+      {
+        "type": "native_spawn",
+        "selector": "fp-reviewer",
+        "task_name": "review_one",
+        "fork_turns": "none"
+      },
+      {
+        "type": "native_spawn",
+        "selector": "fp-reviewer",
+        "task_name": "review_two",
+        "fork_turns": "none"
+      }
+    ],
+    "tool_calls": [
+      "spawn_agent",
+      "spawn_agent",
+      "wait_agent",
+      "wait_agent",
+      "wait_agent",
+      "wait_agent"
+    ],
+    "final_messages": []
+  },
+  {
+    "id": "01a08116-0b09-74b2-add6-80a814a616ef",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high",
+    "agent_path": "/root/review_one",
+    "agent_role": "fp-reviewer",
+    "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a08115-920d-73e3-8051-42fd9d8cf288\",\"depth\":1,\"agent_path\":\"/root/review_one\",\"agent_nickname\":\"Confucius\",\"agent_role\":\"fp-reviewer\"}}}",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T09-55-00-01a08116-0b09-74b2-add6-80a814a616ef.jsonl",
+    "selected_evidence": [
+      {
+        "type": "loaded_role_developer_instructions",
+        "file": ".codex/agents/fp-reviewer.toml",
+        "file_sha256": "3c1d2938403918b35a1050a0338e18252480336a345703cba3a93af5416a05f8",
+        "exact_role_instructions_present": true
+      },
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a08116-0b80-7b32-b0ac-80c85c017ebf",
+          "model": "gpt-6-astra",
+          "effort": "high"
+        }
+      }
+    ],
+    "tool_calls": [
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec"
+    ],
+    "final_messages": [
+      "APPROVED\n\nReviewed T01 correction attempt 3: all 17 artifacts match manifest SHA-256 `8c09af1a22290378414b79b86f6eb10f0b78a285d1ff81fc3075c5ba5aaae050`. Staged coverage is empty; unstaged diff and all nine complete new-file contents match the current state.\n\nVerified:\n\n- All six exact gates exited 0; 16 generic and 18 policy tests passed under native Luna low.\n- Existing tests and 3,547 baseline paths are preserved except authorized task changes.\n- Instruction-type failures return diagnostics; pure decisions remain separate from filesystem actions.\n- Ancestor symlinks fail before traversal; all-role pin regressions remain covered.\n- Native loading, Sol implementation/QA provenance, approved runner cost exception, and limited protection claims have evidence.\n- QA made no edits before gates. Final artifact hashes remain unchanged.\n\nObserved reviewer: native `fp-reviewer`, `/root/review_one`, `gpt-6-astra`, high. Run `01a08116-0b09-74b2-add6-80a814a616ef`; turn `01a08116-0b80-7b32-b0ac-80c85c017ebf`, verified through `native-reviews-round3-identities.json`.\n\nCodegraph was unavailable; targeted rg/read checks substituted. Truncated reads were repeated. No files changed, gates rerun, or sibling verdict accessed."
+    ]
+  },
+  {
+    "id": "01a08116-7a77-72a3-baaf-105903980c1b",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high",
+    "agent_path": "/root/review_two",
+    "agent_role": "fp-reviewer",
+    "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a08115-920d-73e3-8051-42fd9d8cf288\",\"depth\":1,\"agent_path\":\"/root/review_two\",\"agent_nickname\":\"Aquinas\",\"agent_role\":\"fp-reviewer\"}}}",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T09-55-29-01a08116-7a77-72a3-baaf-105903980c1b.jsonl",
+    "selected_evidence": [
+      {
+        "type": "loaded_role_developer_instructions",
+        "file": ".codex/agents/fp-reviewer.toml",
+        "file_sha256": "3c1d2938403918b35a1050a0338e18252480336a345703cba3a93af5416a05f8",
+        "exact_role_instructions_present": true
+      },
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a08116-7aba-7570-a8b1-74e297fcb175",
+          "model": "gpt-6-astra",
+          "effort": "high"
+        }
+      }
+    ],
+    "tool_calls": [
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec"
+    ],
+    "final_messages": [
+      "APPROVED\n\nT01 correction attempt 3: all 17 artifacts match manifest SHA-256 `8c09af1a22290378414b79b86f6eb10f0b78a285d1ff81fc3075c5ba5aaae050`, rechecked before verdict.\n\nReviewed staged/unstaged evidence, all nine complete new files, baseline ownership, preservation records, QA, raw gate output, native role loading, and protected-path evidence. All six exact gates passed under native Luna low; suites passed 16 and 18 tests. Previous tests remain intact. Non-string instruction failures now return diagnostics; FP boundaries, ancestor symlink rejection, pin enforcement, and limited protection claims satisfy the contract.\n\nObserved reviewer: native `fp-reviewer`, `/root/review_two`, `gpt-6-astra`, high.\nRun: `01a08116-7a77-72a3-baaf-105903980c1b`.\nTurn: `01a08116-7aba-7570-a8b1-74e297fcb175`.\nIdentity verified through `native-reviews-round3-identities.json`.\n\nCodegraph unavailable; equivalent `rg`/read checks completed. Truncated reads were recovered. No files modified or gates rerun; no other reviewer\u2019s verdict consulted."
+    ]
+  }
+]

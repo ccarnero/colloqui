@@ -1,0 +1,50 @@
+{
+  "status": "verified",
+  "identities": [
+    {
+      "id": "01a08116-0b09-74b2-add6-80a814a616ef",
+      "agent_path": "/root/review_one",
+      "agent_role": "fp-reviewer",
+      "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a08115-920d-73e3-8051-42fd9d8cf288\",\"depth\":1,\"agent_path\":\"/root/review_one\",\"agent_nickname\":\"Confucius\",\"agent_role\":\"fp-reviewer\"}}}",
+      "selected_evidence": [
+        {
+          "type": "loaded_role_developer_instructions",
+          "file": ".codex/agents/fp-reviewer.toml",
+          "file_sha256": "3c1d2938403918b35a1050a0338e18252480336a345703cba3a93af5416a05f8",
+          "exact_role_instructions_present": true
+        },
+        {
+          "type": "turn_context",
+          "data": {
+            "turn_id": "01a08116-0b80-7b32-b0ac-80c85c017ebf",
+            "model": "gpt-6-astra",
+            "effort": "high"
+          }
+        }
+      ]
+    },
+    {
+      "id": "01a08116-7a77-72a3-baaf-105903980c1b",
+      "agent_path": "/root/review_two",
+      "agent_role": "fp-reviewer",
+      "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a08115-920d-73e3-8051-42fd9d8cf288\",\"depth\":1,\"agent_path\":\"/root/review_two\",\"agent_nickname\":\"Aquinas\",\"agent_role\":\"fp-reviewer\"}}}",
+      "selected_evidence": [
+        {
+          "type": "loaded_role_developer_instructions",
+          "file": ".codex/agents/fp-reviewer.toml",
+          "file_sha256": "3c1d2938403918b35a1050a0338e18252480336a345703cba3a93af5416a05f8",
+          "exact_role_instructions_present": true
+        },
+        {
+          "type": "turn_context",
+          "data": {
+            "turn_id": "01a08116-7aba-7570-a8b1-74e297fcb175",
+            "model": "gpt-6-astra",
+            "effort": "high"
+          }
+        }
+      ]
+    }
+  ],
+  "verdicts_included": false
+}

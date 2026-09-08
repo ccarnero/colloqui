@@ -1,0 +1,11 @@
+{
+  "command": [
+    "codex",
+    "debug",
+    "prompt-input",
+    "Native configuration inspection only; do not execute a manual loop."
+  ],
+  "exit": 1,
+  "duration_seconds": 0.023,
+  "stdout_bytes": 0
+}

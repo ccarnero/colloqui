@@ -1,0 +1,20 @@
+ M AGENTS.md
+ M DOCS/guides/agent-roles.md
+ M DOCS/guides/manual-loop.md
+ M manual-loops-templates/README.md
+ M manual-loops-templates/spec-canonical-template.md
+ M manual-loops-templates/spec-simple-template.md
+ M manual-loops/README.md
+?? e2e/platform-evaluation-config.test.mjs
+?? e2e/platform-evaluation-runner.mjs
+?? e2e/platform-evaluation-state.test.mjs
+?? e2e/platform-evaluation-state.ts
+?? e2e/platform-evaluation.config.ts
+?? e2e/platform-evaluation.spec.ts
+?? manual-loops/architecture/codex-manual-loop-repair/
+?? manual-loops/architecture/economical-gate-execution.md
+?? manual-loops/architecture/economical-gate-execution/
+?? manual-loops/architecture/end-to-end-evaluation-recovery.md
+?? manual-loops/architecture/end-to-end-evaluation-recovery/
+?? manual-loops/architecture/end-to-end-evaluation.md
+?? manual-loops/architecture/end-to-end-evaluation/

@@ -1,0 +1,17 @@
+{
+  "working_directory": "/Users/chris/sources/yoizen/platform-cluster",
+  "commands": [
+    "/bin/bash scripts/checks/doc-code-guards.sh",
+    "python3 scripts/checks/check-fp-delivery.py",
+    "python3 scripts/checks/check-codex-manual-loop.py",
+    "python3 -m unittest discover -s scripts/tests -p 'test_fp_delivery.py'",
+    "python3 -m unittest discover -s scripts/tests -p 'test_codex_manual_loop.py'",
+    "git diff --check"
+  ],
+  "prerequisite": "Native QA ready and unchanged manifest; not yet executed",
+  "python_version_observed": "Python 3.14.5",
+  "codex_version_previously_observed": "0.153.1",
+  "executor": "native script-runner / gpt-5.6-luna / low",
+  "stop_on_first_failure": true,
+  "no_retries": true
+}

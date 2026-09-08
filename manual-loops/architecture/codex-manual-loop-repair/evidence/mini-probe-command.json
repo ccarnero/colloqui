@@ -1,0 +1,21 @@
+{
+  "command": [
+    "codex",
+    "exec",
+    "--ignore-user-config",
+    "--ephemeral",
+    "--sandbox",
+    "read-only",
+    "--json",
+    "-m",
+    "gpt-5.4-mini",
+    "-c",
+    "model_reasoning_effort=\"low\"",
+    "-c",
+    "agents.enabled=false",
+    "-c",
+    "mcp_servers={}",
+    "Reply with exactly RUNNER_MODEL_PROBE_OK. Do not use any tools, read files, execute commands, or modify anything. This is only a model availability probe, not a manual-loop run."
+  ],
+  "purpose": "User-selected runner harmless callability probe, not native role loading proof"
+}

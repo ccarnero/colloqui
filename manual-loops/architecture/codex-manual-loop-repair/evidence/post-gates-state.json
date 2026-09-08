@@ -1,0 +1,9 @@
+{
+  "new_paths_outside_baseline_and_repair": [],
+  "current_manifest_matches": true,
+  "runtime_versions": {
+    "python3": "Python 3.14.5",
+    "codex": "codex-cli 0.153.1"
+  },
+  "dependency_install": "not applicable; Python standard-library configuration checks only, no package install or product build"
+}

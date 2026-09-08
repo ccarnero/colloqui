@@ -1,0 +1,17 @@
+{
+  ".codex/config.toml": "0e2aafb360454df9f511fe0ff65e0abb783ef5e533b17410d67b341e4d164e94",
+  "AGENTS.md": "e9dfd61a8f0deee32bb23070a3b9086b6998872678fe68ec8489f39e4cb3984c",
+  "DOCS/guides/manual-loop.md": "6c78495fc831e09ea992e034d013b60d0c49bd2d044ad38a33c5250b8b309492",
+  "DOCS/guides/agent-roles.md": "6510f687c7a808429183442649f85be11d76e11ba0164300de33516ce532b6d6",
+  "DOCS/guides/codex-manual-loop.md": "7ee1810c5685ff75e7b78767fa9856b35a1424a921cfbf93b4cbff084d35e1bb",
+  "DOCS/archive/INDEX.md": "078aeb8c21d2509cb1eca1af309997447aab13f714ea1365e0079c16a7676353",
+  "scripts/checks/check-fp-delivery.py": "daafdaa7ea032451e1ffc03858541d38311346b68c6283c7f83923ae63637c0a",
+  "scripts/checks/check-codex-manual-loop.py": "e07d359a6f167eba42fdcf01aba91e5c42b9158e9b4780012e1cb18940ff3c76",
+  "scripts/checks/doc-code-guards.sh": "5babb5024508e30e28ab49eccfde040eb34949eadcd0ed3cc4a3eed4554d4a77",
+  "scripts/tests/test_fp_delivery.py": "24df89f6a0ca2e19f62c2e32ec73f206af401fbc6e2e95660bb443b1684d9820",
+  "scripts/tests/test_codex_manual_loop.py": "aa9a6122076fe8cb01b17873046c6db1db7590fcc8d41164372d07597d9d8df0",
+  ".codex/agents/fp-architect.toml": "1640055b7754993d2133b1a9b5df3a99271ae2df91fe2278631c71b6abacda4d",
+  ".codex/agents/fp-dev.toml": "d06443d9f26975f289644b35b9747cdef7cf7477bb13c606f69ad54e0ebc33b5",
+  ".codex/agents/fp-qa.toml": "38e65b353624c7abd7a5e81113e32b19c0bba8c4cebc7ad32f85bb65c5f5e3c8",
+  ".codex/agents/fp-reviewer.toml": "3c1d2938403918b35a1050a0338e18252480336a345703cba3a93af5416a05f8"
+}

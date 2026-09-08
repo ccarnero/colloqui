@@ -1,0 +1,75 @@
+[
+  {
+    "id": "01a080fe-1ef5-7011-94c6-2f56dc35ddae",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "agent_path": null,
+    "agent_role": null,
+    "source": "exec",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T09-28-52-01a080fe-1ef5-7011-94c6-2f56dc35ddae.jsonl",
+    "selected_evidence": [
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a080fe-1f3e-78c3-9542-0668b8dcd5a9",
+          "model": "gpt-6-astra",
+          "effort": "medium"
+        }
+      },
+      {
+        "type": "native_spawn",
+        "selector": "script-runner",
+        "task_name": "repair_gates_round2",
+        "fork_turns": "none"
+      }
+    ],
+    "tool_calls": [
+      "spawn_agent",
+      "wait_agent",
+      "wait_agent"
+    ],
+    "final_messages": [
+      "All six approved gates passed sequentially in the repository root with no retries, fallbacks, edits, or extra commands.\n\n- Guards: exit 0\n- FP delivery checker: exit 0\n- Codex manual-loop checker: exit 0\n- `test_fp_delivery.py`: exit 0, 16 tests OK\n- `test_codex_manual_loop.py`: exit 0, 16 tests OK\n- `git diff --check`: exit 0\n\nTested state: `evidence/round2-manifest.json`, SHA256 `7302d63aa947165b1fcdafb7b22deb09ca67f619d091aaf753c2ff0df141f667`.\n\nRequested executor: native `script-runner`, `gpt-5.6-luna`, low. Native observed provenance is recorded in `native-remaining-role-provenance.json`."
+    ]
+  },
+  {
+    "id": "01a080fe-7805-77f0-982d-5c347aa60027",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "low",
+    "agent_path": "/root/repair_gates_round2",
+    "agent_role": "script-runner",
+    "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a080fe-1ef5-7011-94c6-2f56dc35ddae\",\"depth\":1,\"agent_path\":\"/root/repair_gates_round2\",\"agent_nickname\":\"Chandrasekhar\",\"agent_role\":\"script-runner\"}}}",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T09-29-15-01a080fe-7805-77f0-982d-5c347aa60027.jsonl",
+    "selected_evidence": [
+      {
+        "type": "loaded_role_developer_instructions",
+        "file": ".codex/agents/script-runner.toml",
+        "file_sha256": "c25e15631146484210f3d5d027baa34a709e2f438233125663f30a0435c70710",
+        "exact_role_instructions_present": true
+      },
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a080fe-7858-7a83-8c04-a109b5d1db01",
+          "model": "gpt-5.6-luna",
+          "effort": "low"
+        }
+      }
+    ],
+    "tool_calls": [
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec"
+    ],
+    "final_messages": [
+      "All six approved gates passed sequentially in the repository root with no retries, fallbacks, edits, or extra commands.\n\n- Guards: exit 0\n- FP delivery checker: exit 0\n- Codex manual-loop checker: exit 0\n- `test_fp_delivery.py`: exit 0, 16 tests OK\n- `test_codex_manual_loop.py`: exit 0, 16 tests OK\n- `git diff --check`: exit 0\n\nTested state: `evidence/round2-manifest.json`, SHA256 `7302d63aa947165b1fcdafb7b22deb09ca67f619d091aaf753c2ff0df141f667`.\n\nRequested executor: native `script-runner`, `gpt-5.6-luna`, low. Native observed provenance is recorded in `native-remaining-role-provenance.json`."
+    ]
+  }
+]

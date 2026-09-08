@@ -1,0 +1,225 @@
+[
+  {
+    "id": "01a07e1f-f231-7fe3-a4de-1f5d9757c792",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high",
+    "agent_path": null,
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/07/rollout-2026-09-07T20-06-58-01a07e1f-f231-7fe3-a4de-1f5d9757c792.jsonl",
+    "source": "vscode",
+    "agent_role": null,
+    "turn_contexts": [
+      {
+        "turn_id": "01a07e1f-f5cf-7ba2-9ec9-e5b4e684e749",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e21-4d46-71d3-b7bd-de727a51bb5d",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e25-7929-7882-a435-46cc303910e7",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e26-9595-79a0-b251-a64cb77da10e",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e27-3ff5-7ca0-96e9-97f68860bcba",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e29-2a4c-7311-a91a-1e7efb731abf",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e2a-bb5f-7180-b22d-47bc6f9c71cf",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e2c-41a3-76b1-8a4b-0a869c34a5a6",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e2d-0d82-7d43-8652-074d7ffd028a",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e2e-18ed-7583-b7db-62c92c55282a",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e2e-ef6f-7ad3-9254-adf91b287d9c",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e30-1639-7bd2-9882-f727666954f6",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      }
+    ]
+  },
+  {
+    "id": "01a07e30-95e3-7551-83eb-443426f50829",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high",
+    "agent_path": "/root/repair_qa_plan",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/07/rollout-2026-09-07T20-25-08-01a07e30-95e3-7551-83eb-443426f50829.jsonl",
+    "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a07e1f-f231-7fe3-a4de-1f5d9757c792\",\"depth\":1,\"agent_path\":\"/root/repair_qa_plan\",\"agent_nickname\":\"Schrodinger\",\"agent_role\":null}}}",
+    "agent_role": null,
+    "turn_contexts": [
+      {
+        "turn_id": "01a07e1f-f5cf-7ba2-9ec9-e5b4e684e749",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e21-4d46-71d3-b7bd-de727a51bb5d",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e25-7929-7882-a435-46cc303910e7",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e26-9595-79a0-b251-a64cb77da10e",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e27-3ff5-7ca0-96e9-97f68860bcba",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e29-2a4c-7311-a91a-1e7efb731abf",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e2a-bb5f-7180-b22d-47bc6f9c71cf",
+        "model": "gpt-6-astra",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e2c-41a3-76b1-8a4b-0a869c34a5a6",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e2d-0d82-7d43-8652-074d7ffd028a",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e2e-18ed-7583-b7db-62c92c55282a",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e2e-ef6f-7ad3-9254-adf91b287d9c",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e30-1639-7bd2-9882-f727666954f6",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      },
+      {
+        "turn_id": "01a07e30-9646-7441-a07d-fe617e20195f",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      }
+    ]
+  },
+  {
+    "id": "01a07e30-f4c8-7db1-b3cf-0953bae3ce2d",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium",
+    "agent_path": "/root/repair_qa_sol",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/07/rollout-2026-09-07T20-25-32-01a07e30-f4c8-7db1-b3cf-0953bae3ce2d.jsonl",
+    "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a07e1f-f231-7fe3-a4de-1f5d9757c792\",\"depth\":1,\"agent_path\":\"/root/repair_qa_sol\",\"agent_nickname\":\"Newton\",\"agent_role\":null}}}",
+    "agent_role": null,
+    "turn_contexts": [
+      {
+        "turn_id": "01a07e30-f510-76a3-84cb-61a19d57cd78",
+        "model": "gpt-5.6-sol",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      }
+    ]
+  },
+  {
+    "id": "01a07e33-f05b-7b72-b443-5215fa508e9c",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "high",
+    "agent_path": "/root/repair_architect",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/07/rollout-2026-09-07T20-28-48-01a07e33-f05b-7b72-b443-5215fa508e9c.jsonl",
+    "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a07e1f-f231-7fe3-a4de-1f5d9757c792\",\"depth\":1,\"agent_path\":\"/root/repair_architect\",\"agent_nickname\":\"Sartre\",\"agent_role\":null}}}",
+    "agent_role": null,
+    "turn_contexts": [
+      {
+        "turn_id": "01a07e33-f0ac-7131-9776-84baebb449dc",
+        "model": "gpt-6-astra",
+        "effort": "high",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      }
+    ]
+  },
+  {
+    "id": "01a07e35-d6c7-77d0-803e-9f8d745847f9",
+    "model": "gpt-5.6-sol",
+    "reasoning_effort": "medium",
+    "agent_path": "/root/repair_dev",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/07/rollout-2026-09-07T20-30-52-01a07e35-d6c7-77d0-803e-9f8d745847f9.jsonl",
+    "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a07e1f-f231-7fe3-a4de-1f5d9757c792\",\"depth\":1,\"agent_path\":\"/root/repair_dev\",\"agent_nickname\":\"Descartes\",\"agent_role\":null}}}",
+    "agent_role": null,
+    "turn_contexts": [
+      {
+        "turn_id": "01a07e35-d71c-70e2-9ae0-7573bda53ee4",
+        "model": "gpt-5.6-sol",
+        "effort": "medium",
+        "cwd": "/Users/chris/sources/yoizen/platform-cluster"
+      }
+    ]
+  }
+]

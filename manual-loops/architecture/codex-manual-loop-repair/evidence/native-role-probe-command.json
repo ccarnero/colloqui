@@ -1,0 +1,16 @@
+{
+  "command": [
+    "codex",
+    "exec",
+    "--strict-config",
+    "--sandbox",
+    "read-only",
+    "--json",
+    "-c",
+    "mcp_servers.node_repl.enabled=false",
+    "-c",
+    "mcp_servers.computer-use.enabled=false",
+    "Authorized configuration repair smoke probe only; not a product manual loop. Do not read files, edit anything, run shell commands, tests, builds or E2E. Use the native configured custom agent fp-dev exactly once ONLY if your spawn tool exposes an explicit structural selector for custom agents. Do not copy role instructions or select by task name alone. Supply this harmless task: Report the role name and one distinctive duty from your loaded developer instructions, without any tools or file reads, then stop. Wait for that child. Return the selector used and child identity. If there is no structural custom-agent selector, report its absence and list the available spawn argument names, with no delegation or workaround. This probe is explicitly authorized by the user-approved Codex configuration repair."
+  ],
+  "purpose": "Native custom-role selection probe; no prompt-copy fallback"
+}

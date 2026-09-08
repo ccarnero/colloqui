@@ -1,0 +1,74 @@
+[
+  {
+    "id": "01a08112-bc77-7c51-b9f5-fb530cdb6ab2",
+    "model": "gpt-6-astra",
+    "reasoning_effort": "medium",
+    "agent_path": null,
+    "agent_role": null,
+    "source": "exec",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T09-51-23-01a08112-bc77-7c51-b9f5-fb530cdb6ab2.jsonl",
+    "selected_evidence": [
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a08112-bcc2-7bd0-880a-e4c13264129f",
+          "model": "gpt-6-astra",
+          "effort": "medium"
+        }
+      },
+      {
+        "type": "native_spawn",
+        "selector": "script-runner",
+        "task_name": "repair_gates_round3",
+        "fork_turns": "none"
+      }
+    ],
+    "tool_calls": [
+      "spawn_agent",
+      "wait_agent",
+      "wait_agent"
+    ],
+    "final_messages": []
+  },
+  {
+    "id": "01a08113-2183-7e13-865f-fbd83b172b91",
+    "model": "gpt-5.6-luna",
+    "reasoning_effort": "low",
+    "agent_path": "/root/repair_gates_round3",
+    "agent_role": "script-runner",
+    "source": "{\"subagent\":{\"thread_spawn\":{\"parent_thread_id\":\"01a08112-bc77-7c51-b9f5-fb530cdb6ab2\",\"depth\":1,\"agent_path\":\"/root/repair_gates_round3\",\"agent_nickname\":\"Noether\",\"agent_role\":\"script-runner\"}}}",
+    "rollout_path": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T09-51-49-01a08113-2183-7e13-865f-fbd83b172b91.jsonl",
+    "selected_evidence": [
+      {
+        "type": "loaded_role_developer_instructions",
+        "file": ".codex/agents/script-runner.toml",
+        "file_sha256": "c25e15631146484210f3d5d027baa34a709e2f438233125663f30a0435c70710",
+        "exact_role_instructions_present": true
+      },
+      {
+        "type": "turn_context",
+        "data": {
+          "turn_id": "01a08113-21cd-7a42-afcc-6653f782daaf",
+          "model": "gpt-5.6-luna",
+          "effort": "low"
+        }
+      }
+    ],
+    "tool_calls": [
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec",
+      "exec"
+    ],
+    "final_messages": [
+      "Current `repair_gates_round3` run completed all six gates successfully in `/Users/chris/sources/yoizen/platform-cluster`.\n\n| Command | Status | Duration | Key output |\n|---|---:|---:|---|\n| `/bin/bash scripts/checks/doc-code-guards.sh` | 0 | 1.00s | `KISS doc/code guards passed.` |\n| `python3 scripts/checks/check-fp-delivery.py` | 0 | 0.00s | `tool-neutral manual-loop integration validated` |\n| `python3 scripts/checks/check-codex-manual-loop.py` | 0 | 0.00s | `project Codex manual-loop policy and hash lock validated` |\n| `python3 -m unittest discover -s scripts/tests -p 'test_fp_delivery.py'` | 0 | 0.00s | 16 tests, `OK` |\n| `python3 -m unittest discover -s scripts/tests -p 'test_codex_manual_loop.py'` | 0 | 0.03s | 18 tests, `OK` |\n| `git diff --check` | 0 | 0.00s | No output |\n\nTested state: `evidence/round3-manifest.json`, SHA256 `8c09af1a22290378414b79b86f6eb10f0b78a285d1ff81fc3075c5ba5aaae050`.\n\nRequested executor: `gpt-5.6-luna`, low. The shell records process session `28669` for the first gate and completed command records for the remainder; model/turn provenance is not exposed by `exec_command` and must be taken from the principal\u2019s native-run evidence. This is the current round3 run, separate from prior smoke evidence."
+    ]
+  }
+]

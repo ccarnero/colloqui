@@ -1,0 +1,16 @@
+{
+  "command": [
+    "codex",
+    "exec",
+    "--strict-config",
+    "--sandbox",
+    "read-only",
+    "--json",
+    "-c",
+    "mcp_servers.node_repl.enabled=false",
+    "-c",
+    "mcp_servers.computer-use.enabled=false",
+    "Harmless native configuration smoke only, explicitly authorized by the repair plan and final user selection of Luna. This is NOT QA or code review and MUST NOT read, summarize, transmit, or inspect any repository files/source/documentation. Do not run tools except native spawn and wait. No shell commands, builds, tests, E2E, edits or workarounds. Select exactly these configured agent_type values with fork_turns none: script-runner, fp-qa, fp-architect, fp-reviewer. At most three at once; wait and then launch the remaining one. Pass each ONLY this task: Authorized no-tool/no-file-read role-loading smoke; report your role name and one short distinctive duty from already-loaded developer instructions, then stop; do not read files or use tools, and do not perform QA, review, gates or give APPROVED. Do not copy role definitions or override model/effort. Wait for all and report identities and their short responses. If any native role selector is unavailable report it without fallback. This excludes the repository-content QA/review action that remains pending separate authorization."
+  ],
+  "scope": "No-code no-read smoke; excludes blocked repository-content QA/reviews"
+}

@@ -35,6 +35,13 @@ All non-trivial changes go through the **manual-loop system**:
   implementation and validation after it, and assigns implementation to
   `fp-dev`. The developer owns regression tests. Two independent reviewers
   judge the unchanged final state; the principal does not review its own work.
+- Routine build, test, and E2E gate commands default to a separate mechanical
+  executor whose configured cost is below both the implementation/QA tier and
+  the economical coding tier. Verify both callability and the applicable cost
+  basis before launch; public API pricing alone does not establish tool billing.
+  Never silently substitute a more expensive role. The executor runs
+  commands verbatim and reports evidence only. It does not diagnose, edit,
+  retry, change scope, or decide closure.
 - Shared role duties live in [`DOCS/guides/agent-roles.md`](DOCS/guides/agent-roles.md).
 - Manual-loop owns retries, corrections, and task closure. FP role commands are
   specialist instructions and must not start a competing retry or closure loop.
@@ -192,6 +199,18 @@ Tool configuration inherits global choices by default. Any local role tuning
 is explicit and structural; it never substitutes for recording requested and
 observed model identity on an actual run. Reviewers remain no weaker than the
 implementer under the selected tool/profile policy.
+
+The project-local `.codex/` manual-loop configuration is a deliberate exception
+to default inheritance and is protected by its checked-in hash lock and G19.
+Changing those pins, role instructions, lock, checker, or guard integration
+requires a dedicated human-approved configuration repair; a routine feature SPEC
+cannot authorize changes to its own execution or protection mechanism. The lock
+and guard detect repository drift, while the active sandbox may separately deny
+writes. Neither establishes host immutability or remote branch protection.
+For this Codex role set, the human explicitly approved a runner at the economical
+coding tier because no callable lower-cost configured model met the policy; it
+remains below the implementation/QA tier. This exception permits no automatic
+fallback to a higher-cost model.
 
 ## Retired 2026-07-29 (do not resurrect)
 

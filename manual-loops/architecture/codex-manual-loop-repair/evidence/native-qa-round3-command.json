@@ -1,0 +1,15 @@
+{
+  "command": [
+    "codex",
+    "exec",
+    "--strict-config",
+    "--sandbox",
+    "read-only",
+    "--json",
+    "-c",
+    "mcp_servers.node_repl.enabled=false",
+    "-c",
+    "mcp_servers.computer-use.enabled=false",
+    "Act only as native dispatcher for approved T01 manual-loop repair, existing ChatGPT subscription only; no API/purchases/auth/provider changes. Only spawn and wait tools, waits max60000ms without busy polling. Spawn one configured agent_type fp-qa, task_name repair_qa_round3, fork_turns none, no model/effort overrides or copied role definitions. Task: Read full AGENTS.md, complete SPEC manual-loops/architecture/codex-manual-loop-repair.md, shared manual-loop/role contracts, and evidence/qa-round2-report.md, review-round2-objections.md and native-dev-correction3-provenance.json. Perform read-only coverage QA of correction attempt3. Frozen state round3-manifest.json hash 8c09af1a22290378414b79b86f6eb10f0b78a285d1ff81fc3075c5ba5aaae050. Read round3-diff, round3-staged.diff, round3-unstaged.diff, round3-new-files.json; baseline.diff/status distinguish preexisting work. Compare round2 and round3 manifests: only checker and its tests changed, preserve prior QA findings for byte-identical artifacts, validate all nine acceptance cases still supported. Inspect correction and regressions: non-string developer_instructions must return structural diagnostics without exception, pure and actual filesystem cases including 7/123 and TOML other value types, no existing tests weakened or lost, ancestor symlink checks retained, diagnostics not silently swallowed. Verify current 17 hashes. Evidence under SPEC evidence directory: round3-preservation.json, earlier native five-role load proof and protected-path-probe.json remain unchanged; principal independently captures your current Sol medium telemetry. Read only repair/contracts/evidence/direct necessary precedents, no secrets/unrelated content/network. No writes/edits, gates/tests/builds/E2E/install/commits/delegation/retries/closure. Return QA_READY_FOR_GATES if no necessary gaps, otherwise precise required correction. Do not issue reviewer approval. Keep read outputs bounded and reread any truncated material needed. Dispatcher wait and return report, no fallback."
+  ]
+}

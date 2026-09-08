@@ -1,0 +1,274 @@
+diff --git a/.codex/config.toml b/.codex/config.toml
+index 54953aeb..8695514f 100644
+--- a/.codex/config.toml
++++ b/.codex/config.toml
+@@ -1,3 +1,7 @@
+-# Project configuration intentionally inherits the active global Codex profile.
+-# Local role files are absent unless a future change documents an explicit,
+-# structurally validated project override.
++model = "gpt-6-astra"
++model_reasoning_effort = "medium"
++
++[agents]
++enabled = true
++default_subagent_model = "gpt-5.6-sol"
++default_subagent_reasoning_effort = "medium"
+diff --git a/AGENTS.md b/AGENTS.md
+index 9be20833..2798587f 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -35,6 +35,13 @@ All non-trivial changes go through the **manual-loop system**:
+   implementation and validation after it, and assigns implementation to
+   `fp-dev`. The developer owns regression tests. Two independent reviewers
+   judge the unchanged final state; the principal does not review its own work.
++- Routine build, test, and E2E gate commands default to a separate mechanical
++  executor whose configured cost is below both the implementation/QA tier and
++  the economical coding tier. Verify both callability and the applicable cost
++  basis before launch; public API pricing alone does not establish tool billing.
++  Never silently substitute a more expensive role. The executor runs
++  commands verbatim and reports evidence only. It does not diagnose, edit,
++  retry, change scope, or decide closure.
+ - Shared role duties live in [`DOCS/guides/agent-roles.md`](DOCS/guides/agent-roles.md).
+ - Manual-loop owns retries, corrections, and task closure. FP role commands are
+   specialist instructions and must not start a competing retry or closure loop.
+@@ -193,6 +200,18 @@ is explicit and structural; it never substitutes for recording requested and
+ observed model identity on an actual run. Reviewers remain no weaker than the
+ implementer under the selected tool/profile policy.
+ 
++The project-local `.codex/` manual-loop configuration is a deliberate exception
++to default inheritance and is protected by its checked-in hash lock and G19.
++Changing those pins, role instructions, lock, checker, or guard integration
++requires a dedicated human-approved configuration repair; a routine feature SPEC
++cannot authorize changes to its own execution or protection mechanism. The lock
++and guard detect repository drift, while the active sandbox may separately deny
++writes. Neither establishes host immutability or remote branch protection.
++For this Codex role set, the human explicitly approved a runner at the economical
++coding tier because no callable lower-cost configured model met the policy; it
++remains below the implementation/QA tier. This exception permits no automatic
++fallback to a higher-cost model.
++
+ ## Retired 2026-07-29 (do not resurrect)
+ 
+ - Repo-level SDD tooling (root CLAUDE.md orchestrator text,
+diff --git a/DOCS/archive/INDEX.md b/DOCS/archive/INDEX.md
+index 3bc74ca4..8ab405e5 100644
+--- a/DOCS/archive/INDEX.md
++++ b/DOCS/archive/INDEX.md
+@@ -1753,3 +1753,14 @@ The [former index snapshot](documentation-index-2026-09-06.md) and
+ [FP delivery proposal snapshot](fp-delivery-proposal-2026-09-05.md) preserve the
+ complete pre-consolidation sources. These snapshots are historical evidence,
+ not current execution instructions or proof of a live provider run.
++
++## 2026-09-07 — Codex manual-loop configuration repair (pending)
++
++The approved repair adds standalone project-local Codex role definitions, exact
++pin validation, a SHA-256 drift lock, and G19 guard integration. The configuration
++is installed, and fresh native sessions loaded all five roles with matching
++observed model provenance. Final QA, the six repair gates, and two independent
++reviews remain pending; this row does not mark the repair complete. Procedure and
++current evidence boundaries are documented in the
++[Codex manual-loop guide](../guides/codex-manual-loop.md) and
++[repair SPEC](../../manual-loops/architecture/codex-manual-loop-repair.md).
+diff --git a/DOCS/guides/agent-roles.md b/DOCS/guides/agent-roles.md
+index d2912434..feadd9d0 100644
+--- a/DOCS/guides/agent-roles.md
++++ b/DOCS/guides/agent-roles.md
+@@ -9,6 +9,12 @@ global settings and may provide intentional local tuning, but cannot weaken
+ these role contracts. Supply the applicable full section with the task packet
+ when a global named role needs repository context or a named role is unavailable.
+ These names describe responsibilities, not evidence that a native agent loaded.
++The approved project-local Codex definitions are hash-locked as documented in
++[`codex-manual-loop.md`](codex-manual-loop.md). Routine task scope cannot change
++the definitions, runner, lock, checker, or guard integration that governs it.
++Its human-approved cost-policy exception permits the configured runner to equal
++the economical coding tier while remaining below implementation/QA; it permits no
++automatic fallback to a higher-cost model.
+ 
+ ## Principal
+ 
+@@ -98,6 +104,25 @@ Report acceptance cases, coverage findings, changed test files, commands with
+ actual statuses, model/run provenance, and skipped checks or blockers. A missing
+ prerequisite remains pending evidence rather than a pass.
+ 
++## Mechanical gate execution
++
++The mechanical gate executor is separate from implementation and QA. Resolve a
++configured model below both the implementation/QA tier and the economical coding
++tier before launch. No provider or model is pinned here. If none is available,
++report a prerequisite blocker; do not silently substitute a more expensive role.
++A human-approved exception is required to exceed the cost ceiling, and principal
++execution as a fallback must still respect it. Verify actual callability and the
++applicable tool cost basis; public API pricing alone does not establish billing.
++
++Execute only the exact commands supplied by the approved SPEC, in its working
++directories and order, stopping at the first failure. Report exit status and
++error output; do not diagnose, remediate, edit, retry, change scope, or decide
++closure. Persist full sanitized command output, duration, tested-state identity,
++and requested and observed model/session/turn. Return a concise summary with the
++evidence paths. Each command has one owner. An interruption or handoff transfers
++the existing process/run identity and completion evidence and never duplicates a
++build, E2E run, or other mutating command. The principal owns retries and closure.
++
+ ## Architecture advice (fp-architect)
+ 
+ You are the optional FP architecture specialist. Advise only when a task has a
+diff --git a/DOCS/guides/manual-loop.md b/DOCS/guides/manual-loop.md
+index 66a01c37..e8cf3ac7 100644
+--- a/DOCS/guides/manual-loop.md
++++ b/DOCS/guides/manual-loop.md
+@@ -29,11 +29,28 @@ Local role files are absent by default, and settings stay empty until intentiona
+ tuning. To tune a native role, supply the complete definition required by that
+ tool and verify the effective configuration. Do not copy entire global catalogs
+ or infer provider loading from files being present.
++This repository's approved project-local Codex role set is the named exception;
++[`codex-manual-loop.md`](codex-manual-loop.md) documents its pins, protection
++layers, and required native evidence. A normal feature SPEC cannot authorize a
++change to its own Codex runner, role definitions, lock, checker, or guard wiring;
++that requires dedicated human-approved configuration scope.
++That approved role set includes a human cost-policy exception allowing its runner
++to equal the economical coding tier while remaining below implementation/QA.
++It does not permit an automatic higher-cost model fallback.
+ Resolve the actual launch policy before delegation: economical implementation and
+ QA, capable judgment, and reviewers no weaker than the implementer within the
+ selected tool's policy. Record requested and observed model and agent/run identity
+ separately; configured names do not prove execution or cost.
+ 
++Resolve routine build, test, and E2E execution separately to the configured
++mechanical executor, with an explicit cost ceiling below both the implementation/
++QA tier and the economical coding tier. Verify actual callability and the cost
++basis that applies to the selected tool; public API pricing alone does not prove
++its billing. If no eligible executor is available,
++report a prerequisite blocker before launching commands. Do not silently use a
++more expensive model. Exceeding the ceiling requires a human-approved exception;
++principal execution is still subject to the same ceiling.
++
+ Use global named roles when available, supplying the complete repository role and
+ task packet. If a named role is unavailable, explicitly delegate its role packet
+ using the active model policy and record the fallback. Do not infer that an
+@@ -94,17 +111,23 @@ loop or bypass SPEC approval.
+ 
+ 3. **QA and gates.** After implementation, `fp-qa` checks coverage against its
+    pre-implementation cases and may complete missing tests within the approved
+-   paths. QA edits finish before any gate runs. The principal assigns gate
+-   execution to QA or the implementer as appropriate and assembles the evidence;
+-   the principal owns orchestration, not necessarily shell execution. Then run the SPEC's Gates in order, then the task's own **Accept** commands,
++   paths. QA edits finish before any gate runs. The principal assigns routine
++   command execution to the configured mechanical executor and assembles the
++   evidence; QA and implementation remain separate substantive roles. Then run
++   the SPEC's Gates in order, then the task's own **Accept** commands,
+    verbatim. First failure ends the attempt. Two gate classes, per the SPEC's labels:
+    - Gates labeled **ITERATION** run on EVERY attempt (fast feedback).
+    - Gates labeled **COMMIT GATE** run ONCE per task, only after all iteration
+      gates are green — immediately before dual review. A commit-gate failure is
+      a failed attempt: fix, re-green iteration gates, re-run the commit gate.
+    - Honor any PRECONDITION rules in the SPEC's Gates section before task 1.
+-   - Capture command, exit status, output, and reviewed-state identity for every
+-     gate. Include affected-build reproducibility evidence required by AGENTS.md.
++   - Give each command one executor owner. On interruption or handoff, transfer
++     the existing process/run identity and completion evidence; never issue a
++     duplicate command. The principal owns retries, scope, and closure.
++   - Persist full sanitized output, exit status, duration, tested-state identity,
++     and requested and observed executor model/session/turn for every gate. Keep
++     summaries concise and point to the full evidence. Include affected-build
++     reproducibility evidence required by AGENTS.md.
+ 
+ 4. **Dual review.** Capture staged AND unstaged diffs, a change summary, and full
+    untracked new file content; distinguish task changes from the baseline. Launch
+@@ -186,9 +209,18 @@ through validation; previous approvals cannot certify changed content.
+ ## Tests and gates
+ 
+ A test checks behavior. A gate requires specified checks to succeed before work
+-can advance. Gates are commands and evidence requirements, not separate agents.
+-The principal assigns execution, typically to QA or the implementer, and requires
+-actual commands, exit statuses, output, and identification of the tested state.
++can advance. Routine gate commands are owned by the configured mechanical
++executor, separate from implementation and QA. It executes the exact supplied
++commands in their declared working directories and order, stops at the first
++failure, and reports exit status and error output without diagnosis, remediation,
++edits, retries, scope decisions, or closure decisions. Command semantics and
++mutation boundaries do not change when execution is delegated.
++
++If delegation is unavailable or an in-flight process cannot be inherited safely,
++the principal reports the reason before execution. It may execute only as a
++documented fallback that still satisfies the approved cost ceiling; otherwise the
++missing eligible executor is a blocker. A handoff transfers the existing process
++identity and completion evidence instead of starting the command again.
+ 
+ | Layer | What it demonstrates | Workflow-disable example |
+ | --- | --- | --- |
+diff --git a/scripts/checks/check-fp-delivery.py b/scripts/checks/check-fp-delivery.py
+index 6026e7a0..4a1c5811 100644
+--- a/scripts/checks/check-fp-delivery.py
++++ b/scripts/checks/check-fp-delivery.py
+@@ -16,12 +16,13 @@ from pathlib import Path
+ from typing import Any
+ 
+ 
+-ROLE_NAMES = ("fp-dev", "fp-qa", "fp-reviewer", "fp-architect")
++ROLE_NAMES = ("fp-dev", "fp-qa", "fp-reviewer", "fp-architect", "script-runner")
+ ROLE_SANDBOX = {
+     "fp-dev": "workspace-write",
+     "fp-qa": "workspace-write",
+     "fp-reviewer": "read-only",
+     "fp-architect": "read-only",
++    "script-runner": "workspace-write",
+ }
+ SUPPORTED_REASONING_EFFORTS = frozenset(
+     {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}
+diff --git a/scripts/checks/doc-code-guards.sh b/scripts/checks/doc-code-guards.sh
+index f4a3789e..e1a74ec5 100755
+--- a/scripts/checks/doc-code-guards.sh
++++ b/scripts/checks/doc-code-guards.sh
+@@ -40,6 +40,7 @@
+ #             the inversion of the nats-consumer-lag allow-list.
+ #   G17       no silent drift in Core NATS publish policy.
+ #   G18       all `LazyNatsConnection` wrappers remain explicit legacy debt.
++#   G19       project-local Codex manual-loop pins and hash lock remain intact.
+ #
+ # Usage:
+ #   scripts/checks/doc-code-guards.sh [--full|--kiss] [--verbose|-v]
+@@ -1312,6 +1313,23 @@ services/agent-scheduler-service/src/providers/nats.provider.ts
+   [[ "$ok" -eq 1 ]] && pass "$guard: LazyNatsConnection remains confined to the documented legacy debt"
+ }
+ 
++# ---------------------------------------------------------------------------
++# G19 — Project-local Codex manual-loop policy and locked role definitions.
++# ---------------------------------------------------------------------------
++g19_codex_manual_loop() {
++  local guard="G19(codex-manual-loop)"
++  local output
++  local status
++
++  output=$(python3 scripts/checks/check-codex-manual-loop.py 2>&1)
++  status=$?
++  if [[ "$status" -ne 0 ]]; then
++    fail "$guard: checker failed:\n$output"
++  else
++    pass "$guard: mandatory Codex pins and hash lock validated"
++  fi
++}
++
+ main() {
+   if [[ "$MODE" == "kiss" ]]; then
+     note "Running KISS mode (core + bus guard set)"
+@@ -1346,6 +1364,8 @@ main() {
+     g18_legacy_lazy_nats_wrappers
+   fi
+ 
++  g19_codex_manual_loop
++
+   echo
+   if [[ "$FAILURES" -eq 0 ]]; then
+     if [[ "$MODE" == "kiss" ]]; then
+diff --git a/scripts/tests/test_fp_delivery.py b/scripts/tests/test_fp_delivery.py
+index 0d39e204..d5c058ee 100644
+--- a/scripts/tests/test_fp_delivery.py
++++ b/scripts/tests/test_fp_delivery.py
+@@ -67,6 +67,7 @@ class CodexRoutingTests(unittest.TestCase):
+             ("fp-qa", {"model_reasoning_effort": "low", "sandbox_mode": "workspace-write"}),
+             ("fp-reviewer", {"model": "provider/judgment", "sandbox_mode": "read-only"}),
+             ("fp-architect", {"description": "Architecture tuning"}),
++            ("script-runner", {"model": "provider/mechanical", "model_reasoning_effort": "low"}),
+         )
+         for role, tuning in cases:
+             with self.subTest(role=role):
