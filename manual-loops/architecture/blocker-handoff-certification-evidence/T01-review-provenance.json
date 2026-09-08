@@ -1,0 +1,86 @@
+[
+  {
+    "source_file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T16-49-11-01a08291-3ac0-7d80-95bf-c9c9f1b5558b.jsonl",
+    "run": "01a08291-3ac0-7d80-95bf-c9c9f1b5558b",
+    "source": {
+      "subagent": {
+        "thread_spawn": {
+          "parent_thread_id": "01a08275-b4ee-7ce0-8063-bba49900ca01",
+          "depth": 1,
+          "agent_path": "/root/review_t01_a",
+          "agent_nickname": "Kierkegaard",
+          "agent_role": "fp-reviewer"
+        }
+      }
+    },
+    "agent_role": "fp-reviewer",
+    "turns": [
+      {
+        "timestamp": "2026-09-08T19:49:11.044Z",
+        "turn_id": "01a08275-c011-7ee3-a00f-66b7fc9406ab",
+        "model": "gpt-6-astra",
+        "effort": "medium"
+      },
+      {
+        "timestamp": "2026-09-08T19:49:11.045Z",
+        "turn_id": "01a0827f-3954-70f3-9fc6-6f8966922bbf",
+        "model": "gpt-6-astra",
+        "effort": "medium"
+      },
+      {
+        "timestamp": "2026-09-08T19:49:11.045Z",
+        "turn_id": "01a08286-ea7c-7b41-b29f-bb9b60ce3a75",
+        "model": "gpt-6-astra",
+        "effort": "medium"
+      },
+      {
+        "timestamp": "2026-09-08T19:49:13.375Z",
+        "turn_id": "01a08291-3b0f-7663-8151-7656490bc98f",
+        "model": "gpt-6-astra",
+        "effort": "high"
+      }
+    ]
+  },
+  {
+    "source_file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T16-49-30-01a08291-8561-7551-98a7-44eff5bfcee6.jsonl",
+    "run": "01a08291-8561-7551-98a7-44eff5bfcee6",
+    "source": {
+      "subagent": {
+        "thread_spawn": {
+          "parent_thread_id": "01a08275-b4ee-7ce0-8063-bba49900ca01",
+          "depth": 1,
+          "agent_path": "/root/review_t01_b",
+          "agent_nickname": "Maxwell",
+          "agent_role": "fp-reviewer"
+        }
+      }
+    },
+    "agent_role": "fp-reviewer",
+    "turns": [
+      {
+        "timestamp": "2026-09-08T19:49:30.153Z",
+        "turn_id": "01a08275-c011-7ee3-a00f-66b7fc9406ab",
+        "model": "gpt-6-astra",
+        "effort": "medium"
+      },
+      {
+        "timestamp": "2026-09-08T19:49:30.153Z",
+        "turn_id": "01a0827f-3954-70f3-9fc6-6f8966922bbf",
+        "model": "gpt-6-astra",
+        "effort": "medium"
+      },
+      {
+        "timestamp": "2026-09-08T19:49:30.153Z",
+        "turn_id": "01a08286-ea7c-7b41-b29f-bb9b60ce3a75",
+        "model": "gpt-6-astra",
+        "effort": "medium"
+      },
+      {
+        "timestamp": "2026-09-08T19:49:32.369Z",
+        "turn_id": "01a08291-85b2-7b03-b335-d815343dabac",
+        "model": "gpt-6-astra",
+        "effort": "high"
+      }
+    ]
+  }
+]

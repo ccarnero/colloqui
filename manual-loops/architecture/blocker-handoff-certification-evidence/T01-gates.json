@@ -1,0 +1,83 @@
+{
+  "source_file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T16-38-20-01a08287-4e02-7f50-a8ae-5418bc1f3d83.jsonl",
+  "run": "01a08287-4e02-7f50-a8ae-5418bc1f3d83",
+  "requested_role": "script-runner",
+  "requested_model": "gpt-5.6-luna",
+  "requested_effort": "low",
+  "native_turns": [
+    {
+      "timestamp": "2026-09-08T19:38:20.605Z",
+      "turn_id": "01a08275-c011-7ee3-a00f-66b7fc9406ab",
+      "model": "gpt-6-astra",
+      "effort": "medium"
+    },
+    {
+      "timestamp": "2026-09-08T19:38:20.605Z",
+      "turn_id": "01a0827f-3954-70f3-9fc6-6f8966922bbf",
+      "model": "gpt-6-astra",
+      "effort": "medium"
+    },
+    {
+      "timestamp": "2026-09-08T19:38:20.605Z",
+      "turn_id": "01a08286-ea7c-7b41-b29f-bb9b60ce3a75",
+      "model": "gpt-6-astra",
+      "effort": "medium"
+    },
+    {
+      "timestamp": "2026-09-08T19:38:24.407Z",
+      "turn_id": "01a08287-4e47-7b51-b463-7e926fe21d82",
+      "model": "gpt-5.6-luna",
+      "effort": "low"
+    },
+    {
+      "timestamp": "2026-09-08T19:47:28.308Z",
+      "turn_id": "01a0828f-a6e2-7cf3-9b51-12165ff1372f",
+      "model": "gpt-5.6-luna",
+      "effort": "low"
+    }
+  ],
+  "state_file": "T01-state.json",
+  "state_sha256": "c115b02323a24498f07d1a2869c65afd9719bc95e96e9cabb6b2685af634303b",
+  "gates": [
+    {
+      "command": "./scripts/checks/doc-code-guards.sh",
+      "native_call": "const r = await tools.exec_command({cmd:\"./scripts/checks/doc-code-guards.sh\",\"workdir\":\"/Users/chris/sources/yoizen/platform-cluster\",\"yield_time_ms\":10000,\"max_output_tokens\":20000}); text(r)\n",
+      "call_id": "call_BzouKheabqII2NTtkxQBOE1v",
+      "timestamp": "2026-09-08T19:47:42.850Z",
+      "native_result_file": "T01-gate-01.json",
+      "stdout_file": "T01-gate-01.stdout.txt",
+      "exit_code": 0,
+      "wall_time_seconds": 0.919999792
+    },
+    {
+      "command": "python3 ./scripts/checks/check-codex-manual-loop.py",
+      "native_call": "const r = await tools.exec_command({cmd:\"python3 ./scripts/checks/check-codex-manual-loop.py\",\"workdir\":\"/Users/chris/sources/yoizen/platform-cluster\",\"yield_time_ms\":10000,\"max_output_tokens\":20000}); text(r)\n",
+      "call_id": "call_P5Pmeu5LjN19K8XHk5O2ZBEl",
+      "timestamp": "2026-09-08T19:47:46.873Z",
+      "native_result_file": "T01-gate-02.json",
+      "stdout_file": "T01-gate-02.stdout.txt",
+      "exit_code": 0,
+      "wall_time_seconds": 2.625e-06
+    },
+    {
+      "command": "./scripts/checks/doc-code-guards.sh --full",
+      "native_call": "const r = await tools.exec_command({cmd:\"./scripts/checks/doc-code-guards.sh --full\",\"workdir\":\"/Users/chris/sources/yoizen/platform-cluster\",\"yield_time_ms\":10000,\"max_output_tokens\":20000}); text(r)\n",
+      "call_id": "call_OGVZANV9aJr6irnzhpDDczCN",
+      "timestamp": "2026-09-08T19:47:50.130Z",
+      "native_result_file": "T01-gate-03.json",
+      "stdout_file": "T01-gate-03.stdout.txt",
+      "exit_code": 0,
+      "wall_time_seconds": 3.727402542
+    },
+    {
+      "command": "test -f manual-loops/architecture/blocker-handoff-certification-evidence/deviations.md && grep -c \"DEVIATION A\" manual-loops/architecture/blocker-handoff-certification-evidence/deviations.md && grep -c \"DEVIATION B\" manual-loops/architecture/blocker-handoff-certification-evidence/deviations.md",
+      "native_call": "const r = await tools.exec_command({cmd:\"test -f manual-loops/architecture/blocker-handoff-certification-evidence/deviations.md && grep -c \\\"DEVIATION A\\\" manual-loops/architecture/blocker-handoff-certification-evidence/deviations.md && grep -c \\\"DEVIATION B\\\" manual-loops/architecture/blocker-handoff-certification-evidence/deviations.md\",\"workdir\":\"/Users/chris/sources/yoizen/platform-cluster\",\"yield_time_ms\":10000,\"max_output_tokens\":20000}); text(r)\n",
+      "call_id": "call_4S86WNQsX4rTPXK9gxpDGJ90",
+      "timestamp": "2026-09-08T19:47:57.776Z",
+      "native_result_file": "T01-gate-04.json",
+      "stdout_file": "T01-gate-04.stdout.txt",
+      "exit_code": 0,
+      "wall_time_seconds": 7.584e-06
+    }
+  ]
+}

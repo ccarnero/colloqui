@@ -1,0 +1,42 @@
+{
+  "source_file": "/Users/chris/.codex/sessions/2026/09/08/rollout-2026-09-08T16-19-40-01a08276-3683-7af0-9e31-bb72d4933875.jsonl",
+  "run": "01a08276-3683-7af0-9e31-bb72d4933875",
+  "source": {
+    "subagent": {
+      "thread_spawn": {
+        "parent_thread_id": "01a08275-b4ee-7ce0-8063-bba49900ca01",
+        "depth": 1,
+        "agent_path": "/root/qa_preflight",
+        "agent_nickname": "Epicurus",
+        "agent_role": "fp-qa"
+      }
+    }
+  },
+  "agent_role": "fp-qa",
+  "turns": [
+    {
+      "timestamp": "2026-09-08T19:19:40.483Z",
+      "turn_id": "01a08275-c011-7ee3-a00f-66b7fc9406ab",
+      "model": "gpt-6-astra",
+      "effort": "medium"
+    },
+    {
+      "timestamp": "2026-09-08T19:19:43.358Z",
+      "turn_id": "01a08276-36cb-7210-92dd-af1425ea03af",
+      "model": "gpt-5.6-sol",
+      "effort": "medium"
+    },
+    {
+      "timestamp": "2026-09-08T19:38:15.119Z",
+      "turn_id": "01a08287-362e-7732-a3dc-4b499bc8e182",
+      "model": "gpt-5.6-sol",
+      "effort": "medium"
+    },
+    {
+      "timestamp": "2026-09-08T19:45:40.208Z",
+      "turn_id": "01a0828e-0349-7f92-b49d-19c02a5c438c",
+      "model": "gpt-5.6-sol",
+      "effort": "medium"
+    }
+  ]
+}

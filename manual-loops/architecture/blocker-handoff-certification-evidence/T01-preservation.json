@@ -1,0 +1,11 @@
+{
+  "baseline": "baseline-manifest.json",
+  "checked_files": 3815,
+  "changed_baseline_paths": [
+    "manual-loops/architecture/blocker-handoff-certification.md"
+  ],
+  "allowed_coordinator_or_task_paths": [
+    "manual-loops/architecture/blocker-handoff-certification.md"
+  ],
+  "unexpected_changes": []
+}
