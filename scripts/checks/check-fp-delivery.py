@@ -16,12 +16,13 @@ from pathlib import Path
 from typing import Any
 
 
-ROLE_NAMES = ("fp-dev", "fp-qa", "fp-reviewer", "fp-architect")
+ROLE_NAMES = ("fp-dev", "fp-qa", "fp-reviewer", "fp-architect", "script-runner")
 ROLE_SANDBOX = {
     "fp-dev": "workspace-write",
     "fp-qa": "workspace-write",
     "fp-reviewer": "read-only",
     "fp-architect": "read-only",
+    "script-runner": "workspace-write",
 }
 SUPPORTED_REASONING_EFFORTS = frozenset(
     {"none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"}

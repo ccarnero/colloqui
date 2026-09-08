@@ -67,6 +67,7 @@ class CodexRoutingTests(unittest.TestCase):
             ("fp-qa", {"model_reasoning_effort": "low", "sandbox_mode": "workspace-write"}),
             ("fp-reviewer", {"model": "provider/judgment", "sandbox_mode": "read-only"}),
             ("fp-architect", {"description": "Architecture tuning"}),
+            ("script-runner", {"model": "provider/mechanical", "model_reasoning_effort": "low"}),
         )
         for role, tuning in cases:
             with self.subTest(role=role):

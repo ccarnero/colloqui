@@ -40,6 +40,7 @@
 #             the inversion of the nats-consumer-lag allow-list.
 #   G17       no silent drift in Core NATS publish policy.
 #   G18       all `LazyNatsConnection` wrappers remain explicit legacy debt.
+#   G19       project-local Codex manual-loop pins and hash lock remain intact.
 #
 # Usage:
 #   scripts/checks/doc-code-guards.sh [--full|--kiss] [--verbose|-v]
@@ -1312,6 +1313,23 @@ services/agent-scheduler-service/src/providers/nats.provider.ts
   [[ "$ok" -eq 1 ]] && pass "$guard: LazyNatsConnection remains confined to the documented legacy debt"
 }
 
+# ---------------------------------------------------------------------------
+# G19 — Project-local Codex manual-loop policy and locked role definitions.
+# ---------------------------------------------------------------------------
+g19_codex_manual_loop() {
+  local guard="G19(codex-manual-loop)"
+  local output
+  local status
+
+  output=$(python3 scripts/checks/check-codex-manual-loop.py 2>&1)
+  status=$?
+  if [[ "$status" -ne 0 ]]; then
+    fail "$guard: checker failed:\n$output"
+  else
+    pass "$guard: mandatory Codex pins and hash lock validated"
+  fi
+}
+
 main() {
   if [[ "$MODE" == "kiss" ]]; then
     note "Running KISS mode (core + bus guard set)"
@@ -1345,6 +1363,8 @@ main() {
     g17_core_nats_publish_policy
     g18_legacy_lazy_nats_wrappers
   fi
+
+  g19_codex_manual_loop
 
   echo
   if [[ "$FAILURES" -eq 0 ]]; then
