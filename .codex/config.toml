@@ -1,3 +1,7 @@
-# Project configuration intentionally inherits the active global Codex profile.
-# Local role files are absent unless a future change documents an explicit,
-# structurally validated project override.
+model = "gpt-6-astra"
+model_reasoning_effort = "medium"
+
+[agents]
+enabled = true
+default_subagent_model = "gpt-5.6-sol"
+default_subagent_reasoning_effort = "medium"
