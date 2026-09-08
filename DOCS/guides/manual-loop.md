@@ -29,10 +29,27 @@ Local role files are absent by default, and settings stay empty until intentiona
 tuning. To tune a native role, supply the complete definition required by that
 tool and verify the effective configuration. Do not copy entire global catalogs
 or infer provider loading from files being present.
+This repository's approved project-local Codex role set is the named exception;
+[`codex-manual-loop.md`](codex-manual-loop.md) documents its pins, protection
+layers, and required native evidence. A normal feature SPEC cannot authorize a
+change to its own Codex runner, role definitions, lock, checker, or guard wiring;
+that requires dedicated human-approved configuration scope.
+That approved role set includes a human cost-policy exception allowing its runner
+to equal the economical coding tier while remaining below implementation/QA.
+It does not permit an automatic higher-cost model fallback.
 Resolve the actual launch policy before delegation: economical implementation and
 QA, capable judgment, and reviewers no weaker than the implementer within the
 selected tool's policy. Record requested and observed model and agent/run identity
 separately; configured names do not prove execution or cost.
+
+Resolve routine build, test, and E2E execution separately to the configured
+mechanical executor, with an explicit cost ceiling below both the implementation/
+QA tier and the economical coding tier. Verify actual callability and the cost
+basis that applies to the selected tool; public API pricing alone does not prove
+its billing. If no eligible executor is available,
+report a prerequisite blocker before launching commands. Do not silently use a
+more expensive model. Exceeding the ceiling requires a human-approved exception;
+principal execution is still subject to the same ceiling.
 
 Use global named roles when available, supplying the complete repository role and
 task packet. If a named role is unavailable, explicitly delegate its role packet
@@ -94,17 +111,23 @@ loop or bypass SPEC approval.
 
 3. **QA and gates.** After implementation, `fp-qa` checks coverage against its
    pre-implementation cases and may complete missing tests within the approved
-   paths. QA edits finish before any gate runs. The principal assigns gate
-   execution to QA or the implementer as appropriate and assembles the evidence;
-   the principal owns orchestration, not necessarily shell execution. Then run the SPEC's Gates in order, then the task's own **Accept** commands,
+   paths. QA edits finish before any gate runs. The principal assigns routine
+   command execution to the configured mechanical executor and assembles the
+   evidence; QA and implementation remain separate substantive roles. Then run
+   the SPEC's Gates in order, then the task's own **Accept** commands,
    verbatim. First failure ends the attempt. Two gate classes, per the SPEC's labels:
    - Gates labeled **ITERATION** run on EVERY attempt (fast feedback).
    - Gates labeled **COMMIT GATE** run ONCE per task, only after all iteration
      gates are green — immediately before dual review. A commit-gate failure is
      a failed attempt: fix, re-green iteration gates, re-run the commit gate.
    - Honor any PRECONDITION rules in the SPEC's Gates section before task 1.
-   - Capture command, exit status, output, and reviewed-state identity for every
-     gate. Include affected-build reproducibility evidence required by AGENTS.md.
+   - Give each command one executor owner. On interruption or handoff, transfer
+     the existing process/run identity and completion evidence; never issue a
+     duplicate command. The principal owns retries, scope, and closure.
+   - Persist full sanitized output, exit status, duration, tested-state identity,
+     and requested and observed executor model/session/turn for every gate. Keep
+     summaries concise and point to the full evidence. Include affected-build
+     reproducibility evidence required by AGENTS.md.
 
 4. **Dual review.** Capture staged AND unstaged diffs, a change summary, and full
    untracked new file content; distinguish task changes from the baseline. Launch
@@ -131,8 +154,18 @@ loop or bypass SPEC approval.
 7. **Block.** Attempt budget exhausted, or same error twice in a row:
    - Preserve all task and preexisting work. No automatic revert, clean, or deletion.
    - Record in authorized Progress/BLOCKED.md, or return to the orchestrator if
-     those paths are not allowed: spec file, task id, date, attempt count, the
-     exact failing gate/objection, error output (trimmed), and what was tried per attempt.
+     those paths are not allowed. The record OPENS with a "## For humans"
+     section — at most 10 lines, plain language, no run IDs and no gate numbers:
+     what was attempted, what failed, and what decision is pending. It is
+     followed by the implementer's HANDOFF NOTE (plain-language cause,
+     `file:line`, candidate fixes). Only then comes the evidence: spec file,
+     task id, date, attempt count, the exact failing gate/objection, error
+     output (trimmed), and what was tried per attempt.
+   - Label execution exceptions that did not cause the failure as non-causal, so
+     they are not read at the same level as the actual cause.
+   - The handoff note is analysis, not authorization. It allocates no attempt,
+     creates no budget, and creates no continuation SPEC. Requesting it does not
+     reopen a closed or exhausted loop.
    - Report to the user and STOP the loop — do not continue to the next task.
 
 8. **Next.** After a successful task, reconcile changes with the preserved baseline
@@ -186,9 +219,18 @@ through validation; previous approvals cannot certify changed content.
 ## Tests and gates
 
 A test checks behavior. A gate requires specified checks to succeed before work
-can advance. Gates are commands and evidence requirements, not separate agents.
-The principal assigns execution, typically to QA or the implementer, and requires
-actual commands, exit statuses, output, and identification of the tested state.
+can advance. Routine gate commands are owned by the configured mechanical
+executor, separate from implementation and QA. It executes the exact supplied
+commands in their declared working directories and order, stops at the first
+failure, and reports exit status and error output without diagnosis, remediation,
+edits, retries, scope decisions, or closure decisions. Command semantics and
+mutation boundaries do not change when execution is delegated.
+
+If delegation is unavailable or an in-flight process cannot be inherited safely,
+the principal reports the reason before execution. It may execute only as a
+documented fallback that still satisfies the approved cost ceiling; otherwise the
+missing eligible executor is a blocker. A handoff transfers the existing process
+identity and completion evidence instead of starting the command again.
 
 | Layer | What it demonstrates | Workflow-disable example |
 | --- | --- | --- |
