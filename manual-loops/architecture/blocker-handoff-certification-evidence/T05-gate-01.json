@@ -1,0 +1,1 @@
+{"chunk_id":"88370c","wall_time_seconds":0.826837125,"exit_code":0,"original_token_count":41,"output":"\u001b[1;33m[NOTE]\u001b[0m Running KISS mode (core + bus guard set)\ndi-imports guard: CLEAN (0 files scanned, git-modified only)\n\n\u001b[0;32mKISS doc/code guards passed.\u001b[0m\n"}

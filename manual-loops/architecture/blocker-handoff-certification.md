@@ -455,7 +455,7 @@ durable record for `manual-loop/blocker-handoff`.
 - [x] T02 certification packet and independent verdicts over the committed state
 - [x] T03 predecessor Progress amended with real evidence
 - [x] T04 predecessor T01 Accept annotated per T01's DEVIATION A finding
-- [ ] T05 index and decision record
+- [x] T05 index and decision record
 
 T01 completed in one implementation attempt. `T01-gates.json` records the exact
 commands and native result files: G0 exit 0 (`0.919999792` seconds), G19a exit 0
@@ -908,6 +908,79 @@ Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9
 
 No edits, gate reruns, delegation, or current sibling verdict consulted.
 
+
+### T05 completed — 2026-09-08
+
+Unchanged reviewed state SHA-256 `5bd582224d2fb45915703d2d61ff3a41452a15b4e622048e7932be8f6a32bc03`; all 4020 frozen hashes match after gates and both reviews.
+Evidence-only Progress closure; reviewed implementation and contracts unchanged.
+
+- `./scripts/checks/doc-code-guards.sh` — exit 0; complete output and exact native duration: `T05-gate-01.json`.
+- `python3 ./scripts/checks/check-codex-manual-loop.py` — exit 0; complete output and exact native duration: `T05-gate-02.json`.
+- `./scripts/checks/doc-code-guards.sh --full` — exit 0; complete output and exact native duration: `T05-gate-03.json`.
+- `grep -n "blocker-handoff-certification" DOCS/archive/INDEX.md` — exit 0; complete output and exact native duration: `T05-gate-04.json`.
+
+Native runner gpt-5.6-luna/low, run `01a082d6-fa9a-76f2-b31b-d1eb5fc9d29e`, turn `01a0832a-0a31-7cf3-ba0d-d18a89ec894d`.
+Implementation/QA actual Sol/medium identities and evidence: `T05-preflight-provenance.json`, `T05-qa-provenance.json`, `T05-implementation.md`, `T05-qa.md`.
+Both native Astra/high reviewers are no weaker than the implementer; identities
+and exact verdicts are below and in `T05-review-provenance.json`.
+All evidence paths are under `blocker-handoff-certification-evidence/`.
+
+No gate retries, new tests, service build, cluster gate or dev-mode precondition
+applies to this Markdown-only scope. Engram unavailable; this is the durable
+record for manual-loop/blocker-handoff. Preexisting work is preserved.
+
+Execution exceptions and read recoveries are recorded in `T05-review-inputs.md`, `T05-qa-plan.md` and `T05-implementation.md`. Persisted gate durations are native results; prose transcription errors never replace them.
+
+#### T05 independent reviews — verbatim
+
+##### Reviewer A
+
+APPROVED
+
+Reviewed T05 state SHA-256 `5bd582224d2fb45915703d2d61ff3a41452a15b4e622048e7932be8f6a32bc03`; index SHA-256 `1eda2e3ae4423735225e2c481da33586033df694c2eaaa4f6681a40e3d24ca7a`.
+
+- One dated section appended; every prior index byte, register classification, and append-only status is preserved. All six links resolve.
+- Sources support the deviations, historical `820221a9` rejection, integrated `9fde0baa` certification, later record commit, composition finding, and decision. No premature T05 or whole-queue completion claim.
+- All four commands ran verbatim and sequentially, exit 0. Outputs, durations, and actual native provenance match.
+- Sol/medium QA finished before Luna/low gates. All 4,020 frozen hashes match; unrelated baseline work remains preserved.
+
+Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-4ec2-7ee1-b85b-44047c7cef35`, turn `01a0832a-cab9-76f1-bf6b-113d907dbc95`.
+
+No edits, gate reruns, delegation, or current sibling verdict consulted. Runtime tests, builds, and cluster gates are inapplicable.
+
+##### Reviewer B
+
+APPROVED
+
+Reviewed T05 state SHA-256 `5bd582224d2fb45915703d2d61ff3a41452a15b4e622048e7932be8f6a32bc03`; index SHA-256 `1eda2e3ae4423735225e2c481da33586033df694c2eaaa4f6681a40e3d24ca7a`.
+
+- Only the authorized 40-line index append changed. Every prior index byte remains intact; all six links resolve.
+- Source claims accurately distinguish rejected `820221a9`, certified integrated `9fde0baa`, and later certification-record commit `b9764a6a`. Reviewer discovery/block, four repair commits, human composition finding, separate deviations A/B, and unresolved historical evidence remain accurately represented.
+- Decision, rationale, evidence links, and Engram topic are present. No premature T05 or whole-queue completion claim.
+- All 4,020 frozen hashes match. Four commands ran verbatim and sequentially, exit 0; recorded outputs and durations match native results. Native Sol/medium QA finished before Luna/low gates.
+- No runtime changes, weakened tests, secrets, or applicable build/cluster requirements.
+
+Requested/observed reviewer: `fp-reviewer`, `gpt-6-astra`, high; run `01a082eb-9590-7740-9bb1-215ae4c32518`, turn `01a0832a-f2c7-76a0-a80d-96580ae3f58f`. Native provenance verified.
+
+No edits, gate reruns, delegation, or current sibling verdict consulted.
+
+
+### Queue closure — 2026-09-08
+
+T01-T05 are complete with actual applicable gates and two independent approvals
+for each final state. T01 commit4e26001a, T02 commitb9764a6a, T03 commitfbf7cfe6,
+T04 commitf9f04535; T05's authorized commit contains this evidence-only closure.
+The certified source target remains9fde0baa9fbae768fc97133731eeb2744f90516e, never
+isolated820221a9. Its original defect/block and human composition resolution are
+preserved in the SPEC, packet, predecessor amendment and index. Clean detached
+HEAD/checker proof is T02-attempt2-gates.json; no dirty-workspace dependency.
+Final successful task command counts: T01=4, T02=9, T03=4, T04=5, T05=4; all exit0.
+T02 required the human integration/target decision; T03 had one attribution
+review correction; T04 had one placement/report correction before gates. Original
+failed/split/QA records remain preserved. Runner summary transcription errors
+never replaced native output. No model/provider fallback, push, service rebuild,
+cluster mutation or test weakening. Engram unavailable; topic persists in records.
+Unrelated preexisting evaluation work is preserved and excluded from task commits.
 
 ## Out of scope (explicit)
 

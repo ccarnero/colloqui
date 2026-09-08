@@ -1,0 +1,12 @@
+{
+  "baseline_file": "T05-baseline.json",
+  "checked_files": 4013,
+  "changed_paths": [
+    "DOCS/archive/INDEX.md"
+  ],
+  "allowed_paths": [
+    "DOCS/archive/INDEX.md",
+    "manual-loops/architecture/blocker-handoff-certification.md"
+  ],
+  "unexpected_changes": []
+}
