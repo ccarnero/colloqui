@@ -14,14 +14,13 @@ All non-trivial changes go through the **manual-loop system**:
 
 - Engine: [`DOCS/guides/manual-loop.md`](DOCS/guides/manual-loop.md) — one task
   at a time, gates run verbatim, dual adversarial review, commit per green task.
-- Tool adapters forward to the shared engine and role contracts. Use active
-  global tool/profile roles by default; project files contain only intentional,
-  structurally valid tuning.
+  Codex runs it as the principal with `.codex/agents/`; Claude Code as
+  `/manual-loop` with `.claude/agents/`. Same procedure, same role texts.
 - SPECs: `manual-loops/<area>/<name>.md`, authored from
   `manual-loops-templates/` (read `manual-loops-templates/README.md` first —
-  it explains the context contract: every agent receives full AGENTS.md,
-  the task body including allowed paths/non-goals and Accept, Constraints,
-  and applicable gate commands; reviewers also receive changes and evidence).
+  it explains the context contract: the implementer receives the task text,
+  its acceptance criteria and the SPEC's Constraints; reviewers receive the
+  diff, the task text and the Constraints — nothing else).
 - The human approves every SPEC before its first run, and every SPEC declares
   its Engram topic and its human boundaries.
 - AGENTS.md takes precedence over SPEC Constraints, engine, agents, templates,
@@ -30,18 +29,10 @@ All non-trivial changes go through the **manual-loop system**:
   Skills are advisory authoring input, not a developer or CI filesystem dependency.
 - Each task declares allowed write paths and non-goals. Report required scope
   expansion before editing; preserve preexisting changes and blocked work.
-- The principal assistant is the single coordinator. It may ask `fp-architect`
-  for conditional design advice, asks `fp-qa` for acceptance cases before
-  implementation and validation after it, and assigns implementation to
-  `fp-dev`. The developer owns regression tests. Two independent reviewers
-  judge the unchanged final state; the principal does not review its own work.
-- Routine build, test, and E2E gate commands default to a separate mechanical
-  executor whose configured cost is below both the implementation/QA tier and
-  the economical coding tier. Verify both callability and the applicable cost
-  basis before launch; public API pricing alone does not establish tool billing.
-  Never silently substitute a more expensive role. The executor runs
-  commands verbatim and reports evidence only. It does not diagnose, edit,
-  retry, change scope, or decide closure.
+- The principal assistant is the single coordinator: it launches the
+  implementer, runs the gates itself, launches two independent reviewers on the
+  unchanged diff, and commits or blocks. It never implements or reviews its own
+  work. QA and architecture advice are optional roles the SPEC asks for.
 - Shared role duties live in [`DOCS/guides/agent-roles.md`](DOCS/guides/agent-roles.md).
 - Manual-loop owns retries, corrections, and task closure. FP role commands are
   specialist instructions and must not start a competing retry or closure loop.
@@ -130,16 +121,21 @@ do not copy them or turn a scoped change into a service rewrite.
 ## Verification
 
 - Completion requires actual gate commands, exit statuses and output, plus two
-  independent APPROVED reviews of the same changes. Record agent/run identity
-  and actual model provenance for implementer and reviewers; reviewers must be
-  no weaker than the implementer within the active tool/profile policy.
-  Configuration selects intent only and does not prove execution. Missing
-  evidence is a blocker, not approval.
+  independent APPROVED reviews of the same changes. Missing gates or a missing
+  verdict is a blocker, not approval.
+- Gate evidence is exit status plus trimmed output per gate, kept with the SPEC.
+  After completion or blocking, Progress carries achieved, remaining and blocked
+  work, the attempt count, tokens against the ceiling, and the validation
+  outcome. Read the full applicable AGENTS.md and approved SPEC before
+  execution; a compact summary is navigation, not an execution contract.
+  Retired evidence cannot serve as a baseline or as gate/review proof for new
+  work; a resumed or follow-up task captures fresh state and reruns its applicable
+  validation. Retirement does not invalidate the historical closure it summarized.
 - Review all task changes: staged and unstaged diffs plus full untracked new
   file content. Identify preexisting changes separately without discarding them.
   Any change to reviewed code or task artifacts invalidates gates and reviews;
-  rerun applicable gates and both reviews before completion. Evidence-only
-  Progress updates must not alter the reviewed implementation or contract.
+  rerun applicable gates and both reviews before completion. A compact status
+  update after validation must not alter the reviewed implementation or contract.
 - For affected builds, record pinned runtime/tool versions, lockfile and frozen
   installation command/output, and build command/output for the reviewed state.
   Report unavailable prerequisites; do not claim reproducibility without evidence.
@@ -195,22 +191,12 @@ do not copy them or turn a scoped change into a service rewrite.
 The repository's shared role contract is documented in
 [`DOCS/guides/agent-roles.md`](DOCS/guides/agent-roles.md), and its execution
 procedure in [`DOCS/guides/manual-loop.md`](DOCS/guides/manual-loop.md).
-Tool configuration inherits global choices by default. Any local role tuning
-is explicit and structural; it never substitutes for recording requested and
-observed model identity on an actual run. Reviewers remain no weaker than the
-implementer under the selected tool/profile policy.
-
-The project-local `.codex/` manual-loop configuration is a deliberate exception
-to default inheritance and is protected by its checked-in hash lock and G19.
-Changing those pins, role instructions, lock, checker, or guard integration
-requires a dedicated human-approved configuration repair; a routine feature SPEC
-cannot authorize changes to its own execution or protection mechanism. The lock
-and guard detect repository drift, while the active sandbox may separately deny
-writes. Neither establishes host immutability or remote branch protection.
-For this Codex role set, the human explicitly approved a runner at the economical
-coding tier because no callable lower-cost configured model met the policy; it
-remains below the implementation/QA tier. This exception permits no automatic
-fallback to a higher-cost model.
+Which model runs which role is configuration in `.codex/config.toml` and
+`.codex/agents/*.toml`; no role is asked to prove it. The implementer and reviewer
+texts are identical in `.codex/agents/` and `.claude/agents/`, and G19
+(`scripts/checks/check-loop-roles-sync.py`) fails when they differ. A SPEC about
+the loop itself — its roles, procedure or checks — is not a task queue; it is a
+configuration change and goes through the human directly.
 
 ## Retired 2026-07-29 (do not resurrect)
 

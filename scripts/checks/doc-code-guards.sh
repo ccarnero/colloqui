@@ -40,7 +40,7 @@
 #             the inversion of the nats-consumer-lag allow-list.
 #   G17       no silent drift in Core NATS publish policy.
 #   G18       all `LazyNatsConnection` wrappers remain explicit legacy debt.
-#   G19       project-local Codex manual-loop pins and hash lock remain intact.
+#   G19       manual-loop role texts identical in .codex/agents and .claude/agents.
 #
 # Usage:
 #   scripts/checks/doc-code-guards.sh [--full|--kiss] [--verbose|-v]
@@ -1314,19 +1314,19 @@ services/agent-scheduler-service/src/providers/nats.provider.ts
 }
 
 # ---------------------------------------------------------------------------
-# G19 — Project-local Codex manual-loop policy and locked role definitions.
+# G19 — Manual-loop roles: one text per role, identical in Codex and Claude Code.
 # ---------------------------------------------------------------------------
 g19_codex_manual_loop() {
-  local guard="G19(codex-manual-loop)"
+  local guard="G19(loop-roles-sync)"
   local output
   local status
 
-  output=$(python3 scripts/checks/check-codex-manual-loop.py 2>&1)
+  output=$(python3 scripts/checks/check-loop-roles-sync.py 2>&1)
   status=$?
   if [[ "$status" -ne 0 ]]; then
     fail "$guard: checker failed:\n$output"
   else
-    pass "$guard: mandatory Codex pins and hash lock validated"
+    pass "$guard: implementer and reviewer texts identical in .codex/agents and .claude/agents"
   fi
 }
 
