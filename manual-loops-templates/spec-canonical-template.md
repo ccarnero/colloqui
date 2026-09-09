@@ -53,6 +53,8 @@ Repeat each citation inside the body of the task that uses it.
 
 ## Gates (the `/manual-loop` command runs these verbatim, in order)
 
+Gate executor: orchestrator | script-runner  <!-- script-runner keeps build/E2E logs out of the principal's context; it runs commands verbatim and returns exit codes + trimmed output -->
+
 ```
 # G0 — repo guards (doc/code drift, cheap, every attempt)
 ./scripts/checks/doc-code-guards.sh
@@ -96,6 +98,8 @@ Commits only happen with dev-mode OFF and the built image live.
 
 ### T01 — <short imperative title>
 
+- **Allowed write paths:** <explicit files/directories, including new files and tests>.
+- **Non-goals:** <excluded behavior/refactors — editing outside allowed paths is an automatic reviewer rejection>.
 - <Concrete scope: file paths, function/class names, exact signatures,
   line-cited precedent (`workflows.service.ts:284-388`).>
 - <Explicit DO / DO NOT statements.>
@@ -140,7 +144,7 @@ grep -n "<expected string>" services/<svc>/README.md DOCS/archive/INDEX.md
 - [ ] T0N docs + index
 
 Token ceiling: <N> M per task, every thread including the orchestrator. Crossing it
-blocks the task like an exhausted attempt budget; the monitor alerts on it.
+blocks the task like an exhausted attempt budget.
 
 <!-- Progress convention: entries above grow into a changelog as tasks
 complete — record findings, human-approved mid-flight design changes

@@ -46,7 +46,9 @@ You may read and explain a failure; you may not repair it.
    missing tests within allowed paths and finishes before any gate runs.
 
 4. **Gates.** Run the SPEC's Gates in order, then the task's own **Accept** commands,
-   verbatim. First failure ends the attempt. Two gate classes, per the SPEC's labels:
+   verbatim. Run them yourself with Bash, keeping only exit code and the last lines
+   of each in context. First failure ends the attempt. Two gate classes, per the
+   SPEC's labels:
    - Gates labeled **ITERATION** run on EVERY attempt (fast feedback).
    - Gates labeled **COMMIT GATE** run ONCE per task, only after all iteration
      gates are green — immediately before dual review. A commit-gate failure is

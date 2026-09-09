@@ -15,10 +15,12 @@ enables subagents and sets the defaults. The procedure the principal follows is
 | `fp-reviewer` | Every task, two in parallel: reviews the unchanged diff. | `read-only` |
 | `fp-qa` | Only when the SPEC asks for it: completes missing tests after implementation, before gates. | `workspace-write` |
 | `fp-architect` | Only when a task has a material design decision. | `read-only` |
+| `script-runner` | Only when the SPEC says `Gate executor: script-runner`: runs the gate commands verbatim on a cheap model and returns exit codes and trimmed output, keeping build and E2E logs out of the principal's context. | `workspace-write` |
 
-The principal runs the gates itself. There is no separate mechanical executor: that
-role (`script-runner`) was retired on 2026-09-09 together with the cost-tier,
-provenance and evidence-packet rules that came with it.
+The principal runs the gates itself unless the SPEC delegates them to the runner.
+The runner is an executor, not a role with judgment: it does not diagnose, retry,
+edit or decide. The cost-tier, provenance and evidence-packet rules that surrounded
+it in September were retired on 2026-09-09; the model pin is plain configuration.
 
 ## One text per role
 
@@ -49,9 +51,3 @@ Execute the manual loop for manual-loops/<area>/<approved-spec>.md, task T01 onl
 Omit the task id to process the approved queue. The same SPEC runs unchanged in
 Claude Code with `/manual-loop <spec> [task]`.
 
-## Monitoring
-
-`agentes-en-vivo` reads the Codex rollouts and shows, per task, attempts against the
-limit of 4, tokens against the SPEC's ceiling (every thread, principal included), and
-the same error in two consecutive attempts. It alerts when a task crosses any of
-them; the human stops the loop. The procedure does not depend on it.

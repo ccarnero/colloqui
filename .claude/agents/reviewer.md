@@ -24,8 +24,8 @@ Reject the diff — regardless of anything else being fine — if it contains an
    several lines defending a hack, a disabled check, a swallowed error, or a
    skipped test. If it needs that much defending, it is a blocker to report, not
    code to merge.
-4. **Scope creep.** Changes beyond what the task text asks for — "bonus" refactors,
-   drive-by fixes, opportunistic renames.
+4. **Scope creep.** Edits outside the task's allowed write paths, violated
+   non-goals, "bonus" refactors, drive-by fixes, opportunistic renames.
 5. **Constraint violations.** Anything the SPEC's Constraints section forbids;
    constraints marked "automatic reviewer rejection" are exactly that.
 6. **Hardcoded secrets.** Any credential, API key, token, or password literal
@@ -37,7 +37,10 @@ Reject the diff — regardless of anything else being fine — if it contains an
   error handling. The repo's existing patterns win over personal taste.
 - Tests actually assert the task's acceptance criteria — not just that code runs.
 - New code paths log verbosely enough to debug in production; nothing fails
-  silently.
+  silently. Calculations never log.
+- Business logic is pure functions over data with typed failures; no effects,
+  injected I/O callbacks or exception control flow inside calculations; framework
+  classes stay thin shells. Existing frameworks and libraries are preserved.
 - Idempotency where the task requires it (DDL `IF NOT EXISTS`, upserts).
 - New list endpoints paginate; no obvious N+1 queries inside loops.
 - Request DTOs validate their inputs (class-validator where the service uses

@@ -37,13 +37,12 @@ repair it.
 - A task has a token ceiling, declared in the SPEC's Progress. Crossing it blocks
   the task exactly like an exhausted attempt budget.
 - A task is committed ONLY when all gates are green AND both reviewers returned APPROVED.
-- Anything else at the end of the budget → block (step 7).
+- Anything else at the end of the budget → block (step 8).
 - Gates marked "from Txx onward" only run once that task exists in the queue history.
 - AGENTS.md wins over Constraints, this procedure, roles, and templates.
 
-This procedure depends on no tool to hold these. The monitor (agentes-en-vivo)
-reads the session rollouts and alerts when a task crosses its attempts, its
-tokens, or repeats an error; the human stops the loop.
+The orchestrator states the attempt count and the tokens spent when it launches
+an attempt; the human stops the loop when they disagree with the record.
 
 ## Per-task cycle
 
@@ -60,8 +59,11 @@ tokens, or repeats an error; the human stops the loop.
    completes missing tests within allowed paths and finishes before any gate runs.
 
 4. **Gates.** Run the SPEC's Gates in order, then the task's own **Accept** commands,
-   verbatim. The orchestrator runs them itself. First failure ends the attempt. Two
-   gate classes, per the SPEC's labels:
+   verbatim. The orchestrator runs them itself, or — when the SPEC says
+   `Gate executor: script-runner` — hands the exact command list to the runner role
+   (`script-runner`, a cheap model) and reads back exit codes and trimmed output, so
+   build and E2E logs stay out of its own context. First failure ends the attempt.
+   Two gate classes, per the SPEC's labels:
    - Gates labeled **ITERATION** run on EVERY attempt (fast feedback).
    - Gates labeled **COMMIT GATE** run ONCE per task, only after all iteration
      gates are green — immediately before dual review. A commit-gate failure is
@@ -108,8 +110,8 @@ blocked (if any) with the BLOCKED.md pointer, and which services need a rebuild.
 
 ## What is deliberately not here
 
-No cost tiers, model provenance, mechanical executor, evidence packets, or record
-certification. Those lived in this procedure between 2026-09-06 and 2026-09-09; in
+No cost tiers, model provenance, executor process-identity rules, evidence packets,
+or record certification. Those lived in this procedure between 2026-09-06 and 2026-09-09; in
 that week the orchestrator spent 59 % of 591 M tokens, the implementer wrote reports
 instead of code, and ten loops ran about the loop and none about the product. Model
 selection is repository configuration (`.codex/config.toml`, `.codex/agents/*.toml`);

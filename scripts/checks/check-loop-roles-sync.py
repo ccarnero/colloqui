@@ -25,6 +25,9 @@ PAIRS = (
     (".codex/agents/fp-dev.toml", ".claude/agents/implementer.md"),
     (".codex/agents/fp-reviewer.toml", ".claude/agents/reviewer.md"),
 )
+# Every Codex role, paired or not, must be a well-formed role file: the shape Codex loads, nothing about which model.
+ROLE_KEYS = ("name", "description", "model", "model_reasoning_effort", "sandbox_mode", "developer_instructions")
+SANDBOXES = ("read-only", "workspace-write")
 FRONT_MATTER = re.compile(r"\A---\n.*?\n---\n\s*", re.S)
 
 
@@ -38,8 +41,28 @@ def codex_instructions(text: str) -> str | None:
     return value.strip() if isinstance(value, str) else None
 
 
-def compare(root: Path) -> list[str]:
+def shape_errors(root: Path) -> list[str]:
     errors: list[str] = []
+    agents = root / ".codex" / "agents"
+    for path in sorted(agents.glob("*.toml")) if agents.is_dir() else []:
+        rel = path.relative_to(root)
+        try:
+            data = tomllib.loads(path.read_text(encoding="utf-8"))
+        except tomllib.TOMLDecodeError as exc:
+            errors.append(f"cannot parse {rel}: {exc}")
+            continue
+        for key in ROLE_KEYS:
+            if not isinstance(data.get(key), str) or not data[key].strip():
+                errors.append(f"{rel}: missing or empty {key}")
+        if data.get("name") != path.stem:
+            errors.append(f"{rel}: name {data.get('name')!r} must equal the file stem {path.stem!r}")
+        if data.get("sandbox_mode") not in SANDBOXES:
+            errors.append(f"{rel}: sandbox_mode must be one of {SANDBOXES} (found {data.get('sandbox_mode')!r})")
+    return errors
+
+
+def compare(root: Path) -> list[str]:
+    errors: list[str] = shape_errors(root)
     for codex_rel, claude_rel in PAIRS:
         codex_path, claude_path = root / codex_rel, root / claude_rel
         for path in (codex_path, claude_path):
@@ -68,7 +91,7 @@ def main() -> int:
         print(f"FAIL: {error}", file=sys.stderr)
     if errors:
         return 1
-    print(f"PASS: {len(PAIRS)} manual-loop roles identical in .codex/agents and .claude/agents")
+    print(f"PASS: Codex role files well-formed; {len(PAIRS)} manual-loop roles identical in .codex/agents and .claude/agents")
     return 0
 
 

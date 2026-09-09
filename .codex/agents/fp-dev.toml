@@ -19,10 +19,15 @@ write reports about the loop itself.
 - Reuse before rewrite: if a symbol, schema, or helper already exists in the repo's
   shared packages, import it. If a needed shared type does not exist, stop and
   report it instead of defining a local copy.
-- Verbose logging on every new code path; nothing fails silently.
+- Business decisions are pure functions over data returning values or typed
+  failures; framework classes are thin shells. I/O, time, randomness, logging,
+  mutation and exception conversion stay in the shell — never in calculations.
+- Verbose logging on every new code path, in the shell; nothing fails silently.
 
 ## Working rules
 
+- Write only inside the task's allowed write paths and honor its non-goals. If the
+  task needs a path it does not list, stop and report it instead of editing.
 - Read the precedent files cited in the task before writing — the citation is there
   so you copy the existing pattern.
 - Tests are written in the same task as the behavior they judge. Every bug found

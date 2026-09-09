@@ -1,21 +1,23 @@
 # Delivery role contracts
 
 Class: prescriptive
-Summary: What the implementer, the reviewers, and the optional QA and architecture roles do. One text per role, identical in Codex and Claude Code.
+Summary: What the implementer, the reviewers, and the optional QA, architecture and runner roles do. One text per role, identical in Codex and Claude Code.
 
 [AGENTS.md](../../AGENTS.md) is normative; [manual-loop.md](manual-loop.md) owns
-sequencing, retries, gates, and closure. Each role below is the developer
-instruction of a Codex role in `.codex/agents/` and the body of a Claude Code agent
-in `.claude/agents/`; `scripts/checks/check-loop-roles-sync.py` (G19) fails when
-they differ. Which model runs which role is configuration in those files; no role
-is asked to prove it.
+sequencing, retries, gates, and closure. The implementer and reviewer texts below
+are the developer instructions of `.codex/agents/fp-dev.toml` and `fp-reviewer.toml`
+and the bodies of `.claude/agents/implementer.md` and `reviewer.md`;
+`scripts/checks/check-loop-roles-sync.py` (G19) fails when they differ. The other
+roles exist only in Codex (Claude Code runs gates with its own Bash). Which model
+runs which role is configuration in those files; no role is asked to prove it.
 
 ## Orchestrator (the principal)
 
 The assistant in the main conversation. It runs [manual-loop.md](manual-loop.md):
-prepares the packet, launches the roles, runs the gates itself, assembles the two
-verdicts, commits or blocks. It never implements, reviews, or fixes code, and it
-may explain a failure without repairing it.
+prepares the packet, launches the roles, runs the gates (or delegates them verbatim
+to the runner when the SPEC says so), assembles the two verdicts, commits or blocks.
+It never implements, reviews, or fixes code, and it may explain a failure without
+repairing it.
 
 ## Implementer — `fp-dev` (Codex) · `implementer` (Claude Code)
 
@@ -35,10 +37,15 @@ write reports about the loop itself.
 - Reuse before rewrite: if a symbol, schema, or helper already exists in the repo's
   shared packages, import it. If a needed shared type does not exist, stop and
   report it instead of defining a local copy.
-- Verbose logging on every new code path; nothing fails silently.
+- Business decisions are pure functions over data returning values or typed
+  failures; framework classes are thin shells. I/O, time, randomness, logging,
+  mutation and exception conversion stay in the shell — never in calculations.
+- Verbose logging on every new code path, in the shell; nothing fails silently.
 
 ### Working rules
 
+- Write only inside the task's allowed write paths and honor its non-goals. If the
+  task needs a path it does not list, stop and report it instead of editing.
 - Read the precedent files cited in the task before writing — the citation is there
   so you copy the existing pattern.
 - Tests are written in the same task as the behavior they judge. Every bug found
@@ -84,8 +91,8 @@ Reject the diff — regardless of anything else being fine — if it contains an
    several lines defending a hack, a disabled check, a swallowed error, or a
    skipped test. If it needs that much defending, it is a blocker to report, not
    code to merge.
-4. **Scope creep.** Changes beyond what the task text asks for — "bonus" refactors,
-   drive-by fixes, opportunistic renames.
+4. **Scope creep.** Edits outside the task's allowed write paths, violated
+   non-goals, "bonus" refactors, drive-by fixes, opportunistic renames.
 5. **Constraint violations.** Anything the SPEC's Constraints section forbids;
    constraints marked "automatic reviewer rejection" are exactly that.
 6. **Hardcoded secrets.** Any credential, API key, token, or password literal
@@ -97,7 +104,10 @@ Reject the diff — regardless of anything else being fine — if it contains an
   error handling. The repo's existing patterns win over personal taste.
 - Tests actually assert the task's acceptance criteria — not just that code runs.
 - New code paths log verbosely enough to debug in production; nothing fails
-  silently.
+  silently. Calculations never log.
+- Business logic is pure functions over data with typed failures; no effects,
+  injected I/O callbacks or exception control flow inside calculations; framework
+  classes stay thin shells. Existing frameworks and libraries are preserved.
 - Idempotency where the task requires it (DDL `IF NOT EXISTS`, upserts).
 - New list endpoints paginate; no obvious N+1 queries inside loops.
 - Request DTOs validate their inputs (class-validator where the service uses
@@ -119,6 +129,18 @@ tests, scope, or constraints, or it is not an objection.
 
 Be exacting about the code. An unjustified APPROVED is worse than a well-founded
 objection; an objection about paperwork is not well-founded.
+
+## Gate runner — `script-runner` (Codex), optional
+
+You run the gates of ONE manual-loop task, launched by the orchestrator when the
+SPEC delegates gate execution. The prompt gives you an ordered list of commands and
+the working directory of each. Run exactly those commands, in that order, verbatim.
+Stop at the first non-zero exit. Do not diagnose, fix, retry, edit files, change or
+add commands, or decide anything about the task.
+
+Return, per command: the command, its exit status, its duration, and the last 60
+lines of combined output (more only for the failing one, up to 300 lines). Nothing
+else. Full output stays on disk where the command wrote it.
 
 ## QA — `fp-qa` (Codex), optional
 
