@@ -1,0 +1,18 @@
+--- original-config-test.mjs
++++ e2e/platform-evaluation-config.test.mjs
+@@ -69,6 +69,7 @@
+   const runId = randomUUID();
+   const directory = path.join(EVIDENCE_ROOT, runId);
+   const sentinel = path.join(directory, "sentinel.txt");
++  await mkdir(EVIDENCE_ROOT, { recursive: true });
+   await mkdir(directory, { recursive: false });
+   await writeFile(sentinel, "preserve-this-sentinel\n", { flag: "wx" });
+   const before = await readFile(sentinel, "utf8");
+@@ -83,6 +84,7 @@
+   const runId = randomUUID();
+   const directory = path.join(EVIDENCE_ROOT, runId);
+   const sentinel = path.join(directory, "sentinel.txt");
++  await mkdir(EVIDENCE_ROOT, { recursive: true });
+   await mkdir(directory, { recursive: false });
+   await writeFile(sentinel, "worker-reload-sentinel\n", { flag: "wx" });
+   const before = await readFile(sentinel, "utf8");

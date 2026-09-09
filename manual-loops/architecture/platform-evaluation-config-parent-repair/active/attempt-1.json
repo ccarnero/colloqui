@@ -1,0 +1,10 @@
+{
+  "task": "T01",
+  "attempt": 1,
+  "limit": 4,
+  "scope": "offline exact two-line test repair only",
+  "humanAuthorization": "ok adelante con el cambio",
+  "implementationDispatched": true,
+  "recordedAt": "2026-09-09T17:51:17.088665+00:00",
+  "predecessorR01": "1/1 exhausted; zero new runtime attempts"
+}

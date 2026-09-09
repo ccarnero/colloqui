@@ -1,5 +1,0 @@
-[1;33m[NOTE][0m Running KISS mode (core + bus guard set)
-
-di-imports guard: CLEAN (0 files scanned, git-modified only)
-
-[0;32mKISS doc/code guards passed.[0m

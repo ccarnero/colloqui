@@ -1812,10 +1812,11 @@ Evidence and navigation:
 
 - [certification SPEC](../../manual-loops/architecture/blocker-handoff-certification.md)
 - [predecessor diagnosis SPEC](../../manual-loops/architecture/blocker-handoff-diagnosis.md)
-- [certification packet](../../manual-loops/architecture/blocker-handoff-certification-evidence/certification-packet.md)
-- [deviations](../../manual-loops/architecture/blocker-handoff-certification-evidence/deviations.md)
-- [initial split verdicts](../../manual-loops/architecture/blocker-handoff-certification-evidence/T02-review-verdicts.md)
-- [integrated-target verdicts](../../manual-loops/architecture/blocker-handoff-certification-evidence/T02-attempt2-review-verdicts.md)
+- [compact certification outcome](../../manual-loops/architecture/blocker-handoff-certification-evidence/SUMMARY.md)
+
+The detailed certification packet, deviations and verdict files were retired by
+Chris on 2026-09-09. The historical findings above remain the record; retired
+evidence cannot certify new work.
 
 - **Engram topic**: `manual-loop/blocker-handoff` (durable repository record;
   no memory tool was available).

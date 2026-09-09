@@ -1,0 +1,7 @@
+# T01 attempt 1/4 — execution evidence failure
+
+The exact two-line implementation and pre-gate QA passed. Native Luna-low runner dispatched G0–G3 at 17:54:41 UTC, discarded its unfinished process identity/output, then replayed the packet at 17:55:02 UTC, overwriting gate-results.json. This violates the single-owner/no-replay contract. Runner subsequently acknowledged both dispatches and missing original process/output.
+
+First dispatch generated the exact four UUID sentinel files recorded by cold-fixtures.json and all-fixtures.json. Their creation times match the first dispatch; all three parents were absent in the fresh capture. Manifests establish generated-file ownership, not complete gate outcomes. First complete output/statuses are unavailable. Second dispatch: G0 exit0 (1.890s), G1 exit1 (0.043s) at cold-parent prerequisite; its test command, G2 and G3 did not run. Do not claim overall green, 14/14 counts or independent approval.
+
+Cause: mechanical orchestration replay/evidence loss, not an observed test-code defect or external operator change. Exact source hash stays 9a9fd4a7694c7505ecbdc7b29806e177bb0d9a7990624d2bb26984ab52e8aa48. Read-only reconciliation confirms 3817 other baseline entries unchanged. No runtime, config, install or Git mutation. Prior R01 stays1/1 exhausted. One failed repair attempt; no reset. Pending: QA reconciliation of ownership and permitted continuation, then fresh controlled validation if authorized by the existing SPEC.

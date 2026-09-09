@@ -1,0 +1,30 @@
+[
+  {
+    "id": "G0",
+    "argv": [
+      "/bin/bash",
+      "-o",
+      "pipefail",
+      "-c",
+      "set -e\npython3 - <<'PY_EXACT'\nfrom pathlib import Path\noriginal=Path('manual-loops/architecture/platform-evaluation-config-parent-repair/active/original-config-test.mjs').read_text()\ncurrent=Path('e2e/platform-evaluation-config.test.mjs').read_text()\nneedle='  await mkdir(directory, { recursive: false });'\ninsertion='  await mkdir(EVIDENCE_ROOT, { recursive: true });\\n'+needle\nassert original.count(needle)==2\nassert current==original.replace(needle,insertion),'patch differs from the approved two-line repair'\nprint('exact two-line repair verified')\nPY_EXACT\nnode -e 'if(process.version!==\"v26.7.0\")process.exit(1);console.log(process.version)'\nnode --check e2e/platform-evaluation-config.test.mjs\ngit diff --check\n./scripts/checks/doc-code-guards.sh"
+    ],
+    "exit_code": 0,
+    "duration_seconds": 1.8896079170517623,
+    "stdout": "exact two-line repair verified\nv26.7.0\n\u001b[1;33m[NOTE]\u001b[0m Running KISS mode (core + bus guard set)\ndi-imports guard: CLEAN (0 files scanned, git-modified only)\n\n\u001b[0;32mKISS doc/code guards passed.\u001b[0m\n",
+    "stderr": ""
+  },
+  {
+    "id": "G1",
+    "argv": [
+      "/bin/bash",
+      "-o",
+      "pipefail",
+      "-c",
+      "set -e\npython3 - <<'PY_COLD_PRE'\nfrom pathlib import Path\np=Path('manual-loops/architecture/end-to-end-evaluation/evidence/t02/playwright')\nfor q in [p,p.parent,p.parent.parent]:assert not q.exists() and not q.is_symlink(),'cold parent chain must be absent; preserve existing work'\nprint('all three evidence parent levels absent')\nPY_COLD_PRE\nnode --test e2e/platform-evaluation-config.test.mjs\npython3 - <<'PY_COLD'\nfrom pathlib import Path\nimport hashlib,json,re\nroot=Path('manual-loops/architecture/end-to-end-evaluation/evidence/t02/playwright')\nu=r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'\nchildren=list(root.iterdir());assert len(children)==2\nfiles={};contents=[]\nfor d in children:\n assert d.is_dir() and not d.is_symlink() and re.fullmatch(u,d.name)\n assert [p.name for p in d.iterdir()]==['sentinel.txt']\n p=d/'sentinel.txt';assert p.is_file() and not p.is_symlink()\n files[str(p)]=hashlib.sha256(p.read_bytes()).hexdigest();contents.append(p.read_text())\nassert sorted(contents)==['preserve-this-sentinel\\n','worker-reload-sentinel\\n']\nwith Path('manual-loops/architecture/platform-evaluation-config-parent-repair/active/cold-fixtures.json').open('x') as f:json.dump(files,f,indent=2)\nprint('cold run: two owned sentinel fixtures recorded')\nPY_COLD"
+    ],
+    "exit_code": 1,
+    "duration_seconds": 0.042554916930384934,
+    "stdout": "",
+    "stderr": "Traceback (most recent call last):\n  File \"<stdin>\", line 3, in <module>\nAssertionError: cold parent chain must be absent; preserve existing work\n"
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "G0",
+    "argv": [
+      "/bin/bash",
+      "-o",
+      "pipefail",
+      "-c",
+      "set -e\npython3 - <<'PY_EXACT'\nfrom pathlib import Path\noriginal=Path('manual-loops/architecture/platform-evaluation-config-parent-repair/active/original-config-test.mjs').read_text()\ncurrent=Path('e2e/platform-evaluation-config.test.mjs').read_text()\nneedle='  await mkdir(directory, { recursive: false });'\ninsertion='  await mkdir(EVIDENCE_ROOT, { recursive: true });\\n'+needle\nassert original.count(needle)==2\nassert current==original.replace(needle,insertion),'patch differs from the approved two-line repair'\nprint('exact two-line repair verified')\nPY_EXACT\nnode -e 'if(process.version!==\"v26.7.0\")process.exit(1);console.log(process.version)'\nnode --check e2e/platform-evaluation-config.test.mjs\ngit diff --check\n./scripts/checks/doc-code-guards.sh"
+    ]
+  },
+  {
+    "id": "G1",
+    "argv": [
+      "/bin/bash",
+      "-o",
+      "pipefail",
+      "-c",
+      "set -e\npython3 - <<'PY_COLD_PRE'\nfrom pathlib import Path\np=Path('manual-loops/architecture/end-to-end-evaluation/evidence/t02/playwright')\nfor q in [p,p.parent,p.parent.parent]:assert not q.exists() and not q.is_symlink(),'cold parent chain must be absent; preserve existing work'\nprint('all three evidence parent levels absent')\nPY_COLD_PRE\nnode --test e2e/platform-evaluation-config.test.mjs\npython3 - <<'PY_COLD'\nfrom pathlib import Path\nimport hashlib,json,re\nroot=Path('manual-loops/architecture/end-to-end-evaluation/evidence/t02/playwright')\nu=r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'\nchildren=list(root.iterdir());assert len(children)==2\nfiles={};contents=[]\nfor d in children:\n assert d.is_dir() and not d.is_symlink() and re.fullmatch(u,d.name)\n assert [p.name for p in d.iterdir()]==['sentinel.txt']\n p=d/'sentinel.txt';assert p.is_file() and not p.is_symlink()\n files[str(p)]=hashlib.sha256(p.read_bytes()).hexdigest();contents.append(p.read_text())\nassert sorted(contents)==['preserve-this-sentinel\\n','worker-reload-sentinel\\n']\nwith Path('manual-loops/architecture/platform-evaluation-config-parent-repair/active/cold-fixtures.json').open('x') as f:json.dump(files,f,indent=2)\nprint('cold run: two owned sentinel fixtures recorded')\nPY_COLD"
+    ]
+  },
+  {
+    "id": "G2",
+    "argv": [
+      "/bin/bash",
+      "-o",
+      "pipefail",
+      "-c",
+      "set -e\npython3 - <<'PY_WARM_BEFORE'\nfrom pathlib import Path\nimport hashlib,json\nroot=Path('manual-loops/architecture/end-to-end-evaluation/evidence/t02/playwright')\nassert root.is_dir() and not root.is_symlink()\nb=json.loads(Path('manual-loops/architecture/platform-evaluation-config-parent-repair/active/cold-fixtures.json').read_text())\nfor n,h in b.items():\n q=Path(n);assert q.is_file() and not q.is_symlink() and hashlib.sha256(q.read_bytes()).hexdigest()==h\nprint('existing parent and cold sentinels verified')\nPY_WARM_BEFORE\nnode --test e2e/platform-evaluation-config.test.mjs\npython3 - <<'PY_WARM_AFTER'\nfrom pathlib import Path\nimport hashlib,json,re\np=Path('manual-loops/architecture/platform-evaluation-config-parent-repair/active')\nb=json.loads((p/'cold-fixtures.json').read_text())\nfor n,h in b.items():\n q=Path(n);assert q.is_file() and not q.is_symlink() and hashlib.sha256(q.read_bytes()).hexdigest()==h\nroot=Path('manual-loops/architecture/end-to-end-evaluation/evidence/t02/playwright')\nu=r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'\nchildren=list(root.iterdir());assert len(children)==4\nfiles={};newcontents=[]\nfor d in children:\n assert d.is_dir() and not d.is_symlink() and re.fullmatch(u,d.name)\n assert [q.name for q in d.iterdir()]==['sentinel.txt']\n q=d/'sentinel.txt';assert q.is_file() and not q.is_symlink()\n files[str(q)]=hashlib.sha256(q.read_bytes()).hexdigest()\n if str(q) not in b:newcontents.append(q.read_text())\nassert sorted(newcontents)==['preserve-this-sentinel\\n','worker-reload-sentinel\\n']\nwith (p/'all-fixtures.json').open('x') as f:json.dump(files,f,indent=2)\nprint('warm run: four owned sentinels, cold pair unchanged')\nPY_WARM_AFTER"
+    ]
+  },
+  {
+    "id": "G3",
+    "argv": [
+      "/bin/bash",
+      "-o",
+      "pipefail",
+      "-c",
+      "python3 - <<'PY_PRESERVE'\nfrom pathlib import Path\nimport hashlib,json,subprocess\nout=Path('manual-loops/architecture/platform-evaluation-config-parent-repair/active')\nraw=(out/'baseline.json').read_bytes()\nassert hashlib.sha256(raw).hexdigest()=='043abcda5a252639a9735392e744fd95144c2d8566f942149d68b2b20bc4c9cf'\nb=json.loads(raw)\nassert subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()==b['head']\nchanged='e2e/platform-evaluation-config.test.mjs'\nfor n,e in b['files'].items():\n p=Path(n)\n if n==changed:\n  assert p.is_file() and not p.is_symlink() and p.stat().st_mode & 0o777==e['mode']\n  continue\n if e.get('absent'):good=not p.exists() and not p.is_symlink()\n elif 'symlink' in e:good=p.is_symlink() and str(p.readlink())==e['symlink']\n else:good=p.is_file() and not p.is_symlink() and hashlib.sha256(p.read_bytes()).hexdigest()==e['sha256'] and p.stat().st_mode & 0o777==e['mode']\n assert good,'baseline drift: '+n\nowned=json.loads((out/'all-fixtures.json').read_text())\nfor n,h in owned.items():assert hashlib.sha256(Path(n).read_bytes()).hexdigest()==h\npaths=filter(None,subprocess.check_output(['git','ls-files','--cached','--others','--exclude-standard','-z']).decode().split(chr(0)))\nfor n in paths:\n assert n in b['files'] or n in owned or n=='manual-loops/architecture/platform-evaluation-config-parent-repair.md' or n.startswith('manual-loops/architecture/platform-evaluation-config-parent-repair/'),'unexpected path: '+n\nprint('3817 unchanged baseline entries; only authorized test changed; four exact generated sentinel files')\nPY_PRESERVE"
+    ]
+  }
+]

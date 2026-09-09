@@ -1,9 +1,0 @@
-COMMAND: ./scripts/checks/doc-code-guards.sh --full
-EXIT_STATUS: 0
-ELAPSED_SECONDS: 4.096122290939093
-STDOUT:
-di-imports guard: CLEAN (0 files scanned, git-modified only)
-
-[0;32mAll doc/code guards passed.[0m
-
-STDERR:

@@ -4,6 +4,27 @@ Snapshot: 2026-09-05. Inventory of the 41 records that existed before
 `architecture/existing-loops-alignment.md`. Completion below means **recorded
 completion**, not a fresh audit of the implementation or its runtime behavior.
 
+## Default context: current architecture loops
+
+Read these compact summaries first. Do not load or glob retired evidence packets;
+read the full approved SPEC and current contracts only when executing new work.
+
+| Loop | Current status |
+|:---|:---|
+| [End-to-end evaluation](architecture/end-to-end-evaluation/SUMMARY.md) | Product evaluation incomplete; T02 blocked at 4/4 |
+| [Evaluation recovery](architecture/end-to-end-evaluation-recovery/SUMMARY.md) | J1/J2 passed; J3 blocked at 4/4 |
+| [J3 offline repair](architecture/platform-evaluation-j3-offline-repair/SUMMARY.md) | Exhausted repair superseded by completed continuation |
+| [J3 offline continuation](architecture/platform-evaluation-j3-offline-continuation/SUMMARY.md) | C01 complete offline; runtime evaluation remains |
+| [Codex manual-loop repair](architecture/codex-manual-loop-repair/SUMMARY.md) | Complete |
+| [Blocker handoff diagnosis](architecture/blocker-handoff-diagnosis-evidence/SUMMARY.md) | Historical findings retained compactly |
+| [Blocker handoff certification](architecture/blocker-handoff-certification-evidence/SUMMARY.md) | T01–T05 complete; integrated `9fde0baa` certified |
+| [Economical gate execution](architecture/economical-gate-execution/SUMMARY.md) | Draft superseded by approved Luna exception |
+
+Historical full gate, review and provenance files in these roots were retired by
+Chris on 2026-09-09. Their old gates and baselines are not reusable; follow-up work
+needs freshly scoped gates and baselines. Retirement does not reset attempt budgets
+or supply proof that was missing.
+
 ## Additional working queues
 
 [PENDIENTES](../PENDIENTES/README.md) maintains separate work items and SPECs.
@@ -13,12 +34,11 @@ SPECs in PENDIENTES use the same engine and current AGENTS.md when resumed.
 FP-scoped work follows the current [FP delivery guide](../DOCS/guides/manual-loop.md),
 including its role routing and evidence rules.
 
-## Draft evaluations awaiting approval
+## Current evaluation
 
 - [Platform-cluster end-to-end evaluation](architecture/end-to-end-evaluation.md):
-  product understanding, runtime validation, one real delivery through the existing
-  loop, then a record-cleanup proposal. Draft only: complete concrete gates after
-  read-only preflight and obtain approval before execution. No cleanup authorized.
+  the approved historical execution is blocked. Use its compact summary to scope a
+  continuation. Record cleanup was authorized and performed separately.
 
 ## Current state
 
@@ -130,9 +150,10 @@ changing the feature. No service-wide FP migration follows from adopting the rul
 ## Completion and blocking
 
 KISS is the default repository guard. Applicable service tests, typechecks and
-integration gates still run. Record commands, exit statuses, output, independent
-review results, and exceptions in Progress. A failed gate or missing review blocks
-completion; preserve work and report the blocker. Commit only when authorized.
+integration gates still run. Keep commands, exit statuses, output, independent
+review results, and exceptions in the temporary active packet. A failed gate or
+missing review blocks completion; preserve work and report the blocker. After
+validation, retain the compact outcome and retire the packet. Commit only when authorized.
 
 The maintenance evidence lives in
 [existing-loops-alignment](architecture/existing-loops-alignment.md). This index is

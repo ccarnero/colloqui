@@ -1,8 +1,0 @@
-COMMAND: python3 ./scripts/checks/check-codex-manual-loop.py
-EXIT_STATUS: 0
-ELAPSED_SECONDS: 0.05660045810509473
-FINISHED_UTC: 2026-09-08T18:39:23.143437+00:00
-STDOUT:
-PASS: project Codex manual-loop policy and hash lock validated
-
-STDERR:

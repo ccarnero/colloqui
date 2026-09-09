@@ -1,7 +1,0 @@
-{
-  "exit": 1,
-  "duration_seconds": 0.04,
-  "requested_model": "gpt-5-nano",
-  "observed_model": null,
-  "native_role_loading": "not tested"
-}

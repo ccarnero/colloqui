@@ -1,3 +1,0 @@
-di-imports guard: CLEAN (0 files scanned, git-modified only)
-
-[0;32mAll doc/code guards passed.[0m

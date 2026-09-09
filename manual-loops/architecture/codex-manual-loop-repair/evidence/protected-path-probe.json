@@ -1,9 +1,0 @@
-{
-  "write_open": "denied",
-  "errno": 1,
-  "error": "[Errno 1] Operation not permitted: '.codex/config.toml'",
-  "note": "Observed only for this session sandbox; not an immutable OS flag or global policy.",
-  "path": ".codex/config.toml",
-  "before_sha256": "5c3cfb63a636fc7b78c6e0e6e10e67d2208c4ccd3b033167e37135b447a1ebc9",
-  "after_sha256": "5c3cfb63a636fc7b78c6e0e6e10e67d2208c4ccd3b033167e37135b447a1ebc9"
-}

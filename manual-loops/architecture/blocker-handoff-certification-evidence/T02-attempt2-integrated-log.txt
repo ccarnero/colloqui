@@ -1,5 +1,0 @@
-9fde0baa docs(architecture): commit blocker-handoff-diagnosis evidence directory
-e111957b docs(agents): commit AGENTS.md delivery policy and the codex-manual-loop-repair record
-51689ecd chore(checks): commit the Codex manual-loop policy checker and guard wiring
-07e1d466 chore(codex): commit the locked role set and project config
-4e26001a docs(architecture): record T01 certification deviations

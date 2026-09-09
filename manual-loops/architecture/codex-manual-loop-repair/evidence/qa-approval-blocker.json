@@ -1,7 +1,0 @@
-{
-  "action": "Native Codex fp-qa read-only validation and role smoke dispatch",
-  "result": "automatic approval review rejected before command executed",
-  "reason": "Repository documentation/source transmission to Codex model not deemed specifically authorized",
-  "user_approval": "requested asynchronously; pending",
-  "no_bypass": true
-}

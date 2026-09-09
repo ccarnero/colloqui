@@ -1,0 +1,50 @@
+[
+  {
+    "nativeSource": "/Users/chris/.codex/sessions/2026/09/09/rollout-2026-09-09T14-47-02-01a08747-c3e8-7810-9b14-0e7a74630a2e.jsonl",
+    "runId": "01a08747-c3e8-7810-9b14-0e7a74630a2e",
+    "role": "script-runner",
+    "agentPath": "/root/parent_repair_runner",
+    "turn": {
+      "turn_id": "01a0874e-832c-78f1-8e0c-7ccc36234400",
+      "model": "gpt-5.6-luna",
+      "effort": "low",
+      "service_tier": null
+    },
+    "requested": {
+      "model": "gpt-5.6-luna",
+      "effort": "low"
+    }
+  },
+  {
+    "nativeSource": "/Users/chris/.codex/sessions/2026/09/09/rollout-2026-09-09T14-50-38-01a0874b-0e02-7f80-9eb1-6298e1b26bca.jsonl",
+    "runId": "01a0874b-0e02-7f80-9eb1-6298e1b26bca",
+    "role": "fp-dev",
+    "agentPath": "/root/parent_repair_dev",
+    "turn": {
+      "turn_id": "01a0874b-0e4f-7bc1-bed7-cbaf9126dffc",
+      "model": "gpt-5.6-sol",
+      "effort": "medium",
+      "service_tier": null
+    },
+    "requested": {
+      "model": "gpt-5.6-sol",
+      "effort": "medium"
+    }
+  },
+  {
+    "nativeSource": "/Users/chris/.codex/sessions/2026/09/09/rollout-2026-09-09T11-55-52-01a086ab-0d43-7703-8d15-a6706bd2a579.jsonl",
+    "runId": "01a086ab-0d43-7703-8d15-a6706bd2a579",
+    "role": "fp-qa",
+    "agentPath": "/root/a0_qa",
+    "turn": {
+      "turn_id": "01a0874d-b3b3-7a03-81a7-4e362c4e7534",
+      "model": "gpt-5.6-sol",
+      "effort": "medium",
+      "service_tier": null
+    },
+    "requested": {
+      "model": "gpt-5.6-sol",
+      "effort": "medium"
+    }
+  }
+]
