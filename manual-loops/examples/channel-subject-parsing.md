@@ -107,13 +107,32 @@ cd packages/shared && bun test test/unit/channel.utils.spec.ts && bunx tsc -p ts
 
 ## Progress
 
-- [ ] T01 unit tests for the channel subject helpers
+- [x] T01 unit tests for the channel subject helpers
 - [ ] T02 `parseChannelSubject` rejects unknown tokens
 
 Token ceiling: 5 M per task, every thread including the orchestrator. Crossing it
 blocks the task like an exhausted attempt budget.
 
-- Attempts: T01 0/4; T02 0/4.
+- Attempts: T01 2/4; T02 0/4.
+- T01 completed 2026-09-10: 34 table-driven tests added; production code unchanged.
+  T02 remains unstarted; no blocked work. Estimated run usage below 100,000 / 5,000,000
+  tokens across threads; exact accounting unavailable.
+- Attempt 1: all gates exited 0; both reviewers REJECTED the standalone explicit-version
+  case because T01 requires tables. Attempt 2 converted it to a table, preserving assertions.
+  Both independent reviewers returned APPROVED on the unchanged attempt-2 diff.
+- Validation (script-runner, commands run from repository root; Bun 1.3.1):
+
+  | Gate / exact command | Attempt 1 | Attempt 2 | Trimmed output |
+  |:---|:---|:---|:---|
+  | G0: `./scripts/checks/doc-code-guards.sh` | exit 0 | exit 0 | `KISS doc/code guards passed.`; `di-imports guard: CLEAN (0 files scanned, git-modified only)` |
+  | G1: `cd packages/shared && bunx tsc -p tsconfig.json --noEmit` | exit 0 | exit 0 | No output |
+  | G2: `cd packages/shared && bun test` | exit 0 | exit 0 | `418 pass`, `0 fail`, `783 expect() calls`; 22 files |
+  | Accept: `cd packages/shared && bun test test/unit/channel.utils.spec.ts` | exit 0 | exit 0 | `34 pass`, `0 fail`, `35 expect() calls`; 1 file |
+
+- Implementer independently ran Accept on both attempts: exit 0, 34 pass, 0 fail.
+  No gates skipped or command fallbacks. No affected build, dependency installation,
+  image gate, or service rebuild for this test-only task. Engram connector unavailable;
+  this SPEC preserves the result under the declared topic.
 
 ## Out of scope (explicit)
 
