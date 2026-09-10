@@ -3,7 +3,6 @@
 > Task queue for the `/manual-loop` command. One task at a time, gated by tests
 > and dual review. Queues live in `manual-loops/`.
 > Origin: user decision(s) <YYYY-MM-DD> (Cowork session).
-> Engram topic: '<namespace/kebab-slug>'.
 
 <!-- TEMPLATE NOTES (delete in real SPECs)
 Simple style, based on manual-loops/workflow-toggle.md and trace-console.md

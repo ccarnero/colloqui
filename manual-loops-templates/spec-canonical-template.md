@@ -4,7 +4,6 @@
 > and dual review. Queues live in `manual-loops/`.
 > Depends on: `manual-loops/<prereq>.md` (<status: shipped / done N/N / "degrade gracefully if not shipped yet">)
 > Origin: user decision(s) <YYYY-MM-DD> (Cowork session<, detail>).
-> Engram topic: '<namespace/kebab-slug>'.
 
 <!-- TEMPLATE NOTES (delete in real SPECs)
 Canonical style, reverse-engineered from manual-loops/connector-invoke-api.md
@@ -128,8 +127,7 @@ cd services/<svc> && bun test && bunx tsc -p tsconfig.json --noEmit
 - Update `services/<svc>/README.md` with the new contract/behavior.
 - <Update `DOCS/<area>/<doc>.md`, `SCHEMAS.md`, `TAXONOMY.md` if applicable.>
 - Add an entry to `DOCS/archive/INDEX.md`.
-- Log the decision (rule, why, evidence, engram topic) tying back to
-  "User decisions" and the preamble's Engram topic.
+- Log the decision (rule, why, evidence) tying back to "User decisions".
 
 **Accept**
 ```
