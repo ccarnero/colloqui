@@ -124,15 +124,15 @@ bunx playwright test e2e/journeys/j5-diagnose.spec.ts --reporter=list
 
 <!-- The loop edits only this section: the attempt counter and one line per task. Nothing else goes in the SPEC. -->
 
-- [x] T01 J1 green — attempt 1/4; G0 exit 0 (KISS guards passed), G1 exit 0 (4 passed, 5 future-task fixme skipped), Accept exit 0 (4 passed); 2× APPROVED; pending human commit, T02–T05 remain, no blockers; tokens estimated <100k/6M across threads (exact usage unavailable).
-- [ ] T02 J2 provision
+- [x] T01 J1 green — attempt 1/4; G0 exit 0 (KISS guards passed), G1 exit 0 (4 passed, 5 future-task fixme skipped), Accept exit 0 (4 passed); 2× APPROVED; committed 18cc191e, T02–T05 remain, no blockers; tokens estimated <100k/6M across threads (exact usage unavailable).
+- [x] T02 J2 provision — attempt 1/4; G0 exit 0 (KISS guards passed), G1 exit 0 (6 passed, 3 future-task fixme skipped), Accept exit 0 (2 passed); 2× APPROVED; pending human commit, T03–T05 remain, no blockers; tokens estimated <100k/6M across threads (exact usage unavailable).
 - [ ] T03 J3 execute
 - [ ] T04 J4 toggle
 - [ ] T05 J5 diagnose
 
 Token ceiling: 6 M per task, every thread including the orchestrator.
 
-- Attempts: T01 1/4; T02 0/4; T03 0/4; T04 0/4; T05 0/4.
+- Attempts: T01 1/4; T02 1/4; T03 0/4; T04 0/4; T05 0/4.
 
 ## Out of scope (explicit)
 
