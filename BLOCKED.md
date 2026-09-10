@@ -104,3 +104,83 @@ and add only the three runtime-list exports to its existing selective block.
 The SPEC now records that scope and the retry instruction. Implementation remains
 stashed; attempt 2 has not started because the block records and approved SPEC
 change are uncommitted. This resolves the scope decision, not validation or T02.
+
+
+## E2E journeys T05 — 2026-09-10
+
+The console truncates the execution ID, so J5 cannot display the full API ID.
+Root cause: `services/admin-console/src/app/features/automation/workflows/detail/workflow-run-detail.component.ts:58`
+renders `Run · {{ shortId(d.executionId) }}`; lines 552–553 implement
+`return id.length > 8 ? id.slice(0, 8) : id;`.
+
+Candidate product fixes (analysis only, outside the approved task scope):
+
+1. Render the full ID in the title; low behavioral risk, possible header wrapping:
+
+```diff
+- Run · {{ shortId(d.executionId) }}
++ Run · {{ d.executionId }}
+```
+
+2. Preserve the compact title and add an Execution metadata cell; minor grid expansion:
+
+```diff
+ <div class="meta-grid">
++  <div class="meta-cell">
++    <div class="meta-l">Execution</div>
++    <div class="meta-v mono">{{ d.executionId }}</div>
++  </div>
+```
+
+- SPEC: `manual-loops/e2e-journeys.md`; task T05; date 2026-09-10.
+- Attempt: 1/4; immediate product block under User decision 3, not budget exhaustion.
+- Attempt 1: enabled J5, reused the workflow body, created and executed a workflow,
+  polled terminal status, signed in, checked full workflow and execution IDs, and
+  added afterAll deletion. Only allowed implementation paths changed.
+- Implementer Accept: `bunx playwright test e2e/journeys/j5-diagnose.spec.ts --reporter=list`, exit 1.
+
+```text
+Running 1 test using 1 worker
+
+✘  1 [chromium] › e2e/journeys/j5-diagnose.spec.ts:19:7 › J5 diagnose › console shows the API's workflow and execution ids (25.4s)
+
+Error: expect(locator).toBeVisible() failed
+
+Locator: getByText('pEtcdfHFyFheBjQEceuhi', { exact: true }).first()
+Expected: visible
+Timeout: 5000ms
+Error: element(s) not found
+
+at journeys/console.ts:32
+
+1 failed
+[chromium] › e2e/journeys/j5-diagnose.spec.ts:19:7 › J5 diagnose › console shows the API's workflow and execution ids
+```
+
+Captured UI body (HTTP response body was not captured; this is a UI visibility failure):
+
+```text
+heading "Run · pEtcdfHF FAILED" [level=1]
+text: Started Sep 10, 2026, 8:44:25 PM UTC Status FAILED Temporal workflow acme:j5-diagnose-1789073065059:5mXhSGIXH2vMXZiO3yVVz Definition sUGP_G86e1Onx8QVsFjQf
+```
+
+- Evidence: `test-results/journeys-j5-diagnose-J5-di-20f55--workflow-and-execution-ids-chromium/error-context.md`.
+- Cleanup: afterAll checks DELETE 204 and GET 404; the run reported no hook failure.
+- Unknown execution 404 assertion was not reached after the UI failure.
+- Script-runner gates, dual reviews and commit dry run were not run after the confirmed
+  product block. No workaround, product edit, stash, revert or WIP commit was made.
+- Estimated usage below 100k/6M tokens across threads; exact accounting unavailable.
+- Remaining: resolve the product display requirement in separately approved scope,
+  resume T05, rerun acceptance and all gates, obtain both reviews, then dry run commit.
+- No service rebuild is needed for the preserved test changes; a future product fix
+  would require an admin-console rebuild/deployment.
+
+
+### T05 display decision — 2026-09-10
+
+The human confirmed that `shortId` intentionally displays the first eight execution-ID
+characters. T05 resumes with the full workflow ID and the eight-character execution-ID
+prefix asserted. User decision 3 remains binding: no product changes. This resolves
+the display requirement block; validation must be rerun. Option 2 above (an Execution
+metadata cell with the full ID) remains a note for a future admin-console SPEC, not
+a prerequisite for this task. No product suggestion is implemented in this loop.

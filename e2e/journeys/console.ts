@@ -19,3 +19,15 @@ export const signIn = async (page: Page): Promise<void> => {
   await page.waitForURL("**/dashboard", { timeout: 20_000 });
   await expect(page.locator("app-shell, [class*=\"sidebar\"]").first()).toBeVisible();
 };
+
+export const expectWorkflowRunIds = async (
+  page: Page,
+  workflowId: string,
+  executionId: string,
+): Promise<void> => {
+  await page.goto(
+    `${env.consoleUrl}/workflows/${encodeURIComponent(workflowId)}/runs/${encodeURIComponent(executionId)}`,
+  );
+  await expect(page.getByText(workflowId, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(executionId.slice(0, 8), { exact: true }).first()).toBeVisible();
+};
