@@ -2,7 +2,7 @@ name = "fp-dev"
 description = "Implements one manual-loop task and its regression tests."
 model = "gpt-5.6-sol"
 model_reasoning_effort = "medium"
-sandbox_mode = "workspace-write"
+sandbox_mode = "danger-full-access"  # Playwright/Chromium cannot start under the seatbelt; writes stay bounded by the task's Allowed write paths (loop-commit.py --check)
 developer_instructions = '''You implement exactly ONE task per launch. The prompt gives you the task text, its
 acceptance criteria, the SPEC's Constraints section, and — on retries — the previous
 attempt's failures. Implement the task, make its acceptance criteria pass, and stop.

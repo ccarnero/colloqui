@@ -27,7 +27,7 @@ PAIRS = (
 )
 # Every Codex role, paired or not, must be a well-formed role file: the shape Codex loads, nothing about which model.
 ROLE_KEYS = ("name", "description", "model", "model_reasoning_effort", "sandbox_mode", "developer_instructions")
-SANDBOXES = ("read-only", "workspace-write")
+SANDBOXES = ("read-only", "workspace-write", "danger-full-access")  # full access only for roles that must launch a browser
 FRONT_MATTER = re.compile(r"\A---\n.*?\n---\n\s*", re.S)
 
 
