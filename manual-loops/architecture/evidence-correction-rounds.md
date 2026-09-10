@@ -1,5 +1,11 @@
 # SPEC — Evidence-correction rounds do not consume implementation attempts
 
+> **SUPERSEDED 2026-09-10 — do not run.** Its goal (record corrections must not spend an
+> attempt) is already in the restored August manual (`DOCS/guides/manual-loop.md`, step 6:
+> "Notes about the record are not objections"). Its tasks would add a classification layer
+> to the manual, the templates and `fp-reviewer` — the September accretion retired in
+> `a978bf38`. Kept as a record; Progress stays unchecked on purpose.
+
 > Task queue for the `/manual-loop` command. One task at a time, gated by tests
 > and dual review. Queues live in `manual-loops/`.
 > Depends on: `manual-loops/architecture/blocker-handoff-certification.md`
