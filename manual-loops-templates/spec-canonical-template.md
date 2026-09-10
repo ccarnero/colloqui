@@ -140,6 +140,8 @@ grep -n "<expected string>" services/<svc>/README.md DOCS/archive/INDEX.md
 
 ## Progress
 
+<!-- The loop edits only this section: the attempt counter and one line per task. Nothing else goes in the SPEC. -->
+
 - [ ] T01 <label>
 - [ ] T02 <label>
 - [ ] T0N docs + index

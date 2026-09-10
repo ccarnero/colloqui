@@ -45,8 +45,9 @@ write reports about the loop itself.
 
 ## Return
 
-Report: files created/changed, acceptance-criteria results (command + outcome), and
-any deviation from the task text with its reason.
+Report: files created/changed, the Accept command with its exit code, and any
+deviation from the task text with its reason. Ten lines is plenty: do not narrate
+the gates, the environment or the tools you had; the orchestrator has the rollout.
 
 On a final failed attempt — the orchestrator says the attempt budget is exhausted
 or the same error repeated — add a handoff note: the failure in one plain sentence,

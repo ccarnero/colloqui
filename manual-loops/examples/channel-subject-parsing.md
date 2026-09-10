@@ -4,6 +4,9 @@
 > Origin: user decision 2026-09-09 (Cowork session) — first run of the restored engine,
 > kept under `manual-loops/examples/` as the reference SPEC for small, single-package loops.
 > Engram topic: 'manual-loop/examples/channel-subject-parsing'.
+> Note: the "Validation evidence" sections at the end were written by the loop during
+> its first two runs, before the Progress-only rule; kept as a record of that run, not
+> as the format to follow. T02's scope widening to `index.ts` was a human decision.
 
 ## Goal
 

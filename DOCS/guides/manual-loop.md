@@ -31,7 +31,12 @@ repair it.
 
 ## Invariants
 
-- ONE task in flight at a time. Never start a task with a dirty `git status`.
+- ONE task in flight at a time. Never start a task with changes outside the task's
+  own files (its Allowed write paths, the SPEC, `BLOCKED.md`).
+- The loop writes to the SPEC only inside its **Progress** section: the attempt
+  counter and one line of result per task. No evidence tables, gate output, stash
+  hashes, tool-availability notes or new sections — the rollout, `BLOCKED.md` and
+  the commit are the record. Allowed write paths change only on the human's word.
 - Max 4 implementation attempts per task. The SAME error appearing in 2 consecutive
   attempts blocks the task immediately (do not spend the remaining attempts).
 - A task has a token ceiling, declared in the SPEC's Progress. Crossing it blocks
@@ -46,8 +51,12 @@ an attempt; the human stops the loop when they disagree with the record.
 
 ## Per-task cycle
 
-1. **Preflight.** `git status --porcelain` must be empty. If not, STOP and report —
-   never discard changes you did not create. Read the task's section from the SPEC.
+1. **Preflight.** Run `python3 scripts/loop-commit.py <spec> <task> --check`. It
+   passes when the tree is clean or every uncommitted change is inside the task's
+   Allowed write paths, the SPEC or `BLOCKED.md` (a task resumed after a block or a
+   scope change starts from the work already in the tree). Anything else → STOP and
+   report; never discard changes you did not create. Read the task's section from
+   the SPEC.
 
 2. **Implement.** Launch the implementer role (`fp-dev` in Codex, `implementer` in
    Claude Code) with: the full task text and acceptance criteria, the SPEC's
@@ -98,14 +107,16 @@ an attempt; the human stops the loop when they disagree with the record.
    - Ask the implementer for its handoff note (plain-language failure, root cause
      with `file:line`, one to three candidate fixes with diff and risk). Analysis
      only: it allocates no attempt and authorizes no retry.
-   - Preserve the work and leave the tree clean for the next task:
-     `git stash push -m "BLOCKED <spec> <task>"` scoped to the paths the task touched.
+   - Leave the work in the tree exactly as it is: no stash, no revert, no WIP commit.
+     The loop stops here, so nothing else needs a clean tree; the human decides
+     whether to resume (the preflight accepts the task's own files), commit it as
+     WIP or discard it.
    - Append to `BLOCKED.md` (repo root): the handoff note first, then spec file,
      task id, date, attempt count, the exact failing gate/objection, error output
      (trimmed), and what was tried per attempt.
    - Report to the user and STOP the loop — do not continue to the next task.
 
-9. **Next.** Once the human has committed (`git status` clean again) → proceed to the next
+9. **Next.** Once the human has committed (`--check` passes with a clean tree) → proceed to the next
    unchecked task (unless a task id was pinned — then stop and report).
 
 ## Reporting

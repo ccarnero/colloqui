@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """Step 7 of the manual loop: the commit, with the human in front of it.
 
-    python3 scripts/loop-commit.py <spec.md> <TASK> [--yes] [--type feat|fix|test|chore|refactor|docs] [--scope x]
+    python3 scripts/loop-commit.py <spec.md> <TASK> [--check | --yes] [--type=feat|fix|test|chore|refactor|docs] [--scope=x]
 
-Without --yes it is a dry run: it checks that every changed file is inside the task's
-"Allowed write paths" (plus the SPEC itself), prints `git status --short`, the diffstat
+--check is step 1 (preflight): exit 0 when the tree is clean or every uncommitted
+change is inside the task's "Allowed write paths", the SPEC or BLOCKED.md — so a task
+resumed after a block starts from the work in the tree; exit 1 naming the offenders
+otherwise. Without flags it is step 7's dry run: it checks that every changed file is inside the task's
+"Allowed write paths" (plus the SPEC and BLOCKED.md), prints `git status --short`, the diffstat
 and the exact commit message, and exits 2 ("waiting for your ok"). The orchestrator
 pastes that output and stops; the human runs it again with --yes, or tells it to.
 With --yes it checks the task off in the SPEC's Progress list, stages exactly those
@@ -67,6 +70,7 @@ def main(argv: list[str]) -> int:
         return 1
     spec_rel, task = args[0], args[1].upper()
     yes = "--yes" in flags
+    check = "--check" in flags
     ctype = next((f.split("=", 1)[1] for f in flags if f.startswith("--type=")), "feat")
     if ctype not in TYPES:
         print(f"✖ --type must be one of {sorted(TYPES)}")
@@ -85,21 +89,26 @@ def main(argv: list[str]) -> int:
     if not allowed:
         print(f"✖ {task} declares no **Allowed write paths** — add them to the SPEC before committing")
         return 1
-    allowed = allowed + [spec_rel]
+    allowed = allowed + [spec_rel, "BLOCKED.md"]
 
     changed = [ln[3:].strip() for ln in git("status", "--porcelain", "--untracked-files=all").splitlines() if ln.strip()]
     changed = [c.split(" -> ")[-1] for c in changed]
     if not changed:
         last = git("log", "-1", "--format=%h %s").strip()
-        print(f"nothing to commit — tree clean (last: {last})")
+        print(f"{'preflight ok — ' if check else 'nothing to commit — '}tree clean (last: {last})")
         return 0
     outside = [c for c in changed if not inside(c, allowed)]
     if outside:
-        print(f"✖ {len(outside)} changed file(s) outside {task}'s allowed write paths — nothing staged:")
+        print(f"✖ {len(outside)} changed file(s) outside {task}'s allowed write paths — {'preflight failed' if check else 'nothing staged'}:")
         for c in outside:
             print(f"    {c}")
         print("  allowed: " + ", ".join(allowed))
         return 1
+    if check:
+        print(f"preflight ok — {len(changed)} uncommitted file(s), all inside {task}'s allowed paths (resuming from the tree):")
+        for c in changed:
+            print(f"    {c}")
+        return 0
 
     scope = next((f.split("=", 1)[1] for f in flags if f.startswith("--scope=")), scope_of(allowed))
     attempts = attempts_of(spec, task)
