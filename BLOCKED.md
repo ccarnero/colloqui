@@ -53,3 +53,54 @@
   use); `e2e/nats-events` partially asserts on envelopes fabricated by its own
   mock (validates the double, not `NatsPublisher`);
   `providers.module.ts:34-37` dead ternary (same listener both branches).
+
+
+## manual-loops/examples/channel-subject-parsing.md · T02 — 2026-09-10
+
+The required package-index export test cannot load because the new runtime lists
+are absent from the index's selective exports. The implementer stopped without
+editing outside the allowed paths.
+
+Root cause: `packages/shared/src/index.ts:68-98` selectively re-exports constants,
+ending with `WEBHOOK_SECRET_HEADERS_SET,` followed by `} from "./channel.constants";`.
+It omits all three new lists. The task requires the index export test but excludes
+`index.ts` from its allowed write paths.
+
+Preferred candidate fix (requires human scope approval): add
+`packages/shared/src/index.ts` to T02's allowed paths, then add the intended exports:
+
+```diff
+   WEBHOOK_SECRET_HEADERS_SET,
++  CHANNELS,
++  CHANNEL_PROVIDERS,
++  MESSAGE_KINDS,
+ } from "./channel.constants";
+```
+
+Risk: low; adds three intended public exports. Alternative: use
+`export * from "./channel.constants";` instead of the selective block; medium risk
+because it also exposes other current and future constants. Neither fix was applied.
+
+- SPEC: `manual-loops/examples/channel-subject-parsing.md`; task T02; date 2026-09-10.
+- Attempts: 1/4; stopped for required scope expansion, not budget exhaustion.
+- Attempt 1: added runtime lists, parser membership checks, rejection table and index
+  export test within the three allowed paths. Separate implementer typecheck passed;
+  implementer Accept failed: `Export named 'CHANNEL_PROVIDERS' not found`.
+- Script-runner: G0 exit 0 (KISS guards passed); G1 exit 0 (no output); G2
+  `cd packages/shared && bun test` exit 1: `384 pass`, `1 fail`, `1 error`,
+  `748 expect() calls`, 385 tests across 22 files. Runner output was truncated.
+- Runner Accept, dual review and commit dry run were not run after the failing gate.
+- Estimated total usage below 100,000 / 5,000,000 tokens; exact accounting unavailable.
+- Implementation preserved by scoped stash:
+  `BLOCKED manual-loops/examples/channel-subject-parsing.md T02`.
+  First stash failed with `error: could not write index`; escalated retry succeeded.
+- Remaining: approve scope, commit the block/SPEC records, resume the preserved work,
+  rerun applicable gates and both reviews, then perform the human commit dry run.
+
+### T02 scope decision — 2026-09-10
+
+The user approved the preferred proposal: allow `packages/shared/src/index.ts`
+and add only the three runtime-list exports to its existing selective block.
+The SPEC now records that scope and the retry instruction. Implementation remains
+stashed; attempt 2 has not started because the block records and approved SPEC
+change are uncommitted. This resolves the scope decision, not validation or T02.
