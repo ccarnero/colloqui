@@ -8,7 +8,7 @@ export type Session = { token: string; tenant: string };
 export const login = async (request: APIRequestContext, tenant = env.tenant): Promise<Session> => {
   const res = await request.post(`${env.apiUrl}/api/auth/login`, {
     headers: { [TENANT_HEADER]: tenant },
-    data: { email: env.email, password: env.password, tenantId: tenant },
+    data: { email: env.email, password: env.password, tenant_id: tenant },
   });
   if (!res.ok()) throw new Error(`login failed: ${res.status()} ${await res.text()}`);
   const body = (await res.json()) as Record<string, unknown>;
