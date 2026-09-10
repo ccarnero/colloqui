@@ -13,7 +13,7 @@ enables subagents and sets the defaults. The procedure the principal follows is
 | --- | --- | --- |
 | `fp-dev` | Every task: implements one task and its regression tests. | `workspace-write` |
 | `fp-reviewer` | Every task, two in parallel: reviews the unchanged diff. | `read-only` |
-| `fp-qa` | Only when the SPEC asks for it: completes missing tests after implementation, before gates. | `workspace-write` |
+| `fp-qa` | Only when the SPEC declares `QA: fp-qa` (absent = none): completes missing tests after implementation, before gates. | `workspace-write` |
 | `fp-architect` | Only when a task has a material design decision. | `read-only` |
 | `script-runner` | Only when the SPEC says `Gate executor: script-runner`: runs the gate commands verbatim on a cheap model and returns exit codes and trimmed output, keeping build and E2E logs out of the principal's context. | `workspace-write` |
 

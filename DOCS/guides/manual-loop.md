@@ -54,7 +54,8 @@ an attempt; the human stops the loop when they disagree with the record.
    Constraints section, and (on retries) the exact gate/review failures from the
    previous attempt. Nothing else.
 
-3. **QA (only when the SPEC asks for it).** Launch the QA role (`fp-qa`) with the
+3. **QA (only when the SPEC declares `QA: fp-qa`).** The line sits next to
+   `Gate executor:`; absent or `QA: none` means no QA step. Launch the QA role (`fp-qa`) with the
    task, its acceptance criteria, Constraints, and the implementer's report. It
    completes missing tests within allowed paths and finishes before any gate runs.
 
@@ -84,10 +85,14 @@ an attempt; the human stops the loop when they disagree with the record.
    consumes one attempt. Notes about the record are not objections: the
    orchestrator fixes the record without spending an attempt.
 
-7. **Commit.** Gates green + 2× APPROVED → check the task off in the SPEC's Progress
-   list, include the SPEC in the same commit, and commit with a conventional message
-   scoped to the task, e.g. `feat(workflow-service): T03 block disabled executions`.
-   No Co-Authored-By.
+7. **Commit — the human's call.** Gates green + 2× APPROVED → update the SPEC's
+   Progress (attempt count, one line of result) and run
+   `python3 scripts/loop-commit.py <spec> <task>` (dry run). It checks that every
+   changed file is inside the task's Allowed write paths, prints status, diffstat and
+   the exact conventional message (`feat(<scope>): T03 <title>`, SPEC and attempts in
+   the body, no Co-Authored-By), and exits 2. Paste that output, then STOP the turn:
+   the human commits with `--yes` from a terminal, or tells you to. A file outside the
+   allowed paths is a failed attempt, not something to stage anyway.
 
 8. **Block.** Attempt budget or token ceiling exhausted, or same error twice in a row:
    - Ask the implementer for its handoff note (plain-language failure, root cause
@@ -100,7 +105,7 @@ an attempt; the human stops the loop when they disagree with the record.
      (trimmed), and what was tried per attempt.
    - Report to the user and STOP the loop — do not continue to the next task.
 
-9. **Next.** After a successful commit: `git status` clean again → proceed to the next
+9. **Next.** Once the human has committed (`git status` clean again) → proceed to the next
    unchecked task (unless a task id was pinned — then stop and report).
 
 ## Reporting

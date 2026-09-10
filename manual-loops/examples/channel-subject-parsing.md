@@ -34,6 +34,7 @@ returns `null` for any channel, provider or kind outside the runtime lists.
 
 ## Gates (the manual loop runs these verbatim, in order)
 
+QA: none
 Gate executor: script-runner
 
 ```

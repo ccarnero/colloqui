@@ -54,7 +54,7 @@ Per task:
    wrong). They reject: a duplicated schema, a classification with no
    rule cited, reinvented correlation, a workaround with a long
    justification.
-5. Green + APPROVED = atomic commit. Otherwise = revert.
+5. Green + APPROVED = atomic commit, made by the human (`scripts/loop-commit.py`, dry run first). Otherwise = revert.
 6. Next task.
 ```
 

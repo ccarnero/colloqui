@@ -37,6 +37,7 @@ User decisions and Out of scope address the human and the orchestrator.
 
 ## Gates (the `/manual-loop` command runs these verbatim, in order)
 
+QA: none | fp-qa  <!-- fp-qa completes missing tests after implementation, before gates; absent = none -->
 Gate executor: orchestrator | script-runner  <!-- script-runner keeps build/E2E logs out of the principal's context; it runs commands verbatim and returns exit codes + trimmed output -->
 
 ```
