@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { CHANNELS, CHANNEL_PROVIDERS, MESSAGE_KINDS } from "../../src";
 import {
   buildChannelSubject,
   buildWebhookIngressSubject,
@@ -109,6 +110,44 @@ describe("buildChannelSubject / parseChannelSubject", () => {
       expect(parseChannelSubject(subject)).toBeNull();
     });
   }
+
+  const unknownTokenCases = [
+    [
+      "unknown channel",
+      "evt.t1.channel-service.messaging.whatsapp.telegram.received.v1",
+    ],
+    [
+      "unknown provider",
+      "evt.t1.channel-service.messaging.telegram.meta.received.v1",
+    ],
+    [
+      "unknown kind",
+      "evt.t1.channel-service.messaging.telegram.telegram.bounced.v1",
+    ],
+    [
+      "unknown channel, provider, and kind",
+      "evt.t1.channel-service.messaging.whatsapp.meta.bounced.v1",
+    ],
+  ] as const;
+
+  for (const [name, subject] of unknownTokenCases) {
+    it(`rejects ${name}`, () => {
+      expect(parseChannelSubject(subject)).toBeNull();
+    });
+  }
+
+  it("exports the runtime token lists from the package index", () => {
+    expect(CHANNELS).toEqual(["telegram", "http", "e2e-tests"]);
+    expect(CHANNEL_PROVIDERS).toEqual(["telegram", "http", "e2e-tests"]);
+    expect(MESSAGE_KINDS).toEqual([
+      "received",
+      "sent",
+      "delivered",
+      "read",
+      "failed",
+      "send",
+    ]);
+  });
 });
 
 describe("buildWebhookIngressSubject / parseWebhookIngressSubject", () => {

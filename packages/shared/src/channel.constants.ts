@@ -1,3 +1,39 @@
+import type {
+  Channel,
+  ChannelProvider,
+  MessageKind,
+} from "./channel.interfaces";
+
+export const CHANNELS = [
+  "telegram",
+  "http",
+  "e2e-tests",
+] as const satisfies readonly Channel[];
+export const CHANNEL_PROVIDERS = [
+  "telegram",
+  "http",
+  "e2e-tests",
+] as const satisfies readonly ChannelProvider[];
+export const MESSAGE_KINDS = [
+  "received",
+  "sent",
+  "delivered",
+  "read",
+  "failed",
+  "send",
+] as const satisfies readonly MessageKind[];
+
+type AssertExhaustive<T extends never> = T;
+type AllChannelsListed = AssertExhaustive<
+  Exclude<Channel, (typeof CHANNELS)[number]>
+>;
+type AllChannelProvidersListed = AssertExhaustive<
+  Exclude<ChannelProvider, (typeof CHANNEL_PROVIDERS)[number]>
+>;
+type AllMessageKindsListed = AssertExhaustive<
+  Exclude<MessageKind, (typeof MESSAGE_KINDS)[number]>
+>;
+
 export const CHANNEL_STREAM_PREFIX = "INGRESS";
 /**
  * Canonical 8-token subject pattern for the messaging domain:

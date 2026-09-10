@@ -117,15 +117,43 @@ cd packages/shared && bun test test/unit/channel.utils.spec.ts && bunx tsc -p ts
 ## Progress
 
 - [x] T01 unit tests for the channel subject helpers
-- [ ] T02 `parseChannelSubject` rejects unknown tokens
+- [x] T02 `parseChannelSubject` rejects unknown tokens
 
 Token ceiling: 5 M per task, every thread including the orchestrator.
 
-- Attempts: T01 2/4; T02 1/4.
+- Attempts: T01 2/4; T02 2/4.
 - T01 completed in `13c1c033`: 34 table-driven tests; gates green and two APPROVED reviews.
-- T02 blocked 2026-09-10: implementation stashed; G0/G1 exit 0, G2 exit 1; index export scope approved; clean-tree preflight and attempt 2 remain pending; estimated usage below 100,000 / 5,000,000 tokens (exact accounting unavailable); see BLOCKED.md.
+- T02 validated 2026-09-10: unknown tokens rejected and lists exported; G0/G1/G2/Accept exit 0, two APPROVED reviews; no remaining blocker, human commit pending; estimated cumulative usage below 200,000 / 5,000,000 tokens (exact accounting unavailable).
 
 ## Validation evidence
+
+### T02 attempt 2 — 2026-09-10
+
+Clean-tree preflight passed after scope/record commit `661ef602`.
+Restored stash `eeaaad3f881dde69ccb349511cca36cedc04ae93`; the initial pop failed
+with `error: could not write index`, and the escalated retry succeeded.
+The implementer completed the approved three selective index exports and ran Accept:
+exit 0, 39 pass, 0 fail, TypeScript passed; `git diff --check` also passed.
+
+Gate executor: script-runner; commands started independently at repository root;
+Bun 1.3.1 observed. Fresh validation of the restored implementation:
+
+| Command | Exit | Duration | Trimmed output |
+|:---|:---|:---|:---|
+| `./scripts/checks/doc-code-guards.sh` | 0 | 0.945s | `di-imports guard: CLEAN (3 files scanned, git-modified only)`; `KISS doc/code guards passed.` |
+| `cd packages/shared && bunx tsc -p tsconfig.json --noEmit` | 0 | 0.755s | No output |
+| `cd packages/shared && bun test` | 0 | 2.312s | `423 pass`, `0 fail`, `790 expect() calls`; 22 files |
+| `cd packages/shared && bun test test/unit/channel.utils.spec.ts && bunx tsc -p tsconfig.json --noEmit` | 0 | 0.725s | `39 pass`, `0 fail`, `42 expect() calls`; 1 file; typecheck silent |
+
+Independent `fp-reviewer` agents `t02_review_a` and `t02_review_b` launched in
+parallel on the same complete staged/unstaged diff and returned `APPROVED` each.
+No untracked files or preexisting changes; the implementation diff was verified
+unchanged after review. This update records status and evidence only.
+No gate skips, implementation fallbacks, dependency changes, installation, build,
+or image gate; the SPEC declares no package image. No service rebuild performed.
+Engram remains unavailable; this SPEC retains the result under its declared topic.
+The historical T02 block is resolved by the approved scope and these fresh results;
+only the human commit remains pending.
 
 ### T02 attempt 1 — 2026-09-10
 

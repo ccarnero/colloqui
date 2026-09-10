@@ -1,4 +1,7 @@
 import {
+  CHANNELS,
+  CHANNEL_PROVIDERS,
+  MESSAGE_KINDS,
   CHANNEL_SUBJECT_PREFIX,
   CHANNEL_PRODUCER,
   CHANNEL_DOMAIN,
@@ -6,6 +9,13 @@ import {
   WEBHOOK_INGRESS_RECEIVED_VERSION,
 } from "./channel.constants";
 import type { Channel, ChannelProvider, MessageKind } from "./channel.interfaces";
+
+function isMember<T extends string>(
+  values: readonly T[],
+  value: string,
+): value is T {
+  return values.some((candidate) => candidate === value);
+}
 
 /**
  * Builds a NATS subject for channel messaging events (8 tokens — DOCS/messaging/envelope.md §3).
@@ -56,13 +66,16 @@ export function parseChannelSubject(subject: string): {
   if (parts[0] !== CHANNEL_SUBJECT_PREFIX) return null;
   if (parts[2] !== CHANNEL_PRODUCER) return null;
   if (parts[3] !== CHANNEL_DOMAIN) return null;
+  if (!isMember(CHANNELS, parts[4])) return null;
+  if (!isMember(CHANNEL_PROVIDERS, parts[5])) return null;
+  if (!isMember(MESSAGE_KINDS, parts[6])) return null;
 
   return {
     tenant: parts[1],
     producer: parts[2],
-    channel: parts[4] as Channel,
-    provider: parts[5] as ChannelProvider,
-    kind: parts[6] as MessageKind,
+    channel: parts[4],
+    provider: parts[5],
+    kind: parts[6],
     version: parts[7],
   };
 }
