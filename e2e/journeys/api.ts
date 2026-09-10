@@ -22,6 +22,18 @@ export const headers = (s: Session | null, tenant = s?.tenant ?? env.tenant): Re
   ...(s ? { authorization: `Bearer ${s.token}` } : {}),
 });
 
+export const workflowBody = (name: string) => ({
+  name,
+  application: "e2e-tests",
+  actions: [
+    {
+      activity: "jsFunction",
+      name: "return",
+      args: { code: "return 1" },
+    },
+  ],
+});
+
 export const api = (request: APIRequestContext, s: Session | null) => ({
   get: (path: string, tenant?: string) => request.get(`${env.apiUrl}/api${path}`, { headers: headers(s, tenant) }),
   post: (path: string, data: unknown, tenant?: string) => request.post(`${env.apiUrl}/api${path}`, { headers: headers(s, tenant), data }),
