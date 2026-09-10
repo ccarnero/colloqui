@@ -3,16 +3,17 @@
 
     python3 scripts/loop-commit.py <spec.md> <TASK> [--check | --yes] [--type=feat|fix|test|chore|refactor|docs] [--scope=x]
 
---check is step 1 (preflight): exit 0 when the tree is clean or every uncommitted
-change is inside the task's "Allowed write paths", the SPEC or BLOCKED.md — so a task
-resumed after a block starts from the work in the tree; exit 1 naming the offenders
-otherwise. Without flags it is step 7's dry run: it checks that every changed file is inside the task's
-"Allowed write paths" (plus the SPEC and BLOCKED.md), prints `git status --short`, the diffstat
-and the exact commit message, and exits 2 ("waiting for your ok"). The orchestrator
-pastes that output and stops; the human runs it again with --yes, or tells it to.
-With --yes it checks the task off in the SPEC's Progress list, stages exactly those
-files and commits. Idempotent: nothing to commit → exit 0 with a note; a file outside
-the allowed paths → exit 1 naming it, nothing staged. Never pushes.
+--check is step 1 (preflight). The tree belongs to the human while the loop runs: whatever
+is already uncommitted outside the task's files is recorded as the baseline
+(.git/loop-baseline) and ignored from then on. It never fails; it lists what it will
+ignore. Without flags it is step 7's dry run: a file outside the task's "Allowed write
+paths" (plus the SPEC and BLOCKED.md) that was NOT dirty at preflight is the task's
+doing → exit 1 naming it, nothing staged. Otherwise it prints `git status --short`,
+the diffstat and the exact commit message, and exits 2 ("waiting for your ok"). The
+orchestrator pastes that output and stops; the human runs it again with --yes, or
+tells it to. With --yes it checks the task off in the SPEC's Progress list, stages
+exactly the task's files and commits; the human's own edits stay where they are.
+Idempotent: nothing to commit → exit 0. Never pushes.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+BASELINE = ROOT / ".git" / "loop-baseline"  # uncommitted paths that were the human's before the task started
 TYPES = {"feat", "fix", "test", "chore", "refactor", "docs"}
 
 
@@ -91,23 +93,31 @@ def main(argv: list[str]) -> int:
         return 1
     allowed = allowed + [spec_rel, "BLOCKED.md"]
 
-    changed = [ln[3:].strip() for ln in git("status", "--porcelain", "--untracked-files=all").splitlines() if ln.strip()]
-    changed = [c.split(" -> ")[-1] for c in changed]
-    if not changed:
-        last = git("log", "-1", "--format=%h %s").strip()
-        print(f"{'preflight ok — ' if check else 'nothing to commit — '}tree clean (last: {last})")
+    dirty = [ln[3:].strip() for ln in git("status", "--porcelain", "--untracked-files=all").splitlines() if ln.strip()]
+    dirty = [c.split(" -> ")[-1] for c in dirty]
+    if check:
+        yours = [c for c in dirty if not inside(c, allowed)]
+        BASELINE.write_text("\n".join(yours) + ("\n" if yours else ""))
+        mine = [c for c in dirty if inside(c, allowed)]
+        print(f"preflight ok — {len(yours)} uncommitted file(s) outside {task}'s paths are yours and will be ignored" + (":" if yours else "."))
+        for c in yours:
+            print(f"    {c}")
+        if mine:
+            print(f"  {len(mine)} file(s) inside {task}'s paths already in the tree (resuming from them): " + ", ".join(mine))
         return 0
-    outside = [c for c in changed if not inside(c, allowed)]
+    baseline = set(BASELINE.read_text().split()) if BASELINE.exists() else set()
+    changed = [c for c in dirty if inside(c, allowed)]
+    outside = [c for c in dirty if not inside(c, allowed) and c not in baseline]
+    ignored = [c for c in dirty if not inside(c, allowed) and c in baseline]
     if outside:
-        print(f"✖ {len(outside)} changed file(s) outside {task}'s allowed write paths — {'preflight failed' if check else 'nothing staged'}:")
+        print(f"✖ {len(outside)} file(s) outside {task}'s allowed write paths changed during the task — nothing staged:")
         for c in outside:
             print(f"    {c}")
         print("  allowed: " + ", ".join(allowed))
         return 1
-    if check:
-        print(f"preflight ok — {len(changed)} uncommitted file(s), all inside {task}'s allowed paths (resuming from the tree):")
-        for c in changed:
-            print(f"    {c}")
+    if not changed:
+        last = git("log", "-1", "--format=%h %s").strip()
+        print(f"nothing to commit for {task} (last: {last})" + (f"; {len(ignored)} of your own file(s) left untouched" if ignored else ""))
         return 0
 
     scope = next((f.split("=", 1)[1] for f in flags if f.startswith("--scope=")), scope_of(allowed))
@@ -120,8 +130,10 @@ def main(argv: list[str]) -> int:
     message = header + "\n\n" + "\n".join(lines) + "\n"
 
     print(f"▸ {task} — {title}")
-    print("▸ changed files (all inside allowed paths):")
-    print(git("status", "--short"), end="")
+    print("▸ files of the task (all inside allowed paths):")
+    print(git("status", "--short", "--", *changed), end="")
+    if ignored:
+        print(f"▸ yours, untouched: {', '.join(ignored)}")
     print("▸ diffstat:")
     print(git("diff", "--stat", "HEAD", "--", *changed), end="")
     print("▸ commit message:")

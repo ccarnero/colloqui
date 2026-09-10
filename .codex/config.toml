@@ -1,3 +1,7 @@
+# No seatbelt for the principal nor for what it launches: the manual loop's gates run Playwright against the
+# local dev cluster, and Chromium cannot start inside the macOS sandbox. What the loop may change is bounded by
+# each task's Allowed write paths (scripts/loop-commit.py --check), and git commit stays with the human.
+sandbox_mode = "danger-full-access"
 model = "gpt-6-astra"
 model_reasoning_effort = "medium"
 

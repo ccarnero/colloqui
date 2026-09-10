@@ -31,8 +31,10 @@ repair it.
 
 ## Invariants
 
-- ONE task in flight at a time. Never start a task with changes outside the task's
-  own files (its Allowed write paths, the SPEC, `BLOCKED.md`).
+- ONE task in flight at a time. The working tree belongs to the human: whatever is
+  uncommitted outside the task's files when it starts is theirs, and the loop neither
+  touches, stages nor reports it. The task itself writes only inside its Allowed write
+  paths, the SPEC's Progress and `BLOCKED.md`.
 - The loop writes to the SPEC only inside its **Progress** section: the attempt
   counter and one line of result per task. No evidence tables, gate output, stash
   hashes, tool-availability notes or new sections — the rollout, `BLOCKED.md` and
@@ -52,11 +54,10 @@ an attempt; the human stops the loop when they disagree with the record.
 ## Per-task cycle
 
 1. **Preflight.** Run `python3 scripts/loop-commit.py <spec> <task> --check`. It
-   passes when the tree is clean or every uncommitted change is inside the task's
-   Allowed write paths, the SPEC or `BLOCKED.md` (a task resumed after a block or a
-   scope change starts from the work already in the tree). Anything else → STOP and
-   report; never discard changes you did not create. Read the task's section from
-   the SPEC.
+   records what is already uncommitted outside the task's files as the human's
+   (ignored from here on) and lists any work already inside the task's paths (a
+   task resumed after a block starts from it). It does not fail; never discard
+   changes you did not create. Read the task's section from the SPEC.
 
 2. **Implement.** Launch the implementer role (`fp-dev` in Codex, `implementer` in
    Claude Code) with: the full task text and acceptance criteria, the SPEC's
@@ -116,7 +117,7 @@ an attempt; the human stops the loop when they disagree with the record.
      (trimmed), and what was tried per attempt.
    - Report to the user and STOP the loop — do not continue to the next task.
 
-9. **Next.** Once the human has committed (`--check` passes with a clean tree) → proceed to the next
+9. **Next.** Once the human has committed → proceed to the next
    unchecked task (unless a task id was pinned — then stop and report).
 
 ## Reporting
