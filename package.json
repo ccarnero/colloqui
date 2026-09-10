@@ -1,6 +1,9 @@
 {
   "name": "yoizen-platform",
   "private": true,
+  "scripts": {
+    "e2e:journeys": "playwright test e2e/journeys"
+  },
   "devDependencies": {
     "@playwright/test": "^1.60.0",
     "@yoizen/database": "workspace:*",

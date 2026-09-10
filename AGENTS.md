@@ -22,7 +22,7 @@ All non-trivial changes go through the **manual-loop system**:
   its acceptance criteria and the SPEC's Constraints; reviewers receive the
   diff, the task text and the Constraints — nothing else).
 - The human approves every SPEC before its first run, and every SPEC declares
-  its Engram topic and its human boundaries.
+  its human boundaries.
 - AGENTS.md takes precedence over SPEC Constraints, engine, agents, templates,
   skills, and local precedent. Constraints may specialize or tighten this
   contract, never silently weaken it. Report conflicts before implementation.

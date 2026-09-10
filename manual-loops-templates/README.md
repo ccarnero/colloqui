@@ -98,7 +98,7 @@ si querés cambiar QUÉ se construye y cómo se valida, se edita el SPEC.
 
 | Sección del SPEC | La consume | Cuándo |
 |:---|:---|:---|
-| Preámbulo (`> Task queue for...`) | Humanos y el orquestador | Al abrir el SPEC: dependencias, origen, topic de Engram |
+| Preámbulo (`> Task queue for...`) | Humanos y el orquestador | Al abrir el SPEC: dependencias y origen |
 | `## Goal` | Humanos + orquestador | Contexto: el resultado observable, SIN detalle de implementación |
 | `## User decisions` | Humano + orquestador | Decisiones YA tomadas. El loop no las rediscute. Si una tarea depende de una, citala por número EN esa tarea — el implementer no ve esta sección |
 | `## Prior art` (solo canónico) | El autor del SPEC | Registro del código que se REUSA. El motor no la reenvía: repetí cada cita dentro de la tarea que la usa |
@@ -190,12 +190,13 @@ El SPEC es un documento **vivo**: crece mientras el loop corre.
   — siempre con aprobación humana.
 - **Tareas nuevas**: se AGREGAN al final con provenance
   ("Added \<fecha\> after \<motivo\>"). **Nunca se renumeran** las
-  existentes — los commits y Engram citan los números.
-- **Reintentos tras bloqueo**: nota inline en la tarea:
-  `> RETRY NOTE (<fecha>, after N-attempt block — see BLOCKED.md): ...`
-- **Engram**: cada SPEC declara su topic (`namespace/kebab-slug`). Las
-  decisiones y el resultado final se guardan ahí — es lo que le permite a
-  una sesión futura retomar sin releer todo.
+  existentes — los commits citan los números.
+- **Reintentos tras bloqueo**: el trabajo queda en el árbol y BLOCKED.md tiene
+  el handoff; si el humano cambia el scope, edita los Allowed write paths de la
+  tarea y relanza. Nada más se anota en el SPEC.
+- **Sin memoria externa**: el SPEC, BLOCKED.md y los commits son el único
+  registro. El loop no consulta ni escribe Engram ni ninguna otra memoria;
+  si una herramienta así no está, no es un hecho que reportar.
 
 ## Errores típicos de un primer SPEC
 
